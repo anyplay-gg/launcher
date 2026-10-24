@@ -369,6 +369,7 @@ mod tests {
             accent: Color32::WHITE,
             now,
             utc_offset: Some(0),
+            game_running: false,
         }
     }
 
