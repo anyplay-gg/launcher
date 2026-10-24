@@ -114,6 +114,9 @@ fn online_action(model: &mut Model, action: OnlineAction) {
         OnlineAction::ManageAccount => {
             online.send(Purpose::AccountPage, Command::AccountPage);
         }
+        OnlineAction::Appeal { action, text } => {
+            online.send(Purpose::Appeal(action), Command::Appeal { action, text });
+        }
         OnlineAction::AddFriend(handle) => {
             online.send(
                 Purpose::AddFriend(handle.clone()),

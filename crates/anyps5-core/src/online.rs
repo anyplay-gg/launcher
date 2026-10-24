@@ -14,6 +14,7 @@
 //! Nothing here goes online by itself: the launcher starts the process only once the player asks
 //! to sign in, or when they signed in on this PC before.
 
+mod restrictions;
 mod social;
 mod voice;
 
@@ -30,6 +31,7 @@ pub use anyplay_control::{
     SignedIn, VoiceMode,
 };
 use api::{Account, AccountId, Conversation, FriendLists, Invitation, Message, PartyInvitation};
+pub use restrictions::{Blocked, Restrictions, in_force};
 pub use social::{Fetch, Ingested, KEPT, Listed, Social, others, plain, read_by_other, snippet};
 pub use voice::{
     DEFAULT_KEY, DEFAULT_PERCENT, Devices, Hardware, MAX_PERCENT, Mic, PERCENT_STEP, PeerPrefs,
@@ -254,6 +256,8 @@ pub enum Purpose {
     CancelSignIn,
     /// A link to the account web.
     AccountPage,
+    /// The appeal of the action with this number.
+    Appeal(u64),
     SignOut,
     AddFriend(String),
     Accept(AccountId),
@@ -357,6 +361,10 @@ pub enum Notice {
     MessageRequest(Conversation),
     /// The net service could not open the sound devices and switched voice off.
     VoiceFailed(Problem),
+    /// A moderator limited the account while the launcher ran.
+    Restricted(control::Restriction),
+    /// The account was banned and is signed out.
+    Banned(control::Restriction),
 }
 
 /// What the launcher knows about the player's online state.
@@ -376,6 +384,8 @@ pub struct Online {
     pub social: Social,
     /// Party voice: what the player chose and what the service reports.
     pub voice: Voice,
+    /// What limits the account: mutes, a new account's limits, a ban.
+    pub restrictions: Restrictions,
     /// Friends' trophy counts by grade; `None` when they hide them from the player.
     pub cards: BTreeMap<AccountId, Option<api::Count>>,
     /// Who sees the player's trophies; `None` until the cloud said.
@@ -454,14 +464,60 @@ impl Online {
                 };
                 let result = answer.into_result::<serde_json::Value>();
                 let mut notices = Vec::new();
-                if let Ok(value) = &result {
-                    self.answered(&purpose, value, &mut notices);
+                match &result {
+                    Ok(value) => self.answered(&purpose, value, &mut notices),
+                    Err(failure) => self.refused(&purpose, failure),
                 }
                 notices.push(Notice::Answered(purpose, result));
                 notices
             }
             Line::Output(Output::Event(event)) => self.event(event),
         }
+    }
+
+    /// Keeps what a refusal tells about the account: the restriction that stopped the command.
+    fn refused(&mut self, purpose: &Purpose, failure: &Failure) {
+        let Some(restriction) = &failure.restriction else {
+            return;
+        };
+        let blocked = self.blocked_by(purpose);
+        self.restrictions.learn(blocked, restriction);
+    }
+
+    /// The action a command was, as far as a restriction can stop it.
+    pub fn blocked_by(&self, purpose: &Purpose) -> Option<Blocked> {
+        match purpose {
+            Purpose::AddFriend(_) => Some(Blocked::FriendRequest),
+            Purpose::OpenConversation(account) => Some(if self.friend(*account).is_some() {
+                Blocked::Message
+            } else {
+                Blocked::Stranger
+            }),
+            Purpose::SendMessage { conversation, .. } => Some(
+                if self
+                    .social
+                    .get(conversation)
+                    .is_some_and(|c| self.is_stranger(c))
+                {
+                    Blocked::Stranger
+                } else {
+                    Blocked::Message
+                },
+            ),
+            _ => None,
+        }
+    }
+
+    /// True for a direct conversation with someone who is not a friend: writing in it is what a
+    /// new account may not do yet.
+    pub fn is_stranger(&self, conversation: &Conversation) -> bool {
+        let Some(me) = self.account.as_ref().map(|a| a.id) else {
+            return false;
+        };
+        conversation.kind == api::ConversationKind::Direct
+            && others(conversation, me)
+                .iter()
+                .any(|other| self.friend(other.id).is_none())
     }
 
     /// Keeps what a successful answer tells about the account.
@@ -838,6 +894,7 @@ impl Online {
                     self.sign_in_url = None;
                 }
                 if self.account.is_none() {
+                    self.restrictions.signed_out();
                     self.friends = FriendLists::default();
                     self.invitations.clear();
                     self.social = Social::default();
@@ -847,6 +904,9 @@ impl Online {
                     self.privacy = None;
                     self.uploaded.clear();
                     self.playtime_sent.clear();
+                }
+                if self.account.is_some() {
+                    self.restrictions.signed_in();
                 }
                 if was_waiting && self.account.is_some() {
                     notices.push(Notice::SignedIn);
@@ -890,6 +950,15 @@ impl Online {
                     notices.push(self.voice_failed(&message));
                 }
             }
+            Event::Restrictions { restrictions } => {
+                for restriction in self.restrictions.list(restrictions) {
+                    notices.push(Notice::Restricted(restriction));
+                }
+            }
+            Event::Banned { restriction } => {
+                self.restrictions.ban(restriction.clone());
+                notices.push(Notice::Banned(restriction));
+            }
             Event::Party { party } => self.party_changed(party),
             Event::PartyInvitation { invitation } => {
                 self.social.add_party_invitation(invitation.clone());
@@ -925,9 +994,6 @@ impl Online {
             Event::Voice {
                 state, me, peers, ..
             } => self.voice_event(state, me, peers),
-            // The restrictions are shown by the account page (the restrictions work); voice does
-            // not look at them.
-            Event::Restrictions { .. } | Event::Banned { .. } => {}
             Event::Unknown => {}
         }
         notices
@@ -1055,6 +1121,146 @@ mod tests {
             }),
             pending: None,
         }));
+    }
+
+    fn refusal(online: &mut Online, id: u64, failure: Failure) -> Vec<Notice> {
+        online.apply(Line::Output(Output::Answer(control::Answer::error(
+            id, failure,
+        ))))
+    }
+
+    fn restricted(kind: &str, until: Option<u64>) -> Failure {
+        Failure {
+            restriction: Some(Box::new(control::Restriction::new(kind, until))),
+            ..Failure::new("restricted", "x")
+        }
+    }
+
+    #[test]
+    fn a_refused_friend_request_teaches_what_stops_the_next() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        let id = online.send(
+            Purpose::AddFriend("Lumen".into()),
+            Command::AddFriend {
+                handle: "Lumen".into(),
+            },
+        );
+        refusal(&mut online, id, restricted("new_account", Some(2000)));
+        let blocked = |what| online.restrictions.blocking(what, 1000).map(|r| r.until);
+        assert_eq!(blocked(Blocked::FriendRequest), Some(Some(2000)));
+        assert_eq!(blocked(Blocked::Stranger), None);
+        assert_eq!(blocked(Blocked::Message), None);
+        assert_eq!(
+            online.restrictions.blocking(Blocked::FriendRequest, 2000),
+            None
+        );
+    }
+
+    #[test]
+    fn a_refused_message_to_a_stranger_blocks_strangers_only() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        // Nobody is a friend, so opening the conversation is writing to a stranger.
+        let id = online.send(
+            Purpose::OpenConversation(AccountId(7)),
+            Command::OpenConversation {
+                accounts: vec![AccountId(7)],
+                name: None,
+            },
+        );
+        refusal(&mut online, id, restricted("new_account", Some(2000)));
+        assert!(online.restrictions.blocking(Blocked::Stranger, 0).is_some());
+        assert!(online.restrictions.blocking(Blocked::Message, 0).is_none());
+    }
+
+    #[test]
+    fn the_mutes_the_service_lists_stop_every_action_and_a_new_one_is_announced() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        let mute = |action, until| control::Restriction {
+            action: Some(action),
+            ..control::Restriction::new(control::Restriction::MUTED, Some(until))
+        };
+        let first = online.apply(event(Event::Restrictions {
+            restrictions: vec![mute(1, 5000)],
+        }));
+        assert!(first.is_empty(), "known on going online: no announcement");
+        assert!(
+            online
+                .restrictions
+                .blocking(Blocked::FriendRequest, 10)
+                .is_some()
+        );
+        let later = online.apply(event(Event::Restrictions {
+            restrictions: vec![mute(1, 5000), mute(2, 9000)],
+        }));
+        assert_eq!(
+            later,
+            [Notice::Restricted(mute(2, 9000))],
+            "a mute that began while the launcher ran"
+        );
+        online.apply(event(Event::Restrictions {
+            restrictions: Vec::new(),
+        }));
+        assert!(online.restrictions.active(10).is_empty());
+    }
+
+    #[test]
+    fn a_ban_is_kept_while_signed_out_and_ends_with_the_next_sign_in() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        let ban = control::Restriction {
+            reason: Some("Cheating in a game.".into()),
+            ..control::Restriction::new(control::Restriction::BANNED, Some(9000))
+        };
+        let notices = online.apply(event(Event::Banned {
+            restriction: ban.clone(),
+        }));
+        assert_eq!(notices, [Notice::Banned(ban.clone())]);
+        // The net service then signs the account out.
+        online.apply(event(Event::State {
+            cloud: Cloud::Online,
+            account: None,
+            pending: None,
+        }));
+        assert!(!online.is_signed_in());
+        assert_eq!(online.restrictions.banned(), Some(&ban));
+        signed_in(&mut online);
+        assert_eq!(online.restrictions.banned(), None);
+    }
+
+    #[test]
+    fn a_ban_answered_to_a_command_is_kept_too() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        let id = online.send(Purpose::Privacy, Command::Privacy);
+        refusal(
+            &mut online,
+            id,
+            Failure {
+                restriction: Some(Box::new(control::Restriction::new(
+                    control::Restriction::BANNED,
+                    None,
+                ))),
+                ..Failure::new("banned", "x")
+            },
+        );
+        assert!(online.restrictions.banned().is_some());
+    }
+
+    #[test]
+    fn a_stranger_is_a_direct_conversation_with_someone_who_is_no_friend() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        let direct = chat("a", 0, 0, false);
+        assert!(online.is_stranger(&direct));
+        online.friends.friends.push(api::Friend {
+            account: account(2, "Lumen"),
+            since: 0,
+            presence: Default::default(),
+        });
+        assert!(!online.is_stranger(&direct));
     }
 
     #[test]

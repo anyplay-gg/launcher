@@ -2,6 +2,7 @@
 //! One side panel on the game sheet's frame, with pages that swap in place. The panel only shows
 //! and asks; the net service acts, and the host turns the panel's actions into commands for it.
 
+mod restriction;
 mod social;
 mod voice;
 
@@ -39,6 +40,11 @@ pub enum OnlineAction {
     CancelSignIn,
     /// Open the account web: e-mail, passkeys, devices and deleting the account.
     ManageAccount,
+    /// Appeal the mute an action made.
+    Appeal {
+        action: u64,
+        text: String,
+    },
     AddFriend(String),
     Accept(AccountId),
     Decline(AccountId),
@@ -136,6 +142,8 @@ pub enum Page {
     Voice,
     /// The microphones or the speakers to choose from.
     VoiceDevices(DeviceKind),
+    /// What limits the account, by the kind of the restriction (`muted`, `banned` ...).
+    Restriction(String),
 }
 
 /// What the panel shows, borrowed for one frame.
@@ -177,6 +185,8 @@ pub struct OnlinePanel {
     pub page: Page,
     pub cloud_text: String,
     pub friend_text: String,
+    /// The appeal being written.
+    appeal_text: String,
     reason: usize,
     picked: BTreeSet<AccountId>,
     /// How many messages the conversation page shows.
@@ -241,6 +251,9 @@ impl OnlinePanel {
         if matches!(page, Page::Report(_)) {
             self.reason = 0;
         }
+        if matches!(page, Page::Restriction(_)) && self.page != page {
+            self.clear_appeal();
+        }
         match &page {
             Page::Conversation(id) | Page::MessageRequest(id) => {
                 if self.page != page && !matches!(self.page, Page::Message(..)) {
@@ -282,6 +295,7 @@ impl OnlinePanel {
     fn follow(&mut self, data: &OnlineData<'_>) {
         let online = data.online;
         let wanted = match &self.page {
+            Page::Restriction(_) => self.restriction_follow(data),
             Page::Start | Page::Browser if online.is_signed_in() => Some(Page::Home),
             Page::Start if online.pending == Some(Pending::Browser) => Some(Page::Browser),
             Page::Browser if online.pending.is_none() => Some(Page::Start),
@@ -317,6 +331,7 @@ impl OnlinePanel {
             Page::Browser => Some(entry_page(data)).filter(|p| *p != self.page),
             Page::Blocked(_) => Some(Page::Account),
             Page::Voice | Page::VoiceDevices(_) => self.voice_back(),
+            Page::Restriction(_) => Some(self.restriction_back(data)),
             Page::Report(id) => Some(self.report_from.clone().unwrap_or(Page::Friend(id))),
             _ => self.social_back(data).unwrap_or(Some(Page::Home)),
         }
@@ -431,6 +446,7 @@ impl OnlinePanel {
         let field = match row {
             "cloud" => &mut self.cloud_text,
             "friend" => &mut self.friend_text,
+            "appeal" => &mut self.appeal_text,
             "compose" => {
                 if let Page::Conversation(id) = &self.page {
                     actions.push(OnlineAction::Draft {
@@ -514,7 +530,10 @@ impl OnlinePanel {
 
     fn run(&mut self, row: &str, data: &OnlineData<'_>, actions: &mut Vec<OnlineAction>) {
         let online = data.online;
-        if self.social_run(row, data, actions) || self.voice_run(row, data, actions) {
+        if self.social_run(row, data, actions)
+            || self.restriction_run(row, data, actions)
+            || self.voice_run(row, data, actions)
+        {
             return;
         }
         match (row, &self.page) {
@@ -657,6 +676,11 @@ impl OnlinePanel {
                     sign_in = sign_in.detail(t(T::NeedsCloud));
                     create = create.detail(t(T::NeedsCloud));
                 }
+                self.ban_rows(data, &mut rows);
+                let banned = !rows.is_empty();
+                if banned {
+                    sign_in = sign_in.group_start();
+                }
                 rows.push(sign_in);
                 rows.push(create);
                 let shown = match data.cloud {
@@ -796,14 +820,28 @@ impl OnlinePanel {
                 }
             }
             Page::AddFriend => {
-                rows.push(
-                    Row::text("friend", t(T::Handle), self.friend_text.clone())
-                        .icon(Icon::USER_CIRCLE),
-                );
-                rows.push(busy(
-                    Row::command("sendRequest", t(T::SendRequest)).icon(Icon::USER_PLUS),
-                    |p| matches!(p, Purpose::AddFriend(_)),
-                ));
+                let now = u64::try_from(data.now).unwrap_or(0);
+                if let Some(paused) = online
+                    .restrictions
+                    .blocking(online::Blocked::FriendRequest, now)
+                {
+                    // The request cannot go out: say so where it would be written.
+                    rows.push(restriction::paused_row(
+                        "pausedFriend",
+                        online::Blocked::FriendRequest,
+                        paused,
+                        data,
+                    ));
+                } else {
+                    rows.push(
+                        Row::text("friend", t(T::Handle), self.friend_text.clone())
+                            .icon(Icon::USER_CIRCLE),
+                    );
+                    rows.push(busy(
+                        Row::command("sendRequest", t(T::SendRequest)).icon(Icon::USER_PLUS),
+                        |p| matches!(p, Purpose::AddFriend(_)),
+                    ));
+                }
                 rows.push(Row::info("hint", t(T::AddFriendHint), None).group_start());
                 (
                     t(T::AddFriend).to_owned(),
@@ -812,13 +850,17 @@ impl OnlinePanel {
             }
             Page::Account => {
                 let account = online.account.as_ref();
-                rows.push(
-                    busy(
-                        Row::command("manageAccount", t(T::ManageAccount)).icon(Icon::GLOBE),
-                        |p| matches!(p, Purpose::AccountPage),
-                    )
-                    .detail(t(T::ManageAccountDetail)),
-                );
+                self.restriction_rows_for_page(data, &mut rows);
+                let restricted = !rows.is_empty();
+                let mut manage = busy(
+                    Row::command("manageAccount", t(T::ManageAccount)).icon(Icon::GLOBE),
+                    |p| matches!(p, Purpose::AccountPage),
+                )
+                .detail(t(T::ManageAccountDetail));
+                if restricted {
+                    manage = manage.group_start();
+                }
+                rows.push(manage);
                 rows.push(Row::info(
                     "cloud",
                     t(T::Cloud),
@@ -913,6 +955,9 @@ impl OnlinePanel {
             | Page::Message(..) => self
                 .social_rows(data, &mut rows)
                 .unwrap_or_else(|| (String::new(), None)),
+            Page::Restriction(_) => self
+                .restriction_page_rows(data, &mut rows)
+                .unwrap_or_else(|| (String::new(), None)),
             Page::Picker => {
                 let dialog = online.dialog.as_ref();
                 for friend in picker_friends(online) {
@@ -946,8 +991,15 @@ impl OnlinePanel {
         let language = data.language;
         let t = |text: T| text.text(language);
         let online = data.online;
+        // A limit on the account comes first: it explains why an action will not work.
+        self.restriction_rows_for_page(data, rows);
+        let restricted = !rows.is_empty();
         if !online.invitations.is_empty() || !online.social.party_invitations.is_empty() {
-            rows.push(Row::caption("invitationsCaption", t(T::Invitations)));
+            let mut caption = Row::caption("invitationsCaption", t(T::Invitations));
+            if restricted {
+                caption = caption.group_start();
+            }
+            rows.push(caption);
             for invitation in &online.invitations {
                 rows.push(
                     Row::action(
