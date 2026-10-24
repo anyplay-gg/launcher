@@ -4,7 +4,7 @@
 
 use anyps5_core::online::api::AccountId;
 use anyps5_core::online::{
-    DeviceKind, Hardware, Mic, Online, PERCENT_STEP, MAX_PERCENT, VoiceMode, VoiceStatus,
+    DeviceKind, Hardware, MAX_PERCENT, Mic, Online, PERCENT_STEP, VoiceMode, VoiceStatus,
 };
 use egui::Key;
 
@@ -118,7 +118,7 @@ impl OnlinePanel {
         if !voice.enabled() {
             return;
         }
-        let key = key_label(&talk_key(online).name().to_owned(), language);
+        let key = key_label(talk_key(online).name(), language);
         let mic = voice.mic(in_party);
         if !full {
             let icon = match mic {
@@ -176,17 +176,13 @@ impl OnlinePanel {
         rows.push(
             Row::action("voiceInput", t(V::Microphone))
                 .icon(Icon::MICROPHONE)
-                .detail(selected(
-                    voice.prefs().input.as_deref(),
-                ))
+                .detail(selected(voice.prefs().input.as_deref()))
                 .group_start(),
         );
         rows.push(
             Row::action("voiceOutput", t(V::Speakers))
                 .icon(Icon::HEADPHONES)
-                .detail(selected(
-                    voice.prefs().output.as_deref(),
-                )),
+                .detail(selected(voice.prefs().output.as_deref())),
         );
         rows.push(Row::command("refreshDevices", t(V::RefreshDevices)).icon(Icon::ARROW_CLOCKWISE));
         let note = match voice.hardware() {
@@ -252,7 +248,12 @@ impl OnlinePanel {
     }
 
     /// The part of the member page everyone has: how loud the member is heard, and a mute.
-    pub(super) fn member_voice_rows(&self, id: AccountId, data: &OnlineData<'_>, rows: &mut Vec<Row>) {
+    pub(super) fn member_voice_rows(
+        &self,
+        id: AccountId,
+        data: &OnlineData<'_>,
+        rows: &mut Vec<Row>,
+    ) {
         let language = data.language;
         let (percent, muted) = data.online.voice.prefs().peer(id);
         let handle = data
@@ -365,7 +366,9 @@ impl OnlinePanel {
     pub(super) fn capture(&mut self, events: &[InputEvent], actions: &mut Vec<OnlineAction>) {
         for event in events {
             match event {
-                InputEvent::CapturedKey { key, physical_key, .. } => {
+                InputEvent::CapturedKey {
+                    key, physical_key, ..
+                } => {
                     let key = physical_key.unwrap_or(*key);
                     if key == Key::Escape {
                         self.capturing = false;
@@ -419,7 +422,14 @@ mod tests {
 
     #[test]
     fn a_stored_key_name_comes_back_as_the_same_key() {
-        for key in [Key::V, Key::F5, Key::Num3, Key::Backtick, Key::Semicolon, Key::Q] {
+        for key in [
+            Key::V,
+            Key::F5,
+            Key::Num3,
+            Key::Backtick,
+            Key::Semicolon,
+            Key::Q,
+        ] {
             assert_eq!(Key::from_name(key.name()), Some(key), "{key:?}");
         }
         assert_eq!(key_label("V", Language::English), "V");

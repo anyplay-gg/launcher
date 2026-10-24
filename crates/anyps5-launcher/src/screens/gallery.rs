@@ -351,7 +351,10 @@ fn sample_voice(state: &mut anyps5_core::online::Online, look: OnlineLook) {
             "Headset Microphone (USB Audio)".into(),
             "Microphone Array (Built-in)".into(),
         ],
-        output: vec!["Headset Earphone (USB Audio)".into(), "Speakers (Built-in)".into()],
+        output: vec![
+            "Headset Earphone (USB Audio)".into(),
+            "Speakers (Built-in)".into(),
+        ],
         selected_input: Some("Headset Microphone (USB Audio)".into()),
         selected_output: None,
     });

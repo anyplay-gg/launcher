@@ -192,7 +192,9 @@ impl VoiceText {
             VoiceText::MutedByYou => "Susturuldu",
             VoiceText::NotInVoice => "Seste değil",
             VoiceText::VoiceSettings => "Ses Ayarları",
-            VoiceText::ToastFailed => "Ses başlatılamadı. Mikrofonunu ve hoparlörlerini kontrol et.",
+            VoiceText::ToastFailed => {
+                "Ses başlatılamadı. Mikrofonunu ve hoparlörlerini kontrol et."
+            }
             VoiceText::ToastDenied => "Sistem mikrofona izin vermedi.",
             VoiceText::ToastNoDevice => "Bu cihaz kullanılamıyor. Listeyi yenile.",
         }

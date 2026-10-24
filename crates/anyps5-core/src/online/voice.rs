@@ -265,12 +265,7 @@ impl Voice {
 }
 
 impl Online {
-    pub(super) fn voice_event(
-        &mut self,
-        state: VoiceState,
-        me: VoiceLevel,
-        peers: Vec<VoicePeer>,
-    ) {
+    pub(super) fn voice_event(&mut self, state: VoiceState, me: VoiceLevel, peers: Vec<VoicePeer>) {
         self.voice.state = state;
         self.voice.me = me;
         self.voice.peers = peers;
@@ -422,7 +417,8 @@ impl Online {
     /// The push-to-talk key is down or up. Only changes go out; a key held while voice is off,
     /// or in voice-activity mode, sends nothing.
     pub fn set_talking(&mut self, held: bool) {
-        let wanted = held && self.voice.prefs.enabled && self.voice.prefs.mode == VoiceMode::PushToTalk;
+        let wanted =
+            held && self.voice.prefs.enabled && self.voice.prefs.mode == VoiceMode::PushToTalk;
         if wanted != self.voice.talking {
             self.voice.talking = wanted;
             self.send(Purpose::PushToTalk, Command::PushToTalk { talking: wanted });
@@ -637,10 +633,13 @@ mod tests {
             }],
         });
         assert!(!online.voice.take_changed());
-        let id = online.send(Purpose::Hello, Command::Hello {
-            launcher: "x".into(),
-            cloud: "https://c.example.org".into(),
-        });
+        let id = online.send(
+            Purpose::Hello,
+            Command::Hello {
+                launcher: "x".into(),
+                cloud: "https://c.example.org".into(),
+            },
+        );
         lines(&mut online);
         online.apply(Line::Output(Output::Answer(control::Answer::ok(
             id,
@@ -680,7 +679,9 @@ mod tests {
             (answer(&["Mic"], &["Speakers"]), Hardware::Ready),
         ] {
             let id = online.send(Purpose::VoiceDevices, Command::VoiceDevices);
-            online.apply(Line::Output(Output::Answer(control::Answer::ok(id, devices))));
+            online.apply(Line::Output(Output::Answer(control::Answer::ok(
+                id, devices,
+            ))));
             assert_eq!(online.voice.hardware(), hardware);
         }
     }
@@ -700,7 +701,13 @@ mod tests {
         lines(&mut online);
         online.set_voice_device(DeviceKind::Input, Some("Headset".into()));
         assert_eq!(
-            online.voice.devices.as_ref().unwrap().selected_input.as_deref(),
+            online
+                .voice
+                .devices
+                .as_ref()
+                .unwrap()
+                .selected_input
+                .as_deref(),
             Some("Headset")
         );
         assert_eq!(online.voice.prefs().input.as_deref(), Some("Headset"));

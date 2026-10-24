@@ -10,9 +10,7 @@ pub use voice::talk_key;
 use std::collections::BTreeSet;
 
 use anyps5_core::online::api::{AccountId, Audience, Count, ReportReason};
-use anyps5_core::online::{
-    self, Cloud, DeviceKind, Link, Online, Pending, Purpose, VoiceMode,
-};
+use anyps5_core::online::{self, Cloud, DeviceKind, Link, Online, Pending, Purpose, VoiceMode};
 use egui::{Color32, Context};
 
 use crate::screens::online_strings::OnlineText as T;
@@ -1257,6 +1255,7 @@ mod tests {
                 "requestsCaption",
                 "request",
                 "messages",
+                "voice",
                 "startParty",
                 "friendsCaption",
                 "friendRow",
@@ -1265,7 +1264,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            rows[5].detail.as_deref(),
+            rows[6].detail.as_deref(),
             Some("Playing Test Game · You can join")
         );
         // The panel opens on the first row that takes focus, not on a caption.

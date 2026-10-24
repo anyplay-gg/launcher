@@ -254,7 +254,10 @@ impl OnlinePanel {
                 }
                 rows.push(Row::caption("voiceCaption", V::Voice.text(language)).group_start());
                 self.voice_rows(data, rows, false);
-                rows.push(Row::action("voiceSettings", V::VoiceSettings.text(language)).icon(Icon::SLIDERS_HORIZONTAL));
+                rows.push(
+                    Row::action("voiceSettings", V::VoiceSettings.text(language))
+                        .icon(Icon::SLIDERS_HORIZONTAL),
+                );
                 rows.push(Row::caption("membersCaption", t(S::PartyMembers)).group_start());
                 let voice = &online.voice;
                 let voice_on = voice.enabled();
@@ -1058,7 +1061,7 @@ mod tests {
         let panel = OnlinePanel::default();
         let mut rows = Vec::new();
         panel.home_social_rows(&data(&online), &mut rows);
-        assert_eq!(ids(&rows), ["messages", "startParty"]);
+        assert_eq!(ids(&rows), ["messages", "voice", "startParty"]);
         assert!(
             rows[0].group_start && rows[0].detail.is_none(),
             "no news: no detail"
@@ -1069,7 +1072,7 @@ mod tests {
             .apply_party(Some(party(1, &[(1, "Mira"), (2, "Lumen")])));
         let mut rows = Vec::new();
         panel.home_social_rows(&data(&online), &mut rows);
-        assert_eq!(ids(&rows), ["partyCaption", "party", "messages"]);
+        assert_eq!(ids(&rows), ["partyCaption", "party", "messages", "voice"]);
         assert_eq!(rows[1].title, "Mira, Lumen");
         assert_eq!(rows[1].detail.as_deref(), Some("2 of 8 members"));
     }
@@ -1130,6 +1133,9 @@ mod tests {
             [
                 "partyChat",
                 "inviteFriends",
+                "voiceCaption",
+                "voiceOn",
+                "voiceSettings",
                 "membersCaption",
                 "member",
                 "partyMember",
@@ -1139,13 +1145,13 @@ mod tests {
         );
         assert_eq!(rows[0].detail.as_deref(), Some("3 new"));
         assert_eq!(
-            rows[3].detail.as_deref(),
+            rows[6].detail.as_deref(),
             Some("Leader"),
             "the leader's mark is a word"
         );
-        assert_eq!(rows[3].control, Control::Info(Some("You".into())));
-        assert_eq!(rows[4].detail.as_deref(), Some("Online"));
-        assert!(rows[6].destructive && rows[6].group_start);
+        assert_eq!(rows[6].control, Control::Info(Some("You".into())));
+        assert_eq!(rows[7].detail.as_deref(), Some("Online"));
+        assert!(rows[9].destructive && rows[9].group_start);
         assert_eq!(panel.side.nav.row, 0, "opens on the chat");
     }
 
@@ -1172,15 +1178,23 @@ mod tests {
             ids(&rows),
             [
                 "partyChat",
+                "voiceCaption",
+                "voiceOn",
+                "voiceSettings",
                 "membersCaption",
-                "member",
+                "partyMember",
                 "member",
                 "leaveParty"
             ]
         );
-        assert_eq!(rows[2].detail.as_deref(), Some("Leader · Online"));
-        // And the pages a leader uses lead back when the lead is lost.
+        assert_eq!(rows[5].detail.as_deref(), Some("Leader · Online"));
+        // Any member opens the member page for volume and mute; it has no leader rows.
         panel.go(Page::PartyMember(AccountId(2)), &data(&online));
+        panel.follow(&data(&online));
+        assert_eq!(panel.page, Page::PartyMember(AccountId(2)));
+        assert!(!ids(&panel.rows(&data(&online)).2).contains(&"makeLeader"));
+        // The leader's pages (the picker) lead back.
+        panel.go(Page::PartyPicker, &data(&online));
         panel.follow(&data(&online));
         assert_eq!(panel.page, Page::Party);
     }
@@ -1290,7 +1304,10 @@ mod tests {
         assert_eq!(panel.page, Page::PartyMember(AccountId(2)));
         let (title, _, rows) = panel.rows(&data(&online));
         assert_eq!(title, "Lumen");
-        assert_eq!(ids(&rows), ["makeLeader", "removeMember"]);
+        assert_eq!(
+            ids(&rows),
+            ["peerVolume", "peerMute", "makeLeader", "removeMember"]
+        );
         panel.run("makeLeader", &data(&online), &mut actions);
         assert_eq!(actions, [OnlineAction::PartyLeader(AccountId(2))]);
         panel.go(Page::PartyMember(AccountId(2)), &data(&online));
@@ -1954,9 +1971,9 @@ mod tests {
         let mut panel = OnlinePanel::default();
         panel.go(Page::PartyMember(AccountId(2)), &data(&online));
         let rows = panel.rows(&data(&online)).2;
-        assert_eq!(rows[0].detail.as_deref(), Some("Lumen will lead the party"));
+        assert_eq!(rows[2].detail.as_deref(), Some("Lumen will lead the party"));
         assert_eq!(
-            rows[1].detail.as_deref(),
+            rows[3].detail.as_deref(),
             Some("Lumen is taken out of the party")
         );
     }
@@ -2162,7 +2179,12 @@ mod tests {
 
     fn change(panel: &mut OnlinePanel, online: &Online, change: Change) -> Vec<OnlineAction> {
         let mut actions = Vec::new();
-        panel.handle(&egui::Context::default(), &change, &data(online), &mut actions);
+        panel.handle(
+            &egui::Context::default(),
+            &change,
+            &data(online),
+            &mut actions,
+        );
         actions
     }
 
@@ -2175,8 +2197,8 @@ mod tests {
         assert_eq!(
             ids(&rows),
             [
-                "inviteFriends",
                 "partyChat",
+                "inviteFriends",
                 "voiceCaption",
                 "voiceOn",
                 "voiceSettings",
@@ -2209,7 +2231,13 @@ mod tests {
             .collect();
         assert_eq!(
             voice,
-            ["voiceOn", "micState", "voiceMode", "voiceNote", "voiceSettings"]
+            [
+                "voiceOn",
+                "micState",
+                "voiceMode",
+                "voiceNote",
+                "voiceSettings"
+            ]
         );
         let mic = rows.iter().find(|r| r.id == "micState").unwrap();
         assert!(matches!(&mic.control, Control::Info(Some(v)) if v == "Muted · hold V to talk"));
@@ -2231,7 +2259,10 @@ mod tests {
         online.set_voice_mode(VoiceMode::VoiceActivity);
         let rows = panel.rows(&data(&online)).2;
         let note = rows.iter().find(|r| r.id == "voiceNote").unwrap();
-        assert!(note.title.starts_with("The microphone opens whenever you speak"));
+        assert!(
+            note.title
+                .starts_with("The microphone opens whenever you speak")
+        );
         panel.go(Page::Voice, &data(&online));
         assert!(!ids(&panel.rows(&data(&online)).2).contains(&"talkKey"));
     }
@@ -2242,15 +2273,36 @@ mod tests {
         let mut panel = OnlinePanel::default();
         panel.go(Page::Party, &data(&online));
         assert_eq!(
-            change(&mut panel, &online, Change::Toggle { row: "voiceOn", on: true }),
+            change(
+                &mut panel,
+                &online,
+                Change::Toggle {
+                    row: "voiceOn",
+                    on: true
+                }
+            ),
             [OnlineAction::Voice(true)]
         );
         assert_eq!(
-            change(&mut panel, &online, Change::Choice { row: "voiceMode", index: 1 }),
+            change(
+                &mut panel,
+                &online,
+                Change::Choice {
+                    row: "voiceMode",
+                    index: 1
+                }
+            ),
             [OnlineAction::VoiceMode(VoiceMode::VoiceActivity)]
         );
         assert_eq!(
-            change(&mut panel, &online, Change::Choice { row: "voiceMode", index: 0 }),
+            change(
+                &mut panel,
+                &online,
+                Change::Choice {
+                    row: "voiceMode",
+                    index: 0
+                }
+            ),
             [OnlineAction::VoiceMode(VoiceMode::PushToTalk)]
         );
     }
@@ -2261,7 +2313,14 @@ mod tests {
         let mut panel = OnlinePanel::default();
         let detail = |panel: &mut OnlinePanel, online: &Online| {
             panel.go(Page::Party, &data(online));
-            panel.rows(&data(online)).2.iter().find(|r| r.id == "voiceOn").unwrap().detail.clone()
+            panel
+                .rows(&data(online))
+                .2
+                .iter()
+                .find(|r| r.id == "voiceOn")
+                .unwrap()
+                .detail
+                .clone()
         };
         online.voice.load(VoicePrefs {
             enabled: true,
@@ -2276,7 +2335,10 @@ mod tests {
             panel.rows(&data(&online)).2
         };
         let row = home.iter().find(|r| r.id == "voice").unwrap();
-        assert_eq!(row.detail.as_deref(), Some("Starts when you are in a party"));
+        assert_eq!(
+            row.detail.as_deref(),
+            Some("Starts when you are in a party")
+        );
     }
 
     #[test]
@@ -2318,10 +2380,13 @@ mod tests {
             .filter(|r| matches!(r.id, "member" | "partyMember"))
             .collect();
         assert_eq!(members.len(), 3);
-        // The player, silent and in voice: presence only.
-        assert_eq!(members[0].detail.as_deref(), Some("Online"));
+        // The player, silent and in voice: nothing to add (they have no presence of their own).
+        assert_eq!(members[0].detail.as_deref(), None);
         // Lumen speaks and leads; the party's voice flag says nothing is wrong, so no "Not in voice".
-        assert_eq!(members[1].detail.as_deref(), Some("Speaking · Leader · Online"));
+        assert_eq!(
+            members[1].detail.as_deref(),
+            Some("Speaking · Leader · Online")
+        );
         assert_eq!(members[1].icon, Some(Icon::SPEAKER_HIGH));
         // Juno speaks too, but the player muted Juno: not heard, and said so.
         assert_eq!(members[2].detail.as_deref(), Some("Muted · Online"));
@@ -2335,12 +2400,12 @@ mod tests {
         let mut panel = OnlinePanel::default();
         panel.go(Page::Party, &data(&online));
         let rows = panel.rows(&data(&online)).2;
-        let lumen = rows.iter().filter(|r| r.id == "partyMember").next().unwrap();
+        let lumen = rows.iter().find(|r| r.id == "partyMember").unwrap();
         assert_eq!(lumen.detail.as_deref(), Some("Not in voice · Online"));
         // With voice off nobody is called that.
         online.voice.load(VoicePrefs::default());
         let rows = panel.rows(&data(&online)).2;
-        let lumen = rows.iter().filter(|r| r.id == "partyMember").next().unwrap();
+        let lumen = rows.iter().find(|r| r.id == "partyMember").unwrap();
         assert_eq!(lumen.detail.as_deref(), Some("Online"));
     }
 
@@ -2359,11 +2424,25 @@ mod tests {
             Control::Stepper { value: 100, min: 0, max: 200, step: 10, text } if text == "100%"
         ));
         assert_eq!(
-            change(&mut panel, &online, Change::Stepper { row: "peerVolume", value: 140 }),
+            change(
+                &mut panel,
+                &online,
+                Change::Stepper {
+                    row: "peerVolume",
+                    value: 140
+                }
+            ),
             [OnlineAction::PeerVolume(AccountId(2), 140)]
         );
         assert_eq!(
-            change(&mut panel, &online, Change::Toggle { row: "peerMute", on: true }),
+            change(
+                &mut panel,
+                &online,
+                Change::Toggle {
+                    row: "peerMute",
+                    on: true
+                }
+            ),
             [OnlineAction::PeerMute(AccountId(2), true)]
         );
         // The page stays when the player is no leader.
@@ -2373,7 +2452,10 @@ mod tests {
         let online = voice_online(1);
         panel.go(Page::PartyMember(AccountId(2)), &data(&online));
         let rows = panel.rows(&data(&online)).2;
-        assert_eq!(ids(&rows), ["peerVolume", "peerMute", "makeLeader", "removeMember"]);
+        assert_eq!(
+            ids(&rows),
+            ["peerVolume", "peerMute", "makeLeader", "removeMember"]
+        );
         // A member who left takes the page with them.
         let mut gone = voice_online(1);
         gone.social.apply_party(Some(Party {
@@ -2392,9 +2474,14 @@ mod tests {
         let mut panel = OnlinePanel::default();
         panel.go(Page::PartyMember(AccountId(2)), &data(&online));
         let rows = panel.rows(&data(&online)).2;
-        assert!(matches!(&rows[0].control, Control::Stepper { value: 130, text, .. } if text == "130%"));
+        assert!(
+            matches!(&rows[0].control, Control::Stepper { value: 130, text, .. } if text == "130%")
+        );
         assert!(matches!(rows[1].control, Control::Toggle(true)));
-        assert_eq!(rows[1].detail.as_deref(), Some("Only you stop hearing Lumen"));
+        assert_eq!(
+            rows[1].detail.as_deref(),
+            Some("Only you stop hearing Lumen")
+        );
     }
 
     #[test]
@@ -2425,7 +2512,9 @@ mod tests {
                 "devicesNote"
             ]
         );
-        assert!(matches!(&rows[3].control, Control::Keys { sources, capturing: false } if sources == &["KEY:V"]));
+        assert!(
+            matches!(&rows[3].control, Control::Keys { sources, capturing: false } if sources == &["KEY:V"])
+        );
         let input = rows.iter().find(|r| r.id == "voiceInput").unwrap();
         assert_eq!(input.detail.as_deref(), Some("Headset"));
         let output = rows.iter().find(|r| r.id == "voiceOutput").unwrap();
@@ -2484,29 +2573,47 @@ mod tests {
         panel.run("voiceInput", &data(&online), &mut actions);
         assert_eq!(panel.page, Page::VoiceDevices(DeviceKind::Input));
         let (title, subtitle, rows) = panel.rows(&data(&online));
-        assert_eq!((title.as_str(), subtitle.as_deref()), ("Microphone", Some("Choose the microphone")));
+        assert_eq!(
+            (title.as_str(), subtitle.as_deref()),
+            ("Microphone", Some("Choose the microphone"))
+        );
         assert_eq!(
             ids(&rows),
-            ["deviceDefault", "deviceName", "deviceName", "deviceName", "devicesNote"]
+            [
+                "deviceDefault",
+                "deviceName",
+                "deviceName",
+                "deviceName",
+                "devicesNote"
+            ]
         );
         // A chosen device that is not plugged in stays visible, and says so.
         assert_eq!(rows[3].title, "Old Mic");
-        assert_eq!(rows[3].detail.as_deref(), Some("This device is not connected right now."));
+        assert_eq!(
+            rows[3].detail.as_deref(),
+            Some("This device is not connected right now.")
+        );
         assert_eq!(rows[0].detail, None);
         // Choosing the second one.
         panel.side.nav.row = 2;
         panel.run("deviceName", &data(&online), &mut actions);
         assert_eq!(
             actions,
-            [OnlineAction::VoiceDevice(DeviceKind::Input, Some("Built-in".into()))]
+            [OnlineAction::VoiceDevice(
+                DeviceKind::Input,
+                Some("Built-in".into())
+            )]
         );
         assert_eq!(panel.page, Page::Voice);
         // And the default.
         let mut actions = Vec::new();
         panel.go(Page::VoiceDevices(DeviceKind::Output), &data(&online));
         panel.run("deviceDefault", &data(&online), &mut actions);
-        assert_eq!(actions, [OnlineAction::VoiceDevice(DeviceKind::Output, None)]);
-        assert_eq!(panel.back_page(&data(&online)), Some(Page::Voice));
+        assert_eq!(
+            actions,
+            [OnlineAction::VoiceDevice(DeviceKind::Output, None)]
+        );
+        assert_eq!(panel.page, Page::Voice);
     }
 
     #[test]
@@ -2524,7 +2631,10 @@ mod tests {
         assert!(panel.capturing);
         let rows = panel.rows(&data(&online)).2;
         let key = rows.iter().find(|r| r.id == "talkKey").unwrap();
-        assert_eq!(key.detail.as_deref(), Some("Press a key. Esc keeps the current one."));
+        assert_eq!(
+            key.detail.as_deref(),
+            Some("Press a key. Esc keeps the current one.")
+        );
         let pressed = |key| InputEvent::CapturedKey {
             key,
             physical_key: None,
@@ -2532,7 +2642,10 @@ mod tests {
         };
         // A key the launcher reads itself is ignored; the row keeps waiting.
         let mut actions = Vec::new();
-        panel.capture(&[pressed(egui::Key::Space), pressed(egui::Key::ArrowUp)], &mut actions);
+        panel.capture(
+            &[pressed(egui::Key::Space), pressed(egui::Key::ArrowUp)],
+            &mut actions,
+        );
         assert!(actions.is_empty() && panel.capturing);
         panel.capture(&[pressed(egui::Key::Escape)], &mut actions);
         assert!(actions.is_empty() && !panel.capturing);
@@ -2565,8 +2678,10 @@ mod tests {
         assert!(matches!(&mic.control, Control::Info(Some(v)) if v == "Muted · hold F5 to talk"));
         panel.go(Page::Voice, &data(&online));
         let rows = panel.rows(&data(&online)).2;
-        assert!(matches!(&rows.iter().find(|r| r.id == "talkKey").unwrap().control,
-            Control::Keys { sources, .. } if sources == &["KEY:F5"]));
+        assert!(
+            matches!(&rows.iter().find(|r| r.id == "talkKey").unwrap().control,
+            Control::Keys { sources, .. } if sources == &["KEY:F5"])
+        );
         // A stored name that is no key falls back to the default.
         online.voice.load(VoicePrefs {
             key: Some("Space".into()),

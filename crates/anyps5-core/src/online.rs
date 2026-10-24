@@ -30,11 +30,11 @@ pub use anyplay_control::{
     SignedIn, VoiceMode,
 };
 use api::{Account, AccountId, Conversation, FriendLists, Invitation, Message, PartyInvitation};
+pub use social::{Fetch, Ingested, KEPT, Listed, Social, others, plain, read_by_other, snippet};
 pub use voice::{
     DEFAULT_KEY, DEFAULT_PERCENT, Devices, Hardware, MAX_PERCENT, Mic, PERCENT_STEP, PeerPrefs,
     Problem, Status as VoiceStatus, Voice, VoicePrefs,
 };
-pub use social::{Fetch, Ingested, KEPT, Listed, Social, others, plain, read_by_other, snippet};
 
 use crate::events::Notifier;
 use crate::trophies::{Earned, Grade};
@@ -504,7 +504,8 @@ impl Online {
             }
             Purpose::Hello => self.voice_hello(),
             Purpose::VoiceDevices => {
-                if let Ok(devices) = serde_json::from_value::<control::VoiceDevices>(value.clone()) {
+                if let Ok(devices) = serde_json::from_value::<control::VoiceDevices>(value.clone())
+                {
                     self.voice.devices = Some(devices.into());
                 }
             }
