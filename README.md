@@ -125,7 +125,7 @@ The online part is in development. This is what works today and what does not.
 - No real game plays online yet. The bridge that connects a game to the network lives in an AnyPS5 build, and it is still under review. Until a toolkit carries it, games start as before, offline. The [known gaps](https://github.com/anyplay-gg/network/blob/main/docs/gaps.md) list what is missing.
 - On Linux, starting a game with the bridge is untested.
 
-**What to expect later.** A game plays online only with a build that carries the bridge, and only when its online part uses the platform's own services. Games that need a publisher's servers stay offline: the network never stands in for them. The [network's design](https://github.com/anyplay-gg/network/blob/main/docs/DESIGN.md) has the details and the roadmap.
+**What to expect later.** A game plays online only with a build that carries the bridge, and only when its online part uses the platform's own services. Games whose online play runs on a publisher's live servers stay offline on the PlayStation side: the network never stands in for a service that still runs. The [network's design](https://github.com/anyplay-gg/network/blob/main/docs/DESIGN.md) has the details and the roadmap.
 
 **Privacy.**
 
