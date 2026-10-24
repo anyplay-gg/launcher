@@ -13,7 +13,8 @@ sliders gauge translate sparkle trash mouse arrows-down-up chart-line-up crossha
 export download-simple arrow-counter-clockwise circle list hand-pointing arrows-out-cardinal camera text-aa
 x-circle arrow-right check question folder-open folder-simple-dashed arrow-up arrow-down arrow-left link
 github-logo floppy-disk clock-counter-clockwise users user-plus user-minus envelope-simple
-paper-plane-right cloud sign-in sign-out prohibit flag key`.split(/\s+/);
+paper-plane-right cloud sign-in sign-out prohibit flag key
+microphone microphone-slash speaker-slash headphones`.split(/\s+/);
 
 const BS = String.fromCharCode(92);
 const lines = [];

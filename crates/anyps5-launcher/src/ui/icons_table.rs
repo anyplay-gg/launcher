@@ -100,4 +100,8 @@ impl Icon {
     pub const PROHIBIT: Icon = Icon('\u{e3de}');
     pub const FLAG: Icon = Icon('\u{e244}');
     pub const KEY: Icon = Icon('\u{e2d6}');
+    pub const MICROPHONE: Icon = Icon('\u{e326}');
+    pub const MICROPHONE_SLASH: Icon = Icon('\u{e328}');
+    pub const SPEAKER_SLASH: Icon = Icon('\u{e45a}');
+    pub const HEADPHONES: Icon = Icon('\u{e2a6}');
 }

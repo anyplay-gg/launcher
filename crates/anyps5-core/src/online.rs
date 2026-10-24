@@ -15,6 +15,7 @@
 //! to sign in, or when they signed in on this PC before.
 
 mod social;
+mod voice;
 
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -25,9 +26,14 @@ use std::time::Duration;
 
 pub use anyplay_control::anyplay_api as api;
 pub use anyplay_control::{
-    self as control, Cloud, Command, Event, Failure, Link, Output, Pending, Session, SignedIn,
+    self as control, Cloud, Command, DeviceKind, Event, Failure, Link, Output, Pending, Session,
+    SignedIn, VoiceMode,
 };
 use api::{Account, AccountId, Conversation, FriendLists, Invitation, Message, PartyInvitation};
+pub use voice::{
+    DEFAULT_KEY, DEFAULT_PERCENT, Devices, Hardware, MAX_PERCENT, Mic, PERCENT_STEP, PeerPrefs,
+    Problem, Status as VoiceStatus, Voice, VoicePrefs,
+};
 pub use social::{Fetch, Ingested, KEPT, Listed, Social, others, plain, read_by_other, snippet};
 
 use crate::events::Notifier;
@@ -307,6 +313,12 @@ pub enum Purpose {
     },
     AcceptRequest(String),
     LeaveConversation(String),
+    // Voice
+    /// Switching voice on or off, its mode, a member's volume or mute.
+    Voice,
+    PushToTalk,
+    VoiceDevices,
+    SetVoiceDevice(DeviceKind),
 }
 
 /// The game's invitation dialog, waiting for the player to pick friends.
@@ -343,6 +355,8 @@ pub enum Notice {
     },
     /// A stranger wrote to the player for the first time.
     MessageRequest(Conversation),
+    /// The net service could not open the sound devices and switched voice off.
+    VoiceFailed(Problem),
 }
 
 /// What the launcher knows about the player's online state.
@@ -360,6 +374,8 @@ pub struct Online {
     pub dialog: Option<Dialog>,
     /// The party, the conversations and their messages.
     pub social: Social,
+    /// Party voice: what the player chose and what the service reports.
+    pub voice: Voice,
     /// Friends' trophy counts by grade; `None` when they hide them from the player.
     pub cards: BTreeMap<AccountId, Option<api::Count>>,
     /// Who sees the player's trophies; `None` until the cloud said.
@@ -413,9 +429,12 @@ impl Online {
                 )
             })
             .collect();
+        let mut voice = std::mem::take(&mut self.voice);
+        voice.reset();
         *self = Online {
             status,
             next: self.next,
+            voice,
             ..Online::default()
         };
         notices
@@ -481,6 +500,12 @@ impl Online {
                         .entry((entry.title_id.clone(), entry.day.clone()))
                         .or_default();
                     *known = (*known).max(entry.minutes);
+                }
+            }
+            Purpose::Hello => self.voice_hello(),
+            Purpose::VoiceDevices => {
+                if let Ok(devices) = serde_json::from_value::<control::VoiceDevices>(value.clone()) {
+                    self.voice.devices = Some(devices.into());
                 }
             }
             Purpose::Party => {
@@ -815,6 +840,7 @@ impl Online {
                     self.friends = FriendLists::default();
                     self.invitations.clear();
                     self.social = Social::default();
+                    self.voice.reset();
                     self.session = None;
                     self.cards.clear();
                     self.privacy = None;
@@ -859,6 +885,8 @@ impl Online {
                 tracing::info!("net service: {code}: {message}");
                 if code == "sign_in_timed_out" {
                     notices.push(Notice::SignInTimedOut);
+                } else if code == "voice_device" {
+                    notices.push(self.voice_failed(&message));
                 }
             }
             Event::Party { party } => self.party_changed(party),
@@ -891,9 +919,11 @@ impl Online {
                 }
             }
             Event::ConversationGone { id } => self.social.remove(&id),
-            // Party voice has no controls in the launcher yet; the net service keeps it off
-            // until a `voice` command switches it on.
-            Event::Voice { .. } => {}
+            // `enabled` and `mode` are not taken over: an event sent before the service heard a
+            // choice would undo it. A service that gave up says so in a notice.
+            Event::Voice {
+                state, me, peers, ..
+            } => self.voice_event(state, me, peers),
             Event::Unknown => {}
         }
         notices

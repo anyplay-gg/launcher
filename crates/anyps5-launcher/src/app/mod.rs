@@ -196,6 +196,7 @@ impl LauncherApp {
             if self.model.prefs.online {
                 self.model.effects.push(Effect::StartOnline);
             }
+            self.model.online.voice.load(self.model.prefs.voice.clone());
         }
 
         for event in self.services.drain() {
@@ -211,6 +212,7 @@ impl LauncherApp {
             }
             self.model.on_pipeline(event);
         }
+        self.push_to_talk(ctx);
         for ready in self.online.frame(&mut self.model) {
             self.submit(
                 pipeline::PipelineCommand::Play(ready.game),
@@ -244,8 +246,26 @@ impl LauncherApp {
         self.save_preferences();
     }
 
+    /// Tells the net service whether the talk key is down. Only a launcher in front sees keys:
+    /// when it loses the focus, or the player types somewhere, the key counts as up. A game that
+    /// has the keyboard gets no push to talk; voice activity is for playing (docs/DESIGN.md 17).
+    fn push_to_talk(&mut self, ctx: &Context) {
+        let focused = self.assume_focus || ctx.input(|i| i.viewport().focused).unwrap_or(true);
+        let key = crate::screens::online::talk_key(&self.model.online);
+        let held = focused
+            && !self.shell.input.capture_keys
+            && !self.shell.input.blocked
+            && !ctx.egui_wants_keyboard_input()
+            && ctx.input(|i| i.key_down(key) && !i.modifiers.any());
+        self.model.online.set_talking(held);
+    }
+
     /// Writes the preferences when something changed (atomic, see `Preferences::save`).
     pub fn save_preferences(&mut self) {
+        if self.model.online.voice.take_changed() {
+            let voice = self.model.online.voice.prefs().clone();
+            self.model.edit_prefs(|p| p.voice = voice);
+        }
         if self.model.take_prefs_dirty()
             && let Err(error) = self.model.prefs.save(&self.model.paths)
         {
