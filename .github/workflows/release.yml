@@ -28,10 +28,10 @@ env:
   # The anyplay-gg/network revision whose net service the launcher carries.
   # A full commit SHA, never a branch: a release is built from a revision somebody chose. Bump it by
   # a pull request, or set the repository variable NETWORK_REF; a run by hand can take another one.
-  NETWORK_REF: ${{ inputs.network_ref || vars.NETWORK_REF || '81369391ce82c9b1dd46f7914c7e29af84c202dd' }}
+  NETWORK_REF: ${{ inputs.network_ref || vars.NETWORK_REF || 'a92e0fdc03347b2b447d7ae67fb5a3bc3072deb9' }}
   # The compiler of every release build, an exact version.
   RUST_TOOLCHAIN: 1.99.0
-  # AnyPlay's own cloud, set as a repository variable once it runs; empty until then.
+  # The cloud a release build names by default (the repository variable). Without it, players enter one.
   ANYPLAY_DEFAULT_CLOUD: ${{ vars.ANYPLAY_DEFAULT_CLOUD }}
 
 jobs:

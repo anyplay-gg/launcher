@@ -8,7 +8,7 @@ It is part of **[AnyPlay](https://github.com/anyplay-gg)**, which builds everyth
 |---|---|
 | **Launcher** (this repository) | Your library: unlock, play, controls, trophies and saves |
 | **[Network](https://github.com/anyplay-gg/network)** | Online play with friends over the internet, in development: the net service this launcher starts, the bridge protocol and the specifications |
-| **[Cloud](https://github.com/anyplay-gg/cloud)** | The services behind the network, run by AnyPlay or by you. No public cloud runs yet |
+| **[Cloud](https://github.com/anyplay-gg/cloud)** | The services behind the network, run by AnyPlay or by you. AnyPlay runs a test cloud for now |
 
 News, help and other players: the [AnyPlay Discord](https://discord.gg/nSHbHBRdS).
 
@@ -72,11 +72,11 @@ Online play runs in a program of its own, `anyplay-net` from [anyplay-gg/network
 
 At start, in the background, the launcher asks GitHub for the latest release of this repository. If it is newer, the launcher downloads the portable exe and compares it with its line in the release's `SHA256SUMS.txt`. A missing or wrong checksum refuses the update and leaves nothing behind. Windows can rename a running exe but not overwrite it, so the swap moves the running exe to `<name>.old` and puts the new one in its place; if the second step fails, the old one moves back. The next start removes the `.old` file. The swap happens when you close the launcher. It works for the installed exe and for the portable exe in any folder you can write to.
 
-The checksum list comes from the same release as the exe. That guards against a damaged or substituted download, not against a compromised release. The launcher can therefore trust a signed manifest instead ([docs/UPDATES.md](docs/UPDATES.md)). From the first release whose launcher carries a key in `data/update-keys.txt`, an update is installed only if it is signed by one of those keys, has not expired, is newer than the version you run, and matches the signed hash and size. If anything is wrong, the update is skipped and the installed launcher stays as it is. The key list is still empty, so releases use the checksum path for now. Releases are not code-signed yet. Self-update exists on Windows only.
+The checksum list comes from the same release as the exe. That guards against a damaged or substituted download, not against a compromised release. The launcher therefore trusts a signed manifest instead ([docs/UPDATES.md](docs/UPDATES.md)). Since v0.2.0 the launcher carries the key "anyplay 2026" in `data/update-keys.txt`, and an update is installed only if it is signed by a key on that list, has not expired, is newer than the version you run, and matches the signed hash and size. If anything is wrong, the update is skipped and the installed launcher stays as it is. Older launchers (up to v0.1.3) check only the checksum file and take v0.2.0 that way once. Releases are not code-signed yet. Self-update exists on Windows only.
 
 ## Download
 
-Get the latest version from the [releases page](https://github.com/anyplay-gg/launcher/releases/latest). The files below carry the launcher's current name. The newest release at the time of writing, v0.1.3, was made before the rename and calls them `AnyPS5-Launcher-<version>-…`; the online area described here is on `main` and not in v0.1.3 yet. Each release also carries `AnyPS5-Launcher-<version>-x64.exe`, the same portable exe under the old name, so copies of v0.1.2 and v0.1.3 can update themselves; you do not need it.
+Get the latest version from the [releases page](https://github.com/anyplay-gg/launcher/releases/latest). The files below carry the launcher's current name. Releases up to v0.1.3 were made before the rename and call them `AnyPS5-Launcher-<version>-…`. Each release also carries `AnyPS5-Launcher-<version>-x64.exe`, the same portable exe under the old name, so copies of v0.1.2 and v0.1.3 can update themselves; you do not need it.
 
 **Windows** (64-bit Windows 10 or 11, nothing else to install first):
 
@@ -117,11 +117,11 @@ Settings live in `%APPDATA%\AnyPS5` and the toolkit, logs and caches in `%LOCALA
 
 The online part is in development. This is what works today and what does not.
 
-**What works.** Select your profile at the top of the home screen to open **Online**. Sign in with your e-mail address: there is no password, each PC gets a code by e-mail. Then add friends by their name, see what they play, accept requests and invitations, and join a friend's game when it is open to friends. Your trophies go to the cloud as records: number, grade and time of each, while names and pictures stay on your PC. A friend's page shows their trophy count by grade, and *Who Sees Your Trophies* on the Account page decides who sees yours (friends by default). *Hide Your IP Address* keeps every tunnel on a relay, so other players never learn your address. The launcher, the net service and the cloud are tested together, including two net services with fake games that exchange packets through a tunnel, directly and through a relay (the end-to-end tests in [anyplay-gg/cloud](https://github.com/anyplay-gg/cloud)).
+**What works.** Select your profile at the top of the home screen to open **Online**. Sign in or create an account: both open the cloud's page in your browser, where you can use a passkey or an e-mail code, and the launcher takes you in when you are done. Then add friends by their name, see what they play, accept requests and invitations, and join a friend's game when it is open to friends. Start a party, invite friends to it and send messages. Your trophies go to the cloud as records: number, grade and time of each, while names and pictures stay on your PC. A friend's page shows their trophy count by grade, and *Who Sees Your Trophies* on the Account page decides who sees yours (friends by default). *Hide Your IP Address* keeps every tunnel on a relay, so other players never learn your address. The launcher, the net service and the cloud are tested together, including two net services with fake games that exchange packets through a tunnel, directly and through a relay (the end-to-end tests in [anyplay-gg/cloud](https://github.com/anyplay-gg/cloud)).
 
 **What does not work yet.**
 
-- No public cloud runs. Release builds name none until one does, so you enter the address of a cloud: under **Online → Cloud** you can use one of your own or of friends; [anyplay-gg/cloud](https://github.com/anyplay-gg/cloud) explains how to host it with `docker compose up`.
+- The cloud that release builds use by default, `https://anyplaynet.com`, is a test cloud: expect resets and downtime. Under **Online → Cloud** you can use one of your own or of friends instead; [anyplay-gg/cloud](https://github.com/anyplay-gg/cloud) explains how to host it with `docker compose up`.
 - No real game plays online yet. The bridge that connects a game to the network lives in an AnyPS5 build, and it is still under review. Until a toolkit carries it, games start as before, offline. The [known gaps](https://github.com/anyplay-gg/network/blob/main/docs/gaps.md) list what is missing.
 - On Linux, starting a game with the bridge is untested.
 
