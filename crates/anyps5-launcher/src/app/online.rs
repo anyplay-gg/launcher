@@ -22,6 +22,7 @@ use crate::app::overlay::Overlay;
 use crate::screens::online_restriction_strings as restriction_text;
 use crate::screens::online_social_strings::SocialText as S;
 use crate::screens::online_strings::OnlineText as T;
+use crate::screens::online_voice_strings::VoiceText as VT;
 use crate::ui::focus::HomeFocus;
 use crate::ui::i18n::{Arg, Language};
 use crate::ui::icons::Icon;
@@ -328,6 +329,14 @@ impl OnlineService {
                     model.open(Overlay::Online);
                 }
             }
+            Notice::VoiceFailed(problem) => {
+                let text = if problem.denied {
+                    VT::ToastDenied
+                } else {
+                    VT::ToastFailed
+                };
+                model.toast(text.text(language), Icon::MICROPHONE_SLASH);
+            }
             Notice::Restricted(restriction) => {
                 // The panel shows it as a row; the toast is for a player who looks elsewhere.
                 let text = restriction_text::toast(&restriction, None, None, language);
@@ -496,6 +505,18 @@ impl OnlineService {
                 Err(failure),
             ) => {
                 tracing::info!("net service: {}: {}", failure.code, failure.message);
+            }
+            // Held keys and levels come and go many times a second: a failure is only logged.
+            (Purpose::Voice | Purpose::PushToTalk | Purpose::VoiceDevices, Err(failure)) => {
+                tracing::info!("net service: {}: {}", failure.code, failure.message);
+            }
+            (Purpose::SetVoiceDevice(_), Err(failure)) => {
+                tracing::info!("net service: {}: {}", failure.code, failure.message);
+                // A device chosen earlier may be unplugged now; only a player who looks is told.
+                if model.overlay == Some(Overlay::Online) {
+                    model.toast(VT::ToastNoDevice.text(language), Icon::WARNING);
+                }
+                model.online.request_voice_devices();
             }
             (Purpose::SetPrivacy, Err(failure)) => {
                 // The choice the panel shows goes back to what the cloud keeps.

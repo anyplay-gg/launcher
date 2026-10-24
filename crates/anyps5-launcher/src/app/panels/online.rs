@@ -39,6 +39,7 @@ impl PanelHost {
                 accent,
                 now: crate::app::clock::unix_seconds(),
                 utc_offset: None,
+                game_running: cx.model.running.is_some(),
             };
             if wanted && !self.online_panel.is_open() {
                 self.online_panel.open(&data);
@@ -89,6 +90,13 @@ fn online_action(model: &mut Model, action: OnlineAction) {
         OnlineAction::TrophyAudience(trophies) => {
             online.set_trophy_audience(trophies);
         }
+        OnlineAction::Voice(on) => online.set_voice(on),
+        OnlineAction::VoiceMode(mode) => online.set_voice_mode(mode),
+        OnlineAction::VoiceKey(key) => online.set_voice_key(Some(key)),
+        OnlineAction::VoiceDevice(kind, name) => online.set_voice_device(kind, name),
+        OnlineAction::RefreshVoiceDevices => online.request_voice_devices(),
+        OnlineAction::PeerVolume(account, percent) => online.set_peer_volume(account, percent),
+        OnlineAction::PeerMute(account, muted) => online.set_peer_mute(account, muted),
         OnlineAction::BrowserSignIn { create } => {
             online.send(
                 Purpose::BrowserSignIn { create },

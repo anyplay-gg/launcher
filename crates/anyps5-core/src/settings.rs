@@ -522,6 +522,9 @@ pub struct Preferences {
     /// Tunnels to other players go only through a relay, so they never see this PC's address.
     #[serde(default)]
     pub online_relay_only: bool,
+    /// Party voice: on or off, the mode, the push-to-talk key, devices and member volumes.
+    #[serde(default)]
+    pub voice: crate::online::VoicePrefs,
     /// Games write an observation log of their network calls (`Logs\<TITLEID>-network.jsonl`).
     #[serde(default)]
     pub record_network: bool,
@@ -564,6 +567,7 @@ impl Default for Preferences {
             online_cloud: None,
             online: false,
             online_relay_only: false,
+            voice: crate::online::VoicePrefs::default(),
             record_network: false,
             extra: Map::new(),
         }

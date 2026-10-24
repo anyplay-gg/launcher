@@ -4,14 +4,18 @@
 
 mod restriction;
 mod social;
+mod voice;
+
+pub use voice::talk_key;
 
 use std::collections::BTreeSet;
 
 use anyps5_core::online::api::{AccountId, Audience, Count, ReportReason};
-use anyps5_core::online::{self, Cloud, Link, Online, Pending, Purpose};
+use anyps5_core::online::{self, Cloud, DeviceKind, Link, Online, Pending, Purpose, VoiceMode};
 use egui::{Color32, Context};
 
 use crate::screens::online_strings::OnlineText as T;
+use crate::screens::online_voice_strings::VoiceText as V;
 use crate::screens::rows::{self, Change, Row, RowId};
 use crate::screens::side::{self, SideState, SideView};
 use crate::ui::Shell;
@@ -93,6 +97,16 @@ pub enum OnlineAction {
     CopyText(String),
     /// Who sees the player's trophies.
     TrophyAudience(Audience),
+    // Party voice
+    Voice(bool),
+    VoiceMode(VoiceMode),
+    /// The key held to talk, by its egui name.
+    VoiceKey(String),
+    /// A microphone or speakers by name; `None` is the system's default.
+    VoiceDevice(DeviceKind, Option<String>),
+    RefreshVoiceDevices,
+    PeerVolume(AccountId, u16),
+    PeerMute(AccountId, bool),
     Close,
 }
 
@@ -124,6 +138,10 @@ pub enum Page {
     MessageRequest(String),
     /// One message in full: copy it, report it.
     Message(String, u64),
+    /// Party voice: the switch, the mode, the talk key and the devices.
+    Voice,
+    /// The microphones or the speakers to choose from.
+    VoiceDevices(DeviceKind),
     /// What limits the account, by the kind of the restriction (`muted`, `banned` ...).
     Restriction(String),
 }
@@ -145,6 +163,8 @@ pub struct OnlineData<'a> {
     pub now: i64,
     /// The local UTC offset for the times of messages; `None` asks the system for each.
     pub utc_offset: Option<i32>,
+    /// A game is running: it has the keyboard, so push to talk cannot reach the launcher.
+    pub game_running: bool,
 }
 
 /// The choices of "Who Sees Your Trophies", in the order the row shows them.
@@ -181,6 +201,10 @@ pub struct OnlinePanel {
     queued: Vec<OnlineAction>,
     /// The row the focus stands on, for a page whose rows change under it.
     anchor: Option<social::Anchor>,
+    /// The talk key row waits for a key.
+    capturing: bool,
+    /// What the shell's key capture was last set to by this panel.
+    capture_synced: bool,
 }
 
 impl OnlinePanel {
@@ -248,6 +272,7 @@ impl OnlinePanel {
             self.previous = Some(std::mem::take(&mut self.page));
         }
         self.anchor = None;
+        self.capturing = false;
         self.page = page;
         let rows = self.rows(data).2;
         // A page opens on its first row that takes focus, a conversation on its field. A request
@@ -305,6 +330,7 @@ impl OnlinePanel {
             // Leaving the page leaves the sign-in waiting; Cancel stops it.
             Page::Browser => Some(entry_page(data)).filter(|p| *p != self.page),
             Page::Blocked(_) => Some(Page::Account),
+            Page::Voice | Page::VoiceDevices(_) => self.voice_back(),
             Page::Restriction(_) => Some(self.restriction_back(data)),
             Page::Report(id) => Some(self.report_from.clone().unwrap_or(Page::Friend(id))),
             _ => self.social_back(data).unwrap_or(Some(Page::Home)),
@@ -320,6 +346,8 @@ impl OnlinePanel {
     ) -> Vec<OnlineAction> {
         let mut actions = Vec::new();
         if !self.side.is_active() {
+            self.capturing = false;
+            self.sync_capture(shell);
             return actions;
         }
         if self.side.is_open() {
@@ -333,7 +361,14 @@ impl OnlinePanel {
             {
                 actions.push(OnlineAction::MarkRead(id.clone()));
             }
+            let capturing = self.capturing;
+            if capturing {
+                self.capture(events, &mut actions);
+            }
             for command in side::commands(events) {
+                if capturing {
+                    break;
+                }
                 let rows = self.rows(data).2;
                 let driven = rows::drive(shell, &mut self.side.nav, &rows, &[command]);
                 for change in &driven.changes {
@@ -380,7 +415,16 @@ impl OnlinePanel {
             None
         };
         actions.append(&mut self.queued);
+        self.sync_capture(shell);
         actions
+    }
+
+    /// Hands the keys to the talk key row while it waits, and gives them back after.
+    fn sync_capture(&mut self, shell: &mut Shell) {
+        if self.capturing != self.capture_synced {
+            shell.input.capture_keys = self.capturing;
+            self.capture_synced = self.capturing;
+        }
     }
 
     fn back(&mut self, data: &OnlineData<'_>, actions: &mut Vec<OnlineAction>) {
@@ -432,6 +476,9 @@ impl OnlinePanel {
         actions: &mut Vec<OnlineAction>,
     ) {
         let online = data.online;
+        if self.voice_change(change, actions) {
+            return;
+        }
         match change {
             Change::Edit { .. } => {
                 ctx.data_mut(|d| d.insert_temp(egui::Id::unique("panel-text-focus"), true));
@@ -483,7 +530,10 @@ impl OnlinePanel {
 
     fn run(&mut self, row: &str, data: &OnlineData<'_>, actions: &mut Vec<OnlineAction>) {
         let online = data.online;
-        if self.social_run(row, data, actions) || self.restriction_run(row, data, actions) {
+        if self.social_run(row, data, actions)
+            || self.restriction_run(row, data, actions)
+            || self.voice_run(row, data, actions)
+        {
             return;
         }
         match (row, &self.page) {
@@ -877,6 +927,24 @@ impl OnlinePanel {
                 ));
                 (f(T::ReportTitle, &[Arg::Str(&handle_of(*id))]), None)
             }
+            Page::Voice => {
+                self.voice_page(data, &mut rows);
+                (
+                    V::Voice.text(language).to_owned(),
+                    Some(V::VoiceSubtitle.text(language).to_owned()),
+                )
+            }
+            Page::VoiceDevices(kind) => {
+                self.device_page(data, &mut rows, *kind);
+                let (title, subtitle) = match kind {
+                    DeviceKind::Input => (V::Microphone, V::PickMicrophone),
+                    DeviceKind::Output => (V::Speakers, V::PickSpeakers),
+                };
+                (
+                    title.text(language).to_owned(),
+                    Some(subtitle.text(language).to_owned()),
+                )
+            }
             Page::Party
             | Page::PartyMember(_)
             | Page::PartyPicker
@@ -1150,6 +1218,7 @@ mod tests {
             accent: Color32::WHITE,
             now: 1_792_670_400,
             utc_offset: Some(0),
+            game_running: false,
         }
     }
 
@@ -1238,6 +1307,7 @@ mod tests {
                 "requestsCaption",
                 "request",
                 "messages",
+                "voice",
                 "startParty",
                 "friendsCaption",
                 "friendRow",
@@ -1246,7 +1316,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            rows[5].detail.as_deref(),
+            rows[6].detail.as_deref(),
             Some("Playing Test Game · You can join")
         );
         // The panel opens on the first row that takes focus, not on a caption.
