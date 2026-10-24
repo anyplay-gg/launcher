@@ -925,6 +925,9 @@ impl Online {
             Event::Voice {
                 state, me, peers, ..
             } => self.voice_event(state, me, peers),
+            // The restrictions are shown by the account page (the restrictions work); voice does
+            // not look at them.
+            Event::Restrictions { .. } | Event::Banned { .. } => {}
             Event::Unknown => {}
         }
         notices
