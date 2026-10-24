@@ -256,7 +256,7 @@ impl OnlinePanel {
                 self.voice_rows(data, rows, false);
                 rows.push(
                     Row::action("voiceSettings", V::VoiceSettings.text(language))
-                        .icon(Icon::SLIDERS_HORIZONTAL),
+                        .icon(Icon::GEAR_SIX),
                 );
                 rows.push(Row::caption("membersCaption", t(S::PartyMembers)).group_start());
                 let voice = &online.voice;
@@ -2355,7 +2355,6 @@ mod tests {
         assert!(ids.windows(2).any(|w| w == ["voiceOn", "voiceFailed"]));
         assert!(!ids.contains(&"voiceMode"));
         let note = rows.iter().find(|r| r.id == "voiceFailed").unwrap();
-        assert!(note.attached);
         assert!(note.title.contains("did not allow microphone access"));
         online.voice.problem = Some(Problem {
             message: "no input device".into(),

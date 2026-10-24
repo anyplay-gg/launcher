@@ -113,7 +113,7 @@ impl OnlinePanel {
             } else {
                 V::FailedGeneric
             };
-            rows.push(Row::info("voiceFailed", t(note), None).attached());
+            rows.push(Row::info("voiceFailed", t(note), None));
         }
         if !voice.enabled() {
             return;
@@ -151,7 +151,7 @@ impl OnlinePanel {
             VoiceMode::PushToTalk => V::PttNote,
             VoiceMode::VoiceActivity => V::ActivityNote,
         };
-        rows.push(Row::info("voiceNote", t(note), None).attached());
+        rows.push(Row::info("voiceNote", t(note), None));
     }
 
     /// The voice page: the same toggle and mode, then the key and the devices.
