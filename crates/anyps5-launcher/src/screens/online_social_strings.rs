@@ -68,8 +68,6 @@ pub enum SocialText {
     MessageArrived,
     /// `%@` = who.
     MessageRequestArrived,
-    // Problems
-    Restricted,
     /// The profile button's name while messages wait; `%@` = how many.
     ProfileUnread,
 }
@@ -128,9 +126,6 @@ impl SocialText {
             SocialText::PartyInvitationArrived => "%@ invites you to a party",
             SocialText::MessageArrived => "%@: %@",
             SocialText::MessageRequestArrived => "%@ wants to message you",
-            SocialText::Restricted => {
-                "New accounts can write to people who are not friends after 24 hours."
-            }
             SocialText::ProfileUnread => "%@ unread",
         }
     }
@@ -188,9 +183,6 @@ impl SocialText {
             SocialText::PartyInvitationArrived => "%@ seni bir partiye davet ediyor",
             SocialText::MessageArrived => "%@: %@",
             SocialText::MessageRequestArrived => "%@ sana mesaj yazmak istiyor",
-            SocialText::Restricted => {
-                "Yeni hesaplar arkadaş olmadığı kişilere 24 saat sonra yazabilir."
-            }
             SocialText::ProfileUnread => "%@ okunmamış",
         }
     }

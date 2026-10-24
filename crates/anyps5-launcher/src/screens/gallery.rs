@@ -10,7 +10,8 @@
 //!                           online|online-browser|online-friends|online-friend|
 //!                           online-account|online-picker|
 //!                           online-party|online-party-picker|online-messages|online-conversation|
-//!                           online-message|online-request
+//!                           online-message|online-request|
+//!                           online-muted|online-restriction|online-paused|online-banned
 //!                 [--screenshot=out.png] [--size=WxH] [--tr]
 //! ```
 //!
@@ -123,6 +124,14 @@ pub enum OnlineLook {
     Conversation,
     /// A stranger's first messages, waiting for an answer.
     Request,
+    /// Home while a moderator's mute runs.
+    Muted,
+    /// The page of that mute: what, why, until when, how to appeal.
+    Restriction,
+    /// A conversation while the mute runs: the field is replaced.
+    Paused,
+    /// The Start page after a ban.
+    Banned,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -178,6 +187,10 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "online-message" => ScreenPage::Online(OnlineLook::Message),
         "online-conversation" => ScreenPage::Online(OnlineLook::Conversation),
         "online-request" => ScreenPage::Online(OnlineLook::Request),
+        "online-muted" => ScreenPage::Online(OnlineLook::Muted),
+        "online-restriction" => ScreenPage::Online(OnlineLook::Restriction),
+        "online-paused" => ScreenPage::Online(OnlineLook::Paused),
+        "online-banned" => ScreenPage::Online(OnlineLook::Banned),
         other => {
             let n: usize = other.strip_prefix("settings")?.parse().ok()?;
             (n < crate::screens::settings::Category::ALL.len())
@@ -215,6 +228,7 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         Account, AccountId, Activity, Count, Friend, FriendLists, Invitation, Presence, Privacy,
         Request, SessionRef,
     };
+    use anyps5_core::online::control::{Appeal, Restriction};
     use anyps5_core::online::{Cloud, Dialog, Online, Pending, SignedIn, Status};
     use std::collections::BTreeMap;
     let account = |id: u64, handle: &str| Account {
@@ -250,6 +264,21 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         OnlineLook::Start => return state,
         OnlineLook::Browser => {
             state.pending = Some(Pending::Browser);
+            return state;
+        }
+        OnlineLook::Banned => {
+            state.restrictions.ban(Restriction {
+                rule: Some("cheating".into()),
+                reason: Some(
+                    "Used a program that changes the game for everyone in the session.".into(),
+                ),
+                action: Some(12),
+                appeal: Some(Appeal {
+                    status: "available".into(),
+                    deadline: SAMPLE_NOW as u64 + 150 * 86_400,
+                }),
+                ..Restriction::new(Restriction::BANNED, Some(SAMPLE_NOW as u64 + 30 * 86_400))
+            });
             return state;
         }
         _ => {}
@@ -298,6 +327,21 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
     ]);
     state.privacy = Some(Privacy::default());
     sample_social(&mut state);
+    if matches!(
+        look,
+        OnlineLook::Muted | OnlineLook::Restriction | OnlineLook::Paused
+    ) {
+        state.restrictions.list(vec![Restriction {
+            rule: Some("spam".into()),
+            reason: Some("The same link went to many people who did not know you.".into()),
+            action: Some(41),
+            appeal: Some(Appeal {
+                status: "available".into(),
+                deadline: SAMPLE_NOW as u64 + 150 * 86_400,
+            }),
+            ..Restriction::new(Restriction::MUTED, Some(SAMPLE_NOW as u64 + 3 * 86_400))
+        }]);
+    }
     if look == OnlineLook::Picker {
         state.dialog = Some(Dialog {
             id: 1,
@@ -1129,6 +1173,14 @@ impl ScreenGallery {
                     OnlineLook::Request => self
                         .online_panel
                         .show_page(Page::MessageRequest("c-nyx".into()), &data),
+                    OnlineLook::Muted => self.online_panel.show_page(Page::Home, &data),
+                    OnlineLook::Restriction => self
+                        .online_panel
+                        .show_page(Page::Restriction("muted".into()), &data),
+                    OnlineLook::Paused => self
+                        .online_panel
+                        .show_page(Page::Conversation("c-lumen".into()), &data),
+                    OnlineLook::Banned => self.online_panel.show_page(Page::Start, &data),
                     _ => {}
                 }
             }

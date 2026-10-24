@@ -19,6 +19,7 @@ use anyps5_core::paths::GameId;
 
 use crate::app::model::{Effect, Model};
 use crate::app::overlay::Overlay;
+use crate::screens::online_restriction_strings as restriction_text;
 use crate::screens::online_social_strings::SocialText as S;
 use crate::screens::online_strings::OnlineText as T;
 use crate::ui::focus::HomeFocus;
@@ -327,6 +328,15 @@ impl OnlineService {
                     model.open(Overlay::Online);
                 }
             }
+            Notice::Restricted(restriction) => {
+                // The panel shows it as a row; the toast is for a player who looks elsewhere.
+                let text = restriction_text::toast(&restriction, None, None, language);
+                model.toast(text, Icon::WARNING);
+            }
+            Notice::Banned(restriction) => {
+                let text = restriction_text::toast(&restriction, None, None, language);
+                model.toast(text, Icon::WARNING);
+            }
             Notice::SignedIn => self.signed_in(model),
             Notice::SignInTimedOut => {
                 let text = T::SignInTimedOut.text(language).to_owned();
@@ -430,6 +440,12 @@ impl OnlineService {
                     Self::open_cloud_page(model, &opened.url);
                 }
             }
+            (Purpose::Appeal(_), Ok(_)) => {
+                let text = restriction_text::RestrictionText::AppealSent
+                    .text(language)
+                    .to_owned();
+                model.toast(text, Icon::CHECK);
+            }
             (Purpose::CancelSignIn, _) => {}
             (Purpose::SignOut, _) => {
                 model.edit_prefs(|p| p.online = false);
@@ -488,8 +504,12 @@ impl OnlineService {
                 model.toast(text, Icon::WARNING);
             }
             (_, Ok(_)) => {}
-            (_, Err(failure)) => {
-                let text = failure_text(&failure, language);
+            (purpose, Err(failure)) => {
+                let what = model.online.blocked_by(&purpose);
+                let text = match &failure.restriction {
+                    Some(restriction) => restriction_text::toast(restriction, what, None, language),
+                    None => failure_text(&failure, language),
+                };
                 model.toast(text, Icon::WARNING);
             }
         }
@@ -610,8 +630,14 @@ fn record_env(model: &Model, game: &GameId) -> BTreeMap<String, String> {
 /// What a failure means for the player, and what to do about it.
 pub fn failure_text(failure: &Failure, language: Language) -> String {
     let code = |c: ErrorCode| failure.is(c);
+    // A restriction says what is limited and until when; an older net service sends none.
+    if let Some(restriction) = &failure.restriction {
+        return restriction_text::toast(restriction, None, None, language);
+    }
     if code(ErrorCode::Restricted) {
-        return S::Restricted.text(language).to_owned();
+        return restriction_text::RestrictionText::ToastUnknown
+            .text(language)
+            .to_owned();
     }
     let text = if failure.code == Failure::OFFLINE {
         T::Offline
@@ -898,14 +924,88 @@ mod tests {
         );
     }
 
+    fn with_restriction(code: &str, kind: &str, until: Option<u64>) -> Failure {
+        Failure {
+            restriction: Some(Box::new(net::control::Restriction::new(kind, until))),
+            ..Failure::new(code, "x")
+        }
+    }
+
+    // 2026-10-25 12:00 UTC, which is the 25th or the 26th in any time zone.
+    const END: u64 = 1_792_929_600;
+
     #[test]
-    fn a_restricted_account_is_told_plainly() {
-        let restricted = Failure::new("restricted", "Too new.");
-        assert_eq!(
-            failure_text(&restricted, Language::English),
-            "New accounts can write to people who are not friends after 24 hours."
+    fn a_restricted_account_is_told_what_and_until_when() {
+        let muted = with_restriction("restricted", "muted", Some(END));
+        let text = failure_text(&muted, Language::English);
+        assert!(
+            text.starts_with("Messages and friend requests are paused until Oct 2"),
+            "{text}"
         );
-        assert!(failure_text(&restricted, Language::Turkish).contains("24 saat"));
+        assert!(failure_text(&muted, Language::Turkish).contains("durduruldu"));
+        let forever = with_restriction("restricted", "muted", None);
+        assert_eq!(
+            failure_text(&forever, Language::English),
+            "Messages and friend requests are paused."
+        );
+    }
+
+    #[test]
+    fn an_older_net_service_says_nothing_of_what_is_restricted() {
+        assert_eq!(
+            failure_text(&Failure::new("restricted", "Too new."), Language::English),
+            "This account cannot do that right now."
+        );
+    }
+
+    #[test]
+    fn a_refused_friend_request_names_the_action_in_its_toast() {
+        let mut model = signed_in_model();
+        let mut ready = Vec::new();
+        let failure = with_restriction("restricted", "new_account", Some(END));
+        service().notice(
+            &mut model,
+            Notice::Answered(Purpose::AddFriend("Lumen".into()), Err(failure)),
+            &mut ready,
+        );
+        let text = model
+            .toast
+            .as_ref()
+            .map(|t| t.text.clone())
+            .unwrap_or_default();
+        assert!(
+            text.starts_with(
+                "New accounts can send a few friend requests. You can send more after Oct 2"
+            ),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn a_ban_toasts_where_to_read_why() {
+        let mut model = signed_in_model();
+        let mut ready = Vec::new();
+        let ban = net::control::Restriction::new(net::control::Restriction::BANNED, None);
+        service().notice(&mut model, Notice::Banned(ban), &mut ready);
+        assert_eq!(
+            model.toast.as_ref().map(|t| t.text.as_str()),
+            Some("This account is banned. Open Online to read why and how to appeal.")
+        );
+    }
+
+    #[test]
+    fn a_sent_appeal_is_confirmed() {
+        let mut model = signed_in_model();
+        let mut ready = Vec::new();
+        service().notice(
+            &mut model,
+            Notice::Answered(Purpose::Appeal(4), Ok(serde_json::json!({}))),
+            &mut ready,
+        );
+        assert_eq!(
+            model.toast.as_ref().map(|t| t.text.as_str()),
+            Some("Appeal sent.")
+        );
     }
 
     #[test]

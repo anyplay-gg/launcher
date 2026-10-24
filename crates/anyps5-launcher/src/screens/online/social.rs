@@ -5,9 +5,9 @@
 use anyps5_core::online::api::{
     Account, AccountId, Conversation, ConversationKind, Friend, Message, Visibility,
 };
-use anyps5_core::online::{Online, Purpose, Social, others, plain, read_by_other};
+use anyps5_core::online::{Blocked, Online, Purpose, Social, others, plain, read_by_other};
 
-use super::{OnlineAction, OnlineData, OnlinePanel, Page, presence_text};
+use super::{OnlineAction, OnlineData, OnlinePanel, Page, presence_text, restriction};
 use crate::screens::format;
 use crate::screens::online_social_strings::SocialText as S;
 use crate::screens::online_strings::OnlineText as T;
@@ -453,20 +453,36 @@ impl OnlinePanel {
                     rows.push(Row::info("loading", t(S::Loading), None));
                 }
                 let draft = social.draft(id);
-                let mut compose = Row::text("compose", t(S::MessageField), draft).wide();
-                if !shown.is_empty() || held.is_empty() {
-                    compose = compose.group_start();
+                let what = if online.is_stranger(conversation) {
+                    Blocked::Stranger
+                } else {
+                    Blocked::Message
+                };
+                let now = u64::try_from(data.now).unwrap_or(0);
+                if let Some(paused) = online.restrictions.blocking(what, now) {
+                    // A restriction stops writing: the row that says so stands where the field
+                    // would be, and the draft waits.
+                    let mut paused = restriction::paused_row("pausedSend", what, paused, data);
+                    if !shown.is_empty() || held.is_empty() {
+                        paused = paused.group_start();
+                    }
+                    rows.push(paused);
+                } else {
+                    let mut compose = Row::text("compose", t(S::MessageField), draft).wide();
+                    if !shown.is_empty() || held.is_empty() {
+                        compose = compose.group_start();
+                    }
+                    rows.push(compose);
+                    let mut send = Row::command("send", t(S::Send)).icon(Icon::PAPER_PLANE_RIGHT);
+                    if online.is_waiting(
+                        |p| matches!(p, Purpose::SendMessage { conversation: c, .. } if c == id),
+                    ) {
+                        send = send.detail(T::Sending.text(language));
+                    } else if draft.chars().count() > anyps5_core::online::api::MAX_MESSAGE_CHARS {
+                        send = send.detail(t(S::TooLong));
+                    }
+                    rows.push(send);
                 }
-                rows.push(compose);
-                let mut send = Row::command("send", t(S::Send)).icon(Icon::PAPER_PLANE_RIGHT);
-                if online.is_waiting(
-                    |p| matches!(p, Purpose::SendMessage { conversation: c, .. } if c == id),
-                ) {
-                    send = send.detail(T::Sending.text(language));
-                } else if draft.chars().count() > anyps5_core::online::api::MAX_MESSAGE_CHARS {
-                    send = send.detail(t(S::TooLong));
-                }
-                rows.push(send);
                 if conversation.kind == ConversationKind::Group {
                     rows.push(
                         Row::command("leaveConversation", t(S::LeaveConversation))
