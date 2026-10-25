@@ -110,6 +110,7 @@ mod tests {
                 id: AccountId(1),
                 handle: "Alec".into(),
                 email: "a@example.org".into(),
+                appear_offline: false,
             }),
             pending: None,
         })));

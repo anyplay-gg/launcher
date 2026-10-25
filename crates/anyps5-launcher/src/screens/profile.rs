@@ -61,6 +61,13 @@ impl ProfileScreen {
         self.closing = false;
     }
 
+    /// Opens the screen again on `account` after a comparison: the focus stays on its row.
+    pub fn reopen(&mut self, account: AccountId) {
+        self.account = Some(account);
+        self.open = true;
+        self.closing = false;
+    }
+
     pub fn close(&mut self) {
         if self.open {
             self.open = false;

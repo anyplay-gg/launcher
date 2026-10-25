@@ -10,7 +10,7 @@
 //! `home`, `home-actions`, `home-trophies`, `home-locked`, `home-unlocking`, `home-relinking`,
 //! `home-failed`, `home-queued`, `home-running`, `home-outdated`, `home-diagnosis`, `home-messages` (the
 //! profile button with unread messages), `home-friends` (signed in, three friends online),
-//! `home-friends-quiet` (nobody online), `home-phone` (a phone is connected), `home-friends-focus` and `home-signin-focus` (the top bar's
+//! `home-appearing` (signed in, appearing offline), `home-friends-quiet` (nobody online), `home-phone` (a phone is connected), `home-friends-focus` and `home-signin-focus` (the top bar's
 //! two pills focused), `home-theme1`,
 //! `home-ask` (signed in, a session just ended: "How did it run?"), `home-runs` (the community verdict),
 //! `home-glibc` and `home-glibc-locked` (the system's glibc is older than the libraries ask for),
@@ -68,6 +68,8 @@ pub enum Scene {
     HomeMessages,
     /// Signed in with three friends online: the count on the friends button.
     HomeFriends,
+    /// Signed in and appearing offline: the ring on the profile button and its quiet words.
+    HomeAppearing,
     /// Signed in, nobody online: the plain friends button.
     HomeFriendsQuiet,
     /// A paired phone is connected: its name after the title.
@@ -122,6 +124,7 @@ impl Scene {
             "home-diagnosis" => Scene::HomeDiagnosis,
             "home-messages" => Scene::HomeMessages,
             "home-friends" => Scene::HomeFriends,
+            "home-appearing" => Scene::HomeAppearing,
             "home-friends-quiet" => Scene::HomeFriendsQuiet,
             "home-phone" => Scene::HomePhone,
             "home-friends-focus" => Scene::HomeFriendsFocus,
@@ -145,7 +148,7 @@ impl Scene {
         })
     }
 
-    pub const ALL_NAMES: [&'static str; 39] = [
+    pub const ALL_NAMES: [&'static str; 40] = [
         "onboarding0",
         "onboarding1",
         "onboarding2",
@@ -166,6 +169,7 @@ impl Scene {
         "home-diagnosis",
         "home-messages",
         "home-friends",
+        "home-appearing",
         "home-friends-quiet",
         "home-phone",
         "home-friends-focus",
@@ -639,6 +643,12 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
             sign_in(m);
             add_friends(m, 3, 1);
         }
+        Scene::HomeAppearing => {
+            sign_in(m);
+            add_friends(m, 3, 1);
+            m.online.set_appear_offline(true);
+            m.online.take_outbox();
+        }
         Scene::HomePhone => {
             m.phone.connected = Some("Pixel 8".into());
         }
@@ -767,6 +777,7 @@ fn sign_in(m: &mut crate::app::model::Model) {
         id: AccountId(1),
         handle: "Mira".into(),
         email: "mira@example.org".into(),
+        appear_offline: false,
     });
 }
 
