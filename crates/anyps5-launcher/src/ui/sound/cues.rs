@@ -590,7 +590,10 @@ mod tests {
             high - low
         );
         for tick in ticks {
-            assert!(early_rms_db(tick) < low, "{tick:?} is quieter than the rest");
+            assert!(
+                early_rms_db(tick) < low,
+                "{tick:?} is quieter than the rest"
+            );
         }
     }
 
