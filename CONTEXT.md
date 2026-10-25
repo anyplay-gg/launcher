@@ -143,7 +143,7 @@ A game's settings exported to a file so another player can import them.
 _Avoid_: Preset, profile
 
 **Profile**:
-The player's display name on the home screen, and the button that opens the online area. Signed in to the network, it shows the account's handle instead. It has nothing to do with input files.
+The button in the top bar that opens the online area: the account's handle and avatar when signed in, "Sign In" when not. The PC's user name never shows on it. It has nothing to do with input files.
 _Avoid_: Account (that is the network's), user
 
 **Input profile**:
@@ -224,8 +224,11 @@ _Avoid_: Lock, mutex (how it is done)
 
 The network's own words (account, handle, friend, presence, session, invitation, join intent, version guard, cloud, party, party leader, conversation, message, message number, read mark, message request) are defined in [anyplay-gg/network](https://github.com/anyplay-gg/network/blob/main/CONTEXT.md). The launcher adds these:
 
+**Friends button**:
+The top bar's button between the library and the settings. It opens the online area on the friends list and shows how many friends are online (a dot and the number; nothing at none or while signed out).
+
 **Online area**:
-The side panel the profile opens: signing in, the friends and their presence, requests, invitations and the account.
+The side panel the profile and the friends button open: signing in, the friends and their presence, requests, invitations and the account.
 _Avoid_: Social, community (that is the layout gallery), friends list (one part of it)
 
 **Unread mark**:

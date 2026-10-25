@@ -17,7 +17,8 @@ use crate::ui::sound::Cue;
 /// Where focus sits on the home screen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum HomeFocus {
-    /// Top bar: 0 = library button, 1 = settings button, 2 = the profile (online).
+    /// Top bar, left to right: [`HomeFocus::LIBRARY`], [`HomeFocus::FRIENDS`],
+    /// [`HomeFocus::SETTINGS`], [`HomeFocus::PROFILE`].
     Top(u8),
     /// The tile row.
     #[default]
@@ -55,7 +56,9 @@ pub enum HomeIntent {
     OpenGameSettings,
     OpenLibrary,
     OpenSettings,
-    /// The profile: sign-in, friends and invitations.
+    /// The friends button: the online area on the friends list, or on sign-in while signed out.
+    OpenFriends,
+    /// The profile: sign-in, or the account's online area.
     OpenOnline,
     /// Select with no games: open the games folder dialog.
     ChooseFolder,
@@ -73,6 +76,23 @@ pub struct HomeStep {
 }
 
 impl HomeFocus {
+    pub const LIBRARY: HomeFocus = HomeFocus::Top(0);
+    pub const FRIENDS: HomeFocus = HomeFocus::Top(1);
+    pub const SETTINGS: HomeFocus = HomeFocus::Top(2);
+    pub const PROFILE: HomeFocus = HomeFocus::Top(3);
+    /// The last stop of the top bar.
+    const LAST_TOP: u8 = 3;
+
+    /// What a press on stop `index` of the top bar does.
+    pub fn top_intent(index: u8) -> HomeIntent {
+        match index {
+            0 => HomeIntent::OpenLibrary,
+            1 => HomeIntent::OpenFriends,
+            2 => HomeIntent::OpenSettings,
+            _ => HomeIntent::OpenOnline,
+        }
+    }
+
     /// Applies a command.
     pub fn navigate(self, command: Command, ctx: HomeContext) -> HomeStep {
         let last_game = ctx.games.saturating_sub(1);
@@ -99,7 +119,7 @@ impl HomeFocus {
                     step.selected += 1;
                     step.sound = Some(Cue::Move);
                 }
-                Command::Up => go(&mut step, HomeFocus::Top(1)),
+                Command::Up => go(&mut step, HomeFocus::SETTINGS),
                 Command::Down if has_games => go(&mut step, HomeFocus::Actions(0)),
                 Command::Select => {
                     step.intent = Some(if has_games {
@@ -113,14 +133,10 @@ impl HomeFocus {
             },
             HomeFocus::Top(i) => match command {
                 Command::Left => go(&mut step, HomeFocus::Top(i.saturating_sub(1))),
-                Command::Right => go(&mut step, HomeFocus::Top((i + 1).min(2))),
+                Command::Right => go(&mut step, HomeFocus::Top((i + 1).min(Self::LAST_TOP))),
                 Command::Down | Command::Back => go(&mut step, HomeFocus::Tiles),
                 Command::Select => {
-                    step.intent = Some(match i {
-                        0 => HomeIntent::OpenLibrary,
-                        1 => HomeIntent::OpenSettings,
-                        _ => HomeIntent::OpenOnline,
-                    });
+                    step.intent = Some(HomeFocus::top_intent(i));
                 }
                 Command::Options if has_games => step.intent = Some(HomeIntent::OpenGameSettings),
                 _ => {}
@@ -358,7 +374,7 @@ mod tests {
         let c = ctx(3, 1, true);
         assert_eq!(
             HomeFocus::Tiles.navigate(Command::Up, c).focus,
-            HomeFocus::Top(1)
+            HomeFocus::SETTINGS
         );
         assert_eq!(
             HomeFocus::Tiles.navigate(Command::Down, c).focus,
@@ -378,50 +394,33 @@ mod tests {
     #[test]
     fn top_bar_navigation() {
         let c = ctx(3, 1, false);
-        assert_eq!(
-            HomeFocus::Top(1).navigate(Command::Left, c).focus,
-            HomeFocus::Top(0)
-        );
-        assert_eq!(
-            HomeFocus::Top(0).navigate(Command::Left, c).focus,
-            HomeFocus::Top(0)
-        );
-        assert_eq!(
-            HomeFocus::Top(0).navigate(Command::Right, c).focus,
-            HomeFocus::Top(1)
-        );
-        assert_eq!(
-            HomeFocus::Top(1).navigate(Command::Right, c).focus,
-            HomeFocus::Top(2)
-        );
-        assert_eq!(
-            HomeFocus::Top(2).navigate(Command::Right, c).focus,
-            HomeFocus::Top(2)
-        );
-        assert_eq!(
-            HomeFocus::Top(2).navigate(Command::Select, c).intent,
-            Some(HomeIntent::OpenOnline)
-        );
-        assert_eq!(
-            HomeFocus::Top(0).navigate(Command::Down, c).focus,
-            HomeFocus::Tiles
-        );
-        assert_eq!(
-            HomeFocus::Top(1).navigate(Command::Back, c).focus,
-            HomeFocus::Tiles
-        );
-        assert_eq!(
-            HomeFocus::Top(0).navigate(Command::Select, c).intent,
-            Some(HomeIntent::OpenLibrary)
-        );
-        assert_eq!(
-            HomeFocus::Top(1).navigate(Command::Select, c).intent,
-            Some(HomeIntent::OpenSettings)
-        );
-        assert_eq!(
-            HomeFocus::Top(1).navigate(Command::Up, c).focus,
-            HomeFocus::Top(1)
-        );
+        let nav = |from: HomeFocus, command| from.navigate(command, c);
+        // Left to right: library, friends, settings, profile; no wrap at either end.
+        let order = [
+            HomeFocus::LIBRARY,
+            HomeFocus::FRIENDS,
+            HomeFocus::SETTINGS,
+            HomeFocus::PROFILE,
+        ];
+        for pair in order.windows(2) {
+            assert_eq!(nav(pair[0], Command::Right).focus, pair[1]);
+            assert_eq!(nav(pair[1], Command::Left).focus, pair[0]);
+        }
+        let end = nav(HomeFocus::LIBRARY, Command::Left);
+        assert_eq!((end.focus, end.sound), (HomeFocus::LIBRARY, None));
+        let end = nav(HomeFocus::PROFILE, Command::Right);
+        assert_eq!((end.focus, end.sound), (HomeFocus::PROFILE, None));
+        for (focus, intent) in [
+            (HomeFocus::LIBRARY, HomeIntent::OpenLibrary),
+            (HomeFocus::FRIENDS, HomeIntent::OpenFriends),
+            (HomeFocus::SETTINGS, HomeIntent::OpenSettings),
+            (HomeFocus::PROFILE, HomeIntent::OpenOnline),
+        ] {
+            assert_eq!(nav(focus, Command::Select).intent, Some(intent));
+            assert_eq!(nav(focus, Command::Down).focus, HomeFocus::Tiles);
+            assert_eq!(nav(focus, Command::Back).focus, HomeFocus::Tiles);
+            assert_eq!(nav(focus, Command::Up).focus, focus, "nothing above");
+        }
     }
 
     #[test]

@@ -1695,6 +1695,7 @@ mod tests {
             (HomeIntent::OpenSettings, Overlay::Settings),
             (HomeIntent::OpenLibrary, Overlay::Library),
             (HomeIntent::OpenOnline, Overlay::Online),
+            (HomeIntent::OpenFriends, Overlay::Online),
             (HomeIntent::OpenGameSettings, Overlay::GameSettings),
             (HomeIntent::OpenTrophies, Overlay::Trophies),
         ] {

@@ -331,6 +331,12 @@ pub enum RowControl<'a> {
         none_label: &'a str,
         press_label: &'a str,
     },
+    /// A few small buttons at the row's end, side by side (answer a request: Accept, Decline).
+    /// `selected` is the one the keyboard and the pad would press.
+    Buttons {
+        labels: &'a [String],
+        selected: usize,
+    },
 }
 
 /// A settings row: glyph, title, detail and a value control.
@@ -364,7 +370,14 @@ pub struct RowOutput {
     pub text_changed: bool,
     /// Enter ended the text field's editing.
     pub submitted: bool,
+    /// One of a row's buttons was clicked: its index.
+    pub pressed: Option<usize>,
 }
+
+/// The buttons at a row's end: 32 dp high, 12 dp apart, their text 14 dp in from the edge.
+const BUTTON_HEIGHT: f32 = 32.0;
+const BUTTON_GAP: f32 = 12.0;
+const BUTTON_PAD: f32 = 14.0;
 
 /// Chevrons rest quiet on a card and come up on the focused row.
 const CHEVRON_OPACITY: f32 = 0.45;
@@ -457,6 +470,7 @@ impl<'a> PanelRow<'a> {
             toggled: false,
             text_changed: false,
             submitted: false,
+            pressed: None,
         }
     }
 
@@ -498,6 +512,12 @@ impl<'a> PanelRow<'a> {
                         .collect::<Vec<_>>()
                         .join(", ")
                 });
+                info
+            }
+            RowControl::Buttons { labels, .. } => {
+                // The answers are read after the name: "Vale, Accept, Decline".
+                let mut info = WidgetInfo::labeled(Role::Button, true, self.title);
+                info.current_text_value = Some(labels.join(", "));
                 info
             }
             RowControl::Action | RowControl::Command | RowControl::Text { .. } => {
@@ -603,6 +623,7 @@ impl<'a> PanelRow<'a> {
             toggled: false,
             text_changed: false,
             submitted: false,
+            pressed: None,
         };
         if !ui.is_rect_visible(rect) {
             return out;
@@ -703,6 +724,13 @@ impl<'a> PanelRow<'a> {
             RowControl::Toggle { .. } => size::SWITCH.0,
             RowControl::Action => 14.0,
             RowControl::Caption | RowControl::Command => 0.0,
+            RowControl::Buttons { labels, .. } => {
+                labels
+                    .iter()
+                    .map(|l| text::width(painter, ty::CHOICE_VALUE, l) + 2.0 * BUTTON_PAD)
+                    .sum::<f32>()
+                    + BUTTON_GAP * labels.len().saturating_sub(1) as f32
+            }
             // A long value must not squeeze the title column: at most 40 % of the row.
             RowControl::Info { value } => value.map_or(0.0, |v| {
                 text::width(painter, ty::ROW_INFO, v).min(row_width * 0.4)
@@ -919,6 +947,48 @@ impl<'a> PanelRow<'a> {
                     .label(self.title)
                     .show(&mut child);
                 out.toggled = switch.clicked();
+            }
+            RowControl::Buttons { labels, selected } => {
+                // Right to left, so the first label ends up leftmost and the group ends on the row's edge.
+                let mut right = rect.max.x;
+                for (index, label) in labels.iter().enumerate().rev() {
+                    let w = text::width(&painter, ty::CHOICE_VALUE, label) + 2.0 * BUTTON_PAD;
+                    let at = Rect::from_center_size(
+                        pos2(right - w * 0.5, rect.center().y),
+                        vec2(w, BUTTON_HEIGHT),
+                    );
+                    right -= w + BUTTON_GAP;
+                    let r = ui.interact(at, row_id.with(("button", index)), Sense::click());
+                    r.widget_info(|| WidgetInfo::labeled(Role::Button, true, label.as_str()));
+                    let hover = r.hovered();
+                    if hover {
+                        ctx.set_cursor_icon(CursorIcon::PointingHand);
+                    }
+                    let pressed = r.is_pointer_button_down_on();
+                    let shown = at.shrink(if pressed { 1.0 } else { 0.0 });
+                    // The row rests dark: its buttons are quiet chips. Focused, the row is white, and the
+                    // button the keys would press turns dark on it; the other stays a pale chip.
+                    let picked = index == *selected;
+                    let chip = mix(
+                        white(if hover { 0.18 } else { 0.12 }),
+                        black(if hover { 0.14 } else { 0.08 }),
+                        t,
+                    );
+                    let fill = mix(chip, Color32::BLACK, if picked { t } else { 0.0 });
+                    painter.rect_filled(shown, corner(BUTTON_HEIGHT * 0.5), fill);
+                    let ink = mix(fg, Color32::WHITE, if picked { t } else { 0.0 });
+                    text::paint(
+                        &painter,
+                        shown.center(),
+                        Align2::CENTER_CENTER,
+                        ty::CHOICE_VALUE,
+                        label,
+                        ink,
+                    );
+                    if r.clicked() {
+                        out.pressed = Some(index);
+                    }
+                }
             }
             RowControl::Action => {
                 painter.text(

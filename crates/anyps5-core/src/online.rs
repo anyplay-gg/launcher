@@ -427,6 +427,18 @@ impl Online {
         self.account.is_some()
     }
 
+    /// How many friends are online now; none while signed out.
+    pub fn friends_online(&self) -> usize {
+        if !self.is_signed_in() {
+            return 0;
+        }
+        self.friends
+            .friends
+            .iter()
+            .filter(|f| f.presence.online)
+            .count()
+    }
+
     /// Forgets the process and its state, keeping nothing of the account.
     pub fn stopped(&mut self, status: Status) -> Vec<Notice> {
         let notices = self
@@ -1134,6 +1146,26 @@ mod tests {
             restriction: Some(Box::new(control::Restriction::new(kind, until))),
             ..Failure::new("restricted", "x")
         }
+    }
+
+    #[test]
+    fn friends_online_counts_those_online_and_none_while_signed_out() {
+        let friend = |id, online| Friend {
+            account: account(id, "x"),
+            since: 0,
+            presence: Presence {
+                online,
+                activity: None,
+                revision: 0,
+            },
+        };
+        let mut online = Online::default();
+        online.friends.friends = vec![friend(2, true), friend(3, false), friend(4, true)];
+        assert_eq!(online.friends_online(), 0, "signed out");
+        signed_in(&mut online);
+        assert_eq!(online.friends_online(), 2);
+        online.friends.friends.clear();
+        assert_eq!(online.friends_online(), 0);
     }
 
     #[test]

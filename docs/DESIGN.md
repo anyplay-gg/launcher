@@ -661,9 +661,11 @@ The launcher keeps the port's structure but trims what read as noise next to the
 - **Hint bar.** Follows the device in use (`input::device`): keycaps `Enter`, `Esc`, `O` on a
   keyboard, ✕ ○ △ in circles on a gamepad. No combined labels, no Move hint. 26 dp keys, 15 dp
   labels, 28 dp between hints.
-- **Top bar.** Outline icons at 20 dp (`squares-four` for the library), 12 dp between the two
-  buttons, 32 dp between the groups. The avatar's gradient circle is feathered by hand (a raw mesh
-  gets no anti-aliasing).
+- **Top bar.** Outline icons at 20 dp (`squares-four` for the library, `users` for friends, `gear-six`
+  for settings), 12 dp between the buttons of the strip, 32 dp between the groups (the strip, the
+  profile, the clock). The profile and the friends button are pills on the icon buttons' own
+  surface, hover and focus, so the whole corner reads as one family of controls. The avatar's
+  gradient circle is feathered by hand (a raw mesh gets no anti-aliasing).
 - **Shadows and focus.** Elevation is a quiet dark shadow (tile black 0.22 to 0.32), focus is
   the white fill or ring with only a faint halo (0.07 to 0.14 instead of 0.22 to 0.45). Focus
   rings grow their radius with their outset, so they stay concentric. Button hairlines drop to
@@ -844,11 +846,23 @@ inset by `tile * 0.035`, anchored bottom-trailing. Installing line: height `max(
 
 Vertical stack, spacing 0: **TopBar**, **TileRow** (or **EmptyLibrary**), flexible space, **HeroInfo**, **HintBar**.
 
-**Top bar** (padding h 64, top 34; item gap 22): left "Games" (24 semibold), a small spinner while scanning; right-aligned: library
-button (glyph: 3x3 grid), settings button (glyph: gear), profile (avatar circle 36 with an accent-to-accent-0.55 diagonal gradient
-from top-left to bottom-right and the first letter of the profile name, uppercase, 16 bold white; then the name 16 medium white 0.9),
-clock (HH:mm, local time, updated every minute, 20 medium tabular white 0.92). Icon buttons: 44 circle, white 0.10 fill; focused:
-white fill, black glyph, scale 1.1, glow. (S-home.)
+**Top bar** (padding h 64, top 34): left "Games" (24 semibold), a small spinner while scanning; right-aligned, left to right:
+library button (glyph: 3x3 grid), friends button (glyph: two people; see below), settings button (glyph: gear), 12 dp apart; then 32 dp
+on, the profile; then 32 dp on, the clock (HH:mm, local time, updated every minute, 20 medium tabular white 0.92). Icon buttons: 44
+circle, white 0.10 fill; focused: white fill, black glyph, scale 1.1, glow. The profile and the friends button are pills of the same
+height on the same surface, hover and focus (white 0.10, white 0.16 on hover, white with black ink when focused). Everything sits on
+one centre line, the clock's digits included. (S-home.)
+
+- **Profile.** Signed in: the avatar (a 36 dp circle with an accent-to-accent-0.55 diagonal gradient and the first letter of the
+  account's handle, uppercase, 16 bold white), then the handle (16 medium, white 0.92, cut in the middle past 160 dp). Signed
+  out: the `user-circle` outline in the avatar's footprint, in ink, and "Sign In" (16 medium). The PC's user name never shows here;
+  it stays a setting (`profile_name`) for what the launcher calls the player locally. Select opens the online area.
+- **Friends.** The friends icon in a 44 dp circle. While friends are online it grows into a pill that ends in a dot in the accent (8 dp,
+  8 dp after the glyph) and their number (16 medium, tabular, 6 dp after the dot, 16 dp of padding at the end; `99+` above 99). At
+  none, or while signed out, it is the plain circle: a count of zero says nothing. Its name says what it shows: "Friends, 3 online"
+  (just "Friends" at none). Select opens the online area, which lands on the friends list once signed in and on sign-in otherwise.
+  Keyboard and controller order, left to right: library, friends, settings, profile (`HomeFocus::Top(0..=3)`); up from the tiles
+  lands on settings.
 
 **Tile row** (height `176 + 10`, leading 64). All tiles are in one layer; for tile `i` with `offset = i - selected`:
 
@@ -2050,7 +2064,9 @@ Deviations: the diagnosis sentence in the log view is derived from the log text 
 
 The launcher's side of the AnyPlay network ([anyplay-gg/network](https://github.com/anyplay-gg/network)): signing in, friends and their presence, requests, invitations, joining a friend's game, parties and messages. The launcher shows; the net service (`anyplay-net`) acts. They talk over the net service's standard streams with the control protocol (`spec/control-protocol.md` there); `anyps5_core::online` holds the process and the state, and `Model::online` is that state.
 
-**Entry.** The profile in the top bar becomes the third stop of `HomeFocus::Top` (library, settings, profile; right from settings). It is a pill as tall as the icon buttons: no surface at rest, the button surface on hover, white with dark ink when focused, the same focus grow and glow as its neighbours. While messages wait it ends in a count (a 20 dp capsule, light ink on the dark pill and dark on the light one it becomes when focused, `9+` above nine; the accent stays the online dot's alone), and the button's name says it: "Online, 3 unread". Its radius is the avatar's plus the 4 dp inset, so pill and avatar stay concentric. Signed in, it shows the account's handle instead of the profile name, and while the cloud answers a 4 dp accent dot sits at the avatar's lower right in a 6 dp ring of the pill's own colour. Select opens `Overlay::Online`, a side panel on the game sheet's frame.
+**Entry.** Two buttons of the top bar open the online area: the profile (the last stop of `HomeFocus::Top`: library, friends, settings, profile) and the friends button beside the library. Both are pills as tall as the icon buttons, on the icon buttons' surface (white 0.10, 0.16 on hover, white with dark ink when focused), with the same focus grow and glow as their neighbours. Signed out the profile reads "Sign In" and never shows the PC's name; signed in it shows the account's handle. While messages wait it ends in a count (a 20 dp capsule, light ink on the dark pill and dark on the light one it becomes when focused, `9+` above nine; the accent stays the online dot's alone), and the button's name says it: "Mira, Online, 3 unread". Its radius is the avatar's plus the 4 dp inset, so pill and avatar stay concentric. While the cloud answers a 4 dp accent dot sits at the avatar's lower right in a 6 dp ring of the pill's own colour. The friends button shows how many friends are online (section 5.3). Select on either opens `Overlay::Online`, a side panel on the game sheet's frame; the panel opens on the friends list once signed in and on sign-in otherwise.
+
+**Answering in place.** A request row is a row with a *buttons* control: two small pills, 32 dp high and 12 dp apart, at the row's end (Accept, Decline). At rest they are quiet chips on the dark row; the row focused turns white, the pill the keys would press turns dark on it and the other stays a pale chip. Left and right choose between them, select presses the chosen one (Accept to begin with), and a click presses the pill it lands on. A click on the row's body presses neither: it opens the request's own page (where it can be blocked), so a stray click never answers. No motion beyond the row's own focus and hover. The friends list says what a friend plays ("Playing Lanternfall", "· You can join") but not for how long: presence carries no start time today, so the minutes are left out until the cloud sends one.
 
 **Pages.** One panel whose pages swap in place (no slide); Back leads up a page and closes at the top, the scrim closes. Each page opens on its first focusable row.
 
@@ -2059,8 +2075,9 @@ The launcher's side of the AnyPlay network ([anyplay-gg/network](https://github.
 | Start | "Online" / "Play with your friends over the internet" | Sign In and Create Account (commands; both open the cloud's page in the system browser, detail "Set up the cloud first." without a cloud), Cloud (action, detail "AnyPlay" or the address), note: signing in and creating an account happen in the browser, nothing goes online before |
 | Cloud | "Cloud" / "The address of the cloud you sign in to" | Address (text), Use This Cloud (command; detail when the address is not https or loopback http), Use the AnyPlay Cloud (only with an own cloud), note |
 | Browser | "Online" / "Continue in your browser" | Open the Page Again, Cancel, note: the launcher signs in by itself when the browser is done |
-| Home | the handle / Online, Connecting… or Offline, trying again | Invitations (a game's, then a party's), Friend Requests, Playing Together (members with Direct, Through a relay or Connecting…), Party (only in one: the members' names, "3 of 8 members"), Messages (detail "5 unread · Requests: 1"), Voice (detail "Off", "Starts when you are in a party", "Connecting…" or "On"), Start a Party (only without one), Friends (joinable first, then playing, online, offline; by name), Add a Friend, Sent Requests, Account |
+| Home | "Friends" / "@Mira · 3 online" (the count is left out at none; while the cloud does not answer, "@Mira · Connecting…" or "@Mira · Offline, trying again") | Friend Requests first (up to three, each a row with the handle, "Wants to be your friend" and Accept and Decline at its end; with more, See All Requests with "5 waiting" opens the Requests page), Invitations (a game's, then a party's), Playing Together (members with Direct, Through a relay or Connecting…), Party (only in one: the members' names, "3 of 8 members"), Messages (detail "5 unread · Requests: 1"), Voice (detail "Off", "Starts when you are in a party", "Connecting…" or "On"), Start a Party (only without one), Friends (joinable first, then playing, online, offline; by name), Add a Friend, Sent Requests, Account |
 | Friend | the handle / what they play | Join Game (only when their session is open to friends; detail "2 of 4 players"), Send Message (detail "Opening…" or "2 new"), Invite to Party (when the player leads a party or has none, and the friend is not in it), Invite to Your Game (when you are in a session they are not), Trophies (their gamer card: the total, the grades they have below it, highest first; "None yet" or "Hidden"), Remove Friend, Block (destructive), Report |
+| Requests | "Friend Requests" / "5 waiting" | Every request as the same row, none capped; the page ends by itself with the last answer |
 | Request, Sent, Blocked, Invitation | the handle or "… invites you" | Accept / Decline / Block; Withdraw Request; Unblock; Join Game / Decline |
 | Party | "Party" / "3 of 8 members" | Party Chat (detail "2 new") and, for the leader, Invite Friends (not full) and Take the Party to My Game (detail the game; only in an open session and with company), in that order, except that a party of one starts with Invite Friends; the Voice group (Party Voice, and while it is on the microphone, the mode and their notes, then Voice Settings); the Members (each with "Speaking", "Muted" or "Not in voice" while voice is on, "Leader" and the friend's presence in words, "You" on your own row; the others open the member page); Leave Party (destructive, its own group) |
 | Party member | the handle / presence | Volume (stepper, 0 to 200 %, steps of 10) and Mute (toggle), for everyone; for the leader a group below with Make Leader (detail "Lumen will lead the party") and Remove from Party (destructive; detail "Lumen is taken out of the party") |
@@ -2123,5 +2140,5 @@ Hints that explain a text field or a toggle stand under it with the normal 8 dp 
   - *States and errors.* Off, "Starts when you are in a party" (switched on, no party), "Connecting…", "On". The net service switches voice off by itself when the devices cannot be opened and says so in a `voice_device` notice; the toggle goes off, a toast says "Voice could not start. Check your microphone and speakers." (or "The system did not allow the microphone." when the reason reads like a refusal) and a note under the toggle says what to do. The reason itself goes to the log. No microphone and no sound at all are told apart by the device lists: "No microphone found…" and "The net service reports no sound devices…" (a net service built without sound devices lists none).
   - *Kept.* On or off, mode, key, devices and each member's volume and mute (only values that differ from 100 % and unmuted, at most 256) are in the preferences and sent again after every `hello`, since a new net service starts with voice off. The event's `enabled` and `mode` are not copied back: one sent before the service heard a choice would undo it.
 
-Gallery scenes: `online`, `online-browser`, `online-friends`, `online-friend`, `online-account`, `online-picker`, `online-party`, `online-party-picker`, `online-messages`, `online-conversation`, `online-message`, `online-request`, `online-party-voice`, `online-party-member`, `online-voice`, `online-voice-key`, `online-voice-devices`, `online-voice-denied`, and `home-messages` (the profile button with unread messages).
+Gallery scenes: `online`, `online-browser`, `online-friends`, `online-friend`, `online-account`, `online-picker`, `online-party`, `online-party-picker`, `online-messages`, `online-conversation`, `online-message`, `online-request`, `online-party-voice`, `online-party-member`, `online-voice`, `online-voice-key`, `online-voice-devices`, `online-voice-denied`, and `home-messages` (the profile button with unread messages), `home-friends`, `home-friends-quiet`, `home-friends-focus` and `home-signin-focus` (the top bar's pills).
 Gallery scenes: `online-muted` (Home with a mute), `online-restriction` (the mute's page), `online-paused` (a conversation while muted), `online-banned` (the Start page after a ban), `online`, `online-browser`, `online-friends`, `online-friend`, `online-account`, `online-picker`, `online-party`, `online-party-picker`, `online-messages`, `online-conversation`, `online-message`, `online-request`, and `home-messages` (the profile button with unread messages).

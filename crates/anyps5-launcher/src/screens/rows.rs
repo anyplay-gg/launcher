@@ -54,6 +54,11 @@ pub enum Control {
         sources: Vec<String>,
         capturing: bool,
     },
+    /// Small buttons side by side at the row's end; left and right pick one, select presses it.
+    Buttons {
+        labels: Vec<String>,
+        selected: usize,
+    },
 }
 
 /// One row of a panel.
@@ -150,6 +155,15 @@ impl Row {
         Row::new(id, title, Control::Command)
     }
 
+    pub fn buttons(
+        id: RowId,
+        title: impl Into<String>,
+        labels: Vec<String>,
+        selected: usize,
+    ) -> Row {
+        Row::new(id, title, Control::Buttons { labels, selected })
+    }
+
     pub fn info(id: RowId, title: impl Into<String>, value: Option<String>) -> Row {
         Row::new(id, title, Control::Info(value))
     }
@@ -188,7 +202,7 @@ impl Row {
 
     pub fn kind(&self) -> RowKind {
         match self.control {
-            Control::Choice { .. } => RowKind::Choice,
+            Control::Choice { .. } | Control::Buttons { .. } => RowKind::Choice,
             Control::Toggle(_) => RowKind::Toggle,
             Control::Stepper { .. } => RowKind::Stepper,
             Control::Action | Control::Command => RowKind::Action,
@@ -223,6 +237,11 @@ pub enum Change {
     Run {
         row: RowId,
     },
+    /// A button of a buttons row was pressed (an index past the last button: the row itself).
+    Press {
+        row: RowId,
+        index: usize,
+    },
     /// A keys row asks for a key.
     Capture {
         row: RowId,
@@ -244,6 +263,7 @@ impl Change {
             | Change::Toggle { row, .. }
             | Change::Stepper { row, .. }
             | Change::Run { row }
+            | Change::Press { row, .. }
             | Change::Capture { row }
             | Change::Edit { row }
             | Change::Submit { row } => row,
@@ -254,6 +274,7 @@ impl Change {
     pub fn cue(&self) -> Cue {
         match self {
             Change::Run { .. }
+            | Change::Press { .. }
             | Change::Capture { .. }
             | Change::Edit { .. }
             | Change::Submit { .. } => Cue::Select,
@@ -270,9 +291,16 @@ pub fn resolve(rows: &[Row], effect: PanelEffect) -> Option<Change> {
         PanelEffect::Adjust { row, direction } => {
             let r = rows.get(row)?;
             match &r.control {
-                Control::Choice { options, selected } => {
+                Control::Choice {
+                    options: choices,
+                    selected,
+                }
+                | Control::Buttons {
+                    labels: choices,
+                    selected,
+                } => {
                     let next = (*selected as i64 + i64::from(direction))
-                        .clamp(0, options.len() as i64 - 1) as usize;
+                        .clamp(0, choices.len() as i64 - 1) as usize;
                     (next != *selected).then_some(Change::Choice {
                         row: r.id,
                         index: next,
@@ -307,6 +335,10 @@ pub fn resolve(rows: &[Row], effect: PanelEffect) -> Option<Change> {
                         index: (selected + 1) % options.len(),
                     })
                 }
+                Control::Buttons { selected, .. } => Some(Change::Press {
+                    row: r.id,
+                    index: *selected,
+                }),
                 Control::Toggle(on) => Some(Change::Toggle { row: r.id, on: !on }),
                 Control::Stepper {
                     value,
@@ -382,6 +414,11 @@ pub enum ListEvent {
     },
     /// Enter ended the editing of a text field.
     Submit(usize),
+    /// A button of a buttons row was clicked; an index past the last one is the row's own body.
+    Press {
+        row: usize,
+        index: usize,
+    },
 }
 
 /// How [`list`] draws.
@@ -586,6 +623,10 @@ fn show_row(
             can_decrement: *value > *min,
             can_increment: *value < *max,
         },
+        Control::Buttons { labels, selected } => RowControl::Buttons {
+            labels,
+            selected: *selected,
+        },
         Control::Action => RowControl::Action,
         Control::Command => RowControl::Command,
         Control::Caption => RowControl::Caption,
@@ -623,7 +664,17 @@ fn show_row(
     }
     let out = ui.push_id((*id, occurrence), |ui| panel_row.show(ui)).inner;
     let rect = out.response.rect;
-    if let Some(direction) = out.step {
+    let buttons = match &*control {
+        Control::Buttons { labels, .. } => Some(labels.len()),
+        _ => None,
+    };
+    if let Some(pressed) = out.pressed {
+        events.push(ListEvent::Focus(index));
+        events.push(ListEvent::Press {
+            row: index,
+            index: pressed,
+        });
+    } else if let Some(direction) = out.step {
         events.push(ListEvent::Focus(index));
         events.push(ListEvent::Effect {
             row: index,
@@ -631,6 +682,13 @@ fn show_row(
                 row: index,
                 direction,
             },
+        });
+    } else if let (Some(count), true) = (buttons, out.response.clicked()) {
+        // The body of a buttons row never presses one of them: a stray click must not answer.
+        events.push(ListEvent::Focus(index));
+        events.push(ListEvent::Press {
+            row: index,
+            index: count,
         });
     } else if out.toggled || (out.response.clicked() && focusable && !is_text) {
         events.push(ListEvent::Focus(index));
@@ -688,6 +746,12 @@ pub fn apply_mouse(
             ListEvent::Submit(row) => {
                 if let Some(r) = rows.get(row) {
                     changes.push(Change::Submit { row: r.id });
+                }
+            }
+            ListEvent::Press { row, index } => {
+                if let Some(r) = rows.get(row) {
+                    shell.play(Cue::Select);
+                    changes.push(Change::Press { row: r.id, index });
                 }
             }
         }

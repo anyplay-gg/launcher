@@ -7,7 +7,8 @@
 //!                           about-update|behavior-links|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|
 //!                           recommended|recommended-warning|whats-new|whats-new-loading|
 //!                           saves|saves-empty|restore|
-//!                           online|online-browser|online-friends|online-friend|
+//!                           online|online-browser|online-friends|online-friends-busy|
+//!                           online-friends-empty|online-requests|online-friend|
 //!                           online-account|online-picker|
 //!                           online-party|online-party-picker|online-messages|online-conversation|
 //!                           online-message|online-request|
@@ -111,6 +112,12 @@ pub enum OnlineLook {
     /// The browser sign-in waits.
     Browser,
     Friends,
+    /// Five friend requests wait (three are answered in place), friends play, one is online.
+    FriendsBusy,
+    /// Signed in with nobody yet.
+    FriendsEmpty,
+    /// Every friend request on a page of its own.
+    Requests,
     Friend,
     Account,
     Picker,
@@ -192,6 +199,9 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "online" => ScreenPage::Online(OnlineLook::Start),
         "online-browser" => ScreenPage::Online(OnlineLook::Browser),
         "online-friends" => ScreenPage::Online(OnlineLook::Friends),
+        "online-friends-busy" => ScreenPage::Online(OnlineLook::FriendsBusy),
+        "online-friends-empty" => ScreenPage::Online(OnlineLook::FriendsEmpty),
+        "online-requests" => ScreenPage::Online(OnlineLook::Requests),
         "online-friend" => ScreenPage::Online(OnlineLook::Friend),
         "online-account" => ScreenPage::Online(OnlineLook::Account),
         "online-picker" => ScreenPage::Online(OnlineLook::Picker),
@@ -347,7 +357,27 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         (AccountId(4), Some(count(0, 0, 0, 0))),
     ]);
     state.privacy = Some(Privacy::default());
-    sample_social(&mut state);
+    if matches!(look, OnlineLook::FriendsBusy | OnlineLook::Requests) {
+        state.friends.incoming = [
+            (6, "Vale"),
+            (9, "Wren"),
+            (10, "Ember"),
+            (11, "Sol"),
+            (12, "Tarn"),
+        ]
+        .into_iter()
+        .map(|(id, handle)| Request {
+            account: account(id, handle),
+            since: 0,
+        })
+        .collect();
+    }
+    if look == OnlineLook::FriendsEmpty {
+        state.friends = FriendLists::default();
+        state.invitations.clear();
+    } else {
+        sample_social(&mut state);
+    }
     sample_voice(&mut state, look);
     if matches!(
         look,
@@ -1259,6 +1289,7 @@ impl ScreenGallery {
                 let data = online_data(&self.online, language, shell.accent_color());
                 self.online_panel.open(&data);
                 match look {
+                    OnlineLook::Requests => self.online_panel.show_page(Page::Requests, &data),
                     OnlineLook::Friend => self
                         .online_panel
                         .show_page(Page::Friend(anyps5_core::online::api::AccountId(2)), &data),

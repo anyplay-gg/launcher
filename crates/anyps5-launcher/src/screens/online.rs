@@ -120,6 +120,8 @@ pub enum Page {
     Browser,
     Home,
     Friend(AccountId),
+    /// Every friend request that waits, each with its answers.
+    Requests,
     Request(AccountId),
     Outgoing(AccountId),
     Blocked(AccountId),
@@ -191,6 +193,8 @@ pub struct OnlinePanel {
     picked: BTreeSet<AccountId>,
     /// How many messages the conversation page shows.
     shown: usize,
+    /// Which answer of a request row the keys would press: 0 Accept, 1 Decline.
+    request_answer: usize,
     /// The page the player came from.
     previous: Option<Page>,
     /// Where Back from the report page leads, when it did not open from a friend.
@@ -302,6 +306,7 @@ impl OnlinePanel {
             Page::Cloud | Page::Start | Page::Browser => None,
             _ if !online.is_signed_in() => Some(Page::Start),
             Page::Friend(id) if online.friend(*id).is_none() => Some(Page::Home),
+            Page::Requests if online.friends.incoming.is_empty() => Some(Page::Home),
             Page::Request(id) if !online.friends.incoming.iter().any(|r| r.account.id == *id) => {
                 Some(Page::Home)
             }
@@ -523,6 +528,25 @@ impl OnlinePanel {
                     actions.push(OnlineAction::TrophyAudience(*audience));
                 }
             }
+            Change::Choice {
+                row: "requestRow",
+                index,
+            } => self.request_answer = *index,
+            Change::Press {
+                row: "requestRow",
+                index,
+            } => {
+                let item = self.nth(data, "requestRow");
+                if let Some(request) = online.friends.incoming.get(item) {
+                    let id = request.account.id;
+                    match index {
+                        0 => actions.push(OnlineAction::Accept(id)),
+                        1 => actions.push(OnlineAction::Decline(id)),
+                        // The row's body: the request's own page, where it can be blocked too.
+                        _ => self.go(Page::Request(id), data),
+                    }
+                }
+            }
             Change::Run { row } => self.run(row, data, actions),
             _ => {}
         }
@@ -564,12 +588,7 @@ impl OnlinePanel {
                     self.go(Page::Invitation(invitation.id.clone()), data);
                 }
             }
-            ("request", _) => {
-                let index = self.nth(data, "request");
-                if let Some(request) = online.friends.incoming.get(index) {
-                    self.go(Page::Request(request.account.id), data);
-                }
-            }
+            ("allRequests", _) => self.go(Page::Requests, data),
             ("friendRow", _) => {
                 let index = self.nth(data, "friendRow");
                 if let Some(friend) = online.sorted_friends().get(index) {
@@ -728,17 +747,17 @@ impl OnlinePanel {
             }
             Page::Home => {
                 self.home_rows(data, &mut rows);
-                let status = match online.cloud {
-                    Some(Cloud::Online) => T::StatusOnline,
-                    Some(Cloud::Connecting) | None => T::StatusConnecting,
-                    Some(Cloud::Offline) => T::StatusOffline,
-                };
-                let handle = online
-                    .account
-                    .as_ref()
-                    .map(|a| a.handle.clone())
-                    .unwrap_or_default();
-                (handle, Some(t(status).to_owned()))
+                (t(T::Friends).to_owned(), Some(home_subtitle(data)))
+            }
+            Page::Requests => {
+                self.request_rows(data, &mut rows, None);
+                (
+                    t(T::Requests).to_owned(),
+                    Some(f(
+                        T::RequestsWaiting,
+                        &[Arg::Int(online.friends.incoming.len() as i64)],
+                    )),
+                )
             }
             Page::Friend(id) => {
                 let friend = online.friend(*id);
@@ -987,12 +1006,56 @@ impl OnlinePanel {
         (title, subtitle, rows)
     }
 
+    /// The friend requests that wait, each with Accept and Decline at its end. With a `limit`, the
+    /// rest hide behind "See All Requests".
+    fn request_rows(&self, data: &OnlineData<'_>, rows: &mut Vec<Row>, limit: Option<usize>) {
+        let language = data.language;
+        let t = |text: T| text.text(language);
+        let incoming = &data.online.friends.incoming;
+        if incoming.is_empty() {
+            return;
+        }
+        if limit.is_some() {
+            let mut caption = Row::caption("requestsCaption", t(T::Requests));
+            if !rows.is_empty() {
+                caption = caption.group_start();
+            }
+            rows.push(caption);
+        }
+        let answers = vec![t(T::Accept).to_owned(), t(T::Decline).to_owned()];
+        for request in incoming.iter().take(limit.unwrap_or(usize::MAX)) {
+            rows.push(
+                Row::buttons(
+                    "requestRow",
+                    request.account.handle.clone(),
+                    answers.clone(),
+                    self.request_answer.min(1),
+                )
+                .icon(Icon::USER_PLUS)
+                .detail(t(T::WantsFriend)),
+            );
+        }
+        if let Some(limit) = limit
+            && incoming.len() > limit
+        {
+            rows.push(
+                Row::action("allRequests", t(T::SeeAllRequests))
+                    .icon(Icon::USERS)
+                    .detail(
+                        T::RequestsWaiting.format(language, &[Arg::Int(incoming.len() as i64)]),
+                    ),
+            );
+        }
+    }
+
     fn home_rows(&self, data: &OnlineData<'_>, rows: &mut Vec<Row>) {
         let language = data.language;
         let t = |text: T| text.text(language);
         let online = data.online;
-        // A limit on the account comes first: it explains why an action will not work.
+        // A limit on the account comes first: it explains why an action will not work. Then what
+        // waits for an answer: friend requests, then invitations.
         self.restriction_rows_for_page(data, rows);
+        self.request_rows(data, rows, Some(MAX_INLINE_REQUESTS));
         let restricted = !rows.is_empty();
         if !online.invitations.is_empty() || !online.social.party_invitations.is_empty() {
             let mut caption = Row::caption("invitationsCaption", t(T::Invitations));
@@ -1011,16 +1074,6 @@ impl OnlinePanel {
                 );
             }
             self.party_invitation_rows(data, rows);
-        }
-        if !online.friends.incoming.is_empty() {
-            rows.push(Row::caption("requestsCaption", t(T::Requests)).group_start());
-            for request in &online.friends.incoming {
-                rows.push(
-                    Row::action("request", request.account.handle.clone())
-                        .icon(Icon::USER_PLUS)
-                        .detail(t(T::WantsFriend)),
-                );
-            }
         }
         if let Some(session) = &online.session {
             let me = online.account.as_ref().map(|a| a.id);
@@ -1071,6 +1124,28 @@ impl OnlinePanel {
                 .icon(Icon::GEAR_SIX)
                 .group_start(),
         );
+    }
+}
+
+/// How many friend requests the friends list answers in place; the rest wait behind a row.
+const MAX_INLINE_REQUESTS: usize = 3;
+
+/// Under the friends title: the handle, then how many friends are online (left out at none) or,
+/// while the cloud does not answer, what the connection is doing.
+fn home_subtitle(data: &OnlineData<'_>) -> String {
+    let (online, language) = (data.online, data.language);
+    let handle = online.account.as_ref().map_or("", |a| a.handle.as_str());
+    let tail = match online.cloud {
+        Some(Cloud::Online) => match online.friends_online() {
+            0 => None,
+            n => Some(T::FriendsOnlineCount.format(language, &[Arg::Int(n as i64)])),
+        },
+        Some(Cloud::Connecting) | None => Some(T::StatusConnecting.text(language).to_owned()),
+        Some(Cloud::Offline) => Some(T::StatusOffline.text(language).to_owned()),
+    };
+    match tail {
+        Some(tail) => format!("@{handle} · {tail}"),
+        None => format!("@{handle}"),
     }
 }
 
@@ -1299,13 +1374,13 @@ mod tests {
         let mut panel = OnlinePanel::default();
         panel.open(&data(&online));
         let (title, subtitle, rows) = panel.rows(&data(&online));
-        assert_eq!(title, "Alec");
-        assert_eq!(subtitle.as_deref(), Some("Online"));
+        assert_eq!(title, "Friends");
+        assert_eq!(subtitle.as_deref(), Some("@Alec · 1 online"));
         assert_eq!(
             ids(&rows),
             [
                 "requestsCaption",
-                "request",
+                "requestRow",
                 "messages",
                 "voice",
                 "startParty",
@@ -1324,6 +1399,90 @@ mod tests {
     }
 
     #[test]
+    fn the_subtitle_names_the_handle_and_leaves_out_a_count_of_none() {
+        let mut online = signed_in();
+        assert_eq!(home_subtitle(&data(&online)), "@Alec · 1 online");
+        online.friends.friends[0].presence.online = false;
+        assert_eq!(home_subtitle(&data(&online)), "@Alec");
+        online.cloud = Some(Cloud::Connecting);
+        assert_eq!(home_subtitle(&data(&online)), "@Alec · Connecting…");
+    }
+
+    #[test]
+    fn requests_are_answered_in_place_and_more_than_three_lead_to_all_of_them() {
+        let mut online = signed_in();
+        online.friends.incoming = (3..8)
+            .map(|id| Request {
+                account: account(id, &format!("Req{id}")),
+                since: 0,
+            })
+            .collect();
+        let mut panel = OnlinePanel::default();
+        panel.open(&data(&online));
+        let rows = panel.rows(&data(&online)).2;
+        assert_eq!(
+            &ids(&rows)[..5],
+            [
+                "requestsCaption",
+                "requestRow",
+                "requestRow",
+                "requestRow",
+                "allRequests"
+            ]
+        );
+        // Accept is the first answer: select presses it for the focused request.
+        let mut actions = Vec::new();
+        panel.side.nav.row = 2;
+        panel.handle(
+            &Context::default(),
+            &Change::Press {
+                row: "requestRow",
+                index: 0,
+            },
+            &data(&online),
+            &mut actions,
+        );
+        assert_eq!(actions, [OnlineAction::Accept(AccountId(4))]);
+        // Decline is the second.
+        let mut actions = Vec::new();
+        panel.handle(
+            &Context::default(),
+            &Change::Press {
+                row: "requestRow",
+                index: 1,
+            },
+            &data(&online),
+            &mut actions,
+        );
+        assert_eq!(actions, [OnlineAction::Decline(AccountId(4))]);
+        // The row beyond the answers is its body: the request's own page.
+        let mut actions = Vec::new();
+        panel.handle(
+            &Context::default(),
+            &Change::Press {
+                row: "requestRow",
+                index: 2,
+            },
+            &data(&online),
+            &mut actions,
+        );
+        assert_eq!(
+            (actions.len(), panel.page.clone()),
+            (0, Page::Request(AccountId(4)))
+        );
+        // All of them, none capped, each answered the same way.
+        panel.go(Page::Requests, &data(&online));
+        let (title, subtitle, rows) = panel.rows(&data(&online));
+        assert_eq!(title, "Friend Requests");
+        assert_eq!(subtitle.as_deref(), Some("5 waiting"));
+        assert_eq!(ids(&rows), ["requestRow"; 5]);
+        // The last answered request leaves the page for the friends.
+        online.friends.incoming.clear();
+        panel.follow(&data(&online));
+        assert_eq!(panel.page, Page::Home);
+    }
+
+    #[test]
     fn the_home_page_lists_party_invitations_with_the_other_invitations() {
         let mut online = signed_in();
         online
@@ -1339,11 +1498,16 @@ mod tests {
         panel.open(&data(&online));
         let rows = panel.rows(&data(&online)).2;
         assert_eq!(
-            &ids(&rows)[..3],
-            ["invitationsCaption", "partyInvitation", "requestsCaption"]
+            &ids(&rows)[..4],
+            [
+                "requestsCaption",
+                "requestRow",
+                "invitationsCaption",
+                "partyInvitation"
+            ]
         );
         let mut actions = Vec::new();
-        panel.side.nav.row = 1;
+        panel.side.nav.row = 3;
         panel.run("partyInvitation", &data(&online), &mut actions);
         assert_eq!(panel.page, Page::PartyInvitation("pi".into()));
     }

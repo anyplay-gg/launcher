@@ -11,6 +11,8 @@ use egui::{
 };
 
 use crate::app::model::{GameState, Model, SizeState};
+use crate::screens::online_social_strings::SocialText;
+use crate::screens::online_strings::OnlineText;
 use crate::screens::strings::{Extra, playtime_text};
 use crate::screens::{
     ScreenCx, StateLabel, paint_gradient_circle, paint_label, paint_spinner, place, state_label,
@@ -23,7 +25,7 @@ use crate::ui::components::{
     hint_bar, hint_bar_size,
 };
 use crate::ui::focus::HomeFocus;
-use crate::ui::i18n::{Key, Language, byte_text};
+use crate::ui::i18n::{Arg, Key, Language, byte_text};
 use crate::ui::icons::Icon;
 use crate::ui::intro;
 use crate::ui::text;
@@ -159,7 +161,7 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
     let painter = ui.painter().clone();
     let top = screen.min.y + pad::HOME_TOP;
     let mid = top + size::ICON_BUTTON * 0.5;
-    // 12 between the two buttons, 32 between the groups (title, buttons, profile, clock).
+    // 12 between the buttons of the strip, 32 between the groups (title, buttons, profile, clock).
     let (button_gap, group_gap) = (12.0, 32.0);
 
     let title = text::paint(
@@ -181,7 +183,7 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
         );
     }
 
-    // From the right: clock, profile, settings, library.
+    // From the right: clock, profile, then settings, friends and library.
     let mut x = screen.max.x - pad::HOME_X;
     let clock = crate::app::clock::local_time().text();
     let clock_width = text::tabular_width(&painter, ty::CLOCK, &clock);
@@ -196,10 +198,6 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
     x -= group_gap;
 
     let visible = focus_visible(cx.model);
-    let buttons = [
-        (1u8, Icon::GEAR_SIX, language.text(Key::Settings)),
-        (0u8, Icon::SQUARES_FOUR, language.text(Key::Library)),
-    ];
     // Right to left in one strip: a focused button makes room for itself, so the gap stays 12.
     let strip = Rect::from_min_max(pos2(screen.min.x, top), pos2(x, top + size::ICON_BUTTON));
     let mut row = ui.new_child(
@@ -208,68 +206,133 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
             .layout(Layout::right_to_left(Align::Center)),
     );
     row.spacing_mut().item_spacing.x = button_gap;
-    // The profile opens the online area. Signed in, it carries the network name and, while the
-    // cloud answers, a dot in the accent: the player is online.
     let online = &cx.model.online;
-    let name = online
-        .account
-        .as_ref()
-        .map_or(cx.model.prefs.profile_name.as_str(), |a| a.handle.as_str());
-    let focused = visible && cx.model.focus == HomeFocus::Top(2);
+    let focused = |focus: HomeFocus| visible && cx.model.focus == focus;
+
+    // The profile opens the online area. Signed out it says what to do; signed in it carries the
+    // network name and, while the cloud answers, a dot in the accent: the player is online.
     let unread = online.social.unread_total();
-    let mut label = crate::screens::online_strings::OnlineText::Online
-        .text(language)
-        .to_owned();
-    if unread > 0 {
-        label = format!(
-            "{label}, {}",
-            crate::screens::online_social_strings::SocialText::ProfileUnread
-                .format(language, &[crate::ui::i18n::Arg::Int(unread as i64)])
-        );
-    }
-    if profile_button(
-        &mut row,
-        name,
-        accent,
-        focused,
-        online.is_online(),
+    let handle = online.account.as_ref().map(|a| a.handle.as_str());
+    let profile = Profile {
+        name: handle.unwrap_or_else(|| OnlineText::SignIn.text(language)),
+        signed_in: handle.is_some(),
+        online: online.is_online(),
         unread,
-        &label,
-    )
-    .clicked()
-    {
-        presses.push(Press::Focus(HomeFocus::Top(2)));
+        label: profile_label(handle, online.is_online(), unread, language),
+    };
+    if profile_button(&mut row, &profile, accent, focused(HomeFocus::PROFILE)).clicked() {
+        presses.push(Press::Focus(HomeFocus::PROFILE));
     }
     row.add_space(group_gap - button_gap);
-    for (index, icon, label) in buttons {
-        let focused = visible && cx.model.focus == HomeFocus::Top(index);
-        let response = IconButton::new(icon, label).focused(focused).show(&mut row);
-        if response.clicked() {
-            presses.push(Press::Focus(HomeFocus::Top(index)));
-        }
+    let response = IconButton::new(Icon::GEAR_SIX, language.text(Key::Settings))
+        .focused(focused(HomeFocus::SETTINGS))
+        .show(&mut row);
+    if response.clicked() {
+        presses.push(Press::Focus(HomeFocus::SETTINGS));
+    }
+    // Friends sit between the library and the settings; the count is the friends online now.
+    let friends_online = online.friends_online();
+    let label = match friends_online {
+        0 => OnlineText::Friends.text(language).to_owned(),
+        n => SocialText::FriendsOnline.format(language, &[Arg::Int(n as i64)]),
+    };
+    let friends = friends_button(
+        &mut row,
+        friends_online,
+        accent,
+        focused(HomeFocus::FRIENDS),
+        &label,
+    );
+    if friends.clicked() {
+        presses.push(Press::Focus(HomeFocus::FRIENDS));
+    }
+    let response = IconButton::new(Icon::SQUARES_FOUR, language.text(Key::Library))
+        .focused(focused(HomeFocus::LIBRARY))
+        .show(&mut row);
+    if response.clicked() {
+        presses.push(Press::Focus(HomeFocus::LIBRARY));
     }
 }
 
-/// The avatar and name as one button: no surface at rest, the button surface on hover, white
-/// with dark ink when focused, like the icon buttons beside it. The pill's radius is the
-/// avatar's plus the inset, so the two stay concentric.
-fn profile_button(
-    ui: &mut Ui,
-    name: &str,
-    accent: Color32,
-    focused: bool,
+/// What the profile button shows.
+struct Profile<'a> {
+    /// The account's handle, or the invitation to sign in.
+    name: &'a str,
+    signed_in: bool,
+    /// The cloud answers: a dot at the avatar.
     online: bool,
     unread: u64,
-    label: &str,
+    /// The accessible name.
+    label: String,
+}
+
+/// The profile's accessible name: the handle (what is on screen), then what it tells besides.
+fn profile_label(handle: Option<&str>, online: bool, unread: u64, language: Language) -> String {
+    let Some(handle) = handle else {
+        return OnlineText::SignIn.text(language).to_owned();
+    };
+    let mut label = handle.to_owned();
+    if online {
+        label = format!("{label}, {}", OnlineText::Online.text(language));
+    }
+    if unread > 0 {
+        label = format!(
+            "{label}, {}",
+            SocialText::ProfileUnread.format(language, &[Arg::Int(unread as i64)])
+        );
+    }
+    label
+}
+
+/// The longest a handle gets in the profile button before it is cut in the middle.
+const PROFILE_NAME_MAX: f32 = 160.0;
+
+/// The surface the top bar's pills share with its icon buttons: the button surface at rest, lighter
+/// on hover, white when focused, the same glow. Returns the rectangle to paint into, scaled by
+/// press, and its scale.
+fn paint_pill(painter: &egui::Painter, it: &components::Interaction) -> (Rect, f32) {
+    let rect = components::snap_rect(
+        painter,
+        components::scale_rect(it.grown(FOCUS_GROW), it.press_scale()),
+    );
+    let rest = if it.hovered {
+        color::surface_hover()
+    } else {
+        color::surface()
+    };
+    let r = (rect.height() * 0.5).round();
+    components::paint_shadow(painter, rect, r, theme::shadows::icon_button(it.focus));
+    painter.rect_filled(
+        rect,
+        components::corner(r),
+        theme::mix(rest, color::surface_focused(), it.focus),
+    );
+    (rect, rect.height() / size::ICON_BUTTON)
+}
+
+/// The ink of a pill: white on the dark surface, black once it is focused and white.
+fn pill_ink(focus: f32) -> Color32 {
+    theme::mix(white(0.92), Color32::BLACK, focus)
+}
+
+/// The avatar (or the sign-in glyph) and the name as one button, on the surface of the icon
+/// buttons beside it. The pill's radius is the avatar's plus the inset, so the two stay
+/// concentric.
+fn profile_button(
+    ui: &mut Ui,
+    profile: &Profile<'_>,
+    accent: Color32,
+    focused: bool,
 ) -> egui::Response {
     let painter = ui.painter().clone();
     let inset = (size::ICON_BUTTON - size::AVATAR) * 0.5;
-    let name_width = text::width(&painter, ty::PROFILE, name);
+    let name = text::middle_truncate(&painter, ty::PROFILE, profile.name, PROFILE_NAME_MAX);
+    let name_width = text::width(&painter, ty::PROFILE, &name);
     // Unread messages: a small count in ink after the name, so the dot of being online stays the
     // accent's alone.
-    let count = match unread {
+    let count = match profile.unread {
         0 => String::new(),
-        1..=9 => unread.to_string(),
+        1..=9 => profile.unread.to_string(),
         _ => "9+".to_owned(),
     };
     let badge_width = if count.is_empty() {
@@ -287,43 +350,47 @@ fn profile_button(
         FOCUS_GROW,
     );
     it.response
-        .widget_info(|| WidgetInfo::labeled(Role::Button, true, label));
+        .widget_info(|| WidgetInfo::labeled(Role::Button, true, &profile.label));
     if !ui.is_rect_visible(it.rect) {
         return it.response;
     }
-    let rect = components::snap_rect(
-        &painter,
-        components::scale_rect(it.grown(FOCUS_GROW), it.press_scale()),
-    );
-    let s = rect.height() / size::ICON_BUTTON;
-    let r = (rect.height() * 0.5).round();
-    let rest = if it.hovered {
-        color::surface_hover()
-    } else {
-        Color32::TRANSPARENT
-    };
-    let fill = theme::mix(rest, color::surface_focused(), it.focus);
-    components::paint_shadow(&painter, rect, r, theme::shadows::icon_button(it.focus));
-    painter.rect_filled(rect, components::corner(r), fill);
+    let (rect, s) = paint_pill(&painter, &it);
     let avatar_r = size::AVATAR * 0.5 * s;
     let avatar = pos2(rect.min.x + inset * s + avatar_r, rect.center().y);
-    paint_gradient_circle(
-        &painter,
-        avatar,
-        avatar_r,
-        accent,
-        theme::fade(accent, 0.55),
-    );
-    let initial: String = name.chars().take(1).flat_map(char::to_uppercase).collect();
-    text::paint(
-        &painter,
-        avatar,
-        Align2::CENTER_CENTER,
-        theme::TextStyle::new(text::quantize_size(16.0 * s), Weight::Bold),
-        &initial,
-        Color32::WHITE,
-    );
-    if online {
+    let ink = pill_ink(it.focus);
+    if profile.signed_in {
+        paint_gradient_circle(
+            &painter,
+            avatar,
+            avatar_r,
+            accent,
+            theme::fade(accent, 0.55),
+        );
+        let initial: String = profile
+            .name
+            .chars()
+            .take(1)
+            .flat_map(char::to_uppercase)
+            .collect();
+        text::paint(
+            &painter,
+            avatar,
+            Align2::CENTER_CENTER,
+            theme::TextStyle::new(text::quantize_size(16.0 * s), Weight::Bold),
+            &initial,
+            Color32::WHITE,
+        );
+    } else {
+        // Nobody yet: the outline of a person in the avatar's footprint, in ink, not accent.
+        painter.text(
+            avatar,
+            Align2::CENTER_CENTER,
+            Icon::USER_CIRCLE.glyph(),
+            Icon::USER_CIRCLE.font(text::quantize_size(avatar_r * 2.0 * 0.78), false),
+            ink,
+        );
+    }
+    if profile.signed_in && profile.online {
         // The ring takes the colour of the pill around it, so the dot sits apart from the avatar.
         let dot = avatar + vec2(avatar_r, avatar_r) * 0.72;
         let ring = theme::mix(Color32::from_black_alpha(160), Color32::WHITE, it.focus);
@@ -335,8 +402,8 @@ fn profile_button(
         pos2(avatar.x + avatar_r + 10.0 * s, rect.center().y),
         Align2::LEFT_CENTER,
         ty::PROFILE,
-        name,
-        theme::mix(white(0.9), Color32::BLACK, it.focus),
+        &name,
+        ink,
     );
     if !count.is_empty() {
         // Light on the dark pill, dark on the light one it becomes when focused.
@@ -362,6 +429,81 @@ fn profile_button(
     }
     it.response
 }
+
+/// The friends button: the icon button's circle with the friends icon. While friends are online it
+/// grows into a pill that ends in a dot in the accent and their number; at none (or signed out) it
+/// is the plain circle.
+fn friends_button(
+    ui: &mut Ui,
+    online: usize,
+    accent: Color32,
+    focused: bool,
+    label: &str,
+) -> egui::Response {
+    let painter = ui.painter().clone();
+    let count = match online {
+        0 => String::new(),
+        1..=99 => online.to_string(),
+        _ => "99+".to_owned(),
+    };
+    // The icon keeps the circle's centre; the dot starts 8 after the glyph and the number ends 16
+    // short of the pill's end.
+    let tail = if count.is_empty() {
+        0.0
+    } else {
+        let number = text::tabular_width(&painter, ty::PROFILE, &count);
+        FRIENDS_ICON_END + FRIENDS_DOT_GAP + FRIENDS_DOT + FRIENDS_COUNT_GAP + number + 16.0
+            - size::ICON_BUTTON
+    };
+    let it = components::interact(
+        ui,
+        vec2(size::ICON_BUTTON + tail, size::ICON_BUTTON),
+        focused,
+        true,
+        None,
+        FOCUS_GROW,
+    );
+    it.response
+        .widget_info(|| WidgetInfo::labeled(Role::Button, true, label));
+    if !ui.is_rect_visible(it.rect) {
+        return it.response;
+    }
+    let (rect, s) = paint_pill(&painter, &it);
+    let ink = pill_ink(it.focus);
+    let centre = pos2(rect.min.x + size::ICON_BUTTON * 0.5 * s, rect.center().y);
+    painter.text(
+        centre,
+        Align2::CENTER_CENTER,
+        Icon::USERS.glyph(),
+        Icon::USERS.font(text::quantize_size(size::ICON_BUTTON_GLYPH * s), false),
+        ink,
+    );
+    if !count.is_empty() {
+        let dot = pos2(
+            rect.min.x + (FRIENDS_ICON_END + FRIENDS_DOT_GAP + FRIENDS_DOT * 0.5) * s,
+            rect.center().y,
+        );
+        painter.circle_filled(dot, FRIENDS_DOT * 0.5 * s, accent);
+        text::paint_tabular(
+            &painter,
+            pos2(
+                dot.x + (FRIENDS_DOT * 0.5 + FRIENDS_COUNT_GAP) * s,
+                rect.center().y - ty::PROFILE.line_height() * 0.5,
+            ),
+            ty::PROFILE,
+            &count,
+            ink,
+        );
+    }
+    it.response
+}
+
+/// Where the friends icon ends inside its 44 dp circle (the glyph is 20 dp, centred).
+const FRIENDS_ICON_END: f32 = (size::ICON_BUTTON + size::ICON_BUTTON_GLYPH) * 0.5;
+/// The online dot, its distance from the icon and from the number.
+const FRIENDS_DOT: f32 = 8.0;
+const FRIENDS_DOT_GAP: f32 = 8.0;
+const FRIENDS_COUNT_GAP: f32 = 6.0;
 
 /// The unread count's type and height.
 const BADGE: theme::TextStyle = theme::TextStyle::new(13.0, Weight::Bold);
@@ -978,5 +1120,36 @@ fn empty_library(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut
         .inner;
     if response.clicked() {
         presses.push(Press::ChooseFolder);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_profile_is_named_by_what_it_shows() {
+        let english = Language::English;
+        // Signed out there is no name to show, only the way in.
+        assert_eq!(profile_label(None, false, 0, english), "Sign In");
+        assert_eq!(
+            profile_label(None, false, 0, Language::Turkish),
+            "Giriş Yap"
+        );
+        assert_eq!(profile_label(Some("Mira"), false, 0, english), "Mira");
+        assert_eq!(
+            profile_label(Some("Mira"), true, 3, english),
+            "Mira, Online, 3 unread"
+        );
+    }
+
+    #[test]
+    fn the_friends_button_is_named_by_how_many_are_online() {
+        let name = |n: i64| SocialText::FriendsOnline.format(Language::English, &[Arg::Int(n)]);
+        assert_eq!(name(3), "Friends, 3 online");
+        assert_eq!(
+            SocialText::FriendsOnline.format(Language::Turkish, &[Arg::Int(3)]),
+            "Arkadaşlar, 3 çevrimiçi"
+        );
     }
 }

@@ -8,7 +8,9 @@
 //! Scenes: `onboarding0`, `onboarding1`, `onboarding2` (folder chosen), `onboarding2-empty`,
 //! `home`, `home-actions`, `home-trophies`, `home-locked`, `home-unlocking`, `home-relinking`,
 //! `home-failed`, `home-queued`, `home-running`, `home-outdated`, `home-diagnosis`, `home-messages` (the
-//! profile button with unread messages), `home-theme1`,
+//! profile button with unread messages), `home-friends` (signed in, three friends online),
+//! `home-friends-quiet` (nobody online), `home-friends-focus` and `home-signin-focus` (the top bar's
+//! two pills focused), `home-theme1`,
 //! `home-theme2`, `home-noartwork`, `home-empty`, `home-scanning`, `home-nofolder`, `starting`,
 //! `toast`. The games, their icons and artwork are generated here (nothing of any real game is in
 //! the repository); the clock of the backdrop is fixed, so a scene always renders the same.
@@ -53,6 +55,14 @@ pub enum Scene {
     HomeDiagnosis,
     /// Signed in with unread messages: the count on the profile button.
     HomeMessages,
+    /// Signed in with three friends online: the count on the friends button.
+    HomeFriends,
+    /// Signed in, nobody online: the plain friends button.
+    HomeFriendsQuiet,
+    /// The friends button focused, twelve friends online (two digits).
+    HomeFriendsFocus,
+    /// Signed out with the sign-in button focused.
+    HomeSignInFocus,
     HomeTheme(u32),
     HomeNoArtwork,
     HomeEmpty,
@@ -81,6 +91,10 @@ impl Scene {
             "home-outdated" => Scene::HomeOutdated,
             "home-diagnosis" => Scene::HomeDiagnosis,
             "home-messages" => Scene::HomeMessages,
+            "home-friends" => Scene::HomeFriends,
+            "home-friends-quiet" => Scene::HomeFriendsQuiet,
+            "home-friends-focus" => Scene::HomeFriendsFocus,
+            "home-signin-focus" => Scene::HomeSignInFocus,
             "home-theme1" => Scene::HomeTheme(1),
             "home-theme2" => Scene::HomeTheme(2),
             "home-noartwork" => Scene::HomeNoArtwork,
@@ -93,7 +107,7 @@ impl Scene {
         })
     }
 
-    pub const ALL_NAMES: [&'static str; 24] = [
+    pub const ALL_NAMES: [&'static str; 28] = [
         "onboarding0",
         "onboarding1",
         "onboarding2",
@@ -110,6 +124,10 @@ impl Scene {
         "home-outdated",
         "home-diagnosis",
         "home-messages",
+        "home-friends",
+        "home-friends-quiet",
+        "home-friends-focus",
+        "home-signin-focus",
         "home-theme1",
         "home-theme2",
         "home-noartwork",
@@ -492,18 +510,25 @@ pub fn apply_scene(app: &mut LauncherApp, scene: Scene, games: Vec<Game>) {
             );
             m.focus = HomeFocus::Actions(0);
         }
+        Scene::HomeFriends => {
+            sign_in(m);
+            add_friends(m, 3, 1);
+        }
+        Scene::HomeFriendsQuiet => {
+            sign_in(m);
+            add_friends(m, 0, 4);
+        }
+        Scene::HomeFriendsFocus => {
+            sign_in(m);
+            add_friends(m, 12, 2);
+            m.focus = HomeFocus::FRIENDS;
+        }
+        Scene::HomeSignInFocus => m.focus = HomeFocus::PROFILE,
         Scene::HomeMessages => {
             use anyps5_core::online::api::{
                 Account, AccountId, Conversation, ConversationKind, Conversations,
             };
-            use anyps5_core::online::{Cloud, SignedIn, Status};
-            m.online.status = Status::Running;
-            m.online.cloud = Some(Cloud::Online);
-            m.online.account = Some(SignedIn {
-                id: AccountId(1),
-                handle: "Mira".into(),
-                email: "mira@example.org".into(),
-            });
+            sign_in(m);
             let chat = |id: &str, with: (u64, &str), last, read, request| Conversation {
                 id: id.into(),
                 kind: ConversationKind::Direct,
@@ -541,6 +566,38 @@ pub fn apply_scene(app: &mut LauncherApp, scene: Scene, games: Vec<Game>) {
     }
     // The preview has no workers: what the model asked for is dropped.
     m.effects.retain(|e| matches!(e, Effect::Sound(_)));
+}
+
+/// Signs the preview in as Mira, the cloud answering.
+fn sign_in(m: &mut crate::app::model::Model) {
+    use anyps5_core::online::api::AccountId;
+    use anyps5_core::online::{Cloud, SignedIn, Status};
+    m.online.status = Status::Running;
+    m.online.cloud = Some(Cloud::Online);
+    m.online.account = Some(SignedIn {
+        id: AccountId(1),
+        handle: "Mira".into(),
+        email: "mira@example.org".into(),
+    });
+}
+
+/// Invented friends: `online` of them online, then `offline` who are not.
+fn add_friends(m: &mut crate::app::model::Model, online: usize, offline: usize) {
+    use anyps5_core::online::api::{Account, AccountId, Friend, Presence};
+    m.online.friends.friends = (0..online + offline)
+        .map(|i| Friend {
+            account: Account {
+                id: AccountId(10 + i as u64),
+                handle: format!("Friend{}", i + 1),
+            },
+            since: 0,
+            presence: Presence {
+                online: i < online,
+                activity: None,
+                revision: 0,
+            },
+        })
+        .collect();
 }
 
 /// The games of a showcase folder, read like the library reads dumps.

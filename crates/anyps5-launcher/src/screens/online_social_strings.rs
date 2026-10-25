@@ -70,6 +70,8 @@ pub enum SocialText {
     MessageRequestArrived,
     /// The profile button's name while messages wait; `%@` = how many.
     ProfileUnread,
+    /// The friends button's name while some are online; `%@` = how many.
+    FriendsOnline,
 }
 
 impl SocialText {
@@ -127,6 +129,7 @@ impl SocialText {
             SocialText::MessageArrived => "%@: %@",
             SocialText::MessageRequestArrived => "%@ wants to message you",
             SocialText::ProfileUnread => "%@ unread",
+            SocialText::FriendsOnline => "Friends, %@ online",
         }
     }
 
@@ -184,6 +187,7 @@ impl SocialText {
             SocialText::MessageArrived => "%@: %@",
             SocialText::MessageRequestArrived => "%@ sana mesaj yazmak istiyor",
             SocialText::ProfileUnread => "%@ okunmamış",
+            SocialText::FriendsOnline => "Arkadaşlar, %@ çevrimiçi",
         }
     }
 
@@ -216,6 +220,7 @@ mod tests {
         SocialText::MessageArrived,
         SocialText::MessageRequestArrived,
         SocialText::ProfileUnread,
+        SocialText::FriendsOnline,
     ];
 
     #[test]

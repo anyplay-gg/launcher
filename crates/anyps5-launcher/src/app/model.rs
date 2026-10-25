@@ -894,7 +894,8 @@ impl Model {
             HomeIntent::OpenGameSettings => self.open(Overlay::GameSettings),
             HomeIntent::OpenLibrary => self.open(Overlay::Library),
             HomeIntent::OpenSettings => self.open(Overlay::Settings),
-            HomeIntent::OpenOnline => self.open(Overlay::Online),
+            // The online panel opens on the friends list once signed in, else on sign-in.
+            HomeIntent::OpenFriends | HomeIntent::OpenOnline => self.open(Overlay::Online),
             HomeIntent::ChooseFolder => self.request_folder_dialog(),
         }
     }
@@ -903,9 +904,7 @@ impl Model {
     pub fn click(&mut self, focus: HomeFocus) {
         self.focus = focus;
         let intent = match focus {
-            HomeFocus::Top(0) => HomeIntent::OpenLibrary,
-            HomeFocus::Top(1) => HomeIntent::OpenSettings,
-            HomeFocus::Top(_) => HomeIntent::OpenOnline,
+            HomeFocus::Top(index) => HomeFocus::top_intent(index),
             HomeFocus::Actions(0) => HomeIntent::PrimaryAction,
             HomeFocus::Actions(1) if self.has_trophies() => HomeIntent::OpenTrophies,
             HomeFocus::Actions(_) => HomeIntent::OpenGameSettings,
@@ -1174,7 +1173,7 @@ mod tests {
         assert_eq!(m.focus, HomeFocus::Actions(0));
         m.handle(Command::Up);
         m.handle(Command::Up);
-        assert_eq!(m.focus, HomeFocus::Top(1));
+        assert_eq!(m.focus, HomeFocus::SETTINGS);
         m.handle(Command::Back);
         assert_eq!(m.focus, HomeFocus::Tiles);
     }
