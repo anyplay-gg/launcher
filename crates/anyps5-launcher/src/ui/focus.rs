@@ -40,6 +40,8 @@ pub struct HomeContext {
     pub selected: usize,
     /// The selected game has a trophy list (a trophy button sits between Play and "...").
     pub has_trophies: bool,
+    /// The selected game can be played together: a Play Together button sits after Play.
+    pub together: bool,
     /// "How did it run?" is on screen.
     pub asking: bool,
     /// Buttons of the launcher update notice (0 = no notice).
@@ -47,9 +49,28 @@ pub struct HomeContext {
 }
 
 impl HomeContext {
-    /// Number of buttons in the action row: primary, trophies (optional), "...".
+    /// Number of buttons in the action row: primary, Play Together (optional), trophies
+    /// (optional), "...".
     pub fn action_count(&self) -> usize {
-        if self.has_trophies { 3 } else { 2 }
+        2 + usize::from(self.has_trophies) + usize::from(self.together)
+    }
+
+    /// What a press on button `index` of the action row does.
+    pub fn action_intent(&self, index: usize) -> HomeIntent {
+        let mut slot = 1;
+        if index == 0 {
+            return HomeIntent::PrimaryAction;
+        }
+        if self.together {
+            if index == slot {
+                return HomeIntent::PlayTogether;
+            }
+            slot += 1;
+        }
+        if self.has_trophies && index == slot {
+            return HomeIntent::OpenTrophies;
+        }
+        HomeIntent::OpenGameSettings
     }
 }
 
@@ -58,6 +79,8 @@ impl HomeContext {
 pub enum HomeIntent {
     /// Run the selected game's primary action (play / unlock / retry / cancel / activate window).
     PrimaryAction,
+    /// Start the selected game with a Play Together session.
+    PlayTogether,
     /// Open the trophy list.
     OpenTrophies,
     /// Open the game settings side panel.
@@ -211,13 +234,7 @@ impl HomeFocus {
                     Command::Down if ctx.asking => go(&mut step, HomeFocus::Ask(0)),
                     Command::Up | Command::Back => go(&mut step, HomeFocus::Tiles),
                     Command::Select => {
-                        step.intent = Some(if i == 0 {
-                            HomeIntent::PrimaryAction
-                        } else if i == 1 && ctx.has_trophies {
-                            HomeIntent::OpenTrophies
-                        } else {
-                            HomeIntent::OpenGameSettings
-                        });
+                        step.intent = Some(ctx.action_intent(i));
                     }
                     Command::Options if has_games => {
                         step.intent = Some(HomeIntent::OpenGameSettings)
@@ -447,6 +464,7 @@ mod tests {
             games,
             selected,
             has_trophies,
+            together: false,
             asking: false,
             notice: 0,
         }

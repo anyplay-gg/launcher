@@ -36,6 +36,9 @@ const PAD: f32 = 24.0;
 const AVATAR: f32 = 56.0;
 /// The gap between controls: 12 dp, as everywhere in the launcher's rows of buttons.
 const GAP: f32 = 12.0;
+/// The height of the ringing card and of the strip, for what hangs below them.
+pub(crate) const CARD_HEIGHT: f32 = PAD * 2.0 + AVATAR + 20.0 + size::BUTTON_MIN_HEIGHT;
+pub(crate) const STRIP_HEIGHT: f32 = PAD + size::BUTTON_MIN_HEIGHT;
 /// A ring every this many seconds while a call rings.
 const RING_EVERY: f64 = 3.2;
 

@@ -47,3 +47,13 @@ When an upstream release fixes the cause, set `appliesTo.toolkit.max` to the las
 ```
 
 Entry ids are lowercase letters, digits and dashes, and unique within a game. Run `cargo test -p anyps5-core recommended` before you open the pull request.
+
+# LAN titles
+
+`lan-titles.v1.json` lists the games that can be played together with Play Together: games that find each other on a local network (Minecraft's LAN worlds). The launcher shows a "Play Together" button on the page of a game in this list, and nowhere else. A copy is built into every launcher; the cloud has no copy and decides nothing from it ([spec](https://github.com/anyplaynet/network/blob/main/spec/play-together.md)).
+
+- `mode`: how the game finds others. Only `lan` (a broadcast on the local network) exists. A launcher ignores an entry whose mode it does not know, so a later mode can be added without breaking old launchers.
+- `max_players`: the most players the game allows in one world, host included (2 to 64). It becomes the session's `max_members`.
+- Add a title only after someone has seen it work (an observation log, or a run on two PCs), and put the evidence in the pull request.
+
+Run `cargo test -p anyps5-core play_together` before you open the pull request.

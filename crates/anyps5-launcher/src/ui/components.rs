@@ -17,6 +17,7 @@ use crate::ui::anim::{self, AnimExt, Motion, lerp};
 use crate::ui::i18n::{Key, Language};
 use crate::ui::icons::Icon;
 use crate::ui::input::{self, Device};
+use crate::ui::pad_info;
 use crate::ui::text;
 use crate::ui::theme::{TextStyle, black, color, fade, mix, radius, shadows, size, ty, white};
 
@@ -988,6 +989,16 @@ impl PadGlyph {
         }
     }
 
+    /// The text character of the glyph (the inverse of [`PadGlyph::from_char`]).
+    pub fn symbol(self) -> char {
+        match self {
+            PadGlyph::Cross => '✕',
+            PadGlyph::Circle => '○',
+            PadGlyph::Triangle => '△',
+            PadGlyph::Square => '□',
+        }
+    }
+
     /// Paints the glyph centred at `centre`, fitting a `size` x `size` box, strokes of 1.5 dp.
     pub fn paint(self, painter: &Painter, centre: Pos2, size: f32, color: Color32) {
         let stroke = Stroke::new(1.5, color);
@@ -1052,7 +1063,10 @@ pub fn paint_key_string(
             run.clear();
         }
     };
+    let family = pad_info::family();
     for c in keys.chars() {
+        // A pad that is not a PlayStation pad has letters on its buttons, not shapes.
+        let c = family.face_letter(c).unwrap_or(c);
         if let Some(glyph) = PadGlyph::from_char(c) {
             flush(&mut run, &mut x);
             let side = style.size * 0.95;
@@ -1070,7 +1084,9 @@ pub fn paint_key_string(
 pub fn key_string_width(painter: &Painter, style: TextStyle, keys: &str) -> f32 {
     let mut width = 0.0;
     let mut run = String::new();
+    let family = pad_info::family();
     for c in keys.chars() {
+        let c = family.face_letter(c).unwrap_or(c);
         if PadGlyph::from_char(c).is_some() {
             if !run.is_empty() {
                 width += text::width(painter, style, &run);
@@ -1161,12 +1177,26 @@ impl Hint<'_> {
             match device {
                 Device::Gamepad => {
                     painter.circle_filled(cap.center(), size::HINT_CAP * 0.5, color::keycap());
-                    self.action.glyph().paint(
-                        &painter,
-                        cap.center(),
-                        size::HINT_GLYPH,
-                        color::text_hint_key(),
-                    );
+                    let glyph = self.action.glyph();
+                    match pad_info::family().face_letter(glyph.symbol()) {
+                        // A pad with letters on its buttons: the hint names the letter.
+                        Some(letter) => {
+                            text::paint(
+                                &painter,
+                                cap.center(),
+                                Align2::CENTER_CENTER,
+                                ty::HINT_KEY,
+                                &letter.to_string(),
+                                color::text_hint_key(),
+                            );
+                        }
+                        None => glyph.paint(
+                            &painter,
+                            cap.center(),
+                            size::HINT_GLYPH,
+                            color::text_hint_key(),
+                        ),
+                    }
                 }
                 Device::Keyboard => {
                     painter.rect_filled(cap, corner(radius::KEYCAP_HINT), color::keycap());
