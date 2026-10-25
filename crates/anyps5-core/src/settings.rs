@@ -1,3 +1,4 @@
+//! Ported from utkuhalis/AnyPS5-ARM (GameSettings.swift, GPL-2.0-only) and changed since; see README "Credits".
 //! Persistent launcher preferences and per-game settings, stored as JSON in the locations of
 //! [`AppPaths`] (PORT.md 6.6, GameSettings.swift).
 //!
@@ -554,6 +555,9 @@ pub struct Preferences {
     /// A release tag to stay on (the pinned channel); `None` follows the latest release.
     #[serde(default)]
     pub toolkit_pinned: Option<String>,
+    /// The AnyPlay engine channel: the nightly build of the fork with the network bridge.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub toolkit_engine: bool,
     #[serde(default, deserialize_with = "lenient")]
     pub cpu_conversion: CpuConversion,
     /// The cloud of the network the player signs in to; `None` until one is set.
@@ -639,6 +643,7 @@ impl Default for Preferences {
             toolkit_checked_at: None,
             toolkit_repository: default_repository(),
             toolkit_pinned: None,
+            toolkit_engine: false,
             cpu_conversion: CpuConversion::Auto,
             online_cloud: None,
             online: false,
@@ -665,6 +670,8 @@ pub enum ToolkitChannel {
     Pinned,
     /// A folder the player built or picked.
     Local,
+    /// The nightly build of the AnyPlay engine; updates are offered.
+    Engine,
 }
 
 /// What "How did it run?" is asked once per: a title, its game version and the toolkit version.
@@ -676,6 +683,8 @@ impl Preferences {
     pub fn toolkit_channel(&self) -> ToolkitChannel {
         if self.toolkit.is_some() {
             ToolkitChannel::Local
+        } else if self.toolkit_engine {
+            ToolkitChannel::Engine
         } else if self.toolkit_pinned.is_some() {
             ToolkitChannel::Pinned
         } else {
@@ -1289,6 +1298,29 @@ mod tests {
         // Following the global choice writes nothing, so the file stays as an old launcher reads it.
         let text = serde_json::to_string(&prefs.games["c:/g"]).unwrap();
         assert!(!text.contains("toolkit"), "{text}");
+    }
+
+    #[test]
+    fn the_engine_channel_is_remembered_and_beats_pinned_but_not_local() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::under(dir.path());
+        let mut prefs = Preferences::default();
+        assert_eq!(prefs.toolkit_channel(), ToolkitChannel::Stable);
+        let text = serde_json::to_string(&prefs).unwrap();
+        assert!(
+            !text.contains("toolkitEngine"),
+            "an old launcher reads the same file"
+        );
+        prefs.toolkit_pinned = Some("v0.1.2".into());
+        prefs.toolkit_engine = true;
+        assert_eq!(prefs.toolkit_channel(), ToolkitChannel::Engine);
+        prefs.save(&paths).unwrap();
+        assert_eq!(
+            Preferences::load(&paths).toolkit_channel(),
+            ToolkitChannel::Engine
+        );
+        prefs.toolkit = Some("D:/build".into());
+        assert_eq!(prefs.toolkit_channel(), ToolkitChannel::Local);
     }
 
     #[test]

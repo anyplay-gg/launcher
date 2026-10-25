@@ -1,3 +1,4 @@
+//! Ported from utkuhalis/AnyPS5-ARM (AppModel.swift, GPL-2.0-only) and changed since; see README "Credits".
 //! The app state machine (`AppModel.swift` of the original, minus everything that is I/O).
 //!
 //! [`Model`] holds what the user sees and chose: the preferences, the library, which game is

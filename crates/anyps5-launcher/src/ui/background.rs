@@ -1,3 +1,4 @@
+//! Ported from utkuhalis/AnyPS5-ARM (BackgroundRenderer.swift, GPL-2.0-only) and changed since; see README "Credits".
 //! The animated theme backgrounds (docs/DESIGN.md sections 3 and 14) as a wgpu paint callback.
 //!
 //! A [`Background`] renders its theme's shader into a **half-resolution** offscreen texture (a

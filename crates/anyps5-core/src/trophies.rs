@@ -1,3 +1,4 @@
+//! Ported from utkuhalis/AnyPS5-ARM (Trophies.swift, GPL-2.0-only) and changed since; see README "Credits".
 //! Trophy data read from game dumps and the records the engine writes while a game runs
 //! (PORT.md 6.8, Trophies.swift; the logic is unchanged from the macOS launcher).
 //!

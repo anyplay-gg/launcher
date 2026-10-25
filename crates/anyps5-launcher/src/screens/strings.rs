@@ -112,6 +112,12 @@ pub enum Extra {
     ChannelStableDetail,
     ChannelPinnedDetail,
     ChannelLocalDetail,
+    ChannelEngine,
+    ChannelEngineDetail,
+    EngineBuilt,
+    EngineAvailable,
+    EngineNoBuild,
+    EngineUnverified,
     /// Settings row: the release a pinned channel stays on.
     PinnedVersion,
     /// Settings row and panel title.
@@ -347,6 +353,18 @@ impl Extra {
             Extra::ChannelStableDetail => "Follows the newest release.",
             Extra::ChannelPinnedDetail => "Stays on one release. No update is offered.",
             Extra::ChannelLocalDetail => "Uses a folder you built or picked. No update is offered.",
+            Extra::ChannelEngine => "AnyPlay Engine",
+            Extra::ChannelEngineDetail => {
+                "The nightly build with online play. Changes often and may break games."
+            }
+            Extra::EngineBuilt => "Built on %@",
+            Extra::EngineAvailable => "A new engine build is available",
+            Extra::EngineNoBuild => {
+                "There is no engine build for this system yet. Nothing was installed. Choose another channel."
+            }
+            Extra::EngineUnverified => {
+                "The engine download could not be checked. Nothing was installed. Try again later."
+            }
             Extra::PinnedVersion => "Version",
             Extra::WhatsNew => "What's New",
             Extra::LastCheckedOn => "Last checked %@",
@@ -534,6 +552,18 @@ impl Extra {
             Extra::ChannelLocalDetail => {
                 "Kendi yaptığın ya da seçtiğin klasörü kullanır. Güncelleme önerilmez."
             }
+            Extra::ChannelEngine => "AnyPlay Motoru",
+            Extra::ChannelEngineDetail => {
+                "Çevrimiçi oyun için gecelik derleme. Sık değişir, oyunları bozabilir."
+            }
+            Extra::EngineBuilt => "Derleme tarihi: %@",
+            Extra::EngineAvailable => "Yeni bir motor derlemesi indirilebilir",
+            Extra::EngineNoBuild => {
+                "Bu sistem için henüz motor derlemesi yok. Hiçbir şey kurulmadı. Başka bir kanal seç."
+            }
+            Extra::EngineUnverified => {
+                "Motor indirmesi doğrulanamadı. Hiçbir şey kurulmadı. Daha sonra yeniden dene."
+            }
             Extra::PinnedVersion => "Sürüm",
             Extra::WhatsNew => "Yenilikler",
             Extra::LastCheckedOn => "Son denetleme: %@",
@@ -635,7 +665,7 @@ impl Extra {
         substitute(self.text(language), args)
     }
 
-    pub const ALL: [Extra; 144] = [
+    pub const ALL: [Extra; 150] = [
         Extra::Toolkit,
         Extra::UpdateCheck,
         Extra::UpdateCheckDetail,
@@ -709,6 +739,12 @@ impl Extra {
         Extra::ChannelStableDetail,
         Extra::ChannelPinnedDetail,
         Extra::ChannelLocalDetail,
+        Extra::ChannelEngine,
+        Extra::ChannelEngineDetail,
+        Extra::EngineBuilt,
+        Extra::EngineAvailable,
+        Extra::EngineNoBuild,
+        Extra::EngineUnverified,
         Extra::PinnedVersion,
         Extra::WhatsNew,
         Extra::LastCheckedOn,

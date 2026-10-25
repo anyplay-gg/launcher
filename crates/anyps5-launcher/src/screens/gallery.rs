@@ -4,7 +4,7 @@
 //! ```text
 //! anyplay-launcher --gallery=settings|settings1..6|game-settings|confirm|controls|controls-capture|
 //!                           controls-end|advanced|trophies|trophies-hidden|trophies-revealed|banner|start|unlocking|log|report|library|
-//!                           about-update|behavior-links|settings-codec|settings-codec-off|behavior-clips-off|behavior-clips|behavior-clips-key|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|
+//!                           about-update|behavior-links|settings-codec|settings-codec-off|behavior-clips-off|behavior-clips|behavior-clips-key|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|toolkit-engine|toolkit-engine-update|
 //!                           toolkit-unused|game-toolkit|
 //!                           recommended|recommended-warning|whats-new|whats-new-loading|
 //!                           saves|saves-empty|restore|
@@ -380,6 +380,10 @@ pub enum ToolkitLook {
     Newer,
     Pinned,
     Local,
+    /// The AnyPlay engine channel with a build installed: its build day hangs under the header.
+    Engine,
+    /// The engine channel with a newer nightly build waiting.
+    EngineUpdate,
     /// Two installed releases nothing uses: the page offers to remove them.
     Unused,
     /// The system's glibc is older than the libraries ask for (Linux): the note hangs under the header.
@@ -490,6 +494,8 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "toolkit-newer" => ScreenPage::Toolkit(ToolkitLook::Newer),
         "toolkit-pinned" => ScreenPage::Toolkit(ToolkitLook::Pinned),
         "toolkit-local" => ScreenPage::Toolkit(ToolkitLook::Local),
+        "toolkit-engine" => ScreenPage::Toolkit(ToolkitLook::Engine),
+        "toolkit-engine-update" => ScreenPage::Toolkit(ToolkitLook::EngineUpdate),
         "toolkit-unused" => ScreenPage::Toolkit(ToolkitLook::Unused),
         "toolkit-glibc" => ScreenPage::Toolkit(ToolkitLook::Glibc),
         "recommended" => ScreenPage::Recommended,
@@ -1574,6 +1580,13 @@ impl ScreenGallery {
                     prefs.toolkit = Some("D:\\anyps5\\build".into());
                     toolkit_version = "local-4f2a9c1d7e03".into();
                 }
+                ToolkitLook::Engine | ToolkitLook::EngineUpdate => {
+                    prefs.toolkit_engine = true;
+                    toolkit_version = "anyplay-30d0fe9".into();
+                    if look == ToolkitLook::EngineUpdate {
+                        update = UpdateState::Available("anyplay-a1b2c3d".into());
+                    }
+                }
                 ToolkitLook::Unused | ToolkitLook::Glibc => {}
             }
         }
@@ -1893,6 +1906,7 @@ impl ScreenGallery {
             games_found: self.games.len(),
             app_version: "0.1.0",
             toolkit_version: Some(&self.toolkit_version),
+            engine_built: self.prefs.toolkit_engine.then_some("2026-10-25"),
             glibc: matches!(self.page, ScreenPage::Toolkit(ToolkitLook::Glibc)).then_some(
                 anyps5_core::glibc::Shortfall {
                     needed: anyps5_core::glibc::Version::new(2, 38),

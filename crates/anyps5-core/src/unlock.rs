@@ -1,3 +1,4 @@
+//! Ported from utkuhalis/AnyPS5-ARM (Installer.swift, GPL-2.0-only) and changed since; see README "Credits".
 //! Unlocking a game: unwrap its executable and modules, relink them, and assemble the unlocked
 //! copy the launcher starts (PORT.md 6.4 and 6.5, `Installer.swift`).
 //!
