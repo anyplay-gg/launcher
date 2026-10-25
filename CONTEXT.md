@@ -26,6 +26,10 @@ _Avoid_: Image, rip, backup
 The one folder the player points the launcher at. Games are looked for inside it, a few levels deep.
 _Avoid_: Library folder, root
 
+**Home button**:
+The PS or Guide button of a controller, and the PS button of the phone controller. While a game runs it brings the launcher in front of the game, with the game's quick panel, and back (docs/DESIGN.md 6.6).
+_Avoid_: PS button in visible text
+
 **Title ID**:
 The console's identifier of a game, such as `PPSA02100`, read from the dump's metadata.
 _Avoid_: Game ID, product code

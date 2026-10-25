@@ -50,6 +50,7 @@ pub fn route(game_running: bool, launcher_in_front: bool, home: bool, enabled: b
 #[derive(Default)]
 pub struct HomeButton {
     running: AtomicBool,
+    #[cfg_attr(not(windows), allow(dead_code))]
     window: AtomicIsize,
     /// The preference is off.
     disabled: AtomicBool,
@@ -268,7 +269,11 @@ mod xinput {
             let function = unsafe { GetProcAddress(library, 100usize as *const u8) };
             if let Some(function) = function {
                 // SAFETY: the signature of `XInputGetStateEx`.
-                return Some(unsafe { std::mem::transmute::<unsafe extern "system" fn() -> isize, GetStateEx>(function) });
+                return Some(unsafe {
+                    std::mem::transmute::<unsafe extern "system" fn() -> isize, GetStateEx>(
+                        function,
+                    )
+                });
             }
         }
         None

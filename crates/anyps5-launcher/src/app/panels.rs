@@ -651,10 +651,15 @@ impl PanelHost {
         }
     }
 
-    /// The quick panel of the running game (docs/DESIGN.md 6.5). It ends when the game does.
+    /// The quick panel of the running game (docs/DESIGN.md 6.6). It ends when the game does.
     fn in_game_ui(&mut self, cx: &mut OverlayCx<'_>, wanted: bool) {
         let events = self.take_events(wanted);
-        let Some(game) = cx.model.running.clone().and_then(|id| cx.model.game(&id).cloned()) else {
+        let Some(game) = cx
+            .model
+            .running
+            .clone()
+            .and_then(|id| cx.model.game(&id).cloned())
+        else {
             self.in_game.close();
             if wanted {
                 cx.model.leave_in_game();
@@ -692,7 +697,12 @@ impl PanelHost {
     /// "Close Game" / "Keep Playing". Closing stops the game; the launcher stays in front.
     fn close_game_ui(&mut self, cx: &mut OverlayCx<'_>, wanted: bool) {
         let events = self.take_events(wanted);
-        let Some(game) = cx.model.running.clone().and_then(|id| cx.model.game(&id).cloned()) else {
+        let Some(game) = cx
+            .model
+            .running
+            .clone()
+            .and_then(|id| cx.model.game(&id).cloned())
+        else {
             self.close_game.close();
             if wanted {
                 cx.model.leave_in_game();
@@ -1948,7 +1958,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn the_quick_panel_of_the_home_button_stays_open_and_acts() {
         let mut rig = Rig::new("in-game");
@@ -1962,7 +1971,8 @@ mod tests {
         rig.frames(5);
         assert_eq!(rig.app.model.overlay, Some(Overlay::ConfirmCloseGame));
         // The question opens on Keep Playing: Enter does not stop the game.
-        rig.app.handle_event(&ctx, InputEvent::Command(Command::Select));
+        rig.app
+            .handle_event(&ctx, InputEvent::Command(Command::Select));
         rig.frames(3);
         assert_eq!(rig.app.model.overlay, Some(Overlay::InGame));
         assert!(rig.app.model.running.is_some());

@@ -161,11 +161,7 @@ const LIBRARY_EVERY: f64 = 0.4;
 const PAD_CHECK_EVERY: f64 = 2.0;
 
 impl PhoneService {
-    pub fn new(
-        wake: Arc<dyn Fn() + Send + Sync>,
-        simulated: bool,
-        home: Arc<HomeButton>,
-    ) -> Self {
+    pub fn new(wake: Arc<dyn Fn() + Send + Sync>, simulated: bool, home: Arc<HomeButton>) -> Self {
         let (tx, rx) = channel();
         Self {
             wake,
@@ -438,8 +434,8 @@ impl LauncherApp {
 
         // The pad goes to the virtual controller from the start of a game to its end.
         // The launcher in front of the game (Home button) takes the pad back from the game.
-        let playing = (self.model.running.is_some() || self.model.starting.is_some())
-            && !self.model.summoned;
+        let playing =
+            (self.model.running.is_some() || self.model.starting.is_some()) && !self.model.summoned;
         if playing && self.model.phone.connected.is_some() {
             self.phone.attach_pad();
         } else {
@@ -558,8 +554,8 @@ impl LauncherApp {
     /// The phone asked for something. Navigation does not reach a hidden launcher while a game
     /// runs, and nothing starts a second game.
     fn phone_request(&mut self, ctx: &Context, message: Message) {
-        let playing = (self.model.running.is_some() || self.model.starting.is_some())
-            && !self.model.summoned;
+        let playing =
+            (self.model.running.is_some() || self.model.starting.is_some()) && !self.model.summoned;
         match message {
             Message::Command { name } if !playing => {
                 if let Some(event) = command_for(&name) {
