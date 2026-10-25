@@ -414,6 +414,17 @@ impl LauncherApp {
         self.shell
             .sounds
             .set_music(self.model.prefs.music && !playing && self.focused);
+        // The selected game's own song, on the home screen only: another screen in front, a game,
+        // onboarding or a hidden window bring the home music back or silence.
+        let home = self.model.overlay.is_none() && self.model.prefs.onboarded;
+        let theme = (self.model.prefs.game_music && home && !playing && self.focused)
+            .then(|| {
+                self.model
+                    .selected_game()
+                    .and_then(|game| game.music.clone())
+            })
+            .flatten();
+        self.shell.sounds.set_theme(theme.as_deref());
         self.shell.backdrop.paused =
             self.model.running.is_some() || !self.focused || self.freeze_backdrop;
     }

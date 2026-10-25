@@ -12,9 +12,11 @@ mod engine;
 pub mod hover;
 mod music;
 mod synth;
+mod theme;
 
+use std::path::Path;
 use std::sync::mpsc::{Sender, channel};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use rodio::cpal::BufferSize;
 use rodio::{DeviceSinkBuilder, DeviceSinkError, MixerDeviceSink};
@@ -31,6 +33,7 @@ pub struct Sounds {
     /// Tests and the gallery never open the device, whatever the settings say.
     silent: bool,
     output: Option<Output>,
+    theme: theme::Picker,
 }
 
 /// The link to the audio thread: commands for the engine, and a sender whose drop tells the
@@ -53,6 +56,7 @@ impl Sounds {
             music: false,
             silent: false,
             output: None,
+            theme: theme::Picker::default(),
         }
     }
 
@@ -89,6 +93,20 @@ impl Sounds {
         self.music = on;
         if on || self.output.is_some() {
             self.send(Command::Music(on));
+        }
+    }
+
+    /// The selected game's theme song (`sce_sys/snd0.at9`), or `None` when no theme should play.
+    /// It starts once the selection has rested on the game and replaces the home music while it
+    /// plays. Cheap to call every frame.
+    pub fn set_theme(&mut self, song: Option<&Path>) {
+        if self.silent {
+            return;
+        }
+        match self.theme.update(song, Instant::now()) {
+            Some(theme::Action::Play(song)) => self.send(Command::Theme(Some(song))),
+            Some(theme::Action::Stop) if self.output.is_some() => self.send(Command::Theme(None)),
+            _ => {}
         }
     }
 
@@ -174,6 +192,7 @@ mod tests {
         sounds.enabled = true;
         sounds.play(Cue::Select);
         sounds.set_music(true);
+        sounds.set_theme(Some(Path::new("game/sce_sys/snd0.at9")));
         assert!(sounds.output.is_none());
     }
 

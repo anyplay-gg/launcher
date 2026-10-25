@@ -33,6 +33,9 @@ socket2 = "0.6"
 getrandom = "0.4"
 base64 = "0.22"
 if-addrs = "0.15"
+# A game's theme song (sce_sys/snd0.at9) is ATRAC9: LibAtrac9 (MIT), built from the vendored
+# source in crates/atrac9.
+anyplay-atrac9 = { path = "../atrac9" }
 
 [build-dependencies]
 # build.rs parses data/update-keys.txt with the same parser the launcher uses at run time.

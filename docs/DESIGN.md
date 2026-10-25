@@ -1197,7 +1197,7 @@ category's rows (5.8).
 | Appearance (`appearance`) | brush | `theme` choice (Cosmic/Aurora/Sunset), `accent` choice (six), `backdrop` choice (`backgroundTheme` / `backgroundImage` / `backgroundVideo`; picking image/video opens a file dialog when no file is set or the kind changed), `file` action `chooseFile` (only when backdrop is not theme; detail = file name), `artwork` toggle `gameArtwork`, `motion` choice (`motionFull` / `motionReduced`) |
 | Library (`storage`) | 2x2 grid | `folder` action `folder` (detail = path or an em dash; opens the folder dialog), `rescan` action `rescan` (detail `gamesFound` with count; sound `select`), info `installedSize` |
 | Language (`language`) | globe | `language` choice (Türkçe, English; shown in their own language) |
-| Behaviour (`behaviour`) | sliders | `name` text field `profileName` (live edit), `sounds` toggle, `music` toggle (Home Screen Music, 7.3), `hide` toggle `hideWhilePlaying`, `prepare` toggle `prepareGames` (Prepare New Games Automatically), `hiddenTrophies` toggle `showHiddenTrophies` (trophy glyph; detail `showHiddenTrophiesDetail`; the trophy list's only option, 5.11) (+ platform row, see 9) |
+| Behaviour (`behaviour`) | sliders | `name` text field `profileName` (live edit), `sounds` toggle, `music` toggle (Home Screen Music, 7.3), `gameMusic` toggle (Game Music, `headphones` glyph, 7.3), `hide` toggle `hideWhilePlaying`, `prepare` toggle `prepareGames` (Prepare New Games Automatically), `hiddenTrophies` toggle `showHiddenTrophies` (trophy glyph; detail `showHiddenTrophiesDetail`; the trophy list's only option, 5.11) (+ platform row, see 9) |
 | Phone as Controller (`phone`) | phone | Windows and Linux addition, section 18. Sits between Behaviour and Toolkit. |
 | Advanced (`advanced`) | wrench+screwdriver | `screenshots` action `screenshotsFolder` (detail = path, `~` abbreviated), `showScreenshots` action, `fonts` action `fontsFolder` (detail = the picked path, else the built-in Noto set and whether Japanese, Chinese and Korean are included, not downloaded or downloading), `fontsReset` action (only when a fonts folder is set), `fontsCjk` command (download the Japanese, Chinese and Korean fonts; only without a picked folder and while they are missing), info `fontsHint`, `recordNetwork` toggle, and on Linux while share screen is on `openh264` toggle `Share Screen Video Codec` (detail: off, downloading, downloaded, not downloaded yet, the download failed, or what the share worker made of the file) with the info row `openh264Notice` attached under it, Cisco's text unchanged in every language |
 | About (`about`) | info circle | info `aboutText`, info `version` (app version), info `toolkitVersion`, (platform row), `quit` action `quit` (destructive) |
@@ -1882,6 +1882,28 @@ Latency: the first cue, the boot cue, opens the device and renders every cue, an
 **Mixing.** The music fades in over 2 s and out over 0.8 s (gain = position²) and dips under every cue: `move` 1.5 dB for 0.12 s,
 `select`, `back` and `error` 3 dB for 0.25 s, `unlocked` 6 dB for 1.2 s (15 ms down, 400 ms back up). It plays only while the
 `music` preference (Home Screen Music, on by default) is on, no game is starting or running, and the launcher window has focus.
+
+**Game music** (`ui::sound::theme`, `anyps5_core::theme_song`, 2026-10-25). As on a console, the selected game's own music
+plays on the home screen: `sce_sys/snd0.at9` of its dump, read and never written. It starts once the selection has rested on the
+game for 1 s; moving on fades it out at once (0.8 s) and the next game waits its own second. The song fades in over 1.5 s and takes
+the home music's place: the home music fades out while a song plays and back in when it stops, so the two crossfade rather than
+leave a gap. The song plays at -10 dB (theme songs are mastered loud), dips under cues like the home music, starts after the
+file's encoder delay and repeats its `smpl` loop (the whole song without one). It plays only on the home screen (no screen or
+panel in front, onboarding done), with the `gameMusic` preference (Game Music, on by default) on, no game starting or running,
+and the window focused. Home Screen Music and Game Music are independent: with only Game Music on, a selected game's song plays
+over silence.
+
+The ATRAC9 stream is decoded on the `sound` thread while it plays, one superframe (1024 frames) at a time, with
+[LibAtrac9](https://github.com/Thealexbarney/LibAtrac9), the reference decoder (C, MIT), vendored in
+`crates/atrac9/libatrac9` and built from source behind a safe wrapper (`anyplay_atrac9`). Upstream trusts every value in the
+stream, so a damaged file indexed past its tables: sanitizer fuzzing found those places, each now has a bounds check marked
+`AnyPlay:` (listed in `crates/atrac9/libatrac9/README.md`; one million random superframes, no finding). Its bit reader does not
+check where a buffer ends either, so the wrapper copies each superframe into a buffer followed by 4 KiB of zeros. The pure Rust `atrac9dec` 0.9.1 was
+tried first and rejected: it skips band extension only approximately and fails on real theme songs, which use it at low bit
+rates ("invalid scale factor mode" on the first superframe). The music is resampled linearly to the device rate. A three-minute song therefore costs its compressed size (about 1.6 MB), not
+35 MB of PCM. A `theme song` thread reads and checks the file (the first 8 superframes must decode); the last two songs stay in
+memory, so going back and forth between two games reads no file twice. A file that does not read or decode is skipped for the
+rest of the session, and the home music carries on.
 
 ### 7.5 The sound map (2026-10-25)
 

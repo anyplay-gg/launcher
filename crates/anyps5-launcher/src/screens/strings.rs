@@ -51,6 +51,9 @@ pub enum Extra {
     /// Settings row: the home screen music toggle.
     HomeMusic,
     HomeMusicDetail,
+    /// Settings row: the selected game's own music on the home screen.
+    GameMusic,
+    GameMusicDetail,
     /// Settings row: how strongly the controller vibrates to answer an action.
     Vibration,
     VibrationDetail,
@@ -300,6 +303,10 @@ impl Extra {
             Extra::HomeMusicDetail => {
                 "Plays quiet ambient music on the home screen. It fades out while a game runs."
             }
+            Extra::GameMusic => "Game Music",
+            Extra::GameMusicDetail => {
+                "Plays the selected game's own music on the home screen, in place of the home screen music."
+            }
             Extra::Vibration => "Controller Vibration",
             Extra::VibrationDetail => {
                 "A short, soft pulse answers a press on the controller. Never while a game is in front."
@@ -506,6 +513,10 @@ impl Extra {
             Extra::HomeMusic => "Ana Ekran Müziği",
             Extra::HomeMusicDetail => {
                 "Ana ekranda sakin bir ortam müziği çalar. Oyun çalışırken susar."
+            }
+            Extra::GameMusic => "Oyun Müziği",
+            Extra::GameMusicDetail => {
+                "Ana ekranda, ana ekran müziği yerine seçili oyunun kendi müziğini çalar."
             }
             Extra::Vibration => "Kol Titreşimi",
             Extra::VibrationDetail => {
