@@ -11,12 +11,13 @@ use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use gilrs::{Axis, Button, EventType, Gamepad, GamepadId, Gilrs, MappingSource};
+use gilrs::{Axis, Button, EventType, Gamepad, GamepadId, Gilrs, MappingSource, PowerInfo};
 
 use crate::ui::home_button::HomeButton;
 use crate::ui::input::{Command, PadMessage};
+use crate::ui::pad_info::{self, Battery, Family};
 
 /// Stick deflection that makes a direction.
 pub const STICK_THRESHOLD: f32 = 0.55;
@@ -187,6 +188,92 @@ fn log_pad(pad: &Gamepad<'_>) {
     }
 }
 
+/// How long the pad in use must be quiet before another pad may take over. Steam Input and
+/// DS4Windows can leave the real pad and their virtual Xbox pad both visible; one touch then
+/// arrives from both, and without this it would count twice.
+const HAND_OVER: Duration = Duration::from_millis(600);
+
+/// How often the battery of the pad in use is read.
+const BATTERY_EVERY: Duration = Duration::from_secs(10);
+
+/// What an event from a pad means for the pad in use.
+#[derive(Debug, PartialEq, Eq)]
+enum Turn {
+    /// The pad in use spoke.
+    Same,
+    /// Another pad spoke while the one in use was quiet: it is the pad in use now.
+    Switched,
+    /// Another pad spoke while the one in use was busy: an echo, dropped.
+    Echo,
+}
+
+/// The one pad whose input counts.
+#[derive(Debug)]
+struct ActivePad<I = GamepadId> {
+    id: Option<I>,
+    last: Option<Instant>,
+}
+
+impl<I> Default for ActivePad<I> {
+    fn default() -> Self {
+        Self {
+            id: None,
+            last: None,
+        }
+    }
+}
+
+impl<I: Copy + Eq> ActivePad<I> {
+    fn turn(&mut self, id: I, now: Instant) -> Turn {
+        let quiet = self.last.is_none_or(|t| now.duration_since(t) >= HAND_OVER);
+        match self.id {
+            Some(active) if active == id => {
+                self.last = Some(now);
+                Turn::Same
+            }
+            Some(_) if !quiet => Turn::Echo,
+            _ => {
+                self.id = Some(id);
+                self.last = Some(now);
+                Turn::Switched
+            }
+        }
+    }
+}
+
+fn family_of(pad: &Gamepad<'_>) -> Family {
+    Family::classify(pad.vendor_id(), pad.os_name())
+}
+
+/// What the top bar shows for a battery reading.
+fn battery_of(info: PowerInfo) -> Battery {
+    match info {
+        PowerInfo::Discharging(percent) => Battery::Level {
+            percent,
+            charging: false,
+        },
+        PowerInfo::Charging(percent) => Battery::Level {
+            percent,
+            charging: true,
+        },
+        PowerInfo::Charged => Battery::Level {
+            percent: 100,
+            charging: true,
+        },
+        PowerInfo::Wired | PowerInfo::Unknown => Battery::Unknown,
+    }
+}
+
+/// Makes `id` the pad in use and tells the UI which pad it is.
+fn adopt(gilrs: &Gilrs, active: &mut ActivePad, id: GamepadId) {
+    active.id = Some(id);
+    active.last = None;
+    if let Some(pad) = gilrs.connected_gamepad(id) {
+        pad_info::set_active(family_of(&pad));
+        pad_info::set_battery(battery_of(pad.power_info()));
+    }
+}
+
 fn log_all(gilrs: &Gilrs) {
     let mut count = 0;
     for (_, pad) in gilrs.gamepads() {
@@ -235,6 +322,13 @@ fn session(ctx: &egui::Context, tx: &Sender<PadMessage>, home: &HomeButton, atte
     };
     *attempt = 0;
     log_all(&gilrs);
+    let mut active = ActivePad::default();
+    if let Some((id, _)) = gilrs.gamepads().next() {
+        adopt(&gilrs, &mut active, id);
+    } else {
+        pad_info::clear();
+    }
+    let mut next_battery = Instant::now() + BATTERY_EVERY;
     let mut dirs = Directions::default();
     let mut last = None;
     loop {
@@ -245,6 +339,18 @@ fn session(ctx: &egui::Context, tx: &Sender<PadMessage>, home: &HomeButton, atte
                     ctx.request_repaint();
                 }
             };
+            match event.event {
+                EventType::Connected | EventType::Disconnected => {}
+                _ => match active.turn(event.id, Instant::now()) {
+                    Turn::Same => {}
+                    Turn::Switched => {
+                        adopt(&gilrs, &mut active, event.id);
+                        active.last = Some(Instant::now());
+                        ctx.request_repaint();
+                    }
+                    Turn::Echo => continue,
+                },
+            }
             // With a game in front the launcher hears the Home button and nothing else; the held
             // directions are kept up to date but not passed on.
             let mine = home.accepts_pad();
@@ -278,10 +384,24 @@ fn session(ctx: &egui::Context, tx: &Sender<PadMessage>, home: &HomeButton, atte
                     Axis::DPadY => dirs.dpad.1 = value,
                     _ => {}
                 },
-                EventType::Connected => log_connected(&gilrs, event.id),
+                EventType::Connected => {
+                    log_connected(&gilrs, event.id);
+                    if active.id.is_none() {
+                        adopt(&gilrs, &mut active, event.id);
+                    }
+                    ctx.request_repaint();
+                }
                 EventType::Disconnected => {
                     tracing::info!("gamepad removed");
                     dirs = Directions::default();
+                    if active.id == Some(event.id) {
+                        active = ActivePad::default();
+                        match gilrs.gamepads().find(|(id, _)| *id != event.id) {
+                            Some((id, _)) => adopt(&gilrs, &mut active, id),
+                            None => pad_info::clear(),
+                        }
+                    }
+                    ctx.request_repaint();
                 }
                 _ => {}
             }
@@ -289,6 +409,16 @@ fn session(ctx: &egui::Context, tx: &Sender<PadMessage>, home: &HomeButton, atte
             if now != last {
                 last = now;
                 send(PadMessage::Direction(now));
+            }
+        }
+        if Instant::now() >= next_battery {
+            next_battery = Instant::now() + BATTERY_EVERY;
+            if let Some(pad) = active.id.and_then(|id| gilrs.connected_gamepad(id)) {
+                let battery = battery_of(pad.power_info());
+                if battery != pad_info::battery() {
+                    pad_info::set_battery(battery);
+                    ctx.request_repaint();
+                }
             }
         }
         // 4 ms (a pad reports at 125 to 250 Hz) puts the wait for a press at 2 ms on average and
@@ -302,6 +432,42 @@ fn session(ctx: &egui::Context, tx: &Sender<PadMessage>, home: &HomeButton, atte
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_second_pad_echoing_the_first_is_dropped() {
+        let (real, other) = (0usize, 1usize);
+        let t = Instant::now();
+        let ms = Duration::from_millis;
+        let mut active = ActivePad::<usize>::default();
+        assert_eq!(active.turn(real, t), Turn::Switched);
+        assert_eq!(active.turn(real, t + ms(100)), Turn::Same);
+        // Steam Input or DS4Windows: the virtual pad repeats the touch a moment later.
+        assert_eq!(active.turn(other, t + ms(105)), Turn::Echo);
+        assert_eq!(active.turn(real, t + ms(200)), Turn::Same);
+        // Only after the first has been quiet does the other take over.
+        assert_eq!(active.turn(other, t + ms(900)), Turn::Switched);
+        assert_eq!(active.turn(real, t + ms(950)), Turn::Echo);
+    }
+
+    #[test]
+    fn a_battery_reading_becomes_what_the_bar_shows() {
+        assert_eq!(
+            battery_of(PowerInfo::Discharging(40)),
+            Battery::Level {
+                percent: 40,
+                charging: false
+            }
+        );
+        assert_eq!(
+            battery_of(PowerInfo::Charging(40)),
+            Battery::Level {
+                percent: 40,
+                charging: true
+            }
+        );
+        assert_eq!(battery_of(PowerInfo::Wired), Battery::Unknown);
+        assert_eq!(battery_of(PowerInfo::Unknown), Battery::Unknown);
+    }
 
     #[test]
     fn a_dualsense_is_known_by_its_ids() {

@@ -1744,6 +1744,37 @@ Windows.Gaming.Input, which offers vibration to Xbox-style pads only: a DualSens
 is false), the setting then has no effect. Not verified on hardware: the feel of the strengths and the floor, WGI vibration from a
 second thread and the Linux timer.
 
+### 6.9 Finding the controller (2026-10-26)
+
+**Backend.** gilrs 0.11 with its default `wgi` feature: on Windows the launcher reads pads through Windows.Gaming.Input (the Xbox
+family as a `Gamepad`, everything else, a DualSense and a DualShock among them, as a `RawGameController` that gilrs maps from
+the bundled SDL controller database; the DualSense and DualSense Edge, 054C:0CE6 and 054C:0DF2, have Windows entries there, and
+Bluetooth pads are looked up as USB on purpose). On Linux it reads evdev (`/dev/input/event*` must be readable by the player; the
+kernel's `hid-playstation` driver provides the DualSense, SDL's database has its kernel GUIDs). A pad with no database entry is not
+dropped: it gets gilrs' default layout and `MappingSource::Driver`, and the launcher does not look at the mapping source. WGI delivers input only
+while a window of the process has focus, which suits the launcher's own screens; with a game in front only the XInput thread
+(Xbox pads) still hears the Home button.
+
+**What the launcher does about it.**
+- Each pad found at start or plugged in later is written to `launcher.log` with name, VID and PID, SDL GUID, mapping (or "no SDL
+  mapping") and backend; a pad without a mapping is a warning, "no gamepad found at start" and "gamepad removed" are info lines.
+- The pad thread restarts after five seconds when the backend cannot start (one odd device can fail gilrs on Windows) or panics,
+  instead of ending for good.
+- **Pad in use.** One pad counts at a time (`ActivePad`). Another pad's events are dropped while the pad in use spoke less than
+  600 ms ago, so Steam Input or DS4Windows with both the real pad and their virtual Xbox pad visible do not press twice; after 600 ms of quiet the
+  other pad takes over. The family (`ui::pad_info::Family`: PlayStation, Xbox, Nintendo, other) is read from the vendor id, else the name.
+- **Top bar.** A small status after the title (and the phone status) shows a controller icon and, when the pad reports one, its battery
+  in percent (read every 10 s; wired pads and pads without a reading show the icon alone). It is not a button and outside the focus order.
+  Screen readers get "Controller connected, battery 82 percent".
+- **Hints.** With an Xbox or other pad the hint bar and key strings name the buttons A, B, X, Y; a Switch pad swaps A with B and X with Y
+  (the positions). A PlayStation pad keeps the shapes. Before any pad was seen the shapes are used.
+- **Settings > Behaviour** has a note under Controller Vibration: what to try when the controller is not found (Steam Input,
+  DS4Windows).
+
+Not done, on purpose: a direct HID reader for the DualSense and DualShock. WGI and evdev both see them; the cases that make a pad invisible
+(Steam Input holding it, HidHide hiding it) hide it from HID readers as well. The one gap a HID reader would close is the Home button of a PlayStation pad while a game is in front.
+Not verified on hardware: a DualSense or DualShock over USB and Bluetooth through WGI, the battery reading of a Bluetooth DualSense through WGI, the A/B hints on a real Xbox pad.
+
 ## 7. Sounds and media
 
 ### 7.1 Sounds (`Sounds.swift`): synthesized, nothing bundled

@@ -59,6 +59,10 @@ pub enum Extra {
     VibrationStrong,
     /// Settings note under the vibration row: what to try when the controller is not found.
     ControllerHelp,
+    /// Top bar, read out by screen readers: a controller is connected (and how full it is).
+    PadStatus,
+    PadStatusBattery,
+    PadStatusCharging,
     /// Settings row: the running game on Discord.
     DiscordPresence,
     DiscordPresenceDetail,
@@ -301,8 +305,11 @@ impl Extra {
                 "A short, soft pulse answers a press on the controller. Never while a game is in front."
             }
             Extra::ControllerHelp => {
-                "Controller not working? Steam Input and DS4Windows can hold it back. Turn off PlayStation support in Steam, or quit both, then reconnect the controller."
+                "Steam Input and DS4Windows can block the controller. Turn off PlayStation support in Steam, or quit both apps, then reconnect it."
             }
+            Extra::PadStatus => "Controller connected",
+            Extra::PadStatusBattery => "Controller connected, battery %@ percent",
+            Extra::PadStatusCharging => "Controller connected, battery %@ percent, charging",
             Extra::VibrationLight => "Light",
             Extra::VibrationMedium => "Medium",
             Extra::VibrationStrong => "Strong",
@@ -505,8 +512,11 @@ impl Extra {
                 "Kolda bir tuşa basınca kısa, yumuşak bir titreşim karşılık verir. Oyun öndeyken asla."
             }
             Extra::ControllerHelp => {
-                "Kol çalışmıyor mu? Steam Input ve DS4Windows kolu tutabilir. Steam'de PlayStation desteğini kapat ya da ikisinden de çık, sonra kolu yeniden bağla."
+                "Steam Input ve DS4Windows kolu devralabilir. Steam'de PlayStation desteğini kapat ya da iki uygulamadan da çık, sonra kolu yeniden bağla."
             }
+            Extra::PadStatus => "Kol bağlı",
+            Extra::PadStatusBattery => "Kol bağlı, pil yüzde %@",
+            Extra::PadStatusCharging => "Kol bağlı, pil yüzde %@, şarj oluyor",
             Extra::VibrationLight => "Hafif",
             Extra::VibrationMedium => "Orta",
             Extra::VibrationStrong => "Güçlü",
@@ -673,7 +683,7 @@ impl Extra {
         substitute(self.text(language), args)
     }
 
-    pub const ALL: [Extra; 151] = [
+    pub const ALL: [Extra; 154] = [
         Extra::Toolkit,
         Extra::UpdateCheck,
         Extra::UpdateCheckDetail,
@@ -713,6 +723,9 @@ impl Extra {
         Extra::VibrationMedium,
         Extra::VibrationStrong,
         Extra::ControllerHelp,
+        Extra::PadStatus,
+        Extra::PadStatusBattery,
+        Extra::PadStatusCharging,
         Extra::DiscordPresence,
         Extra::DiscordPresenceDetail,
         Extra::ShowHiddenTrophies,
