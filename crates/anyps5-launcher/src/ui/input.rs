@@ -260,6 +260,18 @@ impl Input {
 
     /// Collects this frame's events. Text fields keep their keys; Enter and Esc leave them.
     pub fn poll(&mut self, ctx: &Context) -> Vec<InputEvent> {
+        let (mut fresh, mut repeated) = (false, false);
+        let out = self.collect(ctx, &mut fresh, &mut repeated);
+        // A frame with any fresh press is a press; only a frame of repeats alone is a repeat.
+        if fresh {
+            self.repeating = false;
+        } else if repeated {
+            self.repeating = true;
+        }
+        out
+    }
+
+    fn collect(&mut self, ctx: &Context, fresh: &mut bool, repeated: &mut bool) -> Vec<InputEvent> {
         let mut out = Vec::new();
         let now = ctx.input(|i| i.time);
 
@@ -271,9 +283,11 @@ impl Input {
                 }
                 match message {
                     PadMessage::Direction(direction) => {
-                        crate::ui::latency::pad_event_seen();
+                        if direction.is_some() {
+                            crate::ui::latency::pad_event_seen();
+                        }
                         if let Some(command) = self.repeater.set_direction(direction, now) {
-                            self.repeating = false;
+                            *fresh = true;
                             self.last_direction = Some(command);
                             out.push(InputEvent::Command(command));
                         }
@@ -286,7 +300,7 @@ impl Input {
             }
         }
         if let Some(command) = self.repeater.tick(now) {
-            self.repeating = true;
+            *repeated = true;
             self.last_direction = Some(command);
             out.push(InputEvent::Command(command));
         }
@@ -297,13 +311,16 @@ impl Input {
         // A held arrow key repeats on our clock. It ends when the key is up (or the keyboard is
         // taken away: a dialog, a binding waiting for a key), whatever the key events said.
         if let Some(key) = self.held_key
-            && (self.blocked || self.capture_keys || !ctx.input(|i| i.key_down(key)))
+            && (self.blocked
+                || self.capture_keys
+                || crate::ui::a11y::foreign_focus(ctx)
+                || ctx.input(|i| !i.key_down(key) || i.modifiers.ctrl || i.modifiers.alt))
         {
             self.held_key = None;
             self.key_repeater.set_direction(None, now);
         }
         if let Some(command) = self.key_repeater.tick(now) {
-            self.repeating = true;
+            *repeated = true;
             self.last_direction = Some(command);
             out.push(InputEvent::Command(command));
         }
@@ -357,7 +374,7 @@ impl Input {
                             if command.is_direction() {
                                 self.held_key = Some(key);
                                 self.key_repeater.set_direction(Some(command), now);
-                                self.repeating = false;
+                                *fresh = true;
                                 self.last_direction = Some(command);
                             }
                             out.push(InputEvent::Command(command));

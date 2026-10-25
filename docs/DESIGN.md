@@ -773,7 +773,7 @@ The launcher keeps the port's structure but trims what read as noise next to the
   used 16.5 % of a core and 30 % GPU (58 threads) before, 11 % and 15 % (26 threads) after; the
   backdrop is untouched and still draws at 60 Hz while focused. A window without focus, and a game
   running, stop all drawing (0.2 to 2 % of a core). The gamepad thread polls every 100 ms while no
-  pad is connected (8 ms with one). `ANYPS5_GPU=dx12|vulkan|both` and `ANYPS5_POWER=high` undo the
+  pad is connected (4 ms with one). `ANYPS5_GPU=dx12|vulkan|both` and `ANYPS5_POWER=high` undo the
   choice for diagnosis; the log carries `startup t=...ms <step>` lines and the demo an `idle ...
   frames/s` line every 5 s. The demo no longer forces a repaint every frame (it idled at 40 % of a
   core, unlike the launcher).
@@ -1510,7 +1510,8 @@ uses AppKit's inverted deltas; the intent above is what the user experiences.)
 **Repeat timing (2026-10-25, replaces 0.38 s / 0.085 s):** when a direction is pressed it fires immediately; if held, after **0.36 s** it
 repeats every **0.10 s**, and after six repeats every **0.06 s**, until released or the direction changes (a change cancels the timers
 and fires the new direction at once). That is 17 rows in a 1.6 s hold, and a long list or the library grid no longer takes ten seconds
-to cross. A slow frame never fires a burst. Identical consecutive directions are not re-fired.
+to cross. A slow frame never fires a burst. Identical consecutive directions are not re-fired. Controller input is not blocked by text fields or panels. The hint bar text is always `✕ / ○ / △` (PlayStation
+naming) regardless of the controller.
 
 **Stick hysteresis:** the stick engages at 0.55 and lets go only below **0.38**, so a thumb resting near the threshold does not
 flutter between "right" and "nothing". A held direction gives way to the other axis only when that axis is at least 0.55 and **1.25
@@ -1518,8 +1519,7 @@ times** the held one, so a thumb near the diagonal does not jump between "right"
 changes direction at once. The D-pad beats the stick. The gamepad thread polls every **4 ms** (was 8) while a pad is connected.
 
 **Latency.** `ui::latency` stamps an event when the gamepad thread reads it, when the frame takes it off the channel and when that frame
-is built; with `RUST_LOG=anyplay_launcher::ui::latency=debug` it logs the average and the maximum of both intervals every 40 events. Controller input is not blocked by text fields or panels. The hint bar text is always `✕ / ○ / △` (PlayStation
-naming) regardless of the controller.
+is built; with `RUST_LOG=anyplay_launcher::ui::latency=debug` it logs the average and the maximum of both intervals every 40 events.
 
 ### 6.4 Focus model
 
@@ -1610,8 +1610,8 @@ trophy list, the top or bottom category) is answered like every other press, wit
 focus ring. The ring, and only the ring, moves toward the wall by about **3 dp** and springs back (`ui::nudge`): a velocity kick of
 140 dp/s into a spring pair on `Motion::Focus`, which peaks after 55 ms, undershoots by less than a quarter of a dp and is still
 inside a quarter of a second. Nothing but a transform changes, the layout stays put and the element does not move. Under "Animations:
-Reduced" the ring stays and only the sound is left. A held direction bumps **once per press**: the repeats of a hold at the edge
-are silent and still (`Input::repeating`). Every site that decides "nothing there" calls `Shell::play(Cue::Bump)`; the shell leans the
+Reduced" the ring stays and only the sound is left. A held direction bumps **once per hold**: the repeats at the edge
+are silent and still (`Input::repeating`). The sites that bump are the home screen, the panel rows and categories, the library grid and the trophy list; each calls `Shell::play(Cue::Bump)`, and the shell leans the
 ring toward `Input::last_direction`.
 
 ## 7. Sounds and media
@@ -1692,7 +1692,7 @@ decay with time constant τ), followed by a one-pole lowpass and a Freeverb send
 | `back` | A3, E4 (0.7) | as `select` | 10 / 90 ms | -15 dBFS | 0.12 / 0.8 s |
 | `error` | A3, B♭3 (0.9) | 1; 2 at 0.25 | 12 / 90 ms | -15 dBFS | 0.06 / 0.8 s |
 | `unlocked` | F4 C5 G5 C6 (1, 0.85, 0.7, 0.55), 15 ms apart, each as two voices 5 cents apart | 1; 2 at 0.25 | 25 / 250 ms | -9 dBFS | 0.20 / 1.2 s |
-| `bump` | F3, nothing above it, lowpass 1.6 kHz | 1; 2 at 0.25 | 10 / 28 ms | -27 dBFS | 0.04 / 0.4 s |
+| `bump` | F3, faint octave, lowpass 1.6 kHz | 1; 2 at 0.25 | 10 / 28 ms | -23 dBFS | 0.04 / 0.4 s |
 | `boot` | F3 C4 G4 C5 F5 (0.9 to 0.45), 70 ms apart, two voices 5 cents apart, glitter at 0.3 s | 1; 2 at 0.25 | 350 / 650 ms | -12 dBFS | 0.35 / 2.2 s |
 
 `unlocked` adds a faint glitter: six sines between 3.15 and 7.88 kHz at 0.12, gone within about 0.1 s. `error` is new and plays
@@ -2236,7 +2236,7 @@ Decisions made while implementing:
   blurred backdrop with saturation 1.25 and a 6 % white tint (both estimates, tune against the original).
 - **Keyboard repeat** of select/back/options is suppressed (a held Enter must not re-fire); held arrows repeat at the OS rate.
 - **Row padding**: panel rows keep 10 dp above and below their text even when the title wraps (the original has none).
-- The gamepad thread only translates events; the 0.38 s / 0.085 s repeat runs on the UI clock (`input::Repeater`).
+- The gamepad thread only translates events; the 0.36 s / 0.10 s / 0.06 s repeat runs on the UI clock (`input::Repeater`).
 
 ---
 

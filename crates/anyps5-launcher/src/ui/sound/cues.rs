@@ -128,11 +128,11 @@ fn recipe(cue: Cue) -> (Mix, Draw) {
                 tone(o, r, 0.0, B_FLAT3, 0.9, shape(0.012, 0.09), PURE, 0.0);
             },
         ),
-        // A low, dull knock: F3 with almost no overtones, cut off at 1.6 kHz, gone in 80 ms. The
+        // A low, dull knock: F3 with a faint octave, cut off at 1.6 kHz, gone in 80 ms. The
         // quietest cue; it says "that is the end" without being a note.
         Cue::Bump => (
             Mix {
-                peak_db: -27.0,
+                peak_db: -23.0,
                 send: 0.04,
                 rt60: 0.4,
                 cutoff: 1600.0,

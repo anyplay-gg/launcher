@@ -76,6 +76,8 @@ pub struct Shell {
     nudge: Nudge,
     /// "Animations: Reduced": the ring does not lean.
     reduced: bool,
+    /// The hold in progress has bumped already.
+    bumped_in_hold: bool,
 }
 
 /// What [`Shell::begin_frame`] hands to the screen.
@@ -110,6 +112,7 @@ impl Shell {
             scale: 1.0,
             nudge: Nudge::default(),
             reduced: false,
+            bumped_in_hold: false,
         }
     }
 
@@ -132,6 +135,7 @@ impl Shell {
             scale: 1.0,
             nudge: Nudge::default(),
             reduced: false,
+            bumped_in_hold: false,
         }
     }
 
@@ -173,10 +177,14 @@ impl Shell {
     /// A bump is answered once per press, not on every repeat of a held direction, and leans
     /// the focus ring toward the wall unless motion is reduced.
     pub fn play(&mut self, cue: Cue) {
-        if cue == Cue::Bump {
-            if self.input.repeating {
+        if cue != Cue::Bump {
+            self.bumped_in_hold = false;
+        } else {
+            // One bump per press, and one per hold: the repeats at a wall stay quiet.
+            if self.input.repeating && self.bumped_in_hold {
                 return;
             }
+            self.bumped_in_hold = true;
             if !self.reduced
                 && let Some(direction) = self.input.last_direction
             {
@@ -274,6 +282,40 @@ impl Shell {
             scale: 1.0,
             nudge: Nudge::default(),
             reduced: false,
+            bumped_in_hold: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod shell_tests {
+    use super::*;
+
+    #[test]
+    fn a_wall_bumps_once_per_hold_and_again_for_every_new_press() {
+        let ctx = Context::default();
+        let mut shell = Shell::for_test(&ctx, Theme::Cosmic);
+        shell.input.last_direction = Some(input::Command::Right);
+        shell.input.repeating = true;
+        shell.play(Cue::Bump);
+        let first = shell.nudge.step(0.02).x;
+        assert!(first > 0.0, "the first bump of a hold leans");
+        shell.play(Cue::Bump);
+        // Nothing was added: the second step only follows the first spring on.
+        let kicked = shell.nudge.step(0.0).x;
+        assert!(kicked <= first + 0.01);
+        shell.input.repeating = false;
+        shell.play(Cue::Bump);
+        assert!(shell.nudge.step(0.01).x > 0.0, "a fresh press bumps again");
+    }
+
+    #[test]
+    fn reduced_motion_keeps_the_ring_still() {
+        let ctx = Context::default();
+        let mut shell = Shell::for_test(&ctx, Theme::Cosmic);
+        shell.reduced = true;
+        shell.input.last_direction = Some(input::Command::Left);
+        shell.play(Cue::Bump);
+        assert!(shell.nudge.is_settled());
     }
 }

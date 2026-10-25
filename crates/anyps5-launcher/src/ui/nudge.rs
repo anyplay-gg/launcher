@@ -31,8 +31,10 @@ impl Nudge {
             Command::Down => (0.0, 1.0),
             _ => return,
         };
-        self.x.velocity += dx * KICK_SPEED;
-        self.y.velocity += dy * KICK_SPEED;
+        // A second bump on the way back adds up, but a hammered wall stays near 3 dp.
+        let limit = KICK_SPEED * 1.5;
+        self.x.velocity = (self.x.velocity + dx * KICK_SPEED).clamp(-limit, limit);
+        self.y.velocity = (self.y.velocity + dy * KICK_SPEED).clamp(-limit, limit);
     }
 
     /// Advances by `dt` seconds and returns the offset in dp.
