@@ -34,6 +34,8 @@ pub enum CompareText {
     HiddenNote,
     EmptyTitle,
     EmptyNote,
+    /// A column with no trophies in the game, in its accessible name.
+    NoneInGame,
     /// The accessible name of a column: `%@` handle, `%@` level, `%@` points in all, `%@` the
     /// game's trophies by grade, `%@` points in this game.
     SideName,
@@ -55,6 +57,7 @@ impl CompareText {
             CompareText::Points => "%@ points",
             CompareText::GamePoints => "%@ points in this game",
             CompareText::NotYet => "Not yet",
+            CompareText::NoneInGame => "no trophies",
             CompareText::NumberedTrophy => "Trophy %@",
             CompareText::NotOwnedNote => {
                 "This game is not in your library, so its trophies show by number."
@@ -84,6 +87,7 @@ impl CompareText {
             CompareText::Points => "%@ puan",
             CompareText::GamePoints => "Bu oyunda %@ puan",
             CompareText::NotYet => "Henüz yok",
+            CompareText::NoneInGame => "kupa yok",
             CompareText::NumberedTrophy => "%@. kupa",
             CompareText::NotOwnedNote => {
                 "Bu oyun kitaplığında yok, bu yüzden kupalar numarayla görünür."

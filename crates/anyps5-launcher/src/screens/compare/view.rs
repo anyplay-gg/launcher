@@ -256,7 +256,11 @@ fn side(inputs: &Inputs<'_>, side: &CompareSide, own: bool) -> Side {
         .filter(|(_, n)| *n > 0)
         .map(|(grade, n)| format!("{n} {}", grade.title(language)))
         .collect();
-    let by_grade = by_grade.join(", ");
+    let by_grade = if by_grade.is_empty() {
+        C::NoneInGame.text(language).to_owned()
+    } else {
+        by_grade.join(", ")
+    };
     Side {
         account,
         label: C::SideName.format(
