@@ -1,3 +1,4 @@
+//! Ported from utkuhalis/AnyPS5-ARM (GameSettings.swift, GPL-2.0-only) and changed since; see README "Credits".
 //! Persistent launcher preferences and per-game settings, stored as JSON in the locations of
 //! [`AppPaths`] (PORT.md 6.6, GameSettings.swift).
 //!
@@ -495,6 +496,17 @@ pub struct Preferences {
     pub discord_join_button: bool,
     #[serde(default)]
     pub hide_while_playing: bool,
+    /// The launcher unlocks a game that appears in the games folder by itself, while the PC is idle,
+    /// so it is ready when the player wants it (like a console installing in the background).
+    #[serde(default = "yes")]
+    pub prepare_games: bool,
+    /// The games the launcher has met in the games folder; `None` until the first scan. What is
+    /// there at that moment is not prepared, only what comes later.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub known_games: Option<BTreeSet<String>>,
+    /// Games that appeared and still wait for their preparation.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub prepare_pending: BTreeSet<String>,
     /// The Home button (PS button) of a controller or the phone switches between a running game
     /// and the launcher.
     #[serde(default = "yes")]
@@ -514,6 +526,15 @@ pub struct Preferences {
     /// The games folder; `None` until the player picks one.
     #[serde(default)]
     pub games_folder: Option<PathBuf>,
+    /// Where the unlocked copies live when the player keeps them away from the dumps (a faster
+    /// drive); `None` is the default, next to the games. See [`crate::location`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unlocked_folder: Option<PathBuf>,
+    /// The store root (the folder that holds `.AnyPS5`) the unlocked copies are being moved out
+    /// of; set from the moment the location changes until the last copy is at the new place or the
+    /// player leaves the rest where it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unlocked_moving_from: Option<PathBuf>,
     #[serde(default)]
     pub screenshots_folder: Option<PathBuf>,
     #[serde(default)]
@@ -543,6 +564,9 @@ pub struct Preferences {
     /// A release tag to stay on (the pinned channel); `None` follows the latest release.
     #[serde(default)]
     pub toolkit_pinned: Option<String>,
+    /// The AnyPlay engine channel: the nightly build of the fork with the network bridge.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub toolkit_engine: bool,
     #[serde(default, deserialize_with = "lenient")]
     pub cpu_conversion: CpuConversion,
     /// The cloud of the network the player signs in to; `None` until one is set.
@@ -560,6 +584,11 @@ pub struct Preferences {
     /// one run.
     #[serde(default)]
     pub online_share_screen: bool,
+    /// Linux: the player turned on Cisco's OpenH264, the codec share screen encodes and decodes
+    /// with there; the launcher downloads it and keeps it while this is on, and removes it when
+    /// it goes off (Cisco's licence terms, `openh264`).
+    #[serde(default)]
+    pub online_openh264: bool,
     /// Party voice: on or off, the mode, the push-to-talk key, devices and member volumes.
     #[serde(default)]
     pub voice: crate::online::VoicePrefs,
@@ -603,12 +632,17 @@ impl Default for Preferences {
             discord_presence: true,
             discord_join_button: true,
             hide_while_playing: false,
+            prepare_games: true,
+            known_games: None,
+            prepare_pending: BTreeSet::new(),
             ps_button: true,
             vibration: Vibration::Medium,
             show_hidden_trophies: false,
             fullscreen: true,
             profile_name: default_profile_name(),
             games_folder: None,
+            unlocked_folder: None,
+            unlocked_moving_from: None,
             screenshots_folder: None,
             fonts_folder: None,
             games: BTreeMap::new(),
@@ -620,11 +654,13 @@ impl Default for Preferences {
             toolkit_checked_at: None,
             toolkit_repository: default_repository(),
             toolkit_pinned: None,
+            toolkit_engine: false,
             cpu_conversion: CpuConversion::Auto,
             online_cloud: None,
             online: false,
             online_relay_only: false,
             online_share_screen: false,
+            online_openh264: false,
             voice: crate::online::VoicePrefs::default(),
             record_network: false,
             phone_remote: false,
@@ -645,6 +681,8 @@ pub enum ToolkitChannel {
     Pinned,
     /// A folder the player built or picked.
     Local,
+    /// The nightly build of the AnyPlay engine; updates are offered.
+    Engine,
 }
 
 /// What "How did it run?" is asked once per: a title, its game version and the toolkit version.
@@ -653,9 +691,20 @@ pub fn run_question_key(title_id: &str, version: &str, toolkit: &str) -> String 
 }
 
 impl Preferences {
+    /// The folder that holds the `.AnyPS5` store: the unlocked-games location when the player set
+    /// one, else the games folder. `None` until there is a games folder.
+    pub fn store_root(&self) -> Option<PathBuf> {
+        self.games_folder.as_ref()?;
+        self.unlocked_folder
+            .clone()
+            .or_else(|| self.games_folder.clone())
+    }
+
     pub fn toolkit_channel(&self) -> ToolkitChannel {
         if self.toolkit.is_some() {
             ToolkitChannel::Local
+        } else if self.toolkit_engine {
+            ToolkitChannel::Engine
         } else if self.toolkit_pinned.is_some() {
             ToolkitChannel::Pinned
         } else {
@@ -1269,6 +1318,29 @@ mod tests {
         // Following the global choice writes nothing, so the file stays as an old launcher reads it.
         let text = serde_json::to_string(&prefs.games["c:/g"]).unwrap();
         assert!(!text.contains("toolkit"), "{text}");
+    }
+
+    #[test]
+    fn the_engine_channel_is_remembered_and_beats_pinned_but_not_local() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::under(dir.path());
+        let mut prefs = Preferences::default();
+        assert_eq!(prefs.toolkit_channel(), ToolkitChannel::Stable);
+        let text = serde_json::to_string(&prefs).unwrap();
+        assert!(
+            !text.contains("toolkitEngine"),
+            "an old launcher reads the same file"
+        );
+        prefs.toolkit_pinned = Some("v0.1.2".into());
+        prefs.toolkit_engine = true;
+        assert_eq!(prefs.toolkit_channel(), ToolkitChannel::Engine);
+        prefs.save(&paths).unwrap();
+        assert_eq!(
+            Preferences::load(&paths).toolkit_channel(),
+            ToolkitChannel::Engine
+        );
+        prefs.toolkit = Some("D:/build".into());
+        assert_eq!(prefs.toolkit_channel(), ToolkitChannel::Local);
     }
 
     #[test]

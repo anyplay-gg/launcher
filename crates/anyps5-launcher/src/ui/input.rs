@@ -226,9 +226,24 @@ fn device_id() -> egui::Id {
 }
 
 /// Whether the pointer may light things up: not while a gamepad is the device in use, so a resting
-/// mouse never leaves a second control lit beside the one the pad has focused.
+/// mouse never leaves a second control lit beside the one the pad has focused, and not after a key
+/// until the pointer moves again, so a list that scrolls under a resting pointer does not light
+/// (or reveal the quick actions of) whatever slides beneath it.
 pub fn pointer_in_use(ctx: &Context) -> bool {
-    device(ctx) != Device::Gamepad
+    device(ctx) != Device::Gamepad && !keys_steer(ctx)
+}
+
+/// A key was pressed and the pointer has not moved, clicked or scrolled since: the keys steer.
+fn keys_steer(ctx: &Context) -> bool {
+    ctx.data(|d| d.get_temp(steer_id())).unwrap_or(false)
+}
+
+fn set_keys_steer(ctx: &Context, steer: bool) {
+    ctx.data_mut(|d| d.insert_temp(steer_id(), steer));
+}
+
+fn steer_id() -> egui::Id {
+    egui::Id::unique("input-keys-steer")
 }
 
 /// `response.hovered()`, but only while the pointer is the device in use. The element it says
@@ -371,9 +386,13 @@ impl Input {
         let events = ctx.input(|i| i.events.clone());
         for event in events {
             match event {
-                Event::PointerButton { .. } => self.pad_in_use = false,
+                Event::PointerButton { .. } => {
+                    set_keys_steer(ctx, false);
+                    self.pad_in_use = false;
+                }
                 Event::PointerMoved(_) => {
                     set_device(ctx, Device::Keyboard);
+                    set_keys_steer(ctx, false);
                     self.pad_in_use = false;
                 }
                 Event::Key {
@@ -384,6 +403,11 @@ impl Input {
                     modifiers,
                 } => {
                     set_device(ctx, Device::Keyboard);
+                    // Only a key that steers the launcher hands the lighting over, not a
+                    // modifier or a letter that means nothing here.
+                    if !in_text_field && command_for_key(key, modifiers).is_some() {
+                        set_keys_steer(ctx, true);
+                    }
                     self.pad_in_use = false;
                     if self.capture_keys {
                         crate::ui::a11y::consume_activation(ctx);
@@ -427,6 +451,8 @@ impl Input {
                     }
                 }
                 Event::MouseWheel { unit, delta, .. } => {
+                    // The wheel is the pointer's: what scrolls under it may light up again.
+                    set_keys_steer(ctx, false);
                     self.pad_in_use = false;
                     let dominant = if delta.x.abs() > delta.y.abs() {
                         delta.x
@@ -463,6 +489,22 @@ mod tests {
         assert!(!pointer_in_use(&ctx));
         set_device(&ctx, Device::Keyboard);
         assert!(pointer_in_use(&ctx));
+    }
+
+    #[test]
+    fn a_key_hands_the_lighting_to_the_keys_until_the_pointer_moves() {
+        let ctx = Context::default();
+        assert!(pointer_in_use(&ctx));
+        set_keys_steer(&ctx, true);
+        assert!(
+            !pointer_in_use(&ctx),
+            "a resting pointer lights nothing after a key"
+        );
+        set_keys_steer(&ctx, false);
+        assert!(
+            pointer_in_use(&ctx),
+            "moving, clicking or the wheel gives it back"
+        );
     }
 
     #[test]

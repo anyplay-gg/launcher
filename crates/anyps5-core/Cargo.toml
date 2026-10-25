@@ -17,6 +17,9 @@ tracing.workspace = true
 notify.workspace = true
 regex.workspace = true
 sha2.workspace = true
+# Cisco's OpenH264 comes as a bzip2 archive (MIT or Apache-2.0; its pure Rust libbz2 is
+# under the bzip2-1.0.6 licence).
+bzip2 = "0.6"
 time.workspace = true
 ureq.workspace = true
 url = "2"
@@ -55,6 +58,7 @@ windows = { workspace = true, features = [
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
     "Win32_System_JobObjects",
+    "Win32_System_Power",
     "Win32_System_Threading",
     "Win32_System_SystemInformation",
     "Win32_System_Registry",

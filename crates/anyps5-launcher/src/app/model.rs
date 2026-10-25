@@ -1,3 +1,4 @@
+//! Ported from utkuhalis/AnyPS5-ARM (AppModel.swift, GPL-2.0-only) and changed since; see README "Credits".
 //! The app state machine (`AppModel.swift` of the original, minus everything that is I/O).
 //!
 //! [`Model`] holds what the user sees and chose: the preferences, the library, which game is
@@ -47,9 +48,20 @@ pub enum GameState {
     Unreadable,
     Locked,
     Queued,
-    Installing { step: UnlockStep, fraction: f32 },
+    Installing {
+        step: UnlockStep,
+        fraction: f32,
+    },
+    /// The launcher unlocks the game on its own while the PC is idle. `progress` is `None` until
+    /// the work starts.
+    Preparing {
+        progress: Option<(UnlockStep, f32)>,
+        paused: bool,
+    },
     Failed(String),
-    Installed { outdated: bool },
+    Installed {
+        outdated: bool,
+    },
     Starting,
     Running,
 }
@@ -132,6 +144,15 @@ pub enum Effect {
     SaveClip,
     /// The player came online: read what they earned in every unlocked game for the network.
     SyncTrophies,
+    /// Look at the unlocked games location (is the drive there, how much is free).
+    CheckLocation,
+    /// Move the unlocked copies from the store `from` to the store `to`, except `running`.
+    StartMove {
+        from: std::path::PathBuf,
+        to: std::path::PathBuf,
+        running: Vec<String>,
+        cancel: anyps5_core::events::CancelToken,
+    },
 }
 
 /// What became of a command.
@@ -213,6 +234,8 @@ pub struct Model {
 
     pub games: Vec<Game>,
     pub scanning: bool,
+    /// The unlocked games location and the move of the copies (`app::relocation`).
+    pub location: crate::app::relocation::LocationState,
     pub selected: usize,
     pub focus: HomeFocus,
     pub overlay: Option<Overlay>,
@@ -235,6 +258,8 @@ pub struct Model {
     pub progress: HashMap<GameId, (UnlockStep, f32)>,
     /// Games waiting for their unlock.
     pub queue: Vec<GameId>,
+    /// Preparing in the background, and the time left of every unlock (`app/prepare.rs`).
+    pub prep: crate::app::prepare::Prep,
     pub failures: HashMap<GameId, String>,
     /// The game from the press of Play until its first window shows.
     pub starting: Option<GameId>,
@@ -256,6 +281,16 @@ pub struct Model {
     /// The notice fits in the top bar as drawn last frame. The focus order reads it, so the pad
     /// never lands on a notice that is not there.
     pub notice_fits: bool,
+    /// This launcher must update before it goes online: the signed manifest or the cloud said so
+    /// (copied in every frame by the panel host). Offline play is never affected.
+    pub update_required: bool,
+    /// The "Update required" screen was shown (or the player turned it away with Play Offline):
+    /// it opens by itself once per run, then only when the online area is asked for.
+    pub required_seen: bool,
+    /// The screen is up because the online area was asked for, not because the launcher started.
+    pub required_online: bool,
+    /// The cloud turned the launcher away (`client_too_old`) since the host looked.
+    pub cloud_too_old: bool,
     /// The toolkit version on this PC (`None`: no toolkit, nothing can be unlocked).
     pub toolkit: Option<String>,
     /// The toolkit needs a newer glibc than this system has (Linux); a notice, not a block.
@@ -274,11 +309,16 @@ pub struct Model {
     pub phone_trophies: Vec<Trophy>,
     /// What the phone server is doing (`app::phone`).
     pub phone: crate::app::phone::PhoneState,
+    /// What the share worker said of Cisco's OpenH264 in its last answer (Linux): its `state` and
+    /// `detail`.
+    pub share_codec: Option<(String, Option<String>)>,
     /// Work for the host; drained after every input pass.
     pub effects: Vec<Effect>,
     /// What the launcher knows of the network. Commands queue here; the host hands them to the
     /// net service and its answers back (`app::online`).
     pub online: Online,
+    /// Play Together: the blocker on the card, the host plan of the next start (`app::together`).
+    pub together: crate::app::together::Together,
     /// The profile the profile screen is on and where Back leads (`app::profile`).
     pub profile: Option<crate::app::profile::Target>,
     /// The comparison the trophy compare screen is on (`app::compare`).
@@ -316,6 +356,7 @@ impl Model {
             now: 0.0,
             games: Vec::new(),
             scanning: false,
+            location: Default::default(),
             selected: 0,
             focus: HomeFocus::Tiles,
             overlay: None,
@@ -328,6 +369,7 @@ impl Model {
             settings_page: None,
             progress: HashMap::new(),
             queue: Vec::new(),
+            prep: Default::default(),
             failures: HashMap::new(),
             starting: None,
             running: None,
@@ -340,6 +382,10 @@ impl Model {
             update_dismissed: None,
             update_request: None,
             notice_fits: true,
+            update_required: false,
+            required_seen: false,
+            required_online: false,
+            cloud_too_old: false,
             toolkit: None,
             glibc: None,
             game_toolkits: HashMap::new(),
@@ -348,8 +394,10 @@ impl Model {
             trophy_banners: Vec::new(),
             phone_trophies: Vec::new(),
             phone: Default::default(),
+            share_codec: None,
             effects: Vec::new(),
             online: Online::default(),
+            together: Default::default(),
             profile: None,
             compare: None,
             profile_returning: false,
@@ -418,6 +466,8 @@ impl Model {
     pub fn tick(&mut self, now: f64) {
         self.now = now;
         self.checkpoint(Instant::now());
+        self.prepare_tick();
+        self.resume_move_tick();
     }
 
     // --- playtime ----------------------------------------------------------------------------
@@ -522,6 +572,9 @@ impl Model {
         if self.running.as_ref() == Some(id) {
             return GameState::Running;
         }
+        if let Some(preparing) = self.preparing_state(id) {
+            return preparing;
+        }
         if let Some(&(step, fraction)) = self.progress.get(id) {
             return GameState::Installing { step, fraction };
         }
@@ -579,9 +632,10 @@ impl Model {
             .is_some_and(|g| self.trophies.contains_key(&g.id))
     }
 
-    /// Buttons in the hero's action row: primary, trophies (if the game has any), "...".
+    /// Buttons in the hero's action row: primary, Play Together and trophies (if the game has
+    /// them), "...".
     pub fn action_count(&self) -> usize {
-        if self.has_trophies() { 3 } else { 2 }
+        self.home_context().action_count()
     }
 
     fn home_context(&self) -> HomeContext {
@@ -589,6 +643,7 @@ impl Model {
             games: self.games.len(),
             selected: self.selected,
             has_trophies: self.has_trophies(),
+            together: crate::app::together::hostable(self).is_some(),
             asking: self.run_question().is_some(),
             notice: self.update_notice().map_or(0, |n| n.buttons),
         }
@@ -618,6 +673,8 @@ impl Model {
     pub fn choose_folder(&mut self, folder: Option<std::path::PathBuf>) {
         let Some(folder) = folder else { return };
         self.edit_prefs(|p| p.games_folder = Some(folder));
+        self.games_folder_changed();
+        self.forget_known_games();
         self.selected = 0;
         if !self.onboarded() && self.onboarding.step == 2 {
             self.onboarding.set_choice(2, 1);
@@ -712,6 +769,7 @@ impl Model {
                 self.games = games;
                 self.scanning = false;
                 self.library_loaded = true;
+                self.note_new_games();
                 self.selected = current
                     .and_then(|id| self.games.iter().position(|g| g.id == id))
                     .unwrap_or_else(|| self.selected.min(self.games.len().saturating_sub(1)));
@@ -744,7 +802,7 @@ impl Model {
             CoreEvent::TrophyRecords { title_id, earned } => {
                 self.online.upload_trophies(&title_id, &earned);
             }
-            _ => {}
+            other => self.on_location_event(other),
         }
     }
 
@@ -762,12 +820,14 @@ impl Model {
                     None => true,
                 };
                 if moved {
-                    self.progress.insert(game, (step, fraction));
+                    self.progress.insert(game.clone(), (step, fraction));
+                    self.prep_progress(&game, step, fraction);
                 }
             }
             PipelineEvent::UnlockFinished { game, result } => {
                 self.progress.remove(&game);
                 self.queue.retain(|q| q != &game);
+                let prepared = self.prep_ended(&game);
                 let name = self.game(&game).map(|g| g.name.clone()).unwrap_or_default();
                 match result {
                     Ok(toolkit) => {
@@ -781,15 +841,25 @@ impl Model {
                     }
                     Err(message) => {
                         self.failures.insert(game, message);
-                        let text = format!("{}: {name}", self.text(Key::UnlockFailed));
+                        let headline = if prepared {
+                            crate::screens::prepare_strings::prepare_failed(self.language())
+                        } else {
+                            self.text(Key::UnlockFailed)
+                        };
+                        let text = format!("{headline}: {name}");
                         self.toast(text, Icon::WARNING);
                     }
                 }
+                self.rescan_after_unlock();
             }
             PipelineEvent::UnlockCancelled { game } => {
                 self.progress.remove(&game);
                 self.queue.retain(|q| q != &game);
+                self.prep_ended(&game);
+                self.rescan_after_unlock();
             }
+            PipelineEvent::UnlockPaused { game, paused } => self.prep_paused(&game, paused),
+            PipelineEvent::StepSeconds(seconds) => self.set_step_seconds(Some(seconds)),
             PipelineEvent::Spawned { game } => {
                 if self.starting.as_ref() == Some(&game) {
                     self.running = Some(game);
@@ -865,6 +935,7 @@ impl Model {
         };
         match self.state_of(&game) {
             GameState::Installed { .. } => self.play(&game.id),
+            GameState::Preparing { .. } => self.promote(&game.id),
             GameState::Locked => self.unlock(&game.id),
             GameState::Failed(_) => self.retry(&game.id),
             GameState::Installing { .. } | GameState::Queued => self.cancel_unlock(&game.id),
@@ -902,6 +973,10 @@ impl Model {
         if self.prefs.games_folder.is_none() {
             return;
         }
+        if self.is_preparing(id) {
+            self.promote(id);
+            return;
+        }
         if !self.toolkit_ready(id) {
             return;
         }
@@ -920,6 +995,17 @@ impl Model {
     }
 
     pub fn cancel_unlock(&mut self, id: &GameId) {
+        if self.prep.background.remove(id) {
+            // Held back or not yet started in the core: it still has to be told.
+            self.effects
+                .push(Effect::Pipeline(PipelineCommand::Cancel(id.clone())));
+            // The player does not want it prepared: it is not tried again.
+            self.prep.paused.remove(id);
+            let key = id.as_str().to_owned();
+            self.edit_prefs(|p| {
+                p.prepare_pending.remove(&key);
+            });
+        }
         if let Some(index) = self.queue.iter().position(|q| q == id) {
             self.queue.remove(index);
             self.effects
@@ -935,6 +1021,11 @@ impl Model {
 
     pub fn play(&mut self, id: &GameId) {
         if self.prefs.games_folder.is_none() || self.starting.is_some() || self.running.is_some() {
+            return;
+        }
+        if self.is_preparing(id) {
+            // Not ready yet: it goes first and shows its progress.
+            self.promote(id);
             return;
         }
         if self.saves_busy.as_ref() == Some(id) {
@@ -1028,6 +1119,15 @@ impl Model {
 
     /// Opens or replaces the overlay without a sound: the panel modules play their own cues.
     pub fn switch_overlay(&mut self, overlay: Overlay) {
+        // The online area is closed while the update is required: whoever asks for it (the
+        // button, an invitation, a link) meets the screen that says why and offers the update.
+        let overlay = if self.update_required && overlay.is_online() {
+            self.required_seen = true;
+            self.required_online = true;
+            Overlay::Required
+        } else {
+            overlay
+        };
         self.panel = match overlay {
             Overlay::Settings => PanelNav::settings(overlay.categories()),
             // The controls panel opens on its first key, below the hint; advanced below its header.
@@ -1041,6 +1141,33 @@ impl Model {
             self.library_index = self.selected;
         }
         self.overlay = Some(overlay);
+    }
+
+    /// The "Update required" screen is due: the update became required, the launcher is idle
+    /// (no game starts or runs, the first-run setup is done) and the screen has not been shown.
+    pub fn required_screen_due(&self) -> bool {
+        self.update_required
+            && !self.required_seen
+            && self.onboarded()
+            && self.running.is_none()
+            && self.starting.is_none()
+    }
+
+    /// Opens "Update required" because the launcher started below the supported version.
+    pub fn show_required(&mut self) {
+        self.required_seen = true;
+        self.required_online = false;
+        self.switch_overlay(Overlay::Required);
+        self.sound(Cue::Open);
+    }
+
+    /// "Play Offline": the screen goes away and the games are the player's again. The online area
+    /// stays closed until the launcher is updated.
+    pub fn play_offline(&mut self) {
+        if self.overlay == Some(Overlay::Required) {
+            self.close_overlay();
+        }
+        self.required_online = false;
     }
 
     /// Closes the overlay without a sound (the panel played its own cue).
@@ -1069,6 +1196,11 @@ impl Model {
         }
         if let Some(overlay) = self.overlay {
             return Routed::Overlay(overlay);
+        }
+        // Back answers the Play Together card first: it closes a blocker and puts an offer away.
+        if command == Command::Back && crate::app::together::escape(self) {
+            self.sound(Cue::Close);
+            return Routed::Done;
         }
         // The launcher is in front because of the Home button: Back goes back to the game.
         if self.summoned && self.running.is_some() && command == Command::Back {
@@ -1122,6 +1254,11 @@ impl Model {
             HomeIntent::PrimaryAction => self.primary_action(),
             HomeIntent::AnswerRun(i) => self.answer_run(i),
             HomeIntent::UpdateAction(i) => self.update_action(i),
+            HomeIntent::PlayTogether => {
+                if let Some(id) = crate::app::together::hostable(self).map(|g| g.id.clone()) {
+                    crate::app::together::host_game(self, &id);
+                }
+            }
             HomeIntent::OpenTrophies => self.open(Overlay::Trophies),
             HomeIntent::OpenGameSettings => self.open(Overlay::GameSettings),
             HomeIntent::OpenLibrary => self.open(Overlay::Library),
@@ -1191,9 +1328,7 @@ impl Model {
         self.focus = focus;
         let intent = match focus {
             HomeFocus::Top(index) => HomeFocus::top_intent(index),
-            HomeFocus::Actions(0) => HomeIntent::PrimaryAction,
-            HomeFocus::Actions(1) if self.has_trophies() => HomeIntent::OpenTrophies,
-            HomeFocus::Actions(_) => HomeIntent::OpenGameSettings,
+            HomeFocus::Actions(i) => self.home_context().action_intent(i),
             HomeFocus::Tiles => HomeIntent::PrimaryAction,
             HomeFocus::Ask(i) => HomeIntent::AnswerRun(i),
             HomeFocus::Update(i) => HomeIntent::UpdateAction(usize::from(i)),
@@ -2174,6 +2309,57 @@ mod tests {
         });
         assert_eq!(m.overlay, None);
         assert!(!m.summoned);
+    }
+
+    #[test]
+    fn nothing_changes_while_the_update_is_optional() {
+        let mut m = model_with(Vec::new());
+        assert!(!m.required_screen_due());
+        m.open(Overlay::Friends);
+        assert_eq!(m.overlay, Some(Overlay::Friends), "the online area is open");
+    }
+
+    #[test]
+    fn a_required_update_opens_its_screen_once_and_closes_the_online_area() {
+        let mut m = model_with(Vec::new());
+        m.update_required = true;
+        assert!(m.required_screen_due());
+        m.show_required();
+        assert_eq!(m.overlay, Some(Overlay::Required));
+        assert!(!m.required_online);
+        assert!(!m.required_screen_due(), "once per run");
+        // Play Offline: the home screen is the player's again.
+        m.play_offline();
+        assert_eq!(m.overlay, None);
+        assert!(!m.required_screen_due());
+        // Every way into the online area meets the screen again, with the reason that fits.
+        for online in [Overlay::Friends, Overlay::Profile, Overlay::Compare] {
+            m.play_offline();
+            m.open(online);
+            assert_eq!(m.overlay, Some(Overlay::Required), "{online:?}");
+            assert!(m.required_online);
+            m.play_offline();
+            assert_eq!(m.overlay, None);
+        }
+        // Offline things stay open: the library, the settings and the game's own panels.
+        for offline in [Overlay::Library, Overlay::Settings, Overlay::GameSettings] {
+            m.open(offline);
+            assert_eq!(m.overlay, Some(offline), "{offline:?}");
+            m.close_overlay();
+        }
+    }
+
+    #[test]
+    fn the_required_screen_waits_for_a_quiet_launcher() {
+        let mut m = model_with(Vec::new());
+        m.update_required = true;
+        m.starting = Some(GameId::from_key("PPSA00000".to_owned()));
+        assert!(
+            !m.required_screen_due(),
+            "a game starts: it is not interrupted"
+        );
+        m.starting = None;
+        assert!(m.required_screen_due());
     }
 
     #[test]

@@ -6,8 +6,6 @@ use crate::ui::i18n::{Arg, Language, substitute};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FriendsText {
-    /// The accessible name of the list of sections.
-    Sections,
     Activity,
     Settings,
     /// The title of the page behind Settings.
@@ -39,16 +37,15 @@ pub enum FriendsText {
 impl FriendsText {
     pub const fn english(self) -> &'static str {
         match self {
-            FriendsText::Sections => "Sections",
             FriendsText::Activity => "Activity",
             FriendsText::Settings => "Settings",
             FriendsText::OnlineSettings => "Online Settings",
             FriendsText::PlayingNow => "Playing Now",
             FriendsText::OnlineCaption => "Online",
             FriendsText::OfflineCaption => "Offline",
-            FriendsText::CountMany => "%@ friends online",
-            FriendsText::CountOne => "1 friend online",
-            FriendsText::CountNone => "No friends online",
+            FriendsText::CountMany => "%@ friends active",
+            FriendsText::CountOne => "1 friend active",
+            FriendsText::CountNone => "No friends active",
             FriendsText::ActionJoin => "Join",
             FriendsText::ActionMessage => "Message",
             FriendsText::MoreAbout => "Options",
@@ -67,16 +64,15 @@ impl FriendsText {
 
     pub const fn turkish(self) -> &'static str {
         match self {
-            FriendsText::Sections => "Bölümler",
             FriendsText::Activity => "Etkinlik",
             FriendsText::Settings => "Ayarlar",
             FriendsText::OnlineSettings => "Çevrimiçi Ayarları",
             FriendsText::PlayingNow => "Şimdi Oynayanlar",
             FriendsText::OnlineCaption => "Çevrimiçi",
             FriendsText::OfflineCaption => "Çevrimdışı",
-            FriendsText::CountMany => "%@ arkadaş çevrimiçi",
-            FriendsText::CountOne => "1 arkadaş çevrimiçi",
-            FriendsText::CountNone => "Çevrimiçi arkadaş yok",
+            FriendsText::CountMany => "%@ arkadaş aktif",
+            FriendsText::CountOne => "1 arkadaş aktif",
+            FriendsText::CountNone => "Aktif arkadaş yok",
             FriendsText::ActionJoin => "Katıl",
             FriendsText::ActionMessage => "Mesaj",
             FriendsText::MoreAbout => "Seçenekler",

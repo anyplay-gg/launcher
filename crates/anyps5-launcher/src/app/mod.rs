@@ -32,12 +32,15 @@ pub mod panels;
 pub mod phone;
 pub mod pipeline;
 pub mod playtime;
+pub mod prepare;
 pub mod preview;
 pub mod profile;
+pub mod relocation;
 pub mod run_question;
 pub mod selfupdate;
 pub mod services;
 pub mod textures;
+pub mod together;
 pub mod toolkit;
 pub mod window_chrome;
 
@@ -143,6 +146,8 @@ pub struct LauncherApp {
     clips: clips::ClipsService,
     applied: Applied,
     focused: bool,
+    /// Frames drawn since the last rate line: window start, count, last frame.
+    rate: (std::time::Instant, u32, std::time::Instant),
     /// Overlays that are open or still animating out.
     overlays_shown: Vec<Overlay>,
     /// Artwork behind the home screen that is fading in or out, newest last.
@@ -160,6 +165,7 @@ pub struct LauncherApp {
     start_screen: screens::start::StartScreen,
     /// The ringing card and the call strip.
     calls: screens::calls::CallsUi,
+    together: screens::together::TogetherUi,
     links: links::LinkState,
     scan_on_start: bool,
     /// No scan, size or trophy work (previews and the demo have a made-up library).
@@ -199,6 +205,7 @@ impl LauncherApp {
             panels: config.panels,
             applied: Applied::default(),
             focused: true,
+            rate: (std::time::Instant::now(), 0, std::time::Instant::now()),
             overlays_shown: Vec::new(),
             artwork: Vec::new(),
             started: false,
@@ -209,6 +216,7 @@ impl LauncherApp {
             shown: None,
             start_screen: screens::start::StartScreen::default(),
             calls: screens::calls::CallsUi::default(),
+            together: screens::together::TogetherUi::default(),
             links: links::LinkState::default(),
             scan_on_start: config.scan_on_start,
             offline: false,
@@ -263,6 +271,7 @@ impl LauncherApp {
             self.model.on_core(event);
         }
         self.model.toolkit = self.pipeline.toolkit_version();
+        self.model.set_step_seconds(self.pipeline.step_seconds());
         self.model.glibc = self.pipeline.glibc_shortfall();
         self.model.game_toolkits = self.pinned_toolkits();
         self.model.patches_dir = self.pipeline.patches_dir();
@@ -352,7 +361,7 @@ impl LauncherApp {
         let running = self.model.running.clone();
         match running.and_then(|id| self.model.game(&id).cloned()) {
             Some(game) => {
-                let root = self.model.prefs.games_folder.clone();
+                let root = self.model.store_root();
                 self.services
                     .watch_trophies(&game, root.as_deref(), &self.model.prefs);
             }
@@ -365,6 +374,20 @@ impl LauncherApp {
     pub fn finish_frame(&mut self, ctx: &Context) {
         let playing = self.model.running.is_some() || self.model.starting.is_some();
         self.shell.finish_frame(ctx, !playing && self.focused);
+        // How often the launcher draws, to see what an idle one costs (about 30 when idle).
+        let now = std::time::Instant::now();
+        // A gap (unfocused, a game in front, nothing to draw) would drag the average to about 0:
+        // start a fresh window instead of logging across it.
+        if now.duration_since(self.rate.2).as_secs_f32() > 2.0 {
+            self.rate = (now, 0, now);
+        }
+        self.rate.2 = now;
+        self.rate.1 += 1;
+        let seconds = now.duration_since(self.rate.0).as_secs_f32();
+        if seconds >= 10.0 {
+            tracing::info!(target: "idle", "{:.1} frames/s, focused={}", self.rate.1 as f32 / seconds, self.focused);
+            self.rate = (now, 0, now);
+        }
     }
 
     /// Shows the preferences to the shell: language, theme, accent, motion, sounds, music.
@@ -532,6 +555,7 @@ impl LauncherApp {
 
     fn run_effect(&mut self, ctx: &Context, effect: Effect) {
         let root = self.model.prefs.games_folder.clone();
+        let store = self.model.store_root();
         match effect {
             Effect::Sound(cue) => self.shell.play(cue),
             Effect::Pipeline(pipeline::PipelineCommand::Play(id)) => {
@@ -565,13 +589,27 @@ impl LauncherApp {
             | Effect::SyncTrophies
                 if self.offline => {}
             Effect::Rescan => {
-                if let Some(root) = root {
-                    if !self.model.busy() {
-                        self.pipeline.before_scan(&root);
+                if let (Some(root), Some(store)) = (root, store) {
+                    // Half-made copies are swept from the store, wherever it is; while a move
+                    // runs, its own partial copies are not for the sweep.
+                    if !self.model.busy() && self.model.location.job.is_none() {
+                        self.pipeline.before_scan(&store);
                     }
-                    self.services.rescan(&root);
+                    self.services.rescan(&root, &store);
                 }
             }
+            Effect::CheckLocation => {
+                if let Some(root) = root {
+                    self.services
+                        .check_location(&root, self.model.prefs.unlocked_folder.as_deref());
+                }
+            }
+            Effect::StartMove {
+                from,
+                to,
+                running,
+                cancel,
+            } => self.services.start_move(from, to, running, cancel),
             Effect::PickGamesFolder => {
                 let title = self.model.language().text(Key::PickFolder);
                 self.services.pick_folder(title, root.as_deref(), ctx);
@@ -584,18 +622,18 @@ impl LauncherApp {
             Effect::LoadTrophies { game, .. } => {
                 if let Some(game) = self.model.game(&game) {
                     self.services
-                        .load_trophies(game, root.as_deref(), &self.model.prefs);
+                        .load_trophies(game, store.as_deref(), &self.model.prefs);
                 }
             }
             Effect::SyncTrophies => {
-                if let Some(root) = root {
-                    self.services.sync_trophies(&self.model.games, &root);
+                if let Some(store) = store {
+                    self.services.sync_trophies(&self.model.games, &store);
                 }
             }
             Effect::ReloadToolkit => self.pipeline.reload_toolkit(&self.model.prefs),
             Effect::BackUpSaves(id) => {
-                if let (Some(game), Some(root)) = (self.model.game(&id), root) {
-                    self.services.back_up_saves(game, &root, &self.model.paths);
+                if let (Some(game), Some(store)) = (self.model.game(&id), store) {
+                    self.services.back_up_saves(game, &store, &self.model.paths);
                 }
             }
             Effect::Presence(Some(game)) if self.discord => {
@@ -619,7 +657,8 @@ impl LauncherApp {
         command: pipeline::PipelineCommand,
         extra_env: Option<&std::collections::BTreeMap<String, String>>,
     ) {
-        let root = self.model.prefs.games_folder.clone();
+        // The pipeline unlocks into and plays from the store, wherever the player keeps it.
+        let root = self.model.store_root();
         let game = self.model.game(command.game()).cloned();
         self.pipeline.submit(
             command,
@@ -673,6 +712,7 @@ impl LauncherApp {
         self.paint_start(&ctx);
         self.paint_toast(&ctx);
         self.calls.show(&ctx, &mut self.model, &mut self.shell);
+        self.together.show(&ctx, &mut self.model, &mut self.shell);
         let mut cx = OverlayCx {
             model: &mut self.model,
             shell: &mut self.shell,
@@ -869,7 +909,7 @@ pub(crate) fn paint_artwork_layer(
             keep.push(id);
         }
         if alpha > 0.003 && !reduced && !paused {
-            ctx.request_repaint_after(Duration::from_millis(16));
+            ctx.request_repaint_after(crate::ui::background::IDLE_REPAINT);
         }
     }
     *artwork = keep;

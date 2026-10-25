@@ -18,7 +18,9 @@ use crate::ui::i18n::{Key, Language};
 use crate::ui::icons::Icon;
 use crate::ui::input;
 use crate::ui::text;
-use crate::ui::theme::{self, black, color, fade, mix, radius, shadows, size, ty, white};
+use crate::ui::theme::{
+    self, TextStyle, Weight, black, color, fade, mix, radius, shadows, size, ty, white,
+};
 
 // ---------------------------------------------------------------------------------------------
 // Game tile (5.1)
@@ -34,6 +36,12 @@ pub enum TileOverlay {
     Queued,
     /// Overall unlock progress 0..=1.
     Installing(f32),
+    /// The launcher prepares the game on its own: a quiet band at the foot of the tile with the
+    /// progress (`None` until the work starts); the words come from [`paint_preparing_caption`].
+    Preparing {
+        fraction: Option<f32>,
+        paused: bool,
+    },
     Failed,
     Starting,
     Running,
@@ -141,6 +149,31 @@ pub fn paint_tile(painter: &Painter, rect: Rect, style: &TileStyle) {
     }
 }
 
+/// The band at the foot of a tile that is being prepared.
+fn preparing_band(rect: Rect) -> Rect {
+    let height = (rect.width() * 0.26).max(34.0);
+    Rect::from_min_max(pos2(rect.min.x, rect.max.y - height), rect.max)
+}
+
+/// The room a preparing tile's caption has.
+pub fn preparing_caption_width(rect: Rect) -> f32 {
+    rect.width() - 2.0 * (rect.width() * 0.07).max(8.0)
+}
+
+/// The words of a tile that is being prepared ("Preparing... 40%"), inside its band.
+pub fn paint_preparing_caption(painter: &Painter, rect: Rect, caption: &str, alpha: f32) {
+    let band = preparing_band(rect);
+    let pad = (rect.width() * 0.07).max(8.0);
+    text::paint(
+        painter,
+        pos2(band.min.x + pad, band.min.y + 5.0),
+        Align2::LEFT_TOP,
+        ty::STATE_LABEL_SMALL,
+        caption,
+        fade(white(0.92), alpha),
+    );
+}
+
 fn paint_tile_overlay(painter: &Painter, rect: Rect, r: f32, style: &TileStyle, alpha: f32) {
     let side = rect.width();
     let dim = |amount: f32| painter.rect_filled(rect, corner(r), fade(black(amount), alpha));
@@ -186,6 +219,26 @@ fn paint_tile_overlay(painter: &Painter, rect: Rect, r: f32, style: &TileStyle, 
                 vec2(side - 2.0 * pad, h),
             );
             paint_progress(painter, bar, fraction, fade(style.accent, alpha));
+        }
+        TileOverlay::Preparing { fraction, paused } => {
+            let band = preparing_band(rect);
+            let corners = egui::CornerRadius {
+                nw: 0,
+                ne: 0,
+                sw: corner(r).sw,
+                se: corner(r).se,
+            };
+            painter.rect_filled(band, corners, fade(black(0.58), alpha));
+            if let Some(fraction) = fraction {
+                let pad = (side * 0.07).max(8.0);
+                let h = size::tile_progress_height(side);
+                let line = Rect::from_min_size(
+                    pos2(band.min.x + pad, band.max.y - 6.0 - h),
+                    vec2(side - 2.0 * pad, h),
+                );
+                let ink = if paused { white(0.55) } else { style.accent };
+                paint_progress(painter, line, fraction, fade(ink, alpha));
+            }
         }
         TileOverlay::Starting => {
             dim(0.42);
@@ -379,22 +432,36 @@ pub fn paint_row_avatar(painter: &Painter, rect: Rect, avatar: RowAvatar) {
             painter.circle_stroke(rect.center(), r - 0.5, egui::Stroke::new(1.0, black(0.18)));
         }
         None => {
-            painter.circle_filled(rect.center(), r, avatar.colour);
-            if let Some(initial) = avatar.initial {
-                painter.text(
-                    rect.center(),
-                    Align2::CENTER_CENTER,
-                    initial.to_uppercase().to_string(),
-                    ty::BUTTON.font(),
-                    Color32::WHITE,
-                );
-            }
+            paint_monogram(&painter, rect, avatar.colour, avatar.initial);
         }
     }
     if let Some(dot) = avatar.dot {
-        let at = pos2(rect.max.x - 3.0, rect.max.y - 3.0);
-        painter.circle_filled(at, 7.0, black(0.55));
-        painter.circle_filled(at, 4.5, dot);
+        // The dot grows with the picture, but a large one keeps it a mark, not a badge.
+        let k = (rect.width() / ROW_AVATAR).clamp(0.8, 1.6);
+        let at = pos2(rect.max.x - 3.0 * k, rect.max.y - 3.0 * k);
+        painter.circle_filled(at, 7.0 * k, black(0.55));
+        painter.circle_filled(at, 4.5 * k, dot);
+    }
+}
+
+/// The share of an avatar's width that its letter takes as font size (19 dp on the 36 dp row
+/// avatar).
+const MONOGRAM_SHARE: f32 = 0.53;
+
+/// A round avatar without a picture: the first letter on a calm colour. The letter scales with
+/// the circle, so the 36 dp row avatar and the 96 dp profile avatar read alike; its ink is
+/// whichever of white and dark reads better on the colour.
+pub fn paint_monogram(painter: &Painter, rect: Rect, colour: Color32, initial: Option<char>) {
+    painter.circle_filled(rect.center(), rect.width() * 0.5, colour);
+    if let Some(initial) = initial {
+        let style = TextStyle::new(rect.width() * MONOGRAM_SHARE, Weight::SemiBold);
+        painter.text(
+            rect.center(),
+            Align2::CENTER_CENTER,
+            initial.to_uppercase().to_string(),
+            style.font(),
+            crate::ui::theme::readable_ink(colour),
+        );
     }
 }
 

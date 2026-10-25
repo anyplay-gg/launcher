@@ -18,7 +18,7 @@ The shared `rules` workflow comes from `anyplaynet/.github@main`, which is the o
 
 ## What the share worker brings in
 
-The share worker (also the recorder of Clips) is built from the network repository at the commit in `network.ref`. Its notable dependencies and their licences: `windows` and `windows-capture` (Windows capture, Media Foundation; MIT or Apache-2.0 and MIT), `minifb` (the viewer's window; MIT or Apache-2.0) and `mp4` 0.14 (writes the clips' MP4 files; MIT, pure Rust, 15 million downloads, last release 2023). MIT is compatible with this repository's GPL-2.0-only; Apache-2.0 alone would not be, which is why the MP4 writer is `mp4` and not `shiguredo_mp4`. The network repository's `cargo deny` run holds the policy; this repository's `deny.toml` and the SBOM of the share worker cover what the launcher ships.
+The share worker (also the recorder of Clips) is built from the network repository at the commit in `network.ref`. Its notable dependencies and their licences: `windows` and `windows-capture` (Windows capture, Media Foundation; MIT or Apache-2.0 and MIT), `minifb` (the viewer's window; MIT or Apache-2.0) and `mp4` 0.14 (writes the clips' MP4 files; MIT, pure Rust, 15 million downloads, last release 2023). On Linux: `ashpd` (the desktop portal's window picker; MIT), `pipewire` (the window's pictures; MIT; it links the system's `libpipewire-0.3`) and `openh264` with `openh264-sys2` (BSD-2-Clause), which load Cisco's OpenH264 binary at run time and only a build whose SHA-256 they know. No OpenH264 code is built into the worker or the launcher: Cisco's binary is downloaded from Cisco to the player's PC when the player turns the codec on in Settings, checked by the SHA-256 of the archive and of the library (`anyps5-core/src/openh264.rs`, `bzip2` to unpack it), and removed when they turn it off. Cisco's licence for that binary is added to `THIRD-PARTY-LICENSES.txt`. MIT is compatible with this repository's GPL-2.0-only; Apache-2.0 alone would not be, which is why the MP4 writer is `mp4` and not `shiguredo_mp4`. The network repository's `cargo deny` run holds the policy; this repository's `deny.toml` and the SBOM of the share worker cover what the launcher ships.
 
 ## How updates arrive
 
@@ -31,7 +31,7 @@ The launcher and the net service are built from `Cargo.toml` files that name `..
 Next to the binaries, installer, `THIRD-PARTY-LICENSES.txt` and the signed manifest, every release has:
 
 - `SHA256SUMS.txt`, which now also covers the files below;
-- five SBOMs in CycloneDX 1.5: `AnyPlay-Launcher-<v>-windows-x86_64.sbom.cdx.json` and `...-linux-x86_64.sbom.cdx.json` for the launcher, and `...net-service.sbom.cdx.json` for the same platforms for the net service inside it, and `...windows-x86_64.share-worker.sbom.cdx.json` for the share worker inside the Windows launcher. They list the crates that go into the binary, not the build tools, and are made from the `Cargo.lock` files the build used;
+- six SBOMs in CycloneDX 1.5: `AnyPlay-Launcher-<v>-windows-x86_64.sbom.cdx.json` and `...-linux-x86_64.sbom.cdx.json` for the launcher, and `...net-service.sbom.cdx.json` and `...share-worker.sbom.cdx.json` for the same platforms for the net service and the share worker inside it. They list the crates that go into the binary, not the build tools, and are made from the `Cargo.lock` files the build used;
 - `AnyPlay-Launcher-<v>-BUILD-INFO.txt`: the launcher commit, the network commit and the workflow run;
 - an attestation for every one of these files (see below).
 

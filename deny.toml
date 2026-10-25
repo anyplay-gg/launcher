@@ -52,6 +52,9 @@ allow = [
     "GPL-2.0-or-later",
     "LGPL-2.1-or-later",
     "Unlicense",
+    # bzip2 and libbzip2 licence 1.0.6, a BSD-style permissive licence: the pure Rust libbz2 that
+    # unpacks Cisco's OpenH264 archive (crates/anyps5-core/src/openh264.rs).
+    "bzip2-1.0.6",
 ]
 
 # Offered under Apache-2.0 only, which the FSF does not count as compatible with GPL-2.0. They come

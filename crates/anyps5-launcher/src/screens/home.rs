@@ -11,13 +11,13 @@ use egui::{
 };
 
 use crate::app::model::{GameState, Model, SizeState};
-use crate::screens::failure_strings::FailureText;
 use crate::screens::glibc_strings::shortfall_text;
 use crate::screens::online_social_strings::SocialText;
 use crate::screens::online_strings::OnlineText;
 use crate::screens::phone_strings::PhoneText;
 use crate::screens::run_strings::{RunText, friends_line};
 use crate::screens::strings::{Extra, playtime_text};
+use crate::screens::together_strings::TogetherText;
 use crate::screens::toolkit_pin;
 use crate::screens::update_strings::UpdateText;
 use crate::screens::{
@@ -31,10 +31,11 @@ use crate::ui::components::{
     Variant, hint_bar, hint_bar_size,
 };
 use crate::ui::focus::HomeFocus;
-use crate::ui::i18n::{Arg, Key, Language, byte_text};
+use crate::ui::i18n::{Arg, Key, Language, byte_text, substitute};
 use crate::ui::icons::Icon;
 use crate::ui::input;
 use crate::ui::intro;
+use crate::ui::pad_info;
 use crate::ui::text;
 use crate::ui::theme::{self, Weight, color, pad, size, ty, white};
 
@@ -251,6 +252,23 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
     if response.clicked() {
         presses.push(Press::Focus(HomeFocus::LIBRARY));
     }
+    // A connected controller sits after the phone (or the title), the same way: it only reports,
+    // and it is left out when the strip has no room for it.
+    if pad_info::connected() {
+        let left = if cx.model.phone.connected.is_some() {
+            after_title + size::CONTROL_GAP
+        } else {
+            title.max.x + PHONE_STATUS_GAP
+        };
+        if let Some(right) = pad_status(
+            ui,
+            pos2(left, mid),
+            row.min_rect().min.x - group_gap,
+            language,
+        ) {
+            after_title = right;
+        }
+    }
     // A launcher update that waits sits after the title (and the phone), in the room the strip
     // leaves. It is drawn, and reachable by the pad, only when it fits there.
     update_notice(
@@ -465,6 +483,91 @@ fn phone_status(ui: &mut Ui, left_middle: egui::Pos2, name: &str, language: Lang
     );
     rect.max.x
 }
+
+/// The status of the connected controller: its icon and, where the pad reports one, its battery.
+/// Same surface and height as [`phone_status`]; not a button.
+fn pad_status(
+    ui: &mut Ui,
+    left_middle: egui::Pos2,
+    limit_x: f32,
+    language: Language,
+) -> Option<f32> {
+    let painter = ui.painter().clone();
+    let battery = pad_info::battery();
+    let (shown, label) = match battery {
+        pad_info::Battery::Level { percent, charging } => {
+            let args = [Arg::Int(i64::from(percent))];
+            let extra = if charging {
+                Extra::PadStatusCharging
+            } else {
+                Extra::PadStatusBattery
+            };
+            (
+                Some(format!("{percent}%")),
+                substitute(extra.text(language), &args),
+            )
+        }
+        pad_info::Battery::Unknown => (None, Extra::PadStatus.text(language).to_owned()),
+    };
+    let glyph = 18.0;
+    let charging = matches!(battery, pad_info::Battery::Level { charging: true, .. });
+    // A small bolt after the percent says "charging" to the eye; the label says it to the ear.
+    let bolt = if charging { 6.0 + BOLT_WIDTH } else { 0.0 };
+    let text_width = shown
+        .as_deref()
+        .map_or(0.0, |s| 8.0 + text::width(&painter, ty::CHIP, s) + bolt);
+    let width = 12.0 + glyph + text_width + 14.0;
+    if left_middle.x + width > limit_x {
+        return None;
+    }
+    let rect = Rect::from_min_size(
+        pos2(left_middle.x, left_middle.y - PHONE_STATUS_HEIGHT * 0.5),
+        vec2(width, PHONE_STATUS_HEIGHT),
+    );
+    let response = ui.allocate_rect(rect, Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &label));
+    if !ui.is_rect_visible(rect) {
+        return Some(rect.max.x);
+    }
+    components::paint_capsule(&painter, rect, color::surface());
+    let ink = white(0.92);
+    painter.text(
+        pos2(rect.min.x + 12.0 + glyph * 0.5, rect.center().y),
+        Align2::CENTER_CENTER,
+        Icon::GAME_CONTROLLER.glyph(),
+        Icon::GAME_CONTROLLER.font(text::quantize_size(glyph), false),
+        ink,
+    );
+    if let Some(shown) = shown {
+        let text_rect = text::paint(
+            &painter,
+            pos2(rect.min.x + 12.0 + glyph + 8.0, rect.center().y),
+            Align2::LEFT_CENTER,
+            ty::CHIP,
+            &shown,
+            ink,
+        );
+        if charging {
+            let c = pos2(text_rect.max.x + 6.0 + BOLT_WIDTH * 0.5, rect.center().y);
+            let (w, h) = (BOLT_WIDTH * 0.5, 6.5);
+            painter.add(egui::Shape::closed_line(
+                vec![
+                    c + vec2(w * 0.3, -h),
+                    c + vec2(-w, h * 0.15),
+                    c + vec2(-w * 0.05, h * 0.15),
+                    c + vec2(-w * 0.3, h),
+                    c + vec2(w, -h * 0.15),
+                    c + vec2(w * 0.05, -h * 0.15),
+                ],
+                egui::Stroke::new(1.5, ink),
+            ));
+        }
+    }
+    Some(rect.max.x)
+}
+
+/// Width of the charging bolt in the controller status.
+const BOLT_WIDTH: f32 = 8.0;
 
 /// What the profile button shows.
 struct Profile<'a> {
@@ -731,14 +834,18 @@ const BADGE_HEIGHT: f32 = 20.0;
 // ---------------------------------------------------------------------------------------------
 
 /// The overlay a tile shows for a state (DESIGN.md 5.1).
-pub fn tile_overlay(state: &GameState) -> TileOverlay {
+pub fn tile_overlay(state: &GameState, weights: &crate::app::pipeline::StepWeights) -> TileOverlay {
     match state {
         GameState::Locked => TileOverlay::Locked,
         GameState::Unreadable => TileOverlay::Unreadable,
         GameState::Queued => TileOverlay::Queued,
         GameState::Installing { step, fraction } => {
-            TileOverlay::Installing(step.overall(*fraction))
+            TileOverlay::Installing(weights.overall(*step, *fraction))
         }
+        GameState::Preparing { progress, paused } => TileOverlay::Preparing {
+            fraction: progress.map(|(step, fraction)| weights.overall(step, fraction)),
+            paused: *paused,
+        },
         GameState::Failed(_) => TileOverlay::Failed,
         GameState::Installed { .. } => TileOverlay::None,
         GameState::Starting => TileOverlay::Starting,
@@ -759,7 +866,7 @@ pub fn icon_resolution(ctx: &Context, side: f32) -> u32 {
 pub fn tile_style(cx: &mut ScreenCx<'_>, game: &Game, side: f32, accent: Color32) -> TileStyle {
     let mut style = TileStyle::new(accent);
     style.time = cx.ctx.clock();
-    style.overlay = tile_overlay(&cx.model.state_of(game));
+    style.overlay = tile_overlay(&cx.model.state_of(game), &cx.model.prep.weights);
     if let Some(icon) = &game.icon {
         let max = icon_resolution(cx.ctx, side);
         style.image = cx.textures.get(icon, max).map(|l| TileImage {
@@ -837,6 +944,17 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
             && ctx.pointer_hover_pos().is_some_and(|p| rect.contains(p));
         style.hover = ctx.animate_to(key("tile-hover"), f32::from(under_pointer), Motion::Hover);
         chrome::paint_tile(&painter, rect, &style);
+        if let TileOverlay::Preparing { fraction, paused } = style.overlay {
+            let percent = fraction.map(|f| (f * 100.0) as u32);
+            let caption = crate::screens::prepare_strings::tile_label(percent, paused, language);
+            let caption = text::middle_truncate(
+                &painter,
+                ty::STATE_LABEL_SMALL,
+                &caption,
+                chrome::preparing_caption_width(rect),
+            );
+            chrome::paint_preparing_caption(&painter, rect, &caption, style.opacity);
+        }
 
         if interactive && opacity > 0.5 {
             let state = cx.model.state_of(&game);
@@ -1028,7 +1146,10 @@ fn paint_hero(
     let has_trophies = cx.model.trophies.get(&game.id);
     let trophy_text =
         has_trophies.map(|set| format!("{}/{}", set.unlocked_count(), set.trophies.len()));
-    let settings_index = if trophy_text.is_some() { 2 } else { 1 };
+    // Play, then Play Together when the game can be played together, then trophies, then "...".
+    let together = crate::app::together::hostable(cx.model).is_some();
+    let trophies_index = 1 + usize::from(together);
+    let settings_index = trophies_index + usize::from(trophy_text.is_some());
     let (primary_title, primary_icon, primary_fill) = primary_look(&state, language);
     let mut pressed = None;
     let after_buttons = place(ui, row, |ui| {
@@ -1044,16 +1165,25 @@ fn paint_hero(
         if primary.clicked() {
             pressed = Some(HomeFocus::Actions(0));
         }
+        if together {
+            let response = ConsoleButton::new(TogetherText::PlayTogether.text(language))
+                .icon(Icon::USERS)
+                .focused(focused(1))
+                .show(ui);
+            if response.clicked() {
+                pressed = Some(HomeFocus::Actions(1));
+            }
+        }
         if let Some(text) = &trophy_text {
             let response = ConsoleButton::new(text)
                 .accessible_name(format!("{}, {}", language.text(Key::Trophies), text))
                 .icon(Icon::TROPHY)
                 .icon_fill(true)
                 .tabular(true)
-                .focused(focused(1))
+                .focused(focused(trophies_index))
                 .show(ui);
             if response.clicked() {
-                pressed = Some(HomeFocus::Actions(1));
+                pressed = Some(HomeFocus::Actions(trophies_index));
             }
         }
         let more = ConsoleButton::icon_only(Icon::DOTS_THREE, language.text(Key::Options))
@@ -1244,6 +1374,7 @@ fn ask_line(
 fn primary_look(state: &GameState, language: Language) -> (&'static str, Icon, bool) {
     match state {
         GameState::Installed { .. } => (language.text(Key::Play), Icon::PLAY, true),
+        GameState::Preparing { .. } => (language.text(Key::Play), Icon::PLAY, true),
         GameState::Locked | GameState::Unreadable => {
             (language.text(Key::Unlock), Icon::LOCK_OPEN, true)
         }
@@ -1269,12 +1400,19 @@ fn action_row_status(
     let accent = cx.accent();
     let painter = ui.painter().clone();
     let mid = top + ACTION_ROW * 0.5;
+    let running = match state {
+        GameState::Installing { step, fraction } => Some((*step, *fraction, false)),
+        GameState::Preparing { progress, paused } => progress.map(|(s, f)| (s, f, *paused)),
+        _ => None,
+    };
     match state {
-        GameState::Installing { step, fraction } => {
+        _ if running.is_some() => {
+            let (step, fraction, paused) = running.expect("checked");
+            let (step, fraction) = (&step, &fraction);
             // The state line above the title already names the step: the bar and its percentage
             // sit on the buttons' centre line.
             let left = x + 16.0;
-            let overall = step.overall(*fraction);
+            let overall = cx.model.overall(*step, *fraction);
             let block = size::HERO_PROGRESS_WIDTH;
             let percent = format!("{}%", (overall * 100.0) as u32);
             text::paint_tabular(
@@ -1287,6 +1425,39 @@ fn action_row_status(
                 &percent,
                 white(0.85),
             );
+            // The time left, from the measured speed; nothing until there is enough to tell.
+            let note = if paused {
+                Some(crate::screens::prepare_strings::paused_note(language).to_owned())
+            } else {
+                cx.model
+                    .time_left(&game.id)
+                    .map(|s| crate::screens::prepare_strings::time_left(s, language))
+            };
+            let spoken = format!(
+                "{} {percent}{}",
+                language.text(step.title_key()),
+                note.as_deref()
+                    .map(|n| format!(", {n}"))
+                    .unwrap_or_default()
+            );
+            let status =
+                Rect::from_min_size(pos2(left, mid - 12.0), vec2(block + 14.0 + 48.0, 24.0));
+            ui.allocate_rect(status, Sense::hover())
+                .widget_info(|| WidgetInfo::labeled(Role::Label, true, spoken.as_str()));
+            if let Some(note) = note {
+                let w = text::tabular_width(&painter, ty::PROGRESS_PERCENT, &percent);
+                text::paint(
+                    &painter,
+                    pos2(
+                        left + block + 14.0 + w + 14.0,
+                        mid - ty::DETAIL_LARGE.line_height() * 0.5,
+                    ),
+                    egui::Align2::LEFT_TOP,
+                    ty::DETAIL_LARGE,
+                    &note,
+                    color::text_subtitle(),
+                );
+            }
             let bar = Rect::from_min_size(
                 pos2(left, mid - size::PROGRESS_HEIGHT * 0.5),
                 vec2(block, size::PROGRESS_HEIGHT),
@@ -1295,19 +1466,35 @@ fn action_row_status(
                 if *step == crate::app::pipeline::UnlockStep::Relink && *fraction == 0.0 {
                     IndeterminateLine::new(accent).width(block).show(ui);
                 } else {
-                    ProgressLine::new(overall, accent)
+                    ProgressLine::new(overall, if paused { white(0.55) } else { accent })
                         .width(block)
                         .label(language.text(step.title_key()))
                         .show(ui);
                 }
             });
         }
+        GameState::Preparing {
+            progress: None,
+            paused,
+        } => {
+            let note = crate::screens::prepare_strings::hero_note(*paused, language);
+            let galley = wrapped(
+                &painter,
+                ty::DETAIL_LARGE,
+                note,
+                color::text_subtitle(),
+                MESSAGE_WIDTH,
+                2,
+            );
+            let top = mid - galley.size().y * 0.5;
+            painter.galley(pos2(x + 16.0, top), galley, color::text_subtitle());
+        }
         GameState::Failed(message) => {
             // What happened and what to do, in words; the technical message stays under it, quiet.
             let headline = wrapped(
                 &painter,
                 ty::ROW_TITLE,
-                FailureText::UnlockStopped.text(language),
+                crate::screens::prepare_strings::failure_headline(language),
                 color::error_text(),
                 MESSAGE_WIDTH,
                 2,
@@ -1318,7 +1505,7 @@ fn action_row_status(
                 message,
                 color::text_subtitle(),
                 MESSAGE_WIDTH,
-                1,
+                2,
             );
             let gap = 4.0;
             let top = mid - (headline.size().y + gap + detail.size().y) * 0.5;
@@ -1328,7 +1515,10 @@ fn action_row_status(
                 pos2(x + 16.0, top),
                 vec2(MESSAGE_WIDTH, detail_top + detail.size().y - top),
             );
-            let name = format!("{} {message}", FailureText::UnlockStopped.text(language));
+            let name = format!(
+                "{} {message}",
+                crate::screens::prepare_strings::failure_headline(language)
+            );
             ui.allocate_rect(total, Sense::hover())
                 .widget_info(|| WidgetInfo::labeled(Role::Label, true, name.as_str()));
             painter.galley(pos2(x + 16.0, detail_top), detail, color::text_subtitle());

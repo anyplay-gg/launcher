@@ -4,9 +4,11 @@
 //! ```text
 //! anyplay-launcher --gallery=settings|settings1..6|game-settings|confirm|controls|controls-capture|
 //!                           controls-end|advanced|trophies|trophies-hidden|trophies-revealed|banner|start|unlocking|log|report|library|
-//!                           about-update|behavior-links|behavior-clips-off|behavior-clips|behavior-clips-key|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|
+//!                           about-update|behavior-links|settings-codec|settings-codec-off|settings-location|settings-location-custom|settings-location-network|settings-location-missing|settings-location-moving|settings-location-left|behavior-clips-off|behavior-clips|behavior-clips-key|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|toolkit-engine|toolkit-engine-update|
 //!                           toolkit-unused|game-toolkit|
 //!                           recommended|recommended-warning|whats-new|whats-new-loading|
+//!                           update-required|update-required-downloading|update-required-failed|
+//!                           update-required-download|update-required-offline|
 //!                           saves|saves-empty|restore|
 //!                           online|online-browser|online-friends|online-friends-busy|
 //!                           online-friends-empty|online-requests|online-friend|
@@ -112,8 +114,14 @@ pub enum ScreenPage {
     AboutUpdate(UpdateLook),
     /// The notes of a launcher update, in the "What's New" panel.
     WhatsNewLauncher,
+    /// "Update required" in one of its states.
+    Required(RequiredLook),
     /// Behavior with the AnyPlay links registered to this launcher.
     BehaviourLinks,
+    /// Advanced on Linux with share screen on: the OpenH264 row turned on (and downloaded), or off.
+    SettingsCodec(bool),
+    /// Settings > Library with the unlocked games location in one state.
+    UnlockedLocation(LocationLook),
     /// Behavior with Clips off, on at 30 seconds, and waiting for the clip key.
     BehaviourClipsOff,
     BehaviourClips,
@@ -135,6 +143,8 @@ pub enum ScreenPage {
     Profile(ProfileLook),
     /// The trophy comparison with an invented friend, in one of its states.
     Compare(CompareLook),
+    /// The Play Together card over the home screen of a game that can be played together.
+    Together(crate::screens::gallery_together::TogetherLook),
 }
 
 /// The trophy comparison's states (docs/DESIGN.md 17, "Trophy compare").
@@ -332,6 +342,14 @@ pub enum OnlineLook {
     InCallOpen,
     /// Waiting for a friend to answer.
     Calling,
+    /// The friends list with friends playing together and one without a session.
+    TogetherFriends,
+    /// A friend's page with a joinable Play Together session.
+    TogetherFriend,
+    /// The party page with its Play Together row.
+    TogetherParty,
+    /// A friend who plays the game with no session: why there is nothing to join.
+    TogetherNoSession,
     /// The friends list with a missed call.
     MissedCall,
     /// The party page while the voice is on Discord, for the leader.
@@ -340,6 +358,38 @@ pub enum OnlineLook {
 
 /// What a launcher release's notes look like (the shape of the GitHub release body).
 const LAUNCHER_SAMPLE_NOTES: &str = "## AnyPlay Launcher 0.1.4\n\n### Your Profile\n\n- Your profile button now opens a full-screen profile: your games, hours and trophies.\n- **Edit Profile** opens your account on the web.\n\n### Look and Feel\n\n- Focus is a ring around buttons, rows and cards instead of a white fill.\n- Every control reacts when the mouse is over it.\n\n### Calls\n\n- A call uses Voice Activity while it lasts, so you no longer hold a key to talk.\n";
+
+/// What "Update required" shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RequiredLook {
+    /// The update is downloaded: Update Now has the focus.
+    Ready,
+    /// The download runs: Update Now waits, Play Offline has the focus.
+    Downloading,
+    /// GitHub could not be reached: Try Again.
+    Failed,
+    /// This launcher cannot install itself: Download from GitHub.
+    Download,
+    /// The player asked for the online area and was turned back: the reason says so, and the
+    /// focus is on Play Offline.
+    OnlineClosed,
+}
+
+impl RequiredLook {
+    fn state(self) -> LauncherUpdate {
+        use crate::screens::settings::UpdateFailure;
+        let version = "0.3.0".to_owned();
+        match self {
+            RequiredLook::Ready | RequiredLook::OnlineClosed => LauncherUpdate::Ready(version),
+            RequiredLook::Downloading => LauncherUpdate::Downloading {
+                version,
+                permille: 420,
+            },
+            RequiredLook::Failed => LauncherUpdate::Failed(UpdateFailure::Offline),
+            RequiredLook::Download => LauncherUpdate::Manual(version),
+        }
+    }
+}
 
 /// Where the launcher's own update stands on the About page.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -384,6 +434,10 @@ pub enum ToolkitLook {
     Newer,
     Pinned,
     Local,
+    /// The AnyPlay engine channel with a build installed: its build day hangs under the header.
+    Engine,
+    /// The engine channel with a newer nightly build waiting.
+    EngineUpdate,
     /// Two installed releases nothing uses: the page offers to remove them.
     Unused,
     /// The system's glibc is older than the libraries ask for (Linux): the note hangs under the header.
@@ -476,7 +530,20 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "about-update-offline" => ScreenPage::AboutUpdate(UpdateLook::Offline),
         "about-update-refused" => ScreenPage::AboutUpdate(UpdateLook::Refused),
         "whats-new-launcher" => ScreenPage::WhatsNewLauncher,
+        "update-required" => ScreenPage::Required(RequiredLook::Ready),
+        "update-required-downloading" => ScreenPage::Required(RequiredLook::Downloading),
+        "update-required-failed" => ScreenPage::Required(RequiredLook::Failed),
+        "update-required-download" => ScreenPage::Required(RequiredLook::Download),
+        "update-required-offline" => ScreenPage::Required(RequiredLook::OnlineClosed),
         "behavior-links" => ScreenPage::BehaviourLinks,
+        "settings-codec" => ScreenPage::SettingsCodec(true),
+        "settings-codec-off" => ScreenPage::SettingsCodec(false),
+        "settings-location" => ScreenPage::UnlockedLocation(LocationLook::Default),
+        "settings-location-custom" => ScreenPage::UnlockedLocation(LocationLook::Custom),
+        "settings-location-network" => ScreenPage::UnlockedLocation(LocationLook::Network),
+        "settings-location-missing" => ScreenPage::UnlockedLocation(LocationLook::Missing),
+        "settings-location-moving" => ScreenPage::UnlockedLocation(LocationLook::Moving),
+        "settings-location-left" => ScreenPage::UnlockedLocation(LocationLook::Left),
         "behavior-clips-off" => ScreenPage::BehaviourClipsOff,
         "behavior-clips" => ScreenPage::BehaviourClips,
         "behavior-clips-key" => ScreenPage::BehaviourClipsKey,
@@ -492,6 +559,8 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "toolkit-newer" => ScreenPage::Toolkit(ToolkitLook::Newer),
         "toolkit-pinned" => ScreenPage::Toolkit(ToolkitLook::Pinned),
         "toolkit-local" => ScreenPage::Toolkit(ToolkitLook::Local),
+        "toolkit-engine" => ScreenPage::Toolkit(ToolkitLook::Engine),
+        "toolkit-engine-update" => ScreenPage::Toolkit(ToolkitLook::EngineUpdate),
         "toolkit-unused" => ScreenPage::Toolkit(ToolkitLook::Unused),
         "toolkit-glibc" => ScreenPage::Toolkit(ToolkitLook::Glibc),
         "recommended" => ScreenPage::Recommended,
@@ -582,6 +651,13 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "calling" => ScreenPage::Online(OnlineLook::Calling),
         "missed-call" => ScreenPage::Online(OnlineLook::MissedCall),
         "party-discord" => ScreenPage::Online(OnlineLook::PartyDiscord),
+        "together-friends" => ScreenPage::Online(OnlineLook::TogetherFriends),
+        "together-friend" => ScreenPage::Online(OnlineLook::TogetherFriend),
+        "together-party" => ScreenPage::Online(OnlineLook::TogetherParty),
+        "together-friend-nosession" => ScreenPage::Online(OnlineLook::TogetherNoSession),
+        other if crate::screens::gallery_together::parse(other).is_some() => {
+            ScreenPage::Together(crate::screens::gallery_together::parse(other)?)
+        }
         other => {
             let n: usize = other.strip_prefix("settings")?.parse().ok()?;
             (n < crate::screens::settings::Category::ALL.len())
@@ -594,11 +670,12 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
 const SAMPLE_NOW: i64 = 1_792_670_400;
 
 /// What the online panel shows over the invented online state: AnyPlay's own cloud.
-fn online_data(
-    online: &anyps5_core::online::Online,
+fn online_data<'a>(
+    online: &'a anyps5_core::online::Online,
+    play_together: Option<&'a str>,
     language: crate::ui::i18n::Language,
     accent: Color32,
-) -> crate::screens::online::OnlineData<'_> {
+) -> crate::screens::online::OnlineData<'a> {
     crate::screens::online::OnlineData {
         online,
         cloud: Some("https://cloud.example.org"),
@@ -610,6 +687,7 @@ fn online_data(
         now: SAMPLE_NOW,
         utc_offset: Some(0),
         game_running: false,
+        play_together,
     }
 }
 
@@ -633,11 +711,11 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
             title: title.into(),
             version: "01.000".into(),
             session: joinable.then(|| SessionRef {
+                kind: Default::default(),
                 id: "s1".into(),
                 joinable: true,
                 members: 2,
                 max_members: 4,
-                kind: Default::default(),
             }),
         })
     };
@@ -700,6 +778,7 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         blocked: vec![account(8, "Spamford")],
     };
     state.invitations = vec![Invitation {
+        kind: Default::default(),
         id: "i1".into(),
         from: account(3, "Juno"),
         session: "s2".into(),
@@ -707,7 +786,6 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         title: NAMES[4].into(),
         version: "01.000".into(),
         expires: 0,
-        kind: Default::default(),
     }];
     let count = |platinum, gold, silver, bronze| Count {
         bronze,
@@ -759,6 +837,16 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
     sample_voice(&mut state, look);
     sample_screen(&mut state, look);
     sample_calls(&mut state, look);
+    if matches!(
+        look,
+        OnlineLook::TogetherFriends
+            | OnlineLook::TogetherFriend
+            | OnlineLook::TogetherParty
+            | OnlineLook::TogetherNoSession
+    ) {
+        crate::screens::gallery_together::sample(&mut state);
+        state.session = None;
+    }
     if matches!(
         look,
         OnlineLook::Muted | OnlineLook::Restriction | OnlineLook::Paused
@@ -1067,6 +1155,7 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
         call: false,
     });
     state.session = Some(Session {
+        kind: Default::default(),
         id: "s1".into(),
         title_id: "TEST00001".into(),
         title: NAMES[1].into(),
@@ -1081,7 +1170,6 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
             link: None,
         }],
         created: 0,
-        kind: Default::default(),
     });
     let chat = |id: &str, kind, with: &[(u64, &str)], last: u64, read: u64, updated: u64| {
         let mut members = vec![account(1, "Mira")];
@@ -1580,6 +1668,7 @@ pub struct ScreenGallery {
     compare: crate::screens::compare::CompareScreen,
     recommended: RecommendedPanel,
     whats_new: WhatsNewPanel,
+    required: crate::screens::required::RequiredScreen,
     notes: Published,
     /// The notes of a launcher update.
     launcher_notes: Published,
@@ -1633,6 +1722,13 @@ impl ScreenGallery {
                     prefs.toolkit = Some("D:\\anyps5\\build".into());
                     toolkit_version = "local-4f2a9c1d7e03".into();
                 }
+                ToolkitLook::Engine | ToolkitLook::EngineUpdate => {
+                    prefs.toolkit_engine = true;
+                    toolkit_version = "anyplay-30d0fe9".into();
+                    if look == ToolkitLook::EngineUpdate {
+                        update = UpdateState::Available("anyplay-a1b2c3d".into());
+                    }
+                }
                 ToolkitLook::Unused | ToolkitLook::Glibc => {}
             }
         }
@@ -1650,6 +1746,7 @@ impl ScreenGallery {
         Self {
             recommended: RecommendedPanel::default(),
             whats_new: WhatsNewPanel::default(),
+            required: crate::screens::required::RequiredScreen::default(),
             notes: Published {
                 tag: "0.1.3".into(),
                 date: "2026-10-20".into(),
@@ -1705,6 +1802,11 @@ impl ScreenGallery {
             home: None,
             opened: false,
         }
+    }
+
+    /// The name for the party's Play Together row: only the look that shows it.
+    fn together_name(&self) -> Option<&'static str> {
+        (self.page == ScreenPage::Online(OnlineLook::TogetherParty)).then_some(NAMES[1])
     }
 
     /// The ringing card and the call strip of the call looks.
@@ -1889,6 +1991,7 @@ impl ScreenGallery {
             let scene = match page {
                 ScreenPage::Unlocking => Scene::HomeUnlocking,
                 ScreenPage::Online(_) | ScreenPage::Profile(_) => Scene::HomeFriends,
+                ScreenPage::Together(_) => Scene::HomeTogether,
                 _ => Scene::Home,
             };
             // The real home, as the launcher paints it; its focus stays hidden under a panel.
@@ -1946,6 +2049,7 @@ impl ScreenGallery {
             games_found: self.games.len(),
             app_version: "0.1.0",
             toolkit_version: Some(&self.toolkit_version),
+            engine_built: self.prefs.toolkit_engine.then_some("2026-10-25"),
             glibc: matches!(self.page, ScreenPage::Toolkit(ToolkitLook::Glibc)).then_some(
                 anyps5_core::glibc::Shortfall {
                     needed: anyps5_core::glibc::Version::new(2, 38),
@@ -1970,9 +2074,28 @@ impl ScreenGallery {
             },
             cjk_fonts: anyps5_core::fonts::CjkState::Missing,
             phone: &self.phone,
+            openh264: matches!(self.page, ScreenPage::SettingsCodec(_)).then(|| {
+                crate::screens::settings::Openh264Env {
+                    state: anyps5_core::openh264::CodecState::Ready,
+                    worker: Some(("ready".into(), None)),
+                }
+            }),
             clips: crate::screens::settings::ClipsEnv {
                 count: if self.prefs.clips_seconds > 0 { 3 } else { 0 },
                 capturing: matches!(self.page, ScreenPage::BehaviourClipsKey),
+            },
+            location: match self.page {
+                ScreenPage::UnlockedLocation(look) => look.env(),
+                _ => crate::screens::settings::LocationEnv {
+                    report: Some(anyps5_core::location::Report {
+                        root: "D:\\Games\\PS5".into(),
+                        custom: false,
+                        availability: anyps5_core::location::Availability::Ready,
+                        free: Some(312_400_000_000),
+                        network: false,
+                    }),
+                    ..Default::default()
+                },
             },
         };
         let icon = Some(self.tile(1));
@@ -2024,7 +2147,7 @@ impl ScreenGallery {
                 .show(shell, &ctx, &events, &stamp, language, accent);
         }
         {
-            let data = online_data(&self.online, language, accent);
+            let data = online_data(&self.online, self.together_name(), language, accent);
             if self.friends.wants_local() {
                 self.friends.set_local(crate::screens::gallery_feed::local(
                     &self.covers,
@@ -2036,6 +2159,9 @@ impl ScreenGallery {
         }
         if let ScreenPage::Online(look) = self.page {
             self.call_surfaces(&ctx, look, accent, language);
+        }
+        if let ScreenPage::Together(look) = self.page {
+            crate::screens::gallery_together::paint(&ctx, accent, look, language);
         }
         {
             let plan = sample_plan(matches!(self.page, ScreenPage::RecommendedWarning));
@@ -2063,6 +2189,22 @@ impl ScreenGallery {
                 launcher,
             };
             self.whats_new.show(shell, &ctx, &events, &data);
+        }
+        if let ScreenPage::Required(look) = self.page {
+            use crate::screens::required::{Reason, RequiredData};
+            let notes = crate::screens::required::note_lines(&self.launcher_notes.notes);
+            let update = look.state();
+            let data = RequiredData {
+                language,
+                update: &update,
+                reason: if look == RequiredLook::OnlineClosed {
+                    Reason::OnlineClosed
+                } else {
+                    Reason::Retired
+                },
+                notes: &notes,
+            };
+            self.required.show(shell, &ctx, &events, &data);
         }
         {
             let mut data = ControlsData {
@@ -2161,7 +2303,12 @@ impl ScreenGallery {
             ScreenPage::Online(look) => {
                 use crate::screens::online::Page;
                 let language = shell.language;
-                let data = online_data(&self.online, language, shell.accent_color());
+                let data = online_data(
+                    &self.online,
+                    self.together_name(),
+                    language,
+                    shell.accent_color(),
+                );
                 // The call looks show the ringing card or the strip over the bare home screen.
                 if matches!(
                     look,
@@ -2190,7 +2337,16 @@ impl ScreenGallery {
                     OnlineLook::Account | OnlineLook::AccountAppearing => {
                         self.friends.show_page(Page::Account, &data);
                     }
-                    OnlineLook::Party => self.friends.show_page(Page::Party, &data),
+                    OnlineLook::Party | OnlineLook::TogetherParty => {
+                        self.friends.show_page(Page::Party, &data);
+                    }
+                    OnlineLook::TogetherFriend => self
+                        .friends
+                        .show_page(Page::Friend(anyps5_core::online::api::AccountId(2)), &data),
+                    OnlineLook::TogetherNoSession => self
+                        .friends
+                        .show_page(Page::Friend(anyps5_core::online::api::AccountId(3)), &data),
+                    OnlineLook::TogetherFriends => self.friends.show_page(Page::Home, &data),
                     OnlineLook::PartyPicker => {
                         self.friends.show_page(Page::PartyPicker, &data);
                     }
@@ -2340,6 +2496,20 @@ impl ScreenGallery {
                     .open_launcher(&self.launcher_notes.notes, shell.language);
             }
             ScreenPage::BehaviourLinks => self.settings.open_at(3, true),
+            ScreenPage::SettingsCodec(on) => {
+                self.prefs.online_openh264 = on;
+                self.settings.open_at(6, true);
+            }
+            ScreenPage::UnlockedLocation(look) => {
+                if look != LocationLook::Default {
+                    self.prefs.unlocked_folder = Some(look.folder().into());
+                }
+                if look == LocationLook::Left {
+                    self.prefs.unlocked_moving_from = Some("D:\\Games\\PS5".into());
+                }
+                self.settings.open_at(1, true);
+                self.settings.focus_row(2);
+            }
             ScreenPage::BehaviourClipsOff => {
                 self.prefs.clips_seconds = 0;
                 self.settings.open_at(3, true);
@@ -2371,9 +2541,15 @@ impl ScreenGallery {
                     .open_expanded(&self.notes.notes, shell.language, 2);
             }
             ScreenPage::WhatsNewLoading => self.whats_new.open(),
+            ScreenPage::Required(look) => {
+                self.required.open();
+                if look == RequiredLook::OnlineClosed {
+                    self.required.focus_offline();
+                }
+            }
             ScreenPage::Log | ScreenPage::Report => self.log.open(),
             ScreenPage::Start => self.start.open_at(ctx.clock()),
-            ScreenPage::Banner | ScreenPage::Unlocking => {}
+            ScreenPage::Banner | ScreenPage::Unlocking | ScreenPage::Together(_) => {}
         }
     }
 
@@ -2489,5 +2665,65 @@ fn sample_game_input() -> GameInput {
     GameInput::Bindings {
         actions: parse_input_ini(ini),
         source: std::path::PathBuf::from("pakchunk0-ps5.pak"),
+    }
+}
+
+/// The unlocked games location in the gallery.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocationLook {
+    /// Next to the dumps, hard links.
+    Default,
+    /// Another drive, with room.
+    Custom,
+    /// A network share.
+    Network,
+    /// The drive is not connected.
+    Missing,
+    /// The copies are being moved.
+    Moving,
+    /// A move stopped; copies wait in the old place.
+    Left,
+}
+
+impl LocationLook {
+    fn folder(self) -> &'static str {
+        match self {
+            LocationLook::Network => "\\\\nas\\games\\unlocked",
+            LocationLook::Missing => "F:\\Unlocked",
+            _ => "E:\\Unlocked",
+        }
+    }
+
+    fn env(self) -> crate::screens::settings::LocationEnv {
+        use anyps5_core::location::{Availability, Report};
+        let report = Report {
+            root: if self == LocationLook::Default {
+                "D:\\Games\\PS5".into()
+            } else {
+                self.folder().into()
+            },
+            custom: self != LocationLook::Default,
+            availability: if self == LocationLook::Missing {
+                Availability::Missing
+            } else {
+                Availability::Ready
+            },
+            free: match self {
+                LocationLook::Default => Some(312_400_000_000),
+                LocationLook::Missing => None,
+                LocationLook::Network => Some(2_100_000_000_000),
+                _ => Some(412_800_000_000),
+            },
+            network: self == LocationLook::Network,
+        };
+        crate::screens::settings::LocationEnv {
+            report: Some(report),
+            moving: (self == LocationLook::Moving).then_some(crate::screens::settings::MoveEnv {
+                done: 2,
+                total: 7,
+                permille: 420,
+            }),
+            left: (self == LocationLook::Left).then(|| ("D:\\Games\\PS5".into(), 3)),
+        }
     }
 }

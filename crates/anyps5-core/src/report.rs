@@ -10,6 +10,9 @@ use crate::paths::AppPaths;
 /// The report keeps this much of the session's end.
 pub const LOG_KEEP: usize = 400 * 1024;
 
+/// The report also keeps this much of the end of the launcher's own log.
+pub const LAUNCHER_LOG_KEEP: usize = 100 * 1024;
+
 /// What the PC is, as the report lists it. Collected once; injected into tests.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SystemInfo {
@@ -157,8 +160,40 @@ pub fn write_report(paths: &AppPaths, input: &ReportInput) -> io::Result<PathBuf
         })
         .collect();
     let file = dir.join(format!("{safe}-{}.txt", file_stamp()));
-    fs::write(&file, diagnostic_text(input))?;
+    let mut text = diagnostic_text(input);
+    if let Some(section) = launcher_log_section(&paths.launcher_log()) {
+        text.push('\n');
+        text.push_str(&section);
+    }
+    fs::write(&file, text)?;
     Ok(file)
+}
+
+/// The "Launcher log" section: the last `LAUNCHER_LOG_KEEP` bytes of the launcher's own log,
+/// read from the end so a full file costs no more than its tail. `None` when there is no log.
+fn launcher_log_section(path: &std::path::Path) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    file.seek(SeekFrom::Start(
+        len.saturating_sub(LAUNCHER_LOG_KEEP as u64),
+    ))
+    .ok()?;
+    let mut bytes = Vec::new();
+    file.take(LAUNCHER_LOG_KEEP as u64)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    let text = String::from_utf8_lossy(&bytes);
+    // A cut lands in the middle of a line (and maybe of a character): drop that first fragment.
+    let text = if len > LAUNCHER_LOG_KEEP as u64 {
+        text.split_once('\n').map_or("", |(_, rest)| rest)
+    } else {
+        &text
+    };
+    Some(format!(
+        "Launcher log (last 100 KiB):\n{}\n",
+        tail(text, LAUNCHER_LOG_KEEP).trim_end()
+    ))
 }
 
 fn file_stamp() -> String {
@@ -452,6 +487,49 @@ line 2
         );
         assert_eq!(name.len(), "PPSA02100-20261022-093100.txt".len());
         assert_eq!(fs::read_to_string(file).unwrap(), diagnostic_text(&input()));
+    }
+
+    #[test]
+    fn no_launcher_log_no_section() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::under(dir.path());
+        let file = write_report(&paths, &input()).unwrap();
+        assert!(!fs::read_to_string(file).unwrap().contains("Launcher log"));
+    }
+
+    #[test]
+    fn the_report_ends_with_the_launcher_log_tail() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::under(dir.path());
+        fs::create_dir_all(paths.logs_dir()).unwrap();
+        fs::write(
+            paths.launcher_log(),
+            "short\nPANIC thread=main at a.rs:1: x\n",
+        )
+        .unwrap();
+        let text = fs::read_to_string(write_report(&paths, &input()).unwrap()).unwrap();
+        assert!(text.starts_with(&diagnostic_text(&input())));
+        assert!(
+            text.ends_with("Launcher log (last 100 KiB):\nshort\nPANIC thread=main at a.rs:1: x\n")
+        );
+    }
+
+    #[test]
+    fn a_long_launcher_log_is_cut_at_a_character_boundary() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::under(dir.path());
+        fs::create_dir_all(paths.logs_dir()).unwrap();
+        let log = format!("START\n{}END\n", "é\n".repeat(120_000));
+        fs::write(paths.launcher_log(), &log).unwrap();
+        let section = launcher_log_section(&paths.launcher_log()).unwrap();
+        let body = section
+            .strip_prefix("Launcher log (last 100 KiB):\n")
+            .unwrap();
+        assert!(body.len() <= LAUNCHER_LOG_KEEP + 1);
+        assert!(body.ends_with("END\n"));
+        assert!(!body.contains("START"));
+        assert!(!body.contains('\u{fffd}'));
+        assert!(body.starts_with("é\n"));
     }
 
     #[cfg(windows)]

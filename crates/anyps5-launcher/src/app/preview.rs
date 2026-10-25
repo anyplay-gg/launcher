@@ -54,6 +54,12 @@ pub enum Scene {
     HomeTrophies,
     HomeLocked,
     HomeUnlocking,
+    /// The launcher prepares the selected game on its own: progress, time left, the quiet tile band.
+    HomePreparing,
+    /// ... and it stands still because the PC is busy.
+    HomePreparingPaused,
+    /// ... before the work has started.
+    HomePreparingWaiting,
     HomeRelinking,
     HomeFailed,
     HomeQueued,
@@ -84,6 +90,8 @@ pub enum Scene {
     HomeRuns,
     /// Signed in, two friends play the game now.
     HomeFriendsPlaying,
+    /// Signed in, the selected game can be played together: the Play Together button.
+    HomeTogether,
     HomeTheme(u32),
     HomeNoArtwork,
     /// The selected game stays on a release of its own (a fact says so).
@@ -122,6 +130,9 @@ impl Scene {
             "home-trophies" => Scene::HomeTrophies,
             "home-locked" => Scene::HomeLocked,
             "home-unlocking" => Scene::HomeUnlocking,
+            "home-preparing" => Scene::HomePreparing,
+            "home-preparing-paused" => Scene::HomePreparingPaused,
+            "home-preparing-waiting" => Scene::HomePreparingWaiting,
             "home-relinking" => Scene::HomeRelinking,
             "home-failed" => Scene::HomeFailed,
             "home-queued" => Scene::HomeQueued,
@@ -140,6 +151,7 @@ impl Scene {
             "home-ask" => Scene::HomeAsk,
             "home-runs" => Scene::HomeRuns,
             "home-friends-playing" => Scene::HomeFriendsPlaying,
+            "home-together" => Scene::HomeTogether,
             "home-theme1" => Scene::HomeTheme(1),
             "home-theme2" => Scene::HomeTheme(2),
             "home-noartwork" => Scene::HomeNoArtwork,
@@ -160,7 +172,7 @@ impl Scene {
         })
     }
 
-    pub const ALL_NAMES: [&'static str; 40] = [
+    pub const ALL_NAMES: [&'static str; 44] = [
         "onboarding0",
         "onboarding1",
         "onboarding2",
@@ -171,6 +183,9 @@ impl Scene {
         "home-trophies",
         "home-locked",
         "home-unlocking",
+        "home-preparing",
+        "home-preparing-paused",
+        "home-preparing-waiting",
         "home-relinking",
         "home-failed",
         "home-queued",
@@ -189,6 +204,7 @@ impl Scene {
         "home-ask",
         "home-runs",
         "home-friends-playing",
+        "home-together",
         "home-theme1",
         "home-theme2",
         "home-noartwork",
@@ -585,6 +601,15 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
             }
         }
         Scene::HomeActions => m.focus = HomeFocus::Actions(0),
+        Scene::HomeTogether => {
+            sign_in(m);
+            let id = ids[at(1)].clone();
+            if let Some(game) = m.games.iter_mut().find(|g| g.id == id) {
+                game.title_id = "PPSA17221".into();
+                game.name = "Minecraft".into();
+            }
+            m.focus = HomeFocus::Actions(1);
+        }
         Scene::HomeTrophies => m.focus = HomeFocus::Actions(1),
         Scene::HomeLocked => m.selected = 2,
         Scene::HomeGlibc => m.focus = HomeFocus::Actions(0),
@@ -598,6 +623,20 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
                 .insert(ids[at(2)].clone(), (UnlockStep::Copy, 0.4));
             m.focus = HomeFocus::Actions(0);
         }
+        Scene::HomePreparing | Scene::HomePreparingPaused | Scene::HomePreparingWaiting => {
+            m.selected = at(2);
+            let id = ids[at(2)].clone();
+            m.prep.background.insert(id.clone());
+            m.prep.background.insert(ids[at(4)].clone());
+            if scene != Scene::HomePreparingWaiting {
+                m.progress.insert(id.clone(), (UnlockStep::Relink, 0.45));
+                m.preview_eta(&id, 130.0);
+            }
+            if scene == Scene::HomePreparingPaused {
+                m.prep.paused.insert(id);
+            }
+            m.focus = HomeFocus::Actions(0);
+        }
         Scene::HomeRelinking => {
             m.selected = at(2);
             m.progress
@@ -607,7 +646,11 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
             m.selected = at(4);
             m.failures.insert(
                 ids[at(4)].clone(),
-                "The relinker stopped with exit code 3 while it converted eboot.bin.".to_owned(),
+                crate::screens::prepare_strings::failure(
+                    anyps5_core::unlock::FailureKind::DiskFull,
+                    m.language(),
+                )
+                .to_owned(),
             );
         }
         Scene::HomeQueued => {
@@ -891,8 +934,6 @@ struct PreviewApp {
     requested: bool,
     script: std::collections::VecDeque<Step>,
     wait: u32,
-    /// Frames drawn since the last rate line of the demo.
-    rate: (std::time::Instant, u32),
 }
 
 impl PreviewApp {
@@ -1017,7 +1058,6 @@ impl PreviewApp {
             requested: false,
             script: options.script.iter().copied().collect(),
             wait: 0,
-            rate: (std::time::Instant::now(), 0),
             options,
         }
     }
@@ -1077,16 +1117,6 @@ impl eframe::App for PreviewApp {
         self.inner.paint(ui);
         self.inner.finish_frame(&ctx);
         self.frames += 1;
-        if self.options.scene.is_none() {
-            // The demo says how often it draws, to see what an idle launcher costs.
-            self.rate.1 += 1;
-            let seconds = self.rate.0.elapsed().as_secs_f32();
-            if seconds >= 5.0 {
-                let focused = ctx.input(|i| i.viewport().focused).unwrap_or(true);
-                tracing::info!(target: "idle", "{:.1} frames/s, focused={focused}", self.rate.1 as f32 / seconds);
-                self.rate = (std::time::Instant::now(), 0);
-            }
-        }
         // Scenes and screenshots draw every frame; the demo idles like the launcher does.
         if self.options.scene.is_some() || self.options.screenshot.is_some() {
             ctx.request_repaint();

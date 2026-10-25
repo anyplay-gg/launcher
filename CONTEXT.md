@@ -65,8 +65,12 @@ The folder the launcher makes for one game: the relinked executable, the toolkit
 _Avoid_: Bundle, install, build, cache
 
 **Store**:
-The hidden `.AnyPS5` folder inside the games folder, on the same volume as the dumps, where unlocked copies and work folders live.
+The hidden `.AnyPS5` folder where unlocked copies and work folders live. It sits inside the games folder (same volume as the dumps, so copies are hard links) or inside the **Unlocked games location**.
 _Avoid_: Cache, output folder
+
+**Unlocked games location**:
+The folder the player picked in Settings > Library to hold the **Store** away from the dumps, for example on a faster drive. Its copies are full copies unless it is on the dumps' volume. Changing it moves the existing copies.
+_Avoid_: Install folder, games drive
 
 **Unlock record**:
 The small file inside an unlocked copy that says which dump and which toolkit made it, and when.
@@ -77,8 +81,20 @@ An unlocked copy made by a different toolkit version than the current one. The p
 _Avoid_: Stale, old
 
 **Unlock queue**:
-The games waiting to be unlocked. Only one is unlocked at a time.
+The games waiting to be unlocked. Only one is unlocked at a time; a game the player asked for goes before a game that is only being prepared.
 _Avoid_: Job list
+
+**Prepare**:
+Unlock a game the player has not asked for yet: the launcher does it by itself for a game that appeared in the games folder (or that a toolkit update left outdated), one at a time, at the lowest priority, and only while the PC is idle. The tile says "Preparing". The word the player sees for the work they ask for stays Unlock.
+_Avoid_: Install, download, pre-install
+
+**Idle gate**:
+The check before and during a preparation: no game starts or runs, the PC is on mains power, enough memory is free and the processors are not busy. When it closes, a preparation in progress stands still (it keeps what it did) and goes on when it opens.
+_Avoid_: Scheduler, throttle
+
+**Kept relinker output**:
+When an unlock again finds nothing the relinker reads changed (the dump's executable and modules, the toolkit release, the flags, the patches), it lays the converted files of the copy it replaces into the new copy instead of relinking. The record's relink key says whether that is so.
+_Avoid_: Cache
 
 ### Toolkit
 
@@ -97,6 +113,10 @@ _Avoid_: Libs, DLLs, drivers
 **Toolkit version**:
 The release tag plus a short fingerprint of the toolkit's files. It changes whenever a file does.
 _Avoid_: Build number
+
+**AnyPlay engine**:
+The toolkit channel that follows the nightly build of anyplaynet/AnyPS5, the fork with the network bridge. It installs into its own folder, is checked against the release's checksum list, and is offered a new build when the archive's checksum changes, not the tag. Its version reads `anyplay-<commit>`.
+_Avoid_: Nightly (for the player), fork build, bridge build
 
 **Glibc shortfall** (Linux):
 The system's glibc is older than the newest version the toolkit's libraries ask for. The launcher says so (Settings, the Unlock and Play buttons) and does not stop anything.
@@ -258,6 +278,23 @@ One entry of the Friends screen's rail with a first page of its own. Every page 
 
 **Quick actions**:
 The buttons at the end of a friend's row (Join, Message, Invite to Party, View Profile, Options). They rest hidden and come up with the focus or the pointer; select presses the chosen one and a click on the row's body opens Options, the friend's own page.
+
+**Play Together**:
+Starting a game that finds others on a local network so that friends can join it. The player presses Play Together on the game's page or in the party; a friend presses Join on an invitation, a friend's page or the prompt card. Only games in the LAN title table have the button. Defined in the network's glossary; the launcher only adds what it shows.
+_Avoid_: Multiplayer (alone), hosting a server, LAN party
+
+**LAN title table**:
+The small list in `data/lan-titles.v1.json` of the games that can be played together, with the most players each allows. Built into every launcher; the cloud has no copy.
+_Avoid_: Compatibility list, whitelist
+
+**Join check**:
+What the launcher compares before it starts a game in a friend's session, in a fixed order: signed in and online, online play on, owned, version, toolkit, place, not busy, still there. It stops at the first that does not hold and names exactly what is missing.
+_Avoid_: Validation, handshake
+
+**Prompt card**:
+The glass card at the top centre that asks "Mira is playing Minecraft. Join?" and, in the same place, says why a join did not go ahead.
+_Avoid_: Popup, banner, toast (a toast says what happened; the card asks or explains)
+
 
 **Profile screen**:
 The full-screen page of a player's profile, the player's own or another's, opened from the profile button, a friend's page or a card of the feed; Back returns to where it was opened from. A header (avatar, handle, how you know each other, a line about them), a few figures (games, hours, trophies by grade) and up to three quiet lists: games, recent trophies, recent activity. Everything is only what the player may see; a part the cloud leaves out leaves no gap and no placeholder for another player. The player's own profile reads games and trophies from this PC and adds Edit Profile (opens the account web) and Friends (the Friends screen). The launcher shows games by name and art from the player's own library only; the cloud only knows title IDs.

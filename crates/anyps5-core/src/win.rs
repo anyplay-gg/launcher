@@ -17,7 +17,12 @@ use windows::Win32::System::JobObjects::{
     JobObjectBasicProcessIdList, JobObjectExtendedLimitInformation, QueryInformationJobObject,
     SetInformationJobObject, TerminateJobObject,
 };
-use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+use windows::Win32::System::Threading::{
+    AttachThreadInput, BELOW_NORMAL_PRIORITY_CLASS, GetCurrentThread, GetCurrentThreadId,
+    IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, OpenProcess, PROCESS_CREATION_FLAGS,
+    PROCESS_SET_INFORMATION, PROCESS_SUSPEND_RESUME, SetPriorityClass, SetThreadPriority,
+    THREAD_MODE_BACKGROUND_BEGIN,
+};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, SendInput,
     VIRTUAL_KEY,
@@ -117,6 +122,76 @@ impl Job {
             let ids = list.ProcessIdList.as_ptr();
             (0..count).map(|i| *ids.add(i) as u32).collect()
         }
+    }
+
+    /// Freezes every process of the job (all their threads) until [`resume`](Self::resume).
+    /// The relinker keeps its memory but takes no CPU while the player's game starts.
+    pub fn suspend(&self) {
+        self.each_process(|handle| {
+            // SAFETY: `handle` is an open process handle with PROCESS_SUSPEND_RESUME.
+            unsafe {
+                let _ = NtSuspendProcess(handle);
+            }
+        });
+    }
+
+    pub fn resume(&self) {
+        self.each_process(|handle| {
+            // SAFETY: as in `suspend`.
+            unsafe {
+                let _ = NtResumeProcess(handle);
+            }
+        });
+    }
+
+    /// The CPU priority class of every process of the job.
+    pub fn set_priority(&self, class: PROCESS_CREATION_FLAGS) {
+        self.each_process(|handle| {
+            // SAFETY: a process handle opened for this call.
+            unsafe {
+                let _ = SetPriorityClass(handle, class);
+            }
+        });
+    }
+
+    fn each_process(&self, action: impl Fn(HANDLE)) {
+        for pid in self.process_ids() {
+            // SAFETY: plain Win32 calls; the handle is closed right after.
+            unsafe {
+                if let Ok(handle) =
+                    OpenProcess(PROCESS_SUSPEND_RESUME | PROCESS_SET_INFORMATION, false, pid)
+                {
+                    action(handle);
+                    let _ = CloseHandle(handle);
+                }
+            }
+        }
+    }
+}
+
+#[link(name = "ntdll")]
+unsafe extern "system" {
+    fn NtSuspendProcess(process: HANDLE) -> i32;
+    fn NtResumeProcess(process: HANDLE) -> i32;
+}
+
+/// The priority class flag for [`Job::set_priority`].
+pub fn priority_class(low: bool, idle: bool) -> PROCESS_CREATION_FLAGS {
+    if idle {
+        IDLE_PRIORITY_CLASS
+    } else if low {
+        BELOW_NORMAL_PRIORITY_CLASS
+    } else {
+        NORMAL_PRIORITY_CLASS
+    }
+}
+
+/// Puts the calling thread into the system's background mode: low CPU, I/O and memory priority,
+/// so a game or the desktop is not slowed by it. Ends with the thread.
+pub fn enter_background_mode() {
+    // SAFETY: the pseudo handle of the calling thread is always valid.
+    unsafe {
+        let _ = SetThreadPriority(GetCurrentThread(), THREAD_MODE_BACKGROUND_BEGIN);
     }
 }
 

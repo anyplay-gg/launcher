@@ -6,6 +6,7 @@
 //! or a music change is a message on a channel, so the UI thread never waits for audio. A
 //! launcher with sounds and music off never touches the device.
 
+pub mod alert;
 mod cues;
 mod engine;
 pub mod hover;

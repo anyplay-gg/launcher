@@ -229,6 +229,13 @@ pub fn page_title(ui: &mut Ui, at: egui::Pos2, width: f32, title: &str, note: Op
         height += 6.0;
         let note = clamped(&painter, PAGE_NOTE, note, Color32::PLACEHOLDER, width, 2);
         let note_h = note.size().y;
+        // The line under the title is text on the painter: a label gives it to the screen reader.
+        ui.interact(
+            Rect::from_min_size(pos2(at.x, at.y + height), vec2(width, note_h)),
+            Id::unique("friends-page-note"),
+            Sense::hover(),
+        )
+        .widget_info(|| WidgetInfo::labeled(Role::Label, true, note.text()));
         painter.galley(pos2(at.x, at.y + height), note, color::text_detail());
         height += note_h;
     }

@@ -15,6 +15,7 @@ use crate::screens::online_social_strings::SocialText as S;
 use crate::screens::online_strings::OnlineText as T;
 use crate::screens::online_voice_strings::VoiceText as V;
 use crate::screens::rows::Row;
+use crate::screens::together_strings::TogetherText as TT;
 use crate::ui::i18n::{Arg, Key, Language};
 use crate::ui::icons::Icon;
 
@@ -219,6 +220,13 @@ impl OnlinePanel {
                 } else {
                     rows.push(chat_row);
                     rows.extend(invite);
+                }
+                if let Some(title) = data.play_together {
+                    rows.push(
+                        Row::command("playTogether", TT::PlayTogether.text(language))
+                            .icon(Icon::GAME_CONTROLLER)
+                            .detail(TT::PlayTogetherDetail.format(language, &[Arg::Str(title)])),
+                    );
                 }
                 if leads
                     && !alone
@@ -916,6 +924,7 @@ impl OnlinePanel {
                 }
             }
             ("leaveParty", _) => actions.push(OnlineAction::PartyLeave),
+            ("playTogether", _) => actions.push(OnlineAction::PlayTogether),
             ("sendPartyInvites", Page::PartyPicker) if !self.picked.is_empty() => {
                 actions.push(OnlineAction::PartyInvite(
                     self.picked.iter().copied().collect(),
@@ -1093,6 +1102,7 @@ mod tests {
             now: 1_792_670_400,
             utc_offset: Some(0),
             game_running: false,
+            play_together: None,
         }
     }
 
@@ -1342,6 +1352,7 @@ mod tests {
         panel.go(Page::Party, &data(&online));
         assert!(!ids(&panel.rows(&data(&online)).2).contains(&"takeParty"));
         let mut session = Session {
+            kind: Default::default(),
             id: "s1".into(),
             title_id: "TEST00001".into(),
             title: "Test Game".into(),
@@ -1356,7 +1367,6 @@ mod tests {
                 link: None,
             }],
             created: 0,
-            kind: Default::default(),
         };
         online.session = Some(session.clone());
         let rows = panel.rows(&data(&online)).2;
@@ -1917,6 +1927,7 @@ mod tests {
         // A running game has the keyboard: the note says what to do instead.
         let playing = OnlineData {
             game_running: true,
+            play_together: None,
             ..data(&online)
         };
         let rows = panel.rows(&playing).2;

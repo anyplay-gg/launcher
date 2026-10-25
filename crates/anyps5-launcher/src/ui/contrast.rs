@@ -462,6 +462,19 @@ fn avatars(report: &mut Report) {
             Need::Text,
         );
     }
+    // The first letter on the calm colours of a person without a picture (rows, cards, the
+    // Friends header and the profile): one measure for every size the letter grows to.
+    for account in 0..6 {
+        let bg =
+            crate::screens::online::monogram_colour(anyps5_core::online::api::AccountId(account));
+        report.add(
+            &format!("monogram initial, colour {}", account + 1),
+            "avatar without a picture",
+            theme::readable_ink(bg),
+            bg,
+            Need::Text,
+        );
+    }
 }
 
 /// The accent where it is the only cue left: the unlock progress line beside the action row, on

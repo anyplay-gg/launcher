@@ -1,3 +1,4 @@
+//! Ported from utkuhalis/AnyPS5-ARM (BackgroundRenderer.swift, GPL-2.0-only) and changed since; see README "Credits".
 //! The animated theme backgrounds (docs/DESIGN.md sections 3 and 14) as a wgpu paint callback.
 //!
 //! A [`Background`] renders its theme's shader into a **half-resolution** offscreen texture (a
@@ -33,6 +34,10 @@ pub const STILL_TIME_FULL: f32 = 260.0;
 pub const STILL_TIME_CARD: f32 = 200.0;
 /// The shader runs at this fraction of the physical pixel size.
 pub const RENDER_SCALE: f32 = 0.5;
+/// The pause between frames while only the backdrop (or the artwork drift) moves. 30 ms, not
+/// 33: the next present then lands on the second vsync (33.3 ms at 60 Hz) instead of slipping to
+/// the third (50 ms). The clock advances by the real frame time, so the drift speed is the same.
+pub const IDLE_REPAINT: std::time::Duration = std::time::Duration::from_millis(30);
 /// Wraps the clock like the original (`clock mod 3600`).
 pub const CLOCK_WRAP: f64 = 3600.0;
 
@@ -139,13 +144,15 @@ impl Backdrop {
         }
     }
 
-    /// Advances the clock and requests the next frame (capped at 60 fps) while it runs.
+    /// Advances the clock and requests the next frame (about 30 fps while idle) while it runs.
+    /// Springs, the theme cross-fade and panel motion ask for their own frames and stay at the
+    /// display rate; input draws at once.
     pub fn update(&mut self, ctx: &Context) {
         let dt = f64::from(ctx.input(|i| i.unstable_dt));
         let paused = self.paused || ctx.reduced_motion();
         self.clock.advance(dt, paused);
         if !paused {
-            ctx.request_repaint_after(std::time::Duration::from_millis(16));
+            ctx.request_repaint_after(IDLE_REPAINT);
         }
     }
 
@@ -695,6 +702,59 @@ mod tests {
         c.speed = 2.0;
         c.advance(0.05, false);
         assert!((c.time() - 100.2).abs() < 1e-4);
+    }
+
+    /// The delay the backdrop asks for after one pass.
+    fn repaint_delay(backdrop: &mut Backdrop, reduced: bool) -> std::time::Duration {
+        let ctx = Context::default();
+        ctx.set_reduced_motion(reduced);
+        // A fresh context owes one immediate frame; the second pass shows the real request.
+        for _ in 0..2 {
+            ctx.run_ui(egui::RawInput::default(), |_| {})
+                .textures_delta
+                .clear();
+        }
+        let mut out = ctx.run_ui(egui::RawInput::default(), |_| backdrop.update(&ctx));
+        out.textures_delta.clear();
+        out.viewport_output[&egui::ViewportId::ROOT].repaint_delay
+    }
+
+    #[test]
+    fn idle_backdrop_repaints_at_about_30_hz() {
+        let mut backdrop = Backdrop::with_clock(Theme::Cosmic, BackgroundClock::starting_at(100.0));
+        backdrop.paused = false;
+        let delay = repaint_delay(&mut backdrop, false);
+        assert!(delay >= std::time::Duration::from_millis(30), "{delay:?}");
+        assert!(delay < std::time::Duration::from_millis(34), "{delay:?}");
+        assert_eq!(delay, IDLE_REPAINT);
+    }
+
+    #[test]
+    fn paused_and_reduced_motion_request_no_repaint() {
+        let mut backdrop = Backdrop::with_clock(Theme::Cosmic, BackgroundClock::starting_at(100.0));
+        backdrop.paused = true;
+        assert_eq!(
+            repaint_delay(&mut backdrop, false),
+            std::time::Duration::MAX
+        );
+        backdrop.paused = false;
+        assert_eq!(repaint_delay(&mut backdrop, true), std::time::Duration::MAX);
+    }
+
+    #[test]
+    fn the_clock_follows_real_time_at_any_frame_rate() {
+        // Same wall time, fewer frames: the drift does not slow down.
+        let (mut fast, mut slow) = (
+            BackgroundClock::starting_at(10.0),
+            BackgroundClock::starting_at(10.0),
+        );
+        for _ in 0..60 {
+            fast.advance(1.0 / 60.0, false);
+        }
+        for _ in 0..30 {
+            slow.advance(1.0 / 30.0, false);
+        }
+        assert!((fast.time() - slow.time()).abs() < 1e-3);
     }
 
     #[test]

@@ -36,12 +36,14 @@ use crate::ui::chrome::RowAvatar;
 use crate::ui::focus::RowKind;
 use crate::ui::i18n::{Arg, Key, Language};
 use crate::ui::icons::Icon;
-use crate::ui::input::InputEvent;
+use crate::ui::input::{Command, InputEvent};
 use crate::ui::sound::Cue;
 
 /// What the panel asks the host to do.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OnlineAction {
+    /// Start the selected game with a Play Together session.
+    PlayTogether,
     SetCloud(String),
     /// Back to the cloud AnyPlay runs.
     UseOfficialCloud,
@@ -321,6 +323,9 @@ pub struct OnlineData<'a> {
     pub utc_offset: Option<i32>,
     /// A game is running: it has the keyboard, so push to talk cannot reach the launcher.
     pub game_running: bool,
+    /// The selected game can be played together and starts now: its name, for the party's
+    /// Play Together row.
+    pub play_together: Option<&'a str>,
 }
 
 /// The choices of "Who Sees Your Trophies", in the order the row shows them.
@@ -654,25 +659,30 @@ impl OnlinePanel {
             }
             if self.feed_is_list(data) {
                 if self.feed_command(shell, command, data, &mut actions) {
-                    self.back(data, &mut actions);
+                    self.step_back(shell, data, &mut actions);
                     break;
                 }
                 continue;
             }
             if self.chat_is_list(data) {
                 if self.chat_list_command(shell, command, data, &mut actions) {
-                    self.back(data, &mut actions);
+                    self.step_back(shell, data, &mut actions);
                     break;
                 }
                 continue;
             }
             if self.chat_is_thread(data) {
                 if self.chat_thread_command(shell, command, data, &mut actions) {
-                    shell.play(Cue::Back);
-                    self.back(data, &mut actions);
+                    self.step_back(shell, data, &mut actions);
                     break;
                 }
                 continue;
+            }
+            // Back goes up one page with the "back" cue; leaving the screen is answered by the
+            // app, which knows whether it lands on Home ("close") or on another screen ("back").
+            if matches!(command, Command::Back | Command::Options) {
+                self.step_back(shell, data, &mut actions);
+                break;
             }
             let rows = self.rows(data).2;
             let driven = rows::drive(shell, &mut self.side.nav, &rows, &[command]);
@@ -765,6 +775,19 @@ impl OnlinePanel {
             shell.input.capture_keys = self.capturing;
             self.capture_synced = self.capturing;
         }
+    }
+
+    /// One step back: up a page with the "back" cue, or out of the screen without one.
+    fn step_back(
+        &mut self,
+        shell: &mut Shell,
+        data: &OnlineData<'_>,
+        actions: &mut Vec<OnlineAction>,
+    ) {
+        if self.back_page(data).is_some() {
+            shell.play(Cue::Back);
+        }
+        self.back(data, actions);
     }
 
     fn back(&mut self, data: &OnlineData<'_>, actions: &mut Vec<OnlineAction>) {
@@ -1141,6 +1164,16 @@ impl OnlinePanel {
                             )),
                     );
                 }
+                // A friend who plays a LAN game with no session: say why there is nothing to join.
+                if joinable.is_none()
+                    && let Some(f) = friend
+                    && let Err(blocker @ anyps5_core::play_together::Blocker::NoSession { .. }) =
+                        anyps5_core::play_together::Offer::of_friend(f)
+                {
+                    let (headline, line) =
+                        super::together_strings::blocker_text(&blocker, language);
+                    rows.push(Row::info("noSession", headline, None).detail(line));
+                }
                 let in_session = online
                     .session
                     .as_ref()
@@ -1355,8 +1388,9 @@ impl OnlinePanel {
                 if !self.feed_is_list(data) {
                     self.feed_rows(data, &mut rows);
                 }
+                // The page is named like its rail entry.
                 (
-                    F::Feed.text(language).to_owned(),
+                    FX::Activity.text(language).to_owned(),
                     Some(F::FeedSubtitle.text(language).to_owned()),
                 )
             }
@@ -1480,9 +1514,16 @@ impl OnlinePanel {
         }
         // A stream on offer in the party: one line that leads to the party page.
         screen::home_row(data, rows);
-        if let Some(session) = &online.session {
-            let me = online.account.as_ref().map(|a| a.id);
-            rows.push(Row::caption("sessionCaption", t(T::Session)).group_start());
+        // Playing Together shows once someone else is in the session: alone it would list only you.
+        let me = online.account.as_ref().map(|a| a.id);
+        if let Some(session) = online
+            .session
+            .as_ref()
+            .filter(|s| s.members.iter().any(|m| Some(m.account.id) != me))
+        {
+            let caption = super::together_strings::own_session_line(session, language)
+                .unwrap_or_else(|| t(T::Session).to_owned());
+            rows.push(Row::caption("sessionCaption", caption).group_start());
             for member in &session.members {
                 let value = if Some(member.account.id) == me {
                     t(T::You)
@@ -1788,6 +1829,11 @@ fn friend_detail(data: &OnlineData<'_>, friend: &online::api::Friend) -> String 
 pub fn presence_text(friend: &online::api::Friend, language: Language) -> String {
     match &friend.presence.activity {
         Some(activity) => {
+            // A Play Together session reads "Playing Minecraft together (2/4)".
+            let together = anyps5_core::play_together::presence(activity);
+            if let Some(line) = super::together_strings::presence_line(&together, language) {
+                return line;
+            }
             let joinable = activity.session.as_ref().is_some_and(|s| s.joinable);
             let text = if joinable {
                 T::PlayingJoinable
@@ -1848,11 +1894,11 @@ mod tests {
                         title: "Test Game".into(),
                         version: "01.000".into(),
                         session: Some(SessionRef {
+                            kind: Default::default(),
                             id: "s1".into(),
                             joinable: true,
                             members: 1,
                             max_members: 4,
-                            kind: Default::default(),
                         }),
                     }),
                     revision: 0,
@@ -1879,6 +1925,7 @@ mod tests {
             now: 1_792_670_400,
             utc_offset: Some(0),
             game_running: false,
+            play_together: None,
         }
     }
 
@@ -2131,11 +2178,11 @@ mod tests {
     }
 
     #[test]
-    fn the_status_line_names_the_connection_and_the_friends_here() {
+    fn the_status_line_names_the_connection_and_the_friends_active() {
         let mut online = signed_in();
-        assert_eq!(status_line(&data(&online)), "Online · 1 friend online");
+        assert_eq!(status_line(&data(&online)), "Online · 1 friend active");
         online.friends.friends[0].presence.online = false;
-        assert_eq!(status_line(&data(&online)), "Online · No friends online");
+        assert_eq!(status_line(&data(&online)), "Online · No friends active");
         online.cloud = Some(Cloud::Connecting);
         assert_eq!(status_line(&data(&online)), "Connecting…");
         online.cloud = Some(Cloud::Offline);
@@ -2491,6 +2538,7 @@ mod tests {
     fn an_invitation_page_answers_it() {
         let mut online = signed_in();
         online.invitations.push(Invitation {
+            kind: Default::default(),
             id: "i1".into(),
             from: account(2, "Lumen"),
             session: "s1".into(),
@@ -2498,7 +2546,6 @@ mod tests {
             title: "Test Game".into(),
             version: "01.000".into(),
             expires: 0,
-            kind: Default::default(),
         });
         let mut panel = OnlinePanel::default();
         panel.go(Page::Invitation("i1".into()), &data(&online));

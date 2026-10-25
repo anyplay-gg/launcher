@@ -57,6 +57,12 @@ pub enum Extra {
     VibrationLight,
     VibrationMedium,
     VibrationStrong,
+    /// Settings note under the vibration row: what to try when the controller is not found.
+    ControllerHelp,
+    /// Top bar, read out by screen readers: a controller is connected (and how full it is).
+    PadStatus,
+    PadStatusBattery,
+    PadStatusCharging,
     /// Settings row: the running game on Discord.
     DiscordPresence,
     DiscordPresenceDetail,
@@ -112,6 +118,12 @@ pub enum Extra {
     ChannelStableDetail,
     ChannelPinnedDetail,
     ChannelLocalDetail,
+    ChannelEngine,
+    ChannelEngineDetail,
+    EngineBuilt,
+    EngineAvailable,
+    EngineNoBuild,
+    EngineUnverified,
     /// Settings row: the release a pinned channel stays on.
     PinnedVersion,
     /// Settings row and panel title.
@@ -292,6 +304,12 @@ impl Extra {
             Extra::VibrationDetail => {
                 "A short, soft pulse answers a press on the controller. Never while a game is in front."
             }
+            Extra::ControllerHelp => {
+                "Steam Input and DS4Windows can block the controller. Turn off PlayStation support in Steam, or quit both apps, then reconnect it."
+            }
+            Extra::PadStatus => "Controller connected",
+            Extra::PadStatusBattery => "Controller connected, battery %@ percent",
+            Extra::PadStatusCharging => "Controller connected, battery %@ percent, charging",
             Extra::VibrationLight => "Light",
             Extra::VibrationMedium => "Medium",
             Extra::VibrationStrong => "Strong",
@@ -347,6 +365,18 @@ impl Extra {
             Extra::ChannelStableDetail => "Follows the newest release.",
             Extra::ChannelPinnedDetail => "Stays on one release. No update is offered.",
             Extra::ChannelLocalDetail => "Uses a folder you built or picked. No update is offered.",
+            Extra::ChannelEngine => "AnyPlay Engine",
+            Extra::ChannelEngineDetail => {
+                "The nightly build with online play. Changes often and may break games."
+            }
+            Extra::EngineBuilt => "Built on %@",
+            Extra::EngineAvailable => "A new engine build is available",
+            Extra::EngineNoBuild => {
+                "There is no engine build for this system yet. Nothing was installed. Choose another channel."
+            }
+            Extra::EngineUnverified => {
+                "The engine download could not be checked. Nothing was installed. Try again later."
+            }
             Extra::PinnedVersion => "Version",
             Extra::WhatsNew => "What's New",
             Extra::LastCheckedOn => "Last checked %@",
@@ -481,6 +511,12 @@ impl Extra {
             Extra::VibrationDetail => {
                 "Kolda bir tuşa basınca kısa, yumuşak bir titreşim karşılık verir. Oyun öndeyken asla."
             }
+            Extra::ControllerHelp => {
+                "Steam Input ve DS4Windows kolu devralabilir. Steam'de PlayStation desteğini kapat ya da iki uygulamadan da çık, sonra kolu yeniden bağla."
+            }
+            Extra::PadStatus => "Kol bağlı",
+            Extra::PadStatusBattery => "Kol bağlı, pil yüzde %@",
+            Extra::PadStatusCharging => "Kol bağlı, pil yüzde %@, şarj oluyor",
             Extra::VibrationLight => "Hafif",
             Extra::VibrationMedium => "Orta",
             Extra::VibrationStrong => "Güçlü",
@@ -533,6 +569,18 @@ impl Extra {
             Extra::ChannelPinnedDetail => "Tek bir sürümde kalır. Güncelleme önerilmez.",
             Extra::ChannelLocalDetail => {
                 "Kendi yaptığın ya da seçtiğin klasörü kullanır. Güncelleme önerilmez."
+            }
+            Extra::ChannelEngine => "AnyPlay Motoru",
+            Extra::ChannelEngineDetail => {
+                "Çevrimiçi oyun için gecelik derleme. Sık değişir, oyunları bozabilir."
+            }
+            Extra::EngineBuilt => "Derleme tarihi: %@",
+            Extra::EngineAvailable => "Yeni bir motor derlemesi indirilebilir",
+            Extra::EngineNoBuild => {
+                "Bu sistem için henüz motor derlemesi yok. Hiçbir şey kurulmadı. Başka bir kanal seç."
+            }
+            Extra::EngineUnverified => {
+                "Motor indirmesi doğrulanamadı. Hiçbir şey kurulmadı. Daha sonra yeniden dene."
             }
             Extra::PinnedVersion => "Sürüm",
             Extra::WhatsNew => "Yenilikler",
@@ -635,7 +683,7 @@ impl Extra {
         substitute(self.text(language), args)
     }
 
-    pub const ALL: [Extra; 144] = [
+    pub const ALL: [Extra; 154] = [
         Extra::Toolkit,
         Extra::UpdateCheck,
         Extra::UpdateCheckDetail,
@@ -674,6 +722,10 @@ impl Extra {
         Extra::VibrationLight,
         Extra::VibrationMedium,
         Extra::VibrationStrong,
+        Extra::ControllerHelp,
+        Extra::PadStatus,
+        Extra::PadStatusBattery,
+        Extra::PadStatusCharging,
         Extra::DiscordPresence,
         Extra::DiscordPresenceDetail,
         Extra::ShowHiddenTrophies,
@@ -709,6 +761,12 @@ impl Extra {
         Extra::ChannelStableDetail,
         Extra::ChannelPinnedDetail,
         Extra::ChannelLocalDetail,
+        Extra::ChannelEngine,
+        Extra::ChannelEngineDetail,
+        Extra::EngineBuilt,
+        Extra::EngineAvailable,
+        Extra::EngineNoBuild,
+        Extra::EngineUnverified,
         Extra::PinnedVersion,
         Extra::WhatsNew,
         Extra::LastCheckedOn,

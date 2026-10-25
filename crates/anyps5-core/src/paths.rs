@@ -163,6 +163,16 @@ impl AppPaths {
         self.data.join("Logs")
     }
 
+    /// `Logs\launcher.log`: what the launcher itself logs, with panics.
+    pub fn launcher_log(&self) -> PathBuf {
+        self.logs_dir().join("launcher.log")
+    }
+
+    /// `Logs\launcher.log.1`: the previous launcher log, kept when the current one fills up.
+    pub fn launcher_log_old(&self) -> PathBuf {
+        self.logs_dir().join("launcher.log.1")
+    }
+
     pub fn log_file(&self, title_id: &str) -> PathBuf {
         self.logs_dir().join(format!("{title_id}.log"))
     }
@@ -186,6 +196,11 @@ impl AppPaths {
 
     pub fn cache_dir(&self) -> PathBuf {
         self.data.join("Cache")
+    }
+
+    /// The `Cache` folder's `unlock-timings.json`: how long the steps of the last full unlock took here.
+    pub fn unlock_timings_file(&self) -> PathBuf {
+        self.cache_dir().join("unlock-timings.json")
     }
 
     /// `Network`: the net service's own folder (its endpoint key, observation logs).
@@ -227,14 +242,29 @@ pub fn store_dir(root: &Path) -> PathBuf {
 
 /// Where the unlocked copy of a game lives: `<root>\.AnyPS5\Games\<name>`.
 pub fn unlocked_copy_dir(root: &Path, title_id: &str, id: &GameId) -> PathBuf {
-    store_dir(root)
-        .join("Games")
-        .join(unlocked_copy_name(title_id, id))
+    copies_dir(root).join(unlocked_copy_name(title_id, id))
+}
+
+/// The folder of all unlocked copies of a store: `<root>\.AnyPS5\Games`. `root` is the folder that
+/// holds the store: the games folder, or the player's unlocked-games location
+/// ([`crate::settings::Preferences::store_root`]).
+pub fn copies_dir(root: &Path) -> PathBuf {
+    store_dir(root).join("Games")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_launcher_log_lives_in_the_logs_folder() {
+        let paths = AppPaths::under(Path::new("data"));
+        assert_eq!(paths.launcher_log(), paths.logs_dir().join("launcher.log"));
+        assert_eq!(
+            paths.launcher_log_old(),
+            paths.logs_dir().join("launcher.log.1")
+        );
+    }
 
     #[test]
     fn spellings_of_one_folder_are_one_id() {

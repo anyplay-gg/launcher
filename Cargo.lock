@@ -284,7 +284,7 @@ dependencies = [
 
 [[package]]
 name = "anyplay-update-manifest"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "ed25519-dalek",
  "rand",
@@ -299,11 +299,12 @@ dependencies = [
 
 [[package]]
 name = "anyps5-core"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "anyplay-control",
  "anyplay-update-manifest",
  "base64 0.22.1",
+ "bzip2",
  "core-foundation",
  "core-graphics",
  "ed25519-dalek",
@@ -335,7 +336,7 @@ dependencies = [
 
 [[package]]
 name = "anyps5-launcher"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "anyps5-core",
  "base64 0.22.1",
@@ -729,6 +730,15 @@ name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
+
+[[package]]
+name = "bzip2"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3a53fac24f34a81bc9954b5d6cfce0c21e18ec6959f44f56e8e90e4bb7c346c"
+dependencies = [
+ "libbz2-rs-sys",
+]
 
 [[package]]
 name = "calloop"
@@ -1516,7 +1526,7 @@ checksum = "af9673d8203fcb076b19dfd17e38b3d4ae9f44959416ea532ce72415a6020365"
 
 [[package]]
 name = "fake-phone"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "anyps5-core",
  "mdns-sd",
@@ -1526,7 +1536,7 @@ dependencies = [
 
 [[package]]
 name = "fake-relinker"
-version = "0.2.4"
+version = "0.2.5"
 
 [[package]]
 name = "fastrand"
@@ -2416,6 +2426,12 @@ name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
+
+[[package]]
+name = "libbz2-rs-sys"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34b357333733e8260735ba5894eb928c02ecc69c78715f01a8019e7fa7f2db4c"
 
 [[package]]
 name = "libc"

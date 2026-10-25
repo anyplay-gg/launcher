@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Writes the licence file of a release: the licences of every third-party crate in the launcher
-# and in the net service it carries (about.toml here and in anyplaynet/network).
+# and in the net service and share worker it carries (about.toml here and in anyplaynet/network),
+# then Cisco's licence for the OpenH264 binary the launcher downloads on Linux.
 #
 #   notices.sh <output file>
 #
@@ -46,5 +47,14 @@ fi
   -c "$root/about.toml" -m "$root/Cargo.toml" -o "$work/launcher.json"
 "$about" generate --format json --locked --fail \
   -c "$network/about.toml" -m "$network/crates/net/Cargo.toml" -o "$work/net.json"
+"$about" generate --format json --locked --fail \
+  -c "$network/about.toml" -m "$network/crates/share-worker/Cargo.toml" -o "$work/share.json"
 mkdir -p "$(dirname "$out")"
-node "$here/notices.mjs" "$out" "$work/launcher.json" "$work/net.json"
+node "$here/notices.mjs" "$out" "$work/launcher.json" "$work/net.json" "$work/share.json"
+# Not part of the release: Cisco's own binary, downloaded to the player's PC when they turn the
+# codec on. Cisco's licence asks for its full text where licences are shown.
+{
+  printf '\n%s\n%s\n\n' "Cisco's OpenH264 binary (Linux, downloaded from Cisco when the player turns" \
+    "Share Screen Video Codec on in Settings, Advanced):"
+  cat "$here/openh264/BINARY_LICENSE.txt"
+} >> "$out"

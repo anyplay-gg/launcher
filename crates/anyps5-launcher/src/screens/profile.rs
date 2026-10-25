@@ -166,8 +166,8 @@ impl ProfileScreen {
 
     fn command(&mut self, shell: &mut Shell, command: Command, actions: &mut Vec<ProfileAction>) {
         match command {
+            // The app answers: "back" to the Friends screen, "close" to Home (7.6).
             Command::Back | Command::Options => {
-                shell.play(Cue::Close);
                 actions.push(ProfileAction::Close);
             }
             Command::Select => self.press(shell, self.focus, actions),

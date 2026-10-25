@@ -1,3 +1,4 @@
+//! Ported from utkuhalis/AnyPS5-ARM (DiscordPresence.swift, GPL-2.0-only) and changed since; see README "Credits".
 //! "Playing <game>" on the player's Discord profile, ported from AnyPS5-ARM
 //! (`DiscordPresence.swift`): the Discord app's local IPC pipe carries frames of a little-endian
 //! opcode and length followed by JSON. Without a running Discord nothing happens, and a Discord

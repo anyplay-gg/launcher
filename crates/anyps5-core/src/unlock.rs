@@ -1,3 +1,4 @@
+//! Ported from utkuhalis/AnyPS5-ARM (Installer.swift, GPL-2.0-only) and changed since; see README "Credits".
 //! Unlocking a game: unwrap its executable and modules, relink them, and assemble the unlocked
 //! copy the launcher starts (PORT.md 6.4 and 6.5, `Installer.swift`).
 //!
@@ -13,16 +14,18 @@ use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
-use std::thread::{self, JoinHandle};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{CancelToken, EventSink};
-use crate::fsx::{self, LinkMode, Linker, TreeError};
+use crate::fsx::{self, LinkMode, Linker, TreeError, TreeOpts};
 use crate::paths::GameId;
 use crate::platform::Os;
-use crate::process::{ToolProcess, ToolSpec};
+use crate::process::{Priority, ToolProcess, ToolSpec};
 use crate::saves::{Reason, SaveData, SavesError};
 use crate::toolkit::{Toolkit, ToolkitError};
 use crate::unwrap::{self, Refused};
@@ -44,6 +47,25 @@ pub enum Step {
     Assemble,
     Finish,
 }
+
+impl Step {
+    pub const ALL: [Step; 5] = [
+        Step::Unwrap,
+        Step::Relink,
+        Step::Copy,
+        Step::Assemble,
+        Step::Finish,
+    ];
+
+    /// The place of the step in [`StepSeconds`].
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+}
+
+/// How many seconds each [`Step`] of one unlock took, by [`Step::index`]. The launcher keeps the
+/// last ones to weigh the steps of its progress bar by what they cost on this PC.
+pub type StepSeconds = [f32; 5];
 
 /// What the launcher keeps in an unlocked copy.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -68,6 +90,17 @@ pub struct UnlockRecord {
         skip_serializing_if = "Option::is_none"
     )]
     pub libs_sha256: Option<String>,
+    /// A hash of everything the relinker's output depends on: its inputs, its arguments and the
+    /// release. An unlock again that changes none of it keeps that output instead of relinking.
+    #[serde(default, rename = "relinkKey", skip_serializing_if = "Option::is_none")]
+    pub relink_key: Option<String>,
+    /// The files the relinker made besides the executable, relative to `app0`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub generated: Vec<String>,
+    /// The relinker's `.json` files (`eboot.<module>.guest.prx.needed.json`, `.registry.json`)
+    /// that sit beside the executable, relative to the copy.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sidecars: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -94,9 +127,12 @@ pub enum UnlockError {
         needed: u64,
         free: u64,
         folder: PathBuf,
-        /// The game files must be copied because the games folder cannot hard-link to the dump.
+        /// The game files must be copied because this drive cannot hard-link to the dump (another
+        /// drive than the dumps', or a file system without links).
         copying: bool,
     },
+    #[error("the folder for unlocked games is not there: {}", .0.display())]
+    LocationMissing(PathBuf),
     #[error("{context}: {source}")]
     Io { context: String, source: io::Error },
     #[error(transparent)]
@@ -117,9 +153,53 @@ fn gb_down(bytes: u64) -> String {
 
 fn copy_note(copying: bool) -> &'static str {
     if copying {
-        " (the games folder cannot hard-link to the dump, so the game files are copied)"
+        " (this drive cannot hard-link to the dump, so the game files are copied)"
     } else {
         ""
+    }
+}
+
+/// What went wrong, in the terms of what the player can do about it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FailureKind {
+    /// No toolkit is installed.
+    ToolkitMissing,
+    /// The drive that holds the unlocked copies is full.
+    DiskFull,
+    /// The folder for unlocked games is not there (a disconnected drive).
+    LocationMissing,
+    /// Another program holds a file (a virus scanner, a backup, a file manager).
+    FileInUse,
+    /// The dump cannot be used: encrypted, or not a PS5 executable.
+    BadDump,
+    /// The converter itself stopped.
+    Converter,
+    Other,
+}
+
+impl UnlockError {
+    pub fn kind(&self) -> FailureKind {
+        match self {
+            UnlockError::ToolkitMissing => FailureKind::ToolkitMissing,
+            UnlockError::Unwrap { .. } | UnlockError::NotAnExecutable { .. } => {
+                FailureKind::BadDump
+            }
+            UnlockError::Relinker { .. } | UnlockError::NoOutput => FailureKind::Converter,
+            UnlockError::Io { source, .. } => match source.raw_os_error() {
+                // ERROR_DISK_FULL, ERROR_HANDLE_DISK_FULL, ENOSPC
+                Some(112 | 39 | 28) => FailureKind::DiskFull,
+                // ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION
+                Some(5 | 32 | 33) => FailureKind::FileInUse,
+                _ => match source.kind() {
+                    io::ErrorKind::StorageFull => FailureKind::DiskFull,
+                    io::ErrorKind::PermissionDenied => FailureKind::FileInUse,
+                    _ => FailureKind::Other,
+                },
+            },
+            UnlockError::NotEnoughSpace { .. } => FailureKind::DiskFull,
+            UnlockError::LocationMissing(_) => FailureKind::LocationMissing,
+            UnlockError::Cancelled | UnlockError::Toolkit(_) => FailureKind::Other,
+        }
     }
 }
 
@@ -157,6 +237,16 @@ pub enum UnlockEvent {
         game: GameId,
         line: String,
     },
+    /// The unlock stopped at a safe point (`paused`) or goes on. It keeps what it did.
+    Paused {
+        game: GameId,
+        paused: bool,
+    },
+    /// Sent before a successful `Finished`: how long each step took.
+    Timings {
+        game: GameId,
+        seconds: StepSeconds,
+    },
     Finished {
         game: GameId,
         result: Result<UnlockRecord, UnlockError>,
@@ -189,6 +279,11 @@ pub struct UnlockRequest {
     /// Where to back up the saves of the copy this unlock replaces, just before it is replaced
     /// (see [`crate::saves`]); `None` makes no backup.
     pub backup_dir: Option<PathBuf>,
+    /// Nobody asked for this unlock yet: the launcher prepares the game while the PC is idle.
+    /// It runs with the lowest priority and gives way to everything the player does.
+    pub background: bool,
+    /// Never keep the relinker's output of the copy this unlock replaces, relink again.
+    pub fresh: bool,
 }
 
 impl UnlockRequest {
@@ -206,6 +301,8 @@ impl UnlockRequest {
             link_mode: LinkMode::Auto,
             free_space_override: None,
             backup_dir: None,
+            background: false,
+            fresh: false,
         }
     }
 }
@@ -359,6 +456,60 @@ pub fn module_directories(modules: &[String]) -> Vec<String> {
     directories
 }
 
+/// Where each module is staged for the relinker: `(path in the dump, path in the work folder)`,
+/// and the modules left out.
+///
+/// The relinker converts the modules of the module folders (`sce_module`, `sce_modules`, `prx`)
+/// and writes each one under its file name; two modules with one name fail it ("Conflicting guest
+/// output filename"). A `.prx` next to `eboot.bin` (except `libc.prx`) is staged inside the module
+/// folder, like AnyPS5-GUI's `move_root_prx`, so it is converted with the others and the game
+/// finds it there. Only the work folder changes, never the dump. When the module folders already
+/// hold a module with the same name (typically `libc.prx`), the copy in the root is left out and
+/// the module folder wins. Everything else is staged where it is.
+pub fn staged_modules(modules: &[String]) -> (Vec<(String, String)>, Vec<String>) {
+    const DEFAULT: [&str; 3] = ["sce_module", "sce_modules", "prx"];
+    fn default_folder(module: &str) -> Option<&str> {
+        let (dir, _) = module.split_once('/')?;
+        DEFAULT
+            .contains(&dir.to_lowercase().as_str())
+            .then_some(dir)
+    }
+    fn file_name(module: &str) -> String {
+        module
+            .rsplit_once('/')
+            .map_or(module, |(_, name)| name)
+            .to_lowercase()
+    }
+    let folder = modules
+        .iter()
+        .find_map(|m| default_folder(m))
+        .unwrap_or("sce_module")
+        .to_string();
+    let mut taken: std::collections::HashSet<String> = modules
+        .iter()
+        .filter(|m| default_folder(m).is_some())
+        .map(|m| file_name(m))
+        .collect();
+    let mut staged = Vec::new();
+    let mut left_out = Vec::new();
+    for module in modules {
+        let lower = module.to_lowercase();
+        let in_root = !module.contains('/');
+        if in_root && lower.ends_with(".prx") && lower != "libc.prx" {
+            if taken.insert(lower) {
+                staged.push((module.clone(), format!("{folder}/{module}")));
+            } else {
+                left_out.push(module.clone());
+            }
+        } else if in_root && lower == "libc.prx" && taken.contains(&lower) {
+            left_out.push(module.clone());
+        } else {
+            staged.push((module.clone(), module.clone()));
+        }
+    }
+    (staged, left_out)
+}
+
 // ---------------------------------------------------------------------------------------------
 // Relinker progress
 
@@ -424,11 +575,34 @@ fn modules_converted(value: &str) -> Option<(f64, f64)> {
 // ---------------------------------------------------------------------------------------------
 // Control and the pipeline
 
-/// Lets another thread stop a running unlock: sets the flag and kills the relinker.
-#[derive(Default)]
+/// Lets another thread steer a running unlock: stop it (sets the flag and kills the relinker),
+/// pause it (freezes the relinker, holds the file work at the next file) and move it between
+/// background and foreground.
 pub struct UnlockControl {
     cancel: CancelToken,
     process: Mutex<Option<ToolProcess>>,
+    paused: Mutex<Pause>,
+    resumed: Condvar,
+    background: AtomicBool,
+}
+
+/// Whether an unlock stands paused, since when, and how long it stood paused before.
+#[derive(Default)]
+struct Pause {
+    since: Option<Instant>,
+    before: Duration,
+}
+
+impl Default for UnlockControl {
+    fn default() -> Self {
+        Self {
+            cancel: CancelToken::default(),
+            process: Mutex::new(None),
+            paused: Mutex::new(Pause::default()),
+            resumed: Condvar::new(),
+            background: AtomicBool::new(false),
+        }
+    }
 }
 
 impl UnlockControl {
@@ -450,13 +624,75 @@ impl UnlockControl {
         if let Some(process) = self.process.lock().expect("process lock").as_ref() {
             process.kill();
         }
+        // A paused unlock wakes up to see that it is over.
+        self.resumed.notify_all();
+    }
+
+    /// Stops the unlock where it is: the relinker is frozen, the file work waits before its next
+    /// file. Nothing is lost; [`resume`](Self::resume) goes on.
+    pub fn pause(&self) {
+        let mut paused = self.paused.lock().expect("pause lock");
+        if paused.since.is_some() {
+            return;
+        }
+        paused.since = Some(Instant::now());
+        if let Some(process) = self.process.lock().expect("process lock").as_ref() {
+            process.pause();
+        }
+    }
+
+    pub fn resume(&self) {
+        let mut paused = self.paused.lock().expect("pause lock");
+        let Some(since) = paused.since.take() else {
+            return;
+        };
+        paused.before += since.elapsed();
+        if let Some(process) = self.process.lock().expect("process lock").as_ref() {
+            process.resume();
+        }
+        drop(paused);
+        self.resumed.notify_all();
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused.lock().expect("pause lock").since.is_some()
+    }
+
+    /// How long the unlock has stood paused so far, a pause that is going on included.
+    pub fn paused_for(&self) -> Duration {
+        let paused = self.paused.lock().expect("pause lock");
+        paused.before + paused.since.map_or(Duration::ZERO, |s| s.elapsed())
+    }
+
+    /// Background work takes the least the PC can spare; the player now waiting for it ends that.
+    pub fn set_background(&self, background: bool) {
+        self.background.store(background, Ordering::Relaxed);
+        if let Some(process) = self.process.lock().expect("process lock").as_ref() {
+            process.set_priority(Self::priority_of(background));
+        }
+    }
+
+    pub fn is_background(&self) -> bool {
+        self.background.load(Ordering::Relaxed)
+    }
+
+    fn priority_of(background: bool) -> Priority {
+        if background {
+            Priority::Idle
+        } else {
+            Priority::Low
+        }
     }
 
     fn register(&self, process: &ToolProcess) {
+        let paused = self.paused.lock().expect("pause lock");
         *self.process.lock().expect("process lock") = Some(process.clone());
-        // A cancel that arrived before the registration still takes effect.
+        process.set_priority(Self::priority_of(self.is_background()));
+        // A cancel or a pause that arrived before the registration still takes effect.
         if self.cancel.is_cancelled() {
             process.kill();
+        } else if paused.since.is_some() {
+            process.pause();
         }
     }
 
@@ -464,7 +700,20 @@ impl UnlockControl {
         *self.process.lock().expect("process lock") = None;
     }
 
+    /// Waits while the unlock is paused; returns at once when it is not, or when it is cancelled.
+    pub fn hold(&self) {
+        let mut paused = self.paused.lock().expect("pause lock");
+        while paused.since.is_some() && !self.cancel.is_cancelled() {
+            paused = self
+                .resumed
+                .wait_timeout(paused, Duration::from_millis(200))
+                .expect("pause lock")
+                .0;
+        }
+    }
+
     fn check(&self) -> Result<(), UnlockError> {
+        self.hold();
         if self.cancel.is_cancelled() {
             Err(UnlockError::Cancelled)
         } else {
@@ -552,6 +801,144 @@ fn unwrap_one(original: &Path, target: &Path, reporter: &Reporter) -> Result<(),
         return Err(UnlockError::NotAnExecutable { file: name });
     }
     Ok(())
+}
+
+/// Times the steps of one unlock without the time it stood paused.
+struct Stopwatch<'a> {
+    control: &'a UnlockControl,
+    seconds: StepSeconds,
+    current: Option<(Step, Instant, Duration)>,
+}
+
+impl<'a> Stopwatch<'a> {
+    fn new(control: &'a UnlockControl) -> Self {
+        Self {
+            control,
+            seconds: [0.0; 5],
+            current: None,
+        }
+    }
+
+    /// Ends the running step and starts `step`.
+    fn enter(&mut self, step: Step) {
+        self.stop();
+        self.current = Some((step, Instant::now(), self.control.paused_for()));
+    }
+
+    fn stop(&mut self) {
+        if let Some((step, since, paused_then)) = self.current.take() {
+            let waited = self.control.paused_for().saturating_sub(paused_then);
+            let spent = since.elapsed().saturating_sub(waited);
+            self.seconds[step.index()] += spent.as_secs_f32();
+        }
+    }
+
+    fn line(&self) -> String {
+        let [unwrap, relink, copy, assemble, finish] = self.seconds;
+        format!(
+            "timing: unwrap {unwrap:.1}s, relink {relink:.1}s, layout {copy:.1}s, \
+             assemble {assemble:.1}s, finish {finish:.1}s, total {:.1}s",
+            self.seconds.iter().sum::<f32>()
+        )
+    }
+}
+
+/// Everything the relinker's output depends on, as a hash: the release, its arguments, the patch
+/// text and what the inputs look like on disk (size and time; the files are not read, that
+/// would cost seconds). `None` when it cannot be told, which never keeps anything.
+fn relink_key(
+    request: &UnlockRequest,
+    inputs: &[(String, String)],
+    args: &[std::ffi::OsString],
+) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    fn seen(path: &Path) -> String {
+        match fs::metadata(path) {
+            Ok(meta) => {
+                let modified = meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(0, |d| d.as_secs());
+                format!("{}:{modified}", meta.len())
+            }
+            Err(_) => "-".to_string(),
+        }
+    }
+    let mut hasher = Sha256::new();
+    let mut part = |text: &str| {
+        hasher.update((text.len() as u64).to_le_bytes());
+        hasher.update(text.as_bytes());
+    };
+    part("relink-key-2");
+    part(request.toolkit.version());
+    match request.toolkit.digests() {
+        Some(digests) => {
+            part(&digests.relinker);
+            part(&digests.libs);
+        }
+        // A folder the player adopted has no checksums: the relinker itself is hashed (a few MB).
+        None => part(&match fs::read(request.toolkit.relinker()) {
+            Ok(bytes) => crate::toolkit::hex(&Sha256::digest(bytes)),
+            Err(_) => return None,
+        }),
+    }
+    for arg in args {
+        part(&arg.to_string_lossy());
+    }
+    part(request.patches_toml.as_deref().unwrap_or(""));
+    // Where a module is staged is part of the key: it changes what the relinker writes.
+    for (from, to) in inputs {
+        let path = request
+            .folder
+            .join(from.replace('/', std::path::MAIN_SEPARATOR_STR));
+        let mut backup = path.clone().into_os_string();
+        backup.push(".esbak");
+        part(&format!(
+            "{from}>{to}|{}|{}",
+            seen(&path),
+            seen(Path::new(&backup))
+        ));
+    }
+    // The icon and the title data go into the executable.
+    for name in ["icon0.png", "param.json", "param.sfo"] {
+        part(&format!(
+            "sce_sys/{name}|{}",
+            seen(&request.folder.join("sce_sys").join(name))
+        ));
+    }
+    Some(crate::toolkit::hex(&hasher.finalize()))
+}
+
+/// The relinker's output a copy this unlock replaces still holds, when the key says it is the
+/// one this unlock would make again.
+struct Reusable {
+    copy: PathBuf,
+    generated: Vec<String>,
+    sidecars: Vec<String>,
+}
+
+fn reusable_output(request: &UnlockRequest, copy: &Path, key: Option<&str>) -> Option<Reusable> {
+    // The Mach-O patches change the executable after the relinker; its copy is not the output.
+    if cfg!(target_os = "macos") || request.fresh {
+        return None;
+    }
+    let key = key?;
+    let record = read_record(copy)?;
+    if record.relink_key.as_deref() != Some(key) {
+        return None;
+    }
+    let intact = copy.join(EXECUTABLE).is_file()
+        && record
+            .generated
+            .iter()
+            .all(|relative| copy.join("app0").join(relative).is_file())
+        && record.sidecars.iter().all(|name| copy.join(name).is_file());
+    intact.then(|| Reusable {
+        copy: copy.to_path_buf(),
+        generated: record.generated,
+        sidecars: record.sidecars,
+    })
 }
 
 /// Slack for the relinker's temporary files, the record and the volume's own bookkeeping.
@@ -690,6 +1077,10 @@ pub fn run_unlock(
             .map_err(io_context("Rosetta 2"))?;
     }
     let root = std::path::absolute(&request.root).unwrap_or_else(|_| request.root.clone());
+    // A location on a drive that is gone must not be made up on the wrong disk.
+    if !root.is_dir() {
+        return Err(UnlockError::LocationMissing(root));
+    }
     let name = crate::paths::unlocked_copy_name(&request.title_id, &request.game);
     let copy = games_dir(&root).join(&name);
     let partial = games_dir(&root).join(format!("{name}.partial"));
@@ -706,36 +1097,30 @@ pub fn run_unlock(
         sink,
         last: None,
     };
-    let mut linker = Linker::new(request.link_mode);
+    let linker = Linker::new(request.link_mode);
+    let mut clock = Stopwatch::new(control);
 
     // 0. Enough room on the games folder's volume, before anything is written.
-    let modules = modules_in(&request.folder).map_err(io_context("read the dump"))?;
-    let dump_plan = preflight(request, &root, &modules, &reporter)?;
-
-    // 1. The executable and every module as plain ELF files, in the dump's layout.
-    reporter.progress(Step::Unwrap, 0.0);
-    let source = work.join("source");
-    fs::create_dir_all(&source).map_err(io_context("create work folder"))?;
-    let mut inputs = vec!["eboot.bin".to_string()];
-    inputs.extend(modules.iter().cloned());
-    for (index, relative) in inputs.iter().enumerate() {
-        control.check()?;
-        let original = request
-            .folder
-            .join(relative.replace('/', std::path::MAIN_SEPARATOR_STR));
-        let target = source.join(relative.replace('/', std::path::MAIN_SEPARATOR_STR));
-        if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent).map_err(io_context("create work folder"))?;
-        }
-        unwrap_one(&original, &target, &reporter)?;
-        reporter.progress(Step::Unwrap, (index + 1) as f64 / inputs.len() as f64);
+    let dump_modules = modules_in(&request.folder).map_err(io_context("read the dump"))?;
+    let (staged, left_out) = staged_modules(&dump_modules);
+    for module in &left_out {
+        reporter.log(format!(
+            "{module}: a module with this name is already in the module folder, left out"
+        ));
     }
+    let moved = staged.iter().filter(|(from, to)| from != to).count();
+    if moved > 0 {
+        reporter.log(format!(
+            "{moved} .prx next to eboot.bin staged in the module folder (the dump is not changed)"
+        ));
+    }
+    let dump_plan = preflight(request, &root, &dump_modules, &reporter)?;
 
-    // 2. The relinker turns them into a native executable and guest modules.
-    reporter.progress(Step::Relink, 0.0);
-    let out = work.join("out");
-    fs::create_dir_all(&out).map_err(io_context("create work folder"))?;
-    stage_metadata(&request.folder, &source, &mut linker, control)?;
+    // What the relinker will be asked (where each file is in the dump, where in the work folder),
+    // and so whether its last output still fits.
+    let modules: Vec<String> = staged.iter().map(|(_, to)| to.clone()).collect();
+    let mut inputs = vec![("eboot.bin".to_string(), "eboot.bin".to_string())];
+    inputs.extend(staged.iter().cloned());
     let mut args: Vec<std::ffi::OsString> = Os::current()
         .relinker_args()
         .iter()
@@ -758,75 +1143,184 @@ pub fn run_unlock(
                 .map(std::ffi::OsString::from),
         );
     }
-    if let Some(toml) = &request.patches_toml {
-        let file = work.join("patches.toml");
-        fs::write(&file, toml).map_err(io_context("write patches"))?;
-        args.push("--patches".into());
-        args.push(file.into());
+    let key = relink_key(request, &inputs, &args);
+    let reuse = reusable_output(request, &copy, key.as_deref());
+
+    let source = work.join("source");
+    let out = work.join("out");
+    let mut generated = Vec::new();
+    let mut sidecars = Vec::new();
+    if let Some(reuse) = &reuse {
+        // Nothing the relinker reads has changed since it made the copy that is being replaced:
+        // its output is laid into the new copy as it is.
+        clock.enter(Step::Unwrap);
+        reporter.log("relinker output kept: nothing it reads has changed");
+        reporter.progress(Step::Unwrap, 1.0);
+        clock.enter(Step::Relink);
+        reporter.progress(Step::Relink, 1.0);
+        generated.clone_from(&reuse.generated);
+        sidecars.clone_from(&reuse.sidecars);
+    } else {
+        // 1. The executable and every module as plain ELF files, in the dump's layout.
+        clock.enter(Step::Unwrap);
+        reporter.progress(Step::Unwrap, 0.0);
+        fs::create_dir_all(&source).map_err(io_context("create work folder"))?;
+        for (index, (from, to)) in inputs.iter().enumerate() {
+            control.check()?;
+            let original = request
+                .folder
+                .join(from.replace('/', std::path::MAIN_SEPARATOR_STR));
+            let target = source.join(to.replace('/', std::path::MAIN_SEPARATOR_STR));
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent).map_err(io_context("create work folder"))?;
+            }
+            unwrap_one(&original, &target, &reporter)?;
+            reporter.progress(Step::Unwrap, (index + 1) as f64 / inputs.len() as f64);
+        }
+
+        // 2. The relinker turns them into a native executable and guest modules.
+        clock.enter(Step::Relink);
+        reporter.progress(Step::Relink, 0.0);
+        fs::create_dir_all(&out).map_err(io_context("create work folder"))?;
+        stage_metadata(&request.folder, &source, &linker, control)?;
+        if let Some(toml) = &request.patches_toml {
+            let file = work.join("patches.toml");
+            fs::write(&file, toml).map_err(io_context("write patches"))?;
+            args.push("--patches".into());
+            args.push(file.into());
+        }
+        args.push("eboot.bin".into());
+        args.push(out.join(EXECUTABLE).into());
+        run_relinker(request, control, &mut reporter, &source, args)?;
+        if !out.join(EXECUTABLE).is_file() {
+            return Err(UnlockError::NoOutput);
+        }
+        // The relinker writes `eboot.<module>.guest.prx.needed.json` and `.registry.json` for every
+        // converted module beside the executable; AnyPS5-GUI keeps them next to it.
+        for entry in fs::read_dir(&out)
+            .map_err(io_context("read the relinker output"))?
+            .flatten()
+        {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.to_lowercase().ends_with(".json") && entry.path().is_file() {
+                sidecars.push(name);
+            }
+        }
+        sidecars.sort();
+        let guest_modules = out.join("app0");
+        if guest_modules.is_dir() {
+            let made = fsx::walk(&guest_modules, true, &[])
+                .map_err(io_context("read the converted modules"))?;
+            generated = made
+                .iter()
+                .filter(|e| !e.is_dir)
+                .map(|e| e.relative.to_string_lossy().replace('\\', "/"))
+                .collect();
+        }
+        reporter.progress(Step::Relink, 1.0);
     }
-    args.push("eboot.bin".into());
-    args.push(out.join(EXECUTABLE).into());
-    run_relinker(request, control, &mut reporter, &source, args)?;
-    if !out.join(EXECUTABLE).is_file() {
-        return Err(UnlockError::NoOutput);
-    }
-    reporter.progress(Step::Relink, 1.0);
 
     // 3. The game files, linked (no extra space on NTFS), with the relinked modules over them.
     control.check()?;
+    clock.enter(Step::Copy);
     fsx::remove_tree(&partial).map_err(io_context("remove old partial copy"))?;
     let app0 = partial.join("app0");
     fs::create_dir_all(&app0).map_err(io_context("create the copy"))?;
     fs::create_dir_all(partial.join("libs")).map_err(io_context("create the copy"))?;
     reporter.progress(Step::Copy, 0.0);
+    let hold = || control.hold();
+    let tree = TreeOpts {
+        cancel: control.cancel_token(),
+        hold: &hold,
+        background: control.is_background(),
+    };
     match &dump_plan {
-        Some(plan) => fsx::link_tree_planned(
-            &request.folder,
-            plan,
-            &app0,
-            &mut linker,
-            control.cancel_token(),
-            &mut |f| reporter.progress(Step::Copy, f),
-        ),
+        Some(plan) => {
+            fsx::link_tree_planned(&request.folder, plan, &app0, &linker, &tree, &mut |f| {
+                reporter.progress(Step::Copy, f)
+            })
+        }
         None => fsx::link_tree(
             &request.folder,
             &app0,
-            &mut linker,
+            &linker,
             &[STORE_NAME],
-            control.cancel_token(),
+            &tree,
             &mut |f| reporter.progress(Step::Copy, f),
         ),
     }
     .map_err(tree_error)?;
-    let guest_modules = out.join("app0");
-    if guest_modules.is_dir() {
-        fsx::link_tree(
-            &guest_modules,
-            &app0,
-            &mut linker,
-            &[],
-            control.cancel_token(),
-            &mut |_| {},
-        )
-        .map_err(tree_error)?;
+    if let Some(reuse) = &reuse {
+        for relative in &generated {
+            let to = app0.join(relative);
+            if let Some(parent) = to.parent() {
+                fs::create_dir_all(parent).map_err(io_context("create the copy"))?;
+            }
+            lay_over(
+                &linker,
+                &reuse.copy.join("app0").join(relative),
+                &to,
+                control,
+            )?;
+        }
+    } else if out.join("app0").is_dir() {
+        fsx::link_tree(&out.join("app0"), &app0, &linker, &[], &tree, &mut |_| {})
+            .map_err(tree_error)?;
+    }
+    // The modules staged from next to eboot.bin are converted in the module folder. Like
+    // AnyPS5-GUI (it moves them), the copy does not keep the dump's unconverted file next to
+    // eboot.bin, or the game could pick that one. `app0` holds hard links or copies, so only the
+    // copy's name is removed, never the dump's file.
+    for (from, _) in staged.iter().filter(|(from, to)| from != to) {
+        let link = app0.join(from);
+        if let Err(error) = fs::remove_file(&link)
+            && error.kind() != io::ErrorKind::NotFound
+        {
+            reporter.log(format!(
+                "{from}: could not remove it from the copy: {error}"
+            ));
+        }
     }
     if let Some(note) = linker.take_note() {
         reporter.log(note);
     }
+    let (linked, copied) = linker.counts();
+    reporter.log(format!(
+        "layout: {linked} files linked, {copied} copied, {} threads",
+        fsx::link_threads()
+    ));
 
     // 4. The executable, the libraries and the record.
     control.check()?;
+    clock.enter(Step::Assemble);
     reporter.progress(Step::Assemble, 0.0);
-    fs::copy(out.join(EXECUTABLE), partial.join(EXECUTABLE))
-        .map_err(io_context("copy the executable"))?;
+    let output = match &reuse {
+        Some(reuse) => reuse.copy.clone(),
+        None => out.clone(),
+    };
+    let made = output.join(EXECUTABLE);
+    if cfg!(target_os = "macos") {
+        // The Mach-O patches below change this file.
+        fs::copy(&made, partial.join(EXECUTABLE)).map_err(io_context("copy the executable"))?;
+    } else {
+        // Nothing writes to the executable; sharing it saves copying hundreds of megabytes.
+        linker
+            .link_or_copy(&made, &partial.join(EXECUTABLE), control.cancel_token())
+            .map_err(io_context("copy the executable"))?;
+    }
+    for name in &sidecars {
+        // Small files: copied, not linked.
+        fs::copy(output.join(name), partial.join(name))
+            .map_err(io_context(format!("copy {name}")))?;
+    }
     #[cfg(target_os = "macos")]
     assemble_macos(request, &partial, &reporter)?;
     fsx::link_tree(
         request.toolkit.libs(),
         &partial.join("libs"),
-        &mut linker,
+        &linker,
         &[],
-        control.cancel_token(),
+        &tree,
         &mut |_| {},
     )
     .map_err(tree_error)?;
@@ -856,6 +1350,9 @@ pub fn run_unlock(
         toolkit: request.toolkit.version().to_string(),
         relinker_sha256: request.toolkit.digests().map(|d| d.relinker.clone()),
         libs_sha256: request.toolkit.digests().map(|d| d.libs.clone()),
+        relink_key: key.filter(|_| !cfg!(target_os = "macos")),
+        generated,
+        sidecars,
     };
     let json = serde_json::to_string_pretty(&record).map_err(|e| UnlockError::Io {
         context: "write the record".into(),
@@ -866,6 +1363,7 @@ pub fn run_unlock(
 
     // 5. The new copy takes the old one's place, keeping what the game wrote there.
     control.check()?;
+    clock.enter(Step::Finish);
     reporter.progress(Step::Finish, 0.0);
     if copy.exists() {
         // The saves are carried over, so this is a second copy, not the only one. Failing to make
@@ -879,7 +1377,35 @@ pub fn run_unlock(
     }
     swap_in(&copy, &partial, &previous, &reporter)?;
     reporter.progress(Step::Finish, 1.0);
+    clock.stop();
+    reporter.log(clock.line());
+    // A kept relinker output says nothing about what a relink costs here.
+    if reuse.is_none() {
+        (sink)(UnlockEvent::Timings {
+            game: request.game.clone(),
+            seconds: clock.seconds,
+        });
+    }
     Ok(record)
+}
+
+/// Puts `from` at `to`, replacing what is there (the dump's own file, linked earlier).
+fn lay_over(
+    linker: &Linker,
+    from: &Path,
+    to: &Path,
+    control: &UnlockControl,
+) -> Result<(), UnlockError> {
+    fsx::replace_file(to).map_err(io_context(format!("replace {}", to.display())))?;
+    linker
+        .link_or_copy(from, to, control.cancel_token())
+        .map_err(|source| match source.kind() {
+            io::ErrorKind::Interrupted if control.is_cancelled() => UnlockError::Cancelled,
+            _ => UnlockError::Io {
+                context: format!("copy {}", from.display()),
+                source,
+            },
+        })
 }
 
 fn unique_name() -> String {
@@ -967,7 +1493,7 @@ fn now_utc() -> String {
 fn stage_metadata(
     dump: &Path,
     source: &Path,
-    linker: &mut Linker,
+    linker: &Linker,
     control: &UnlockControl,
 ) -> Result<(), UnlockError> {
     let target_dir = source.join("sce_sys");
@@ -996,6 +1522,11 @@ fn run_relinker(
         args,
         cwd: Some(cwd.to_path_buf()),
         env: Vec::new(),
+        priority: if control.is_background() {
+            Priority::Idle
+        } else {
+            Priority::Low
+        },
     };
     let process = ToolProcess::spawn(&spec).map_err(io_context("start the relinker"))?;
     control.register(&process);
@@ -1265,22 +1796,38 @@ impl LogLine for () {
 // ---------------------------------------------------------------------------------------------
 // The queue
 
+struct Running {
+    game: GameId,
+    control: Arc<UnlockControl>,
+    background: bool,
+}
+
 struct QueueState {
+    /// Waiting games, in the order they start within their kind (asked-for first).
     queue: VecDeque<UnlockRequest>,
-    running: Option<(GameId, Arc<UnlockControl>)>,
+    running: Vec<Running>,
     shutdown: bool,
+    /// The PC is busy: background unlocks stand still until it is not.
+    hold_background: bool,
 }
 
 struct Shared {
     state: Mutex<QueueState>,
-    wake: Condvar,
     sink: EventSink<UnlockEvent>,
+    threads: Mutex<Vec<thread::JoinHandle<()>>>,
 }
 
-/// Unlocks one game at a time, in the order they were queued.
+/// Unlocks games, one at a time and in the order they were asked for.
+///
+/// A game the player asked for runs before any game the launcher only prepares on its own
+/// (`UnlockRequest::background`). Prepared games wait for an idle PC ([`hold_background`]),
+/// stand still while an asked-for game unlocks, and keep what they did: the relinker is frozen,
+/// not killed. [`promote`] turns a prepared game into an asked-for one.
+///
+/// [`hold_background`]: UnlockQueue::hold_background
+/// [`promote`]: UnlockQueue::promote
 pub struct UnlockQueue {
     shared: Arc<Shared>,
-    worker: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl UnlockQueue {
@@ -1289,13 +1836,13 @@ impl UnlockQueue {
             shared: Arc::new(Shared {
                 state: Mutex::new(QueueState {
                     queue: VecDeque::new(),
-                    running: None,
+                    running: Vec::new(),
                     shutdown: false,
+                    hold_background: false,
                 }),
-                wake: Condvar::new(),
                 sink,
+                threads: Mutex::new(Vec::new()),
             }),
-            worker: Mutex::new(None),
         }
     }
 
@@ -1303,31 +1850,59 @@ impl UnlockQueue {
     /// on the calling thread here and on the worker thread otherwise; it must not call back into
     /// the queue.
     pub fn enqueue(&self, request: UnlockRequest) -> bool {
-        {
-            let mut state = self.shared.state.lock().expect("queue lock");
-            let busy = state.queue.iter().any(|r| r.game == request.game)
-                || state
-                    .running
-                    .as_ref()
-                    .is_some_and(|(g, _)| *g == request.game);
-            if busy || state.shutdown {
-                return false;
-            }
-            (self.shared.sink)(UnlockEvent::Queued {
-                game: request.game.clone(),
-            });
+        let mut state = self.shared.state.lock().expect("queue lock");
+        let busy = state.queue.iter().any(|r| r.game == request.game)
+            || state.running.iter().any(|r| r.game == request.game);
+        if busy || state.shutdown {
+            return false;
+        }
+        (self.shared.sink)(UnlockEvent::Queued {
+            game: request.game.clone(),
+        });
+        if request.background {
             state.queue.push_back(request);
+        } else {
+            // Behind the games the player asked for before, in front of the prepared ones.
+            let at = state
+                .queue
+                .iter()
+                .position(|r| r.background)
+                .unwrap_or(state.queue.len());
+            state.queue.insert(at, request);
         }
-        self.shared.wake.notify_all();
-        let mut worker = self.worker.lock().expect("worker lock");
-        if worker.is_none() {
-            let shared = self.shared.clone();
-            *worker = thread::Builder::new()
-                .name("unlock".into())
-                .spawn(move || worker_loop(shared))
-                .ok();
-        }
+        pump(&self.shared, &mut state);
         true
+    }
+
+    /// The player now waits for a game the launcher was only preparing: it goes to the front,
+    /// takes the machine it needs and shows its progress. False when the game is not queued or
+    /// running, or was asked for already.
+    pub fn promote(&self, game: &GameId) -> bool {
+        let mut state = self.shared.state.lock().expect("queue lock");
+        let mut changed = false;
+        if let Some(index) = state.queue.iter().position(|r| r.game == *game)
+            && let Some(mut request) = state.queue.remove(index)
+        {
+            changed = request.background;
+            request.background = false;
+            state.queue.push_front(request);
+        } else if let Some(running) = state.running.iter_mut().find(|r| r.game == *game) {
+            changed = running.background;
+            running.background = false;
+            running.control.set_background(false);
+        }
+        pump(&self.shared, &mut state);
+        changed
+    }
+
+    /// Prepared games wait while the PC is busy (a game runs, the battery is in use, memory is
+    /// short) and go on when it is not. Games the player asked for ignore this.
+    pub fn hold_background(&self, hold: bool) {
+        let mut state = self.shared.state.lock().expect("queue lock");
+        if state.hold_background != hold {
+            state.hold_background = hold;
+            pump(&self.shared, &mut state);
+        }
     }
 
     /// Removes a queued game (it finishes with `Cancelled`) or stops the running one.
@@ -1340,23 +1915,36 @@ impl UnlockQueue {
                 game: game.clone(),
                 result: Err(UnlockError::Cancelled),
             });
-        } else if let Some((running, control)) = &state.running
-            && running == game
-        {
-            control.cancel();
+        } else if let Some(running) = state.running.iter().find(|r| r.game == *game) {
+            running.control.cancel();
         }
     }
 
     /// Nothing queued and nothing running.
+    /// A game the launcher prepares on its own is running (or stands still half done).
+    pub fn background_active(&self) -> bool {
+        let state = self.shared.state.lock().expect("queue lock");
+        state.running.iter().any(|r| r.background)
+    }
+
     pub fn is_idle(&self) -> bool {
         let state = self.shared.state.lock().expect("queue lock");
-        state.queue.is_empty() && state.running.is_none()
+        state.queue.is_empty() && state.running.is_empty()
     }
 
     /// Position of a queued game (0 = next); `None` when it is not waiting.
     pub fn position(&self, game: &GameId) -> Option<usize> {
         let state = self.shared.state.lock().expect("queue lock");
         state.queue.iter().position(|r| r.game == *game)
+    }
+
+    /// Whether a game's unlock stands still at the moment.
+    pub fn is_paused(&self, game: &GameId) -> bool {
+        let state = self.shared.state.lock().expect("queue lock");
+        state
+            .running
+            .iter()
+            .any(|r| r.game == *game && r.control.is_paused())
     }
 }
 
@@ -1366,42 +1954,109 @@ impl Drop for UnlockQueue {
             let mut state = self.shared.state.lock().expect("queue lock");
             state.shutdown = true;
             state.queue.clear();
-            if let Some((_, control)) = &state.running {
-                control.cancel();
+            for running in &state.running {
+                running.control.cancel();
             }
         }
-        self.shared.wake.notify_all();
-        if let Some(handle) = self.worker.lock().expect("worker lock").take() {
+        let threads = std::mem::take(&mut *self.shared.threads.lock().expect("threads lock"));
+        for handle in threads {
             let _ = handle.join();
         }
     }
 }
 
-fn worker_loop(shared: Arc<Shared>) {
-    loop {
-        let (request, control) = {
-            let mut state = shared.state.lock().expect("queue lock");
-            loop {
-                if state.shutdown {
-                    return;
-                }
-                if let Some(request) = state.queue.pop_front() {
-                    let control = Arc::new(UnlockControl::new());
-                    state.running = Some((request.game.clone(), control.clone()));
-                    break (request, control);
-                }
-                state = shared.wake.wait(state).expect("queue lock");
-            }
-        };
-        let sink = shared.sink.clone();
-        let result = run_unlock(&request, &control, &*sink);
-        // Clear `running` before the final event, so a listener that enqueues again succeeds.
-        shared.state.lock().expect("queue lock").running = None;
-        (shared.sink)(UnlockEvent::Finished {
-            game: request.game.clone(),
-            result,
-        });
+/// Decides what runs and what stands still. Called with the state locked after every change.
+///
+/// One game the player asked for runs at a time; a prepared game runs only when none is asked
+/// for, the PC is idle and no other prepared game is under way. Prepared games under way stand
+/// still whenever one of those is not so.
+fn pump(shared: &Arc<Shared>, state: &mut QueueState) {
+    if state.shutdown {
+        return;
     }
+    let asked_running = state.running.iter().any(|r| !r.background);
+    let asked_waiting = state.queue.iter().any(|r| !r.background);
+    let make_way = asked_running || asked_waiting;
+    let stand_still = make_way || state.hold_background;
+    // A prepared game stands still for the PC or for an asked-for one; an asked-for game waits
+    // only for another asked-for game that started before it (a promoted game, for instance).
+    let mut asked_before = false;
+    for running in &state.running {
+        let still = if running.background {
+            stand_still
+        } else {
+            std::mem::replace(&mut asked_before, true)
+        };
+        if still && !running.control.is_paused() {
+            running.control.pause();
+            (shared.sink)(UnlockEvent::Paused {
+                game: running.game.clone(),
+                paused: true,
+            });
+        } else if !still && running.control.is_paused() {
+            running.control.resume();
+            (shared.sink)(UnlockEvent::Paused {
+                game: running.game.clone(),
+                paused: false,
+            });
+        }
+    }
+    let next = if !asked_running && asked_waiting {
+        state.queue.iter().position(|r| !r.background)
+    } else if !make_way && !state.hold_background && state.running.is_empty() {
+        // Only the front entry can be a prepared game here: the asked-for ones are first.
+        (!state.queue.is_empty()).then_some(0)
+    } else {
+        None
+    };
+    let Some(request) = next.and_then(|index| state.queue.remove(index)) else {
+        return;
+    };
+    let control = Arc::new(UnlockControl::new());
+    control.set_background(request.background);
+    state.running.push(Running {
+        game: request.game.clone(),
+        control: control.clone(),
+        background: request.background,
+    });
+    let worker = shared.clone();
+    let spawned = thread::Builder::new()
+        .name("unlock".into())
+        .spawn(move || run_job(&worker, &request, &control));
+    let mut threads = shared.threads.lock().expect("threads lock");
+    threads.retain(|handle| !handle.is_finished());
+    match spawned {
+        Ok(handle) => threads.push(handle),
+        // No thread, no unlock: the game must not stay "running" forever.
+        Err(_) => {
+            drop(threads);
+            if let Some(failed) = state.running.pop() {
+                (shared.sink)(UnlockEvent::Finished {
+                    game: failed.game,
+                    result: Err(UnlockError::Io {
+                        context: "start the unlock".into(),
+                        source: io::Error::other("no thread"),
+                    }),
+                });
+            }
+        }
+    }
+}
+
+fn run_job(shared: &Arc<Shared>, request: &UnlockRequest, control: &UnlockControl) {
+    let sink = shared.sink.clone();
+    let result = run_unlock(request, control, &*sink);
+    // Leave `running` before the final event, so a listener that enqueues again succeeds.
+    {
+        let mut state = shared.state.lock().expect("queue lock");
+        state.running.retain(|r| r.game != request.game);
+    }
+    (shared.sink)(UnlockEvent::Finished {
+        game: request.game.clone(),
+        result,
+    });
+    let mut state = shared.state.lock().expect("queue lock");
+    pump(shared, &mut state);
 }
 
 #[cfg(test)]
@@ -1568,6 +2223,45 @@ mod tests {
     }
 
     #[test]
+    fn staged_modules_cases() {
+        let run = |m: &[&str]| staged_modules(&m.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        let pair = |a: &str, b: &str| (a.to_string(), b.to_string());
+        // A root module goes into the module folder; libc.prx stays when nothing collides.
+        let (staged, left) = run(&["libc.prx", "libcohtml.Prospero.prx", "sce_module/a.prx"]);
+        assert_eq!(
+            staged,
+            [
+                pair("libc.prx", "libc.prx"),
+                pair(
+                    "libcohtml.Prospero.prx",
+                    "sce_module/libcohtml.Prospero.prx"
+                ),
+                pair("sce_module/a.prx", "sce_module/a.prx"),
+            ]
+        );
+        assert!(left.is_empty());
+        // Same name in the module folder: the root copy is left out (PPSA02929).
+        let (staged, left) = run(&["libc.prx", "sce_module/libc.prx"]);
+        assert_eq!(staged, [pair("sce_module/libc.prx", "sce_module/libc.prx")]);
+        assert_eq!(left, ["libc.prx"]);
+        let (_, left) = run(&["a.prx", "sce_modules/A.prx"]);
+        assert_eq!(left, ["a.prx"]);
+        // No module folder: sce_module is used. Other folders and .sprx stay put.
+        let (staged, _) = run(&["a.prx", "x.sprx", "Media/Plugins/b.prx"]);
+        assert_eq!(
+            staged,
+            [
+                pair("a.prx", "sce_module/a.prx"),
+                pair("x.sprx", "x.sprx"),
+                pair("Media/Plugins/b.prx", "Media/Plugins/b.prx"),
+            ]
+        );
+        // The existing folder's name is kept.
+        let (staged, _) = run(&["a.prx", "prx/b.prx"]);
+        assert_eq!(staged[0], pair("a.prx", "prx/a.prx"));
+    }
+
+    #[test]
     fn relink_progress_rows() {
         let mut p = RelinkProgress::new();
         let near = |a: Option<f64>, b: f64| (a.unwrap() - b).abs() < 1e-9;
@@ -1631,6 +2325,9 @@ mod tests {
             toolkit: "0.1.3-abc".into(),
             relinker_sha256: None,
             libs_sha256: None,
+            relink_key: None,
+            generated: Vec::new(),
+            sidecars: Vec::new(),
         };
         let json = serde_json::to_string_pretty(&record).unwrap();
         assert_eq!(

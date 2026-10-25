@@ -46,6 +46,7 @@ pub mod input;
 pub mod intro;
 pub mod latency;
 pub mod nudge;
+pub mod pad_info;
 pub mod press;
 pub mod shade;
 pub mod sound;
@@ -64,6 +65,7 @@ use self::home_button::HomeButton;
 use self::i18n::Language;
 use self::input::{Input, InputEvent};
 use self::nudge::Nudge;
+use self::sound::alert::AlertGate;
 use self::sound::hover::{Frame as HoverFrame, HoverGate};
 use self::sound::{Cue, Sounds};
 use self::theme::{Accent, Theme};
@@ -75,6 +77,10 @@ pub struct Shell {
     pub home: Arc<HomeButton>,
     pub sounds: Sounds,
     hover: HoverGate,
+    /// Holds back the chatter of message and notice cues (see [`sound::alert`]).
+    alerts: AlertGate,
+    /// The time of the frame in seconds, for the gates.
+    now: f64,
     /// A cue other than the hover tick played since the last [`Shell::finish_frame`].
     cue_played: bool,
     pub backdrop: Backdrop,
@@ -121,6 +127,8 @@ impl Shell {
             home,
             sounds: Sounds::new(),
             hover: HoverGate::default(),
+            alerts: AlertGate::default(),
+            now: 0.0,
             cue_played: false,
             haptics: Haptics::new(),
             had_pad: true,
@@ -148,6 +156,8 @@ impl Shell {
             home: Arc::new(HomeButton::new(&cc.egui_ctx)),
             sounds,
             hover: HoverGate::default(),
+            alerts: AlertGate::default(),
+            now: 0.0,
             cue_played: false,
             haptics: Haptics::silent(),
             had_pad: true,
@@ -164,6 +174,7 @@ impl Shell {
     /// Call first thing in every frame: applies the window scale and collects input events.
     pub fn begin_frame(&mut self, ctx: &Context) -> FrameInput {
         self.scale = theme::sync_scale(ctx);
+        self.now = ctx.input(|i| i.time);
         text::set_pixels_per_point(ctx.pixels_per_point());
         // The first use of the pad starts the vibration thread, so its first pulse is not late.
         if self.input.pad_in_use {
@@ -217,6 +228,10 @@ impl Shell {
     /// A bump is answered once per press, not on every repeat of a held direction, and leans
     /// the focus ring toward the wall unless motion is reduced.
     pub fn play(&mut self, cue: Cue) {
+        // A burst of messages or notices sounds once; their toasts and badges still show.
+        if !self.alerts.allow(cue, self.now) {
+            return;
+        }
         self.cue_played |= cue != Cue::Hover;
         if cue != Cue::Bump {
             self.bumped_in_hold = false;
@@ -376,6 +391,8 @@ impl Shell {
             home: Arc::new(HomeButton::new(ctx)),
             sounds,
             hover: HoverGate::default(),
+            alerts: AlertGate::default(),
+            now: 0.0,
             cue_played: false,
             haptics: Haptics::silent(),
             had_pad: true,

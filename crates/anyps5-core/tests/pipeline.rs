@@ -617,6 +617,9 @@ fn a_failed_unlock_again_leaves_the_old_copy_untouched() {
     let broken = make_toolkit(&w._dir.path().join("broken"), &["FAKE_RELINKER=fail"]);
     let mut again = request.clone();
     again.toolkit = broken;
+    // The fake relinker behaves differently through a sidecar file only, so the kept output
+    // would be taken for a match; a real different relinker changes the key.
+    again.fresh = true;
     assert!(run(&again).0.is_err());
     assert!(unlock::read_record(&copy).is_some());
     assert_eq!(fs::read(copy.join("_sd/slot0.sav")).unwrap(), b"SAVE-1");
@@ -711,6 +714,8 @@ fn tag(e: &UnlockEvent) -> (&'static str, GameId) {
         UnlockEvent::Started { game } => ("started", game.clone()),
         UnlockEvent::Progress { game, .. } => ("progress", game.clone()),
         UnlockEvent::Log { game, .. } => ("log", game.clone()),
+        UnlockEvent::Paused { game, .. } => ("paused", game.clone()),
+        UnlockEvent::Timings { game, .. } => ("timings", game.clone()),
         UnlockEvent::Finished { game, .. } => ("finished", game.clone()),
     }
 }
@@ -836,4 +841,476 @@ fn dropping_the_queue_stops_a_running_unlock() {
     drop(queue);
     assert!(started.elapsed() < Duration::from_secs(20));
     no_leftovers(&w.root);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Unlock speed: parallel layout, kept relinker output, background queue
+
+fn counting(events: &[UnlockEvent]) -> usize {
+    events
+        .iter()
+        .filter(|e| matches!(e, UnlockEvent::Started { .. }))
+        .count()
+}
+
+#[test]
+fn a_big_tree_is_laid_out_in_parallel_and_matches_the_dump() {
+    let w = world(&[]);
+    let request = w.dump("Many", "PPSA20001", &elf_bytes());
+    for i in 0..400 {
+        let file = request.folder.join(format!("data/pack{}/f{i}.bin", i % 7));
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, format!("file {i}")).unwrap();
+    }
+    let (result, events) = run(&request);
+    result.unwrap();
+    let copy = unlock::unlocked_copy("PPSA20001", &request.game, &w.root);
+    for i in 0..400 {
+        let name = format!("data/pack{}/f{i}.bin", i % 7);
+        assert_eq!(
+            fs::read_to_string(copy.join("app0").join(&name)).unwrap(),
+            format!("file {i}")
+        );
+    }
+    assert!(logs(&events).iter().any(|l| l.starts_with("layout: ")));
+    assert!(logs(&events).iter().any(|l| l.starts_with("timing: ")));
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, UnlockEvent::Timings { .. }))
+    );
+    no_leftovers(&w.root);
+}
+
+#[test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "the Mach-O patches change the executable: nothing is kept there"
+)]
+fn unlocking_again_keeps_the_relinker_output_until_something_it_reads_changes() {
+    let w = world(&[]);
+    let request = w.dump("Again", "PPSA20002", &elf_bytes());
+    let (first, _) = run(&request);
+    let first = first.unwrap();
+    assert!(first.relink_key.is_some());
+
+    let (second, events) = run(&request);
+    let second = second.unwrap();
+    assert!(
+        logs(&events)
+            .iter()
+            .any(|l| l.starts_with("relinker output kept")),
+        "{:?}",
+        logs(&events)
+    );
+    assert_eq!(second.relink_key, first.relink_key);
+    let copy = unlock::unlocked_copy("PPSA20002", &request.game, &w.root);
+    assert!(copy.join(EXECUTABLE).is_file());
+    assert!(unlock::read_record(&copy).is_some());
+
+    // A changed input (the executable grows) relinks again.
+    let mut bigger = elf_bytes();
+    bigger.extend_from_slice(b"more");
+    fs::write(request.folder.join("eboot.bin"), bigger).unwrap();
+    let (third, events) = run(&request);
+    third.unwrap();
+    assert!(
+        !logs(&events)
+            .iter()
+            .any(|l| l.starts_with("relinker output kept"))
+    );
+
+    // `fresh` always relinks.
+    let mut fresh = request.clone();
+    fresh.fresh = true;
+    let (fourth, events) = run(&fresh);
+    fourth.unwrap();
+    assert!(
+        !logs(&events)
+            .iter()
+            .any(|l| l.starts_with("relinker output kept"))
+    );
+}
+
+/// What a .prx next to eboot.bin must look like in the copy (Minecraft's libcohtml, and a libc.prx
+/// that the module folder has as well).
+fn assert_root_prx_layout(request: &UnlockRequest, copy: &Path, w: &World) {
+    let guest = |p: &str| fs::read(copy.join("app0").join(p)).ok();
+    // Converted in the module folder, like the others.
+    assert_eq!(
+        guest("sce_module/libcohtml.Prospero.prx.guest.prx").as_deref(),
+        Some(&b"FAKE-GUEST-MODULE"[..])
+    );
+    // The unconverted root file is not in the copy; the dump keeps it.
+    assert!(!copy.join("app0/libcohtml.Prospero.prx").exists());
+    assert!(request.folder.join("libcohtml.Prospero.prx").is_file());
+    // A name the module folder has wins: the root libc.prx is not staged, only the module
+    // folder's is converted.
+    assert!(copy.join("app0/sce_module/libc.prx.guest.prx").is_file());
+    assert!(
+        !copy
+            .join("app0/sce_module/libc.prx.guest.prx.guest.prx")
+            .exists()
+    );
+    assert!(request.folder.join("libc.prx").is_file());
+    // The relinker's JSON sits next to the executable.
+    for kind in ["needed", "registry"] {
+        assert!(
+            copy.join(format!(
+                "eboot.libcohtml.Prospero.prx.guest.prx.{kind}.json"
+            ))
+            .is_file(),
+            "{kind}"
+        );
+    }
+    no_leftovers(&w.root);
+}
+
+#[test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "the Mach-O patches change the executable: nothing is kept there"
+)]
+fn a_prx_next_to_eboot_is_staged_in_the_layout_and_survives_a_kept_relink() {
+    let w = world(&[]);
+    let request = w.dump("RootPrx", "PPSA20010", &elf_bytes());
+    write(&request.folder.join("libcohtml.Prospero.prx"), &elf_bytes());
+    write(&request.folder.join("libc.prx"), &elf_bytes());
+    write(&request.folder.join("sce_module/libc.prx"), &elf_bytes());
+    let copy = unlock::unlocked_copy("PPSA20010", &request.game, &w.root);
+
+    // First unlock: relinked, the staged module is converted in the module folder.
+    let (first, events) = run(&request);
+    let first = first.unwrap();
+    assert!(
+        logs(&events)
+            .iter()
+            .any(|l| l.contains("staged in the module folder")),
+        "{:?}",
+        logs(&events)
+    );
+    assert!(!first.sidecars.is_empty());
+    assert_root_prx_layout(&request, &copy, &w);
+
+    // Unlock again, nothing changed: the relinker is skipped and the layout is the same.
+    let (second, events) = run(&request);
+    let second = second.unwrap();
+    assert!(
+        logs(&events)
+            .iter()
+            .any(|l| l.starts_with("relinker output kept")),
+        "{:?}",
+        logs(&events)
+    );
+    assert_eq!(second.sidecars, first.sidecars);
+    assert_root_prx_layout(&request, &copy, &w);
+
+    // The staged module changed in the dump: the relinker runs again.
+    let mut bigger = elf_bytes();
+    bigger.extend_from_slice(b"more");
+    write(&request.folder.join("libcohtml.Prospero.prx"), &bigger);
+    let (third, events) = run(&request);
+    third.unwrap();
+    assert!(
+        !logs(&events)
+            .iter()
+            .any(|l| l.starts_with("relinker output kept"))
+    );
+    assert_root_prx_layout(&request, &copy, &w);
+}
+
+#[test]
+fn an_asked_for_game_runs_before_prepared_ones_and_prepared_ones_wait() {
+    let w = world(&["FAKE_DELAY_MS=10"]);
+    let mut prepared = w.dump("Prep", "PPSA20003", &elf_bytes());
+    prepared.background = true;
+    let asked = w.dump("Asked", "PPSA20004", &elf_bytes());
+    let (queue, events) = queue();
+    queue.hold_background(true);
+    assert!(queue.enqueue(prepared.clone()));
+    // Held: the prepared game does not start by itself.
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(counting(&events.0.lock().unwrap()), 0);
+    assert!(queue.enqueue(asked.clone()));
+    events.wait_until("asked finished", Duration::from_secs(60), |e| {
+        finished(e, &asked.game).is_some()
+    });
+    assert!(finished(&events.0.lock().unwrap(), &prepared.game).is_none());
+    // Free again: it goes on.
+    queue.hold_background(false);
+    events.wait_until("prepared finished", Duration::from_secs(60), |e| {
+        finished(e, &prepared.game).is_some()
+    });
+    assert_eq!(
+        finished(&events.0.lock().unwrap(), &prepared.game),
+        Some(true)
+    );
+}
+
+#[test]
+fn promote_turns_a_prepared_game_into_an_asked_for_one() {
+    let w = world(&["FAKE_DELAY_MS=10"]);
+    let mut prepared = w.dump("Promo", "PPSA20005", &elf_bytes());
+    prepared.background = true;
+    let (queue, events) = queue();
+    queue.hold_background(true);
+    assert!(queue.enqueue(prepared.clone()));
+    assert!(queue.promote(&prepared.game));
+    assert!(!queue.promote(&prepared.game), "already asked for");
+    events.wait_until("promoted game finished", Duration::from_secs(60), |e| {
+        finished(e, &prepared.game).is_some()
+    });
+    assert_eq!(
+        finished(&events.0.lock().unwrap(), &prepared.game),
+        Some(true)
+    );
+}
+
+#[test]
+fn a_paused_unlock_stands_still_and_goes_on_without_losing_work() {
+    let w = world(&["FAKE_DELAY_MS=40"]);
+    let mut prepared = w.dump("Pause", "PPSA20006", &elf_bytes());
+    prepared.background = true;
+    let (queue, events) = queue();
+    assert!(queue.enqueue(prepared.clone()));
+    events.wait_until("relinking", Duration::from_secs(30), |e| {
+        e.iter().any(|ev| {
+            matches!(
+                ev,
+                UnlockEvent::Progress {
+                    step: Step::Relink,
+                    ..
+                }
+            )
+        })
+    });
+    queue.hold_background(true);
+    events.wait_until("paused event", Duration::from_secs(10), |e| {
+        e.iter()
+            .any(|ev| matches!(ev, UnlockEvent::Paused { paused: true, .. }))
+    });
+    assert!(queue.is_paused(&prepared.game));
+    std::thread::sleep(Duration::from_millis(400));
+    assert!(finished(&events.0.lock().unwrap(), &prepared.game).is_none());
+    queue.hold_background(false);
+    events.wait_until("finished", Duration::from_secs(60), |e| {
+        finished(e, &prepared.game).is_some()
+    });
+    assert_eq!(
+        finished(&events.0.lock().unwrap(), &prepared.game),
+        Some(true)
+    );
+}
+
+#[test]
+fn cancelling_a_paused_unlock_ends_it() {
+    let w = world(&["FAKE_DELAY_MS=40"]);
+    let mut prepared = w.dump("PauseCancel", "PPSA20007", &elf_bytes());
+    prepared.background = true;
+    let (queue, events) = queue();
+    assert!(queue.enqueue(prepared.clone()));
+    events.wait_until("relinking", Duration::from_secs(30), |e| {
+        e.iter().any(|ev| {
+            matches!(
+                ev,
+                UnlockEvent::Progress {
+                    step: Step::Relink,
+                    ..
+                }
+            )
+        })
+    });
+    queue.hold_background(true);
+    events.wait_until("paused", Duration::from_secs(10), |e| {
+        e.iter()
+            .any(|ev| matches!(ev, UnlockEvent::Paused { paused: true, .. }))
+    });
+    queue.cancel(&prepared.game);
+    events.wait_until("cancelled", Duration::from_secs(20), |e| {
+        finished(e, &prepared.game).is_some()
+    });
+    no_leftovers(&w.root);
+}
+
+#[test]
+fn promoting_a_paused_prepared_game_lets_it_go_on() {
+    let w = world(&["FAKE_DELAY_MS=40"]);
+    let mut prepared = w.dump("PromoPaused", "PPSA20008", &elf_bytes());
+    prepared.background = true;
+    let (queue, events) = queue();
+    assert!(queue.enqueue(prepared.clone()));
+    events.wait_until("relinking", Duration::from_secs(30), |e| {
+        e.iter().any(|ev| {
+            matches!(
+                ev,
+                UnlockEvent::Progress {
+                    step: Step::Relink,
+                    ..
+                }
+            )
+        })
+    });
+    // The PC got busy: it stands still. The player then presses Play on it.
+    queue.hold_background(true);
+    events.wait_until("paused", Duration::from_secs(10), |e| {
+        e.iter()
+            .any(|ev| matches!(ev, UnlockEvent::Paused { paused: true, .. }))
+    });
+    assert!(queue.promote(&prepared.game));
+    events.wait_until("it goes on and finishes", Duration::from_secs(60), |e| {
+        finished(e, &prepared.game).is_some()
+    });
+    assert_eq!(
+        finished(&events.0.lock().unwrap(), &prepared.game),
+        Some(true)
+    );
+}
+
+#[test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "the Mach-O patches change the executable: nothing is kept there"
+)]
+fn a_kept_relinker_output_does_not_report_timings() {
+    let w = world(&[]);
+    let request = w.dump("NoTimings", "PPSA20009", &elf_bytes());
+    run(&request).0.unwrap();
+    let (again, events) = run(&request);
+    again.unwrap();
+    assert!(
+        logs(&events)
+            .iter()
+            .any(|l| l.starts_with("relinker output kept"))
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, UnlockEvent::Timings { .. }))
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// The unlocked games location (launcher#35): the store sits in another folder than the dumps.
+
+/// A request whose store lives in `fast`, a folder besides the games folder.
+fn dump_with_store_in(w: &World, fast: &Path, name: &str, title_id: &str) -> UnlockRequest {
+    let mut request = w.dump(name, title_id, &elf_bytes());
+    request.root = fast.to_path_buf();
+    request
+}
+
+fn listing(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    fn visit(dir: &Path, out: &mut Vec<(PathBuf, Vec<u8>)>) {
+        let mut entries: Vec<_> = fs::read_dir(dir).unwrap().flatten().collect();
+        entries.sort_by_key(|e| e.file_name());
+        for entry in entries {
+            let path = entry.path();
+            if path.is_dir() {
+                out.push((path.clone(), Vec::new()));
+                visit(&path, out);
+            } else {
+                out.push((path.clone(), fs::read(&path).unwrap()));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    visit(root, &mut out);
+    out
+}
+
+#[test]
+fn a_store_in_another_folder_gets_the_copy_and_the_dumps_stay_untouched() {
+    let w = world(&[]);
+    let fast = w._dir.path().join("fast");
+    fs::create_dir_all(&fast).unwrap();
+    let mut request = dump_with_store_in(&w, &fast, "Stray", "PPSA03000");
+    request.link_mode = LinkMode::ForceCopy;
+    let before = listing(&w.root);
+    let (result, _events) = run(&request);
+    result.expect("unlock succeeds");
+
+    let copy = unlock::unlocked_copy("PPSA03000", &request.game, &fast);
+    assert!(copy.join(EXECUTABLE).is_file());
+    assert!(copy.starts_with(fast.join(".AnyPS5/Games")));
+    assert_eq!(
+        fs::read(copy.join("app0/data/level1.pak")).unwrap(),
+        b"LEVEL-ONE-DATA"
+    );
+    assert!(
+        !w.root.join(".AnyPS5").exists(),
+        "nothing was made in the games folder"
+    );
+    assert_eq!(
+        listing(&w.root),
+        before,
+        "the dump folder is byte for byte as it was"
+    );
+    no_leftovers(&fast);
+}
+
+// (macOS shares files by cloning, which keeps a link count of 1.)
+#[cfg(all(unix, not(target_os = "macos")))]
+#[test]
+fn files_are_linked_on_one_volume_and_copied_when_forced() {
+    use std::os::unix::fs::MetadataExt;
+    let w = world(&[]);
+    let fast = w._dir.path().join("fast");
+    fs::create_dir_all(&fast).unwrap();
+
+    let linked = dump_with_store_in(&w, &fast, "Linked", "PPSA03001");
+    run(&linked).0.expect("unlock succeeds");
+    let copy = unlock::unlocked_copy("PPSA03001", &linked.game, &fast);
+    let pak = copy.join("app0/data/level1.pak");
+    assert!(
+        fs::metadata(&pak).unwrap().nlink() > 1,
+        "same volume: a hard link"
+    );
+
+    let mut copied = dump_with_store_in(&w, &fast, "Copied", "PPSA03002");
+    copied.link_mode = LinkMode::ForceCopy;
+    run(&copied).0.expect("unlock succeeds");
+    let copy = unlock::unlocked_copy("PPSA03002", &copied.game, &fast);
+    let pak = copy.join("app0/data/level1.pak");
+    assert_eq!(
+        fs::metadata(&pak).unwrap().nlink(),
+        1,
+        "another volume: a copy of its own"
+    );
+    assert_eq!(fs::read(&pak).unwrap(), b"LEVEL-ONE-DATA");
+}
+
+#[test]
+fn a_location_that_is_gone_stops_before_anything_is_written() {
+    let w = world(&[]);
+    let gone = w._dir.path().join("unplugged");
+    let request = dump_with_store_in(&w, &gone, "Stray", "PPSA03003");
+    let (result, events) = run(&request);
+    let error = result.unwrap_err();
+    assert!(matches!(&error, UnlockError::LocationMissing(p) if p.ends_with("unplugged")));
+    assert_eq!(error.kind(), unlock::FailureKind::LocationMissing);
+    assert!(!gone.exists(), "no folder is made on the wrong disk");
+    assert!(!w.root.join(".AnyPS5").exists());
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, UnlockEvent::Progress { .. }))
+    );
+}
+
+#[test]
+fn the_space_check_measures_the_drive_of_the_location() {
+    let w = world(&[]);
+    let fast = w._dir.path().join("fast");
+    fs::create_dir_all(&fast).unwrap();
+    let mut request = dump_with_store_in(&w, &fast, "Tight", "PPSA03004");
+    request.free_space_override = Some(Some(1024 * 1024));
+    let error = run(&request).0.unwrap_err();
+    match error {
+        UnlockError::NotEnoughSpace { folder, free, .. } => {
+            assert_eq!(folder, fast, "the message names the location's drive");
+            assert_eq!(free, 1024 * 1024);
+        }
+        other => panic!("expected NotEnoughSpace, got {other}"),
+    }
+    assert!(!fast.join(".AnyPS5/Games").exists());
 }

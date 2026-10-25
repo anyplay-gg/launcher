@@ -518,7 +518,9 @@ fn key_caps(sources: &[String], language: Language) -> Vec<KeyCapSpec> {
 // ---------------------------------------------------------------------------------------------
 
 /// Rows fade out over this distance at a clipped edge of a list that scrolls.
-const LIST_FADE: f32 = 28.0;
+const LIST_FADE: f32 = 20.0;
+/// How far a row may reach over the edge before it starts to fade: the padding above its text.
+const LIST_FADE_LEAD: f32 = 14.0;
 
 /// Draws `rows` in a scroll area that fills the available space and follows the focused row with
 /// the focus spring. Returns what the mouse did.
@@ -556,10 +558,14 @@ pub fn list_with_header(
     if let Some(offset) = scroll_to {
         area = area.vertical_scroll_offset(offset);
     }
-    // A list taller than its panel fades rows out over the last 28 dp at a clipped edge instead
+    // A list taller than its panel fades rows out over the last 20 dp at a clipped edge instead
     // of cutting them hard. Whether it overflows is known from the last frame.
     let overflow_id = id.with("overflows");
     let overflows: bool = ctx.data(|d| d.get_temp(overflow_id)).unwrap_or(false);
+    // The heights of the last frame: a caption or a note is lower than a row, and a line that is
+    // cut at the edge must already be gone, not half there.
+    let heights_id = id.with("heights");
+    let heights: Vec<f32> = ctx.data(|d| d.get_temp(heights_id)).unwrap_or_default();
     let clip = ui.clip_rect().intersect(ui.max_rect());
     let output = area.show(ui, |ui| {
         egui::Frame::NONE
@@ -585,10 +591,12 @@ pub fn list_with_header(
                     let focused = options.focus == Some(index);
                     let force = options.force.and_then(|(i, f)| (i == index).then_some(f));
                     let top = ui.cursor().min.y;
-                    let centre = top + size::ROW_MIN_HEIGHT * 0.5;
+                    let height = heights.get(index).copied().unwrap_or(size::ROW_MIN_HEIGHT);
                     let fade = if overflows {
-                        let edge = (centre - clip.min.y).min(clip.max.y - centre);
-                        (edge / LIST_FADE).clamp(0.0, 1.0)
+                        // How far the row is inside the list. It is opaque while it rests inside
+                        // the inset and gone by the time the cut reaches its text.
+                        let edge = (top - clip.min.y).min(clip.max.y - (top + height));
+                        ((edge + LIST_FADE_LEAD) / LIST_FADE).clamp(0.0, 1.0)
                     } else {
                         1.0
                     };
@@ -611,7 +619,13 @@ pub fn list_with_header(
             });
     });
     let overflowing = output.content_size.y > output.inner_rect.height() + 1.0;
-    ctx.data_mut(|d| d.insert_temp(overflow_id, overflowing));
+    ctx.data_mut(|d| {
+        d.insert_temp(overflow_id, overflowing);
+        let now: Vec<f32> = geometry.iter().map(|(_, h)| *h).collect();
+        if d.get_temp::<Vec<f32>>(heights_id).as_ref() != Some(&now) {
+            d.insert_temp(heights_id, now);
+        }
+    });
     follow.end(
         &ctx,
         geometry,

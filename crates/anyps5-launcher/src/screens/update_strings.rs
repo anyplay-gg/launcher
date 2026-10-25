@@ -54,10 +54,27 @@ pub enum UpdateText {
     NoticeHoldingName,
     /// The accessible name of the settings button while an update waits. `%@` = "Settings".
     SettingsBadge,
+    // The "Update required" screen (docs/DESIGN.md 9.5.1)
+    RequiredTitle,
+    /// The one-line reason. `%@` = the version to update to.
+    RequiredReason,
+    /// The same when the version is not known yet.
+    RequiredReasonUnknown,
+    /// The reason when the player asked for the online area while the update is required.
+    RequiredOnline,
+    UpdateNow,
+    PlayOffline,
+    TryAgain,
+    /// Required, and GitHub could not be reached.
+    RequiredOffline,
+    /// Required, but the check found no newer release (the cloud turned the launcher away first).
+    RequiredNoNewer,
+    /// Required and this launcher cannot install it itself.
+    RequiredNoteManual,
 }
 
 impl UpdateText {
-    pub const ALL: [UpdateText; 27] = [
+    pub const ALL: [UpdateText; 37] = [
         UpdateText::Row,
         UpdateText::Checking,
         UpdateText::UpToDate,
@@ -85,6 +102,16 @@ impl UpdateText {
         UpdateText::NoticeName,
         UpdateText::NoticeHoldingName,
         UpdateText::SettingsBadge,
+        UpdateText::RequiredTitle,
+        UpdateText::RequiredReason,
+        UpdateText::RequiredReasonUnknown,
+        UpdateText::RequiredOnline,
+        UpdateText::UpdateNow,
+        UpdateText::PlayOffline,
+        UpdateText::TryAgain,
+        UpdateText::RequiredOffline,
+        UpdateText::RequiredNoNewer,
+        UpdateText::RequiredNoteManual,
     ];
 
     pub const fn english(self) -> &'static str {
@@ -128,6 +155,26 @@ impl UpdateText {
             UpdateText::NoticeName => "Launcher %@ is ready to install",
             UpdateText::NoticeHoldingName => "Launcher %@ restarts when your game closes",
             UpdateText::SettingsBadge => "%@, update ready",
+            UpdateText::RequiredTitle => "Update required",
+            UpdateText::RequiredReason => "AnyPlay Launcher %@ is needed to play online.",
+            UpdateText::RequiredReasonUnknown => {
+                "This version of AnyPlay Launcher can no longer play online."
+            }
+            UpdateText::RequiredOnline => {
+                "The online area needs the latest launcher. Your games still play offline."
+            }
+            UpdateText::UpdateNow => "Update Now",
+            UpdateText::PlayOffline => "Play Offline",
+            UpdateText::TryAgain => "Try Again",
+            UpdateText::RequiredOffline => {
+                "Could not reach GitHub. Check your connection, then try again."
+            }
+            UpdateText::RequiredNoNewer => {
+                "No newer launcher was found yet. Try again in a moment."
+            }
+            UpdateText::RequiredNoteManual => {
+                "Download the new version from GitHub and install it."
+            }
         }
     }
 
@@ -170,6 +217,24 @@ impl UpdateText {
             UpdateText::NoticeName => "Başlatıcı %@ kurulmaya hazır",
             UpdateText::NoticeHoldingName => "Başlatıcı %@, oyun kapanınca yeniden başlar",
             UpdateText::SettingsBadge => "%@, güncelleme hazır",
+            UpdateText::RequiredTitle => "Güncelleme gerekli",
+            UpdateText::RequiredReason => "Çevrimiçi oynamak için AnyPlay Başlatıcı %@ gerekir.",
+            UpdateText::RequiredReasonUnknown => {
+                "AnyPlay Başlatıcı'nın bu sürümüyle artık çevrimiçi oynanamaz."
+            }
+            UpdateText::RequiredOnline => {
+                "Çevrimiçi alan en yeni başlatıcıyı gerektirir. Oyunlarını çevrimdışı oynamaya devam edebilirsin."
+            }
+            UpdateText::UpdateNow => "Şimdi Güncelle",
+            UpdateText::PlayOffline => "Çevrimdışı Oyna",
+            UpdateText::TryAgain => "Tekrar Dene",
+            UpdateText::RequiredOffline => {
+                "GitHub'a ulaşılamadı. Bağlantını denetle, sonra tekrar dene."
+            }
+            UpdateText::RequiredNoNewer => {
+                "Henüz daha yeni bir başlatıcı bulunamadı. Biraz sonra tekrar dene."
+            }
+            UpdateText::RequiredNoteManual => "Yeni sürümü GitHub'dan indir ve kur.",
         }
     }
 
@@ -220,6 +285,7 @@ mod tests {
             UpdateText::NoticeName,
             UpdateText::NoticeHoldingName,
             UpdateText::SettingsBadge,
+            UpdateText::RequiredReason,
         ] {
             for language in Language::ALL {
                 assert!(text.text(language).contains("%@"), "{text:?} {language:?}");
