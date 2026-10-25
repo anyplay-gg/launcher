@@ -27,6 +27,8 @@ pub enum HomeFocus {
     Actions(usize),
     /// "How did it run?" below the facts: the four answers (0 to 3), then dismiss (4).
     Ask(usize),
+    /// The launcher update notice after the title: its buttons from the left.
+    Update(u8),
 }
 
 /// What the home screen needs to know to navigate.
@@ -40,6 +42,8 @@ pub struct HomeContext {
     pub has_trophies: bool,
     /// "How did it run?" is on screen.
     pub asking: bool,
+    /// Buttons of the launcher update notice (0 = no notice).
+    pub notice: u8,
 }
 
 impl HomeContext {
@@ -60,6 +64,8 @@ pub enum HomeIntent {
     OpenGameSettings,
     /// Answer "How did it run?" (0 to 3) or dismiss it (4).
     AnswerRun(usize),
+    /// A button of the launcher update notice (0 = the main one).
+    UpdateAction(usize),
     OpenLibrary,
     OpenSettings,
     /// The friends button: the online area on the friends list, or on sign-in while signed out.
@@ -138,6 +144,9 @@ impl HomeFocus {
                 _ => {}
             },
             HomeFocus::Top(i) => match command {
+                Command::Left if i == 0 && ctx.notice > 0 => {
+                    go(&mut step, HomeFocus::Update(ctx.notice - 1));
+                }
                 Command::Left => go(&mut step, HomeFocus::Top(i.saturating_sub(1))),
                 Command::Right => go(&mut step, HomeFocus::Top((i + 1).min(Self::LAST_TOP))),
                 Command::Down | Command::Back => go(&mut step, HomeFocus::Tiles),
@@ -169,6 +178,15 @@ impl HomeFocus {
                     _ => {}
                 }
             }
+            HomeFocus::Update(i) => match command {
+                Command::Left => go(&mut step, HomeFocus::Update(i.saturating_sub(1))),
+                Command::Right if i + 1 < ctx.notice => go(&mut step, HomeFocus::Update(i + 1)),
+                Command::Right => go(&mut step, HomeFocus::Top(0)),
+                Command::Down | Command::Back => go(&mut step, HomeFocus::Tiles),
+                Command::Select => step.intent = Some(HomeIntent::UpdateAction(usize::from(i))),
+                Command::Options if has_games => step.intent = Some(HomeIntent::OpenGameSettings),
+                _ => {}
+            },
             HomeFocus::Ask(i) => match command {
                 Command::Left => go(&mut step, HomeFocus::Ask(i.saturating_sub(1))),
                 Command::Right => go(&mut step, HomeFocus::Ask((i + 1).min(ASK_LAST))),
@@ -374,6 +392,7 @@ mod tests {
             selected,
             has_trophies,
             asking: false,
+            notice: 0,
         }
     }
 

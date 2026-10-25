@@ -71,6 +71,23 @@ pub struct Toast {
     pub until: f64,
 }
 
+/// The launcher update notice on the home screen.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UpdateNotice {
+    pub version: String,
+    /// The restart waits for a running game.
+    pub holding: bool,
+    /// How many buttons it has (the focus stops of [`HomeFocus::Update`]).
+    pub buttons: u8,
+}
+
+/// What a button of the notice asks the host for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UpdateRequest {
+    Restart,
+    CancelRestart,
+}
+
 /// Where the first-run setup stands.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Onboarding {
@@ -228,6 +245,12 @@ pub struct Model {
     /// Why each game stopped the last time it was started, when it stopped on an error.
     pub diagnoses: HashMap<GameId, String>,
     pub toast: Option<Toast>,
+    /// Where the launcher's own update stands, copied in every frame by the panel host.
+    pub update: crate::screens::settings::LauncherUpdate,
+    /// The version whose notice the player sent away with "Later" (until the next start).
+    pub update_dismissed: Option<String>,
+    /// What the notice asked for since the host looked: restart now, or cancel the held restart.
+    pub update_request: Option<UpdateRequest>,
     /// The toolkit version on this PC (`None`: no toolkit, nothing can be unlocked).
     pub toolkit: Option<String>,
     /// The toolkit needs a newer glibc than this system has (Linux); a notice, not a block.
@@ -301,6 +324,9 @@ impl Model {
             trophies: HashMap::new(),
             diagnoses: HashMap::new(),
             toast: None,
+            update: Default::default(),
+            update_dismissed: None,
+            update_request: None,
             toolkit: None,
             glibc: None,
             game_toolkits: HashMap::new(),
@@ -532,6 +558,7 @@ impl Model {
             selected: self.selected,
             has_trophies: self.has_trophies(),
             asking: self.run_question().is_some(),
+            notice: self.update_notice().map_or(0, |n| n.buttons),
         }
     }
 
@@ -1015,6 +1042,10 @@ impl Model {
         if matches!(self.focus, HomeFocus::Ask(_)) && self.run_question().is_none() {
             self.focus = HomeFocus::Actions(0);
         }
+        // The notice may have gone (sent away, installed) while the focus was on it.
+        if matches!(self.focus, HomeFocus::Update(_)) && self.update_notice().is_none() {
+            self.focus = HomeFocus::Tiles;
+        }
         let step = self.focus.navigate(command, self.home_context());
         self.focus = step.focus;
         let moved = step.selected != self.selected;
@@ -1036,6 +1067,7 @@ impl Model {
         match intent {
             HomeIntent::PrimaryAction => self.primary_action(),
             HomeIntent::AnswerRun(i) => self.answer_run(i),
+            HomeIntent::UpdateAction(i) => self.update_action(i),
             HomeIntent::OpenTrophies => self.open(Overlay::Trophies),
             HomeIntent::OpenGameSettings => self.open(Overlay::GameSettings),
             HomeIntent::OpenLibrary => self.open(Overlay::Library),
@@ -1045,6 +1077,51 @@ impl Model {
             // The profile button: the own profile once signed in, the sign-in page before.
             HomeIntent::OpenOnline => self.open_profile_button(),
             HomeIntent::ChooseFolder => self.request_folder_dialog(),
+        }
+    }
+
+    // --- the launcher update notice -------------------------------------------------------------
+
+    /// The notice on the home screen, when there is one: a verified update waits and the player
+    /// has not sent it away, or its restart waits for the game to end.
+    pub fn update_notice(&self) -> Option<UpdateNotice> {
+        use crate::screens::settings::LauncherUpdate;
+        if !self.onboarded() {
+            return None;
+        }
+        match &self.update {
+            LauncherUpdate::Ready(v) if self.update_dismissed.as_deref() != Some(v) => {
+                Some(UpdateNotice {
+                    version: v.clone(),
+                    holding: false,
+                    buttons: 2,
+                })
+            }
+            LauncherUpdate::Holding(v) => Some(UpdateNotice {
+                version: v.clone(),
+                holding: true,
+                buttons: 1,
+            }),
+            _ => None,
+        }
+    }
+
+    /// A button of the notice: "Restart Now" and "Later", or while the restart waits, "Cancel".
+    fn update_action(&mut self, index: usize) {
+        let Some(notice) = self.update_notice() else {
+            return;
+        };
+        self.sound(Cue::Select);
+        match (notice.holding, index) {
+            (false, 0) => self.update_request = Some(UpdateRequest::Restart),
+            (false, _) => {
+                self.update_dismissed = Some(notice.version);
+                self.focus = HomeFocus::Tiles;
+            }
+            (true, _) => {
+                self.update_request = Some(UpdateRequest::CancelRestart);
+                self.focus = HomeFocus::Tiles;
+            }
         }
     }
 
@@ -1058,6 +1135,7 @@ impl Model {
             HomeFocus::Actions(_) => HomeIntent::OpenGameSettings,
             HomeFocus::Tiles => HomeIntent::PrimaryAction,
             HomeFocus::Ask(i) => HomeIntent::AnswerRun(i),
+            HomeFocus::Update(i) => HomeIntent::UpdateAction(usize::from(i)),
         };
         self.apply_intent(intent);
     }
