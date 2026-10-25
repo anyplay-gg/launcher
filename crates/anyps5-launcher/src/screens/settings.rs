@@ -358,9 +358,13 @@ fn location_rows(prefs: &Preferences, location: &LocationEnv, language: Language
     );
     if let Some((from, count)) = &location.left {
         rows.push(
-            Row::info("unlockedNote", words::note_left(*count, from, language), None)
-                .attached()
-                .warning(),
+            Row::info(
+                "unlockedNote",
+                words::note_left(*count, from, language),
+                None,
+            )
+            .attached()
+            .warning(),
         );
         rows.push(Row::command("moveContinue", words::continue_move(language)).icon(Icon::PLAY));
         rows.push(
@@ -381,7 +385,10 @@ fn location_rows(prefs: &Preferences, location: &LocationEnv, language: Language
     };
     rows.push(note.attached());
     if custom.is_some() {
-        rows.push(Row::command("unlockedDefault", words::use_default(language)).icon(Icon::ARROW_COUNTER_CLOCKWISE));
+        rows.push(
+            Row::command("unlockedDefault", words::use_default(language))
+                .icon(Icon::ARROW_COUNTER_CLOCKWISE),
+        );
     }
     rows
 }
@@ -1530,14 +1537,17 @@ impl SettingsPanel {
                     crate::screens::location_strings::dialog(language),
                     start.as_deref(),
                 ) {
-                    out.actions.push(SettingsAction::UnlockedFolderPicked(folder));
+                    out.actions
+                        .push(SettingsAction::UnlockedFolderPicked(folder));
                 }
             }
             Change::Run {
                 row: "unlockedDefault",
             } => out.actions.push(SettingsAction::UseDefaultLocation),
             Change::Run { row: "moveCancel" } => out.actions.push(SettingsAction::CancelMove),
-            Change::Run { row: "moveContinue" } => out.actions.push(SettingsAction::ContinueMove),
+            Change::Run {
+                row: "moveContinue",
+            } => out.actions.push(SettingsAction::ContinueMove),
             Change::Run { row: "moveLeave" } => out.actions.push(SettingsAction::LeaveOldCopies),
             change if phone::action(env.phone, change).is_some() => {
                 out.actions

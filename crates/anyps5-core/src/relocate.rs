@@ -323,14 +323,31 @@ mod tests {
         let linked = copy_path(&from, "PPSA1-a").join("data.pak");
         fs::hard_link(&dump, &linked).unwrap();
 
-        let report = move_all(&from, &to, LinkMode::Auto, &|_| false, &CancelToken::new(), &mut quiet());
+        let report = move_all(
+            &from,
+            &to,
+            LinkMode::Auto,
+            &|_| false,
+            &CancelToken::new(),
+            &mut quiet(),
+        );
         assert_eq!(report.moved, ["PPSA1-a"]);
         assert!(report.complete());
         let moved = copy_path(&to, "PPSA1-a");
-        assert_eq!(fs::read_to_string(moved.join("_sd/slot0.sav")).unwrap(), "SAVE ONE");
+        assert_eq!(
+            fs::read_to_string(moved.join("_sd/slot0.sav")).unwrap(),
+            "SAVE ONE"
+        );
         assert!(!copy_path(&from, "PPSA1-a").exists());
-        assert!(!paths::store_dir(&from).exists(), "the emptied store is tidied away");
-        assert_eq!(fs::read_to_string(&dump).unwrap(), "dump bytes", "the dump is untouched");
+        assert!(
+            !paths::store_dir(&from).exists(),
+            "the emptied store is tidied away"
+        );
+        assert_eq!(
+            fs::read_to_string(&dump).unwrap(),
+            "dump bytes",
+            "the dump is untouched"
+        );
     }
 
     #[test]
@@ -351,7 +368,14 @@ mod tests {
                 cancel.cancel();
             }
         };
-        let report = move_all(&from, &to, LinkMode::ForceCopy, &|_| false, &cancel, &mut progress);
+        let report = move_all(
+            &from,
+            &to,
+            LinkMode::ForceCopy,
+            &|_| false,
+            &cancel,
+            &mut progress,
+        );
         assert!(report.cancelled && !report.complete());
         assert_eq!(report.moved, ["G1-1"]);
         assert_eq!(pending(&to), ["G1-1"]);
@@ -367,7 +391,14 @@ mod tests {
         assert!(starts > 0);
 
         // A later move picks up where this one stopped.
-        let again = move_all(&from, &to, LinkMode::Auto, &|_| false, &CancelToken::new(), &mut quiet());
+        let again = move_all(
+            &from,
+            &to,
+            LinkMode::Auto,
+            &|_| false,
+            &CancelToken::new(),
+            &mut quiet(),
+        );
         assert!(again.complete());
         assert_eq!(pending(&to), ["G1-1", "G2-2", "G3-3"]);
         assert!(pending(&from).is_empty());
@@ -379,7 +410,14 @@ mod tests {
         let (from, to) = (dir.path().join("a"), dir.path().join("b"));
         copy(&from, "G1-1", "one");
         copy(&from, "G2-2", "two");
-        let report = move_all(&from, &to, LinkMode::Auto, &|name| name == "G1-1", &CancelToken::new(), &mut quiet());
+        let report = move_all(
+            &from,
+            &to,
+            LinkMode::Auto,
+            &|name| name == "G1-1",
+            &CancelToken::new(),
+            &mut quiet(),
+        );
         assert_eq!(report.moved, ["G2-2"]);
         assert_eq!(report.left, [("G1-1".to_string(), Left::Running)]);
         assert!(!report.complete());
@@ -392,12 +430,22 @@ mod tests {
         let (from, to) = (dir.path().join("a"), dir.path().join("b"));
         copy(&from, "G1-1", "one");
         // What a killed move leaves: a half-made copy at the new place.
-        write(&paths::copies_dir(&to).join("G1-1.partial/eboot.exe"), "gam");
+        write(
+            &paths::copies_dir(&to).join("G1-1.partial/eboot.exe"),
+            "gam",
+        );
         assert!(pending(&to).is_empty(), "a partial is not a copy");
         crate::unlock::remove_leftovers(&to);
         assert!(!paths::copies_dir(&to).join("G1-1.partial").exists());
         assert!(copy_path(&from, "G1-1").join("_sd/slot0.sav").is_file());
-        let report = move_all(&from, &to, LinkMode::Auto, &|_| false, &CancelToken::new(), &mut quiet());
+        let report = move_all(
+            &from,
+            &to,
+            LinkMode::Auto,
+            &|_| false,
+            &CancelToken::new(),
+            &mut quiet(),
+        );
         assert!(report.complete());
     }
 
@@ -407,7 +455,14 @@ mod tests {
         let (from, to) = (dir.path().join("a"), dir.path().join("b"));
         copy(&from, "G1-1", "one");
         copy(&to, "G1-1", "one");
-        let report = move_all(&from, &to, LinkMode::Auto, &|_| false, &CancelToken::new(), &mut quiet());
+        let report = move_all(
+            &from,
+            &to,
+            LinkMode::Auto,
+            &|_| false,
+            &CancelToken::new(),
+            &mut quiet(),
+        );
         assert_eq!(report.moved, ["G1-1"]);
         assert!(report.duplicates.is_empty());
         assert!(pending(&from).is_empty());
@@ -419,7 +474,14 @@ mod tests {
         let (from, to) = (dir.path().join("a"), dir.path().join("b"));
         copy(&from, "G1-1", "old save");
         copy(&to, "G1-1", "new save, longer");
-        let report = move_all(&from, &to, LinkMode::Auto, &|_| false, &CancelToken::new(), &mut quiet());
+        let report = move_all(
+            &from,
+            &to,
+            LinkMode::Auto,
+            &|_| false,
+            &CancelToken::new(),
+            &mut quiet(),
+        );
         assert!(matches!(report.left[0].1, Left::Failed(_)));
         assert_eq!(
             fs::read_to_string(copy_path(&from, "G1-1").join("_sd/slot0.sav")).unwrap(),
@@ -440,17 +502,33 @@ mod tests {
         copy(&from, "G1-1", "SAVE");
         let linked = copy_path(&from, "G1-1").join("data.pak");
         fs::hard_link(&dump, &linked).unwrap();
-        let report = move_all(&from, &to, LinkMode::ForceCopy, &|_| false, &CancelToken::new(), &mut quiet());
+        let report = move_all(
+            &from,
+            &to,
+            LinkMode::ForceCopy,
+            &|_| false,
+            &CancelToken::new(),
+            &mut quiet(),
+        );
         assert_eq!(report.moved, ["G1-1"]);
         assert!(report.complete() && report.duplicates.is_empty());
         let new = copy_path(&to, "G1-1");
-        assert_eq!(fs::read_to_string(new.join("_sd/slot0.sav")).unwrap(), "SAVE");
-        assert_eq!(fs::read_to_string(new.join("data.pak")).unwrap(), "dump bytes");
+        assert_eq!(
+            fs::read_to_string(new.join("_sd/slot0.sav")).unwrap(),
+            "SAVE"
+        );
+        assert_eq!(
+            fs::read_to_string(new.join("data.pak")).unwrap(),
+            "dump bytes"
+        );
         assert!(!copy_path(&from, "G1-1").exists());
         assert!(!paths::copies_dir(&to).join("G1-1.partial").exists());
         // A full copy: it shares no storage with the dump, so removing the dump keeps the game whole.
         fs::remove_file(&dump).unwrap();
-        assert_eq!(fs::read_to_string(new.join("data.pak")).unwrap(), "dump bytes");
+        assert_eq!(
+            fs::read_to_string(new.join("data.pak")).unwrap(),
+            "dump bytes"
+        );
     }
 
     #[test]
@@ -460,12 +538,19 @@ mod tests {
         copy(&from, "G1-1", "one");
         copy(&from, "G2-2", "two");
         let cancel = CancelToken::new();
-        let report = move_all(&from, &to, LinkMode::ForceCopy, &|_| false, &cancel, &mut |p| {
-            // The first copy has begun: cancel before its files are done.
-            if p.current == "G1-1" {
-                cancel.cancel();
-            }
-        });
+        let report = move_all(
+            &from,
+            &to,
+            LinkMode::ForceCopy,
+            &|_| false,
+            &cancel,
+            &mut |p| {
+                // The first copy has begun: cancel before its files are done.
+                if p.current == "G1-1" {
+                    cancel.cancel();
+                }
+            },
+        );
         assert!(report.cancelled);
         assert!(report.moved.is_empty());
         assert_eq!(pending(&from), ["G1-1", "G2-2"]);
@@ -482,10 +567,17 @@ mod tests {
         copy(&from, "G2-2", "two");
         let last = AtomicUsize::new(0);
         let mut seen = Vec::new();
-        let report = move_all(&from, &to, LinkMode::Auto, &|_| false, &CancelToken::new(), &mut |p| {
-            last.store(p.total, Ordering::Relaxed);
-            seen.push(p);
-        });
+        let report = move_all(
+            &from,
+            &to,
+            LinkMode::Auto,
+            &|_| false,
+            &CancelToken::new(),
+            &mut |p| {
+                last.store(p.total, Ordering::Relaxed);
+                seen.push(p);
+            },
+        );
         assert!(report.complete());
         assert_eq!(last.load(Ordering::Relaxed), 2);
         assert!(seen.windows(2).all(|w| w[0].done_bytes <= w[1].done_bytes));

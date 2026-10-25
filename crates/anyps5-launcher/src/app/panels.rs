@@ -759,10 +759,9 @@ impl PanelHost {
                 UninstallAction::Cancel => model.dismiss_overlay(),
                 UninstallAction::Confirm => {
                     model.dismiss_overlay();
-                    if let (Some(game), Some(root)) = (
-                        model.selected_game().cloned(),
-                        model.store_root(),
-                    ) {
+                    if let (Some(game), Some(root)) =
+                        (model.selected_game().cloned(), model.store_root())
+                    {
                         let backups = model.paths.game_backups_dir(&game.title_id);
                         self.start_uninstall(&game, root, backups, model.language());
                     }

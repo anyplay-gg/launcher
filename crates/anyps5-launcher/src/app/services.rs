@@ -11,11 +11,11 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use anyps5_core::events::{CancelToken, CoreEvent, Notifier};
 use anyps5_core::fsx::LinkMode;
 use anyps5_core::library::{self, Game, LibraryWatcher};
-use anyps5_core::{location, relocate};
 use anyps5_core::paths::{self, AppPaths, GameId};
 use anyps5_core::saves::{AFTER_PLAYING_EVERY, Reason, SaveData};
 use anyps5_core::settings::{ConsoleLanguage, Preferences};
 use anyps5_core::trophies::{Trophies, TrophyWatcher};
+use anyps5_core::{location, relocate};
 use egui::Context;
 
 /// The pause between two games of a trophy sync.

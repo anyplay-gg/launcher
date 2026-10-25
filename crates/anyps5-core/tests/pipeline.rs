@@ -1236,8 +1236,15 @@ fn a_store_in_another_folder_gets_the_copy_and_the_dumps_stay_untouched() {
         fs::read(copy.join("app0/data/level1.pak")).unwrap(),
         b"LEVEL-ONE-DATA"
     );
-    assert!(!w.root.join(".AnyPS5").exists(), "nothing was made in the games folder");
-    assert_eq!(listing(&w.root), before, "the dump folder is byte for byte as it was");
+    assert!(
+        !w.root.join(".AnyPS5").exists(),
+        "nothing was made in the games folder"
+    );
+    assert_eq!(
+        listing(&w.root),
+        before,
+        "the dump folder is byte for byte as it was"
+    );
     no_leftovers(&fast);
 }
 
@@ -1253,7 +1260,10 @@ fn files_are_linked_on_one_volume_and_copied_when_forced() {
     run(&linked).0.expect("unlock succeeds");
     let copy = unlock::unlocked_copy("PPSA03001", &linked.game, &fast);
     let pak = copy.join("app0/data/level1.pak");
-    assert!(fs::metadata(&pak).unwrap().nlink() > 1, "same volume: a hard link");
+    assert!(
+        fs::metadata(&pak).unwrap().nlink() > 1,
+        "same volume: a hard link"
+    );
 
     let mut copied = dump_with_store_in(&w, &fast, "Copied", "PPSA03002");
     copied.link_mode = LinkMode::ForceCopy;
@@ -1279,7 +1289,11 @@ fn a_location_that_is_gone_stops_before_anything_is_written() {
     assert_eq!(error.kind(), unlock::FailureKind::LocationMissing);
     assert!(!gone.exists(), "no folder is made on the wrong disk");
     assert!(!w.root.join(".AnyPS5").exists());
-    assert!(!events.iter().any(|e| matches!(e, UnlockEvent::Progress { .. })));
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, UnlockEvent::Progress { .. }))
+    );
 }
 
 #[test]

@@ -513,7 +513,8 @@ impl Pipeline for CorePipeline {
         let fresh = matches!(command, PipelineCommand::UnlockAgain(_));
         // Copies are moving to another place: nothing is unlocked or started until they are there.
         if cx.prefs.unlocked_moving_from.is_some() {
-            let waits = crate::screens::location_strings::waits_for_move(ui_language(cx.prefs.language));
+            let waits =
+                crate::screens::location_strings::waits_for_move(ui_language(cx.prefs.language));
             match &command {
                 PipelineCommand::Unlock(game)
                 | PipelineCommand::Retry(game)

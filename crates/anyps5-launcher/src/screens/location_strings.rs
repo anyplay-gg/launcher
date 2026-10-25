@@ -16,7 +16,11 @@ fn pick(language: Language, english: &'static str, turkish: &'static str) -> &'s
 
 /// The title of the setting row.
 pub fn title(language: Language) -> &'static str {
-    pick(language, "Unlocked Games Location", "Kilidi Açılan Oyunların Konumu")
+    pick(
+        language,
+        "Unlocked Games Location",
+        "Kilidi Açılan Oyunların Konumu",
+    )
 }
 
 /// The title of the folder dialog.
@@ -50,7 +54,10 @@ pub fn detail(
         |folder| folder.display().to_string(),
     );
     if missing {
-        return format!("{place} \u{b7} {}", pick(language, "Not found", "Bulunamadı"));
+        return format!(
+            "{place} \u{b7} {}",
+            pick(language, "Not found", "Bulunamadı")
+        );
     }
     match free {
         Some(free) => format!(
@@ -97,8 +104,14 @@ pub fn note_missing(language: Language) -> &'static str {
 /// The row while the copies move: "Moving 3 of 7 · 42%".
 pub fn moving(done: usize, total: usize, percent: u32, language: Language) -> String {
     match language {
-        Language::English => format!("Moving {} of {total} \u{b7} {percent}%", (done + 1).min(total)),
-        Language::Turkish => format!("{} / {total} taşınıyor \u{b7} %{percent}", (done + 1).min(total)),
+        Language::English => format!(
+            "Moving {} of {total} \u{b7} {percent}%",
+            (done + 1).min(total)
+        ),
+        Language::Turkish => format!(
+            "{} / {total} taşınıyor \u{b7} %{percent}",
+            (done + 1).min(total)
+        ),
     }
 }
 
@@ -120,7 +133,11 @@ pub fn continue_move(language: Language) -> &'static str {
 }
 
 pub fn leave(language: Language) -> &'static str {
-    pick(language, "Leave Games Where They Are", "Oyunları Olduğu Yerde Bırak")
+    pick(
+        language,
+        "Leave Games Where They Are",
+        "Oyunları Olduğu Yerde Bırak",
+    )
 }
 
 pub fn leave_detail(language: Language) -> &'static str {
@@ -206,7 +223,11 @@ pub fn busy_moving(language: Language) -> &'static str {
 
 /// A toast: the games moved.
 pub fn moved(language: Language) -> &'static str {
-    pick(language, "Unlocked games moved.", "Kilidi açılan oyunlar taşındı.")
+    pick(
+        language,
+        "Unlocked games moved.",
+        "Kilidi açılan oyunlar taşındı.",
+    )
 }
 
 /// A toast: the move stopped with games left in the old location.
@@ -216,9 +237,9 @@ pub fn stopped(left: usize, language: Language) -> String {
             "{left} {} left in the old location. Continue the move in Settings.",
             if left == 1 { "game was" } else { "games were" }
         ),
-        Language::Turkish => format!(
-            "{left} oyun eski konumunda kaldı. Taşımaya Ayarlar'dan devam et."
-        ),
+        Language::Turkish => {
+            format!("{left} oyun eski konumunda kaldı. Taşımaya Ayarlar'dan devam et.")
+        }
     }
 }
 
@@ -272,7 +293,13 @@ mod tests {
         assert!(note_left(0, from, Language::English).starts_with("Some unlocked games"));
         assert!(note_left(3, from, Language::English).starts_with("3 unlocked games are "));
         assert!(stopped(1, Language::English).starts_with("1 game was "));
-        assert_eq!(moving(0, 7, 4, Language::English), "Moving 1 of 7 \u{b7} 4%");
-        assert_eq!(moving(7, 7, 100, Language::English), "Moving 7 of 7 \u{b7} 100%");
+        assert_eq!(
+            moving(0, 7, 4, Language::English),
+            "Moving 1 of 7 \u{b7} 4%"
+        );
+        assert_eq!(
+            moving(7, 7, 100, Language::English),
+            "Moving 7 of 7 \u{b7} 100%"
+        );
     }
 }

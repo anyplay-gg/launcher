@@ -200,12 +200,20 @@ fn network_impl(_path: &Path) -> bool {
 /// text, is a network one.
 pub fn network_in_mounts(mounts: &str, path: &Path) -> bool {
     const NETWORK: [&str; 8] = [
-        "nfs", "nfs4", "cifs", "smb3", "smbfs", "fuse.sshfs", "9p", "afs",
+        "nfs",
+        "nfs4",
+        "cifs",
+        "smb3",
+        "smbfs",
+        "fuse.sshfs",
+        "9p",
+        "afs",
     ];
     let mut best: Option<(usize, &str)> = None;
     for line in mounts.lines() {
         let mut fields = line.split_whitespace();
-        let (Some(_device), Some(point), Some(kind)) = (fields.next(), fields.next(), fields.next())
+        let (Some(_device), Some(point), Some(kind)) =
+            (fields.next(), fields.next(), fields.next())
         else {
             continue;
         };
@@ -237,9 +245,15 @@ mod tests {
         let kept = adopt(&other, &games).unwrap();
         assert_eq!(kept.as_deref(), Some(other.as_path()));
         assert!(paths::store_dir(&other).is_dir());
-        assert!(!paths::store_dir(&games).exists(), "the games folder is not written to");
         assert!(
-            fs::read_dir(paths::store_dir(&other)).unwrap().next().is_none(),
+            !paths::store_dir(&games).exists(),
+            "the games folder is not written to"
+        );
+        assert!(
+            fs::read_dir(paths::store_dir(&other))
+                .unwrap()
+                .next()
+                .is_none(),
             "the write probe is removed"
         );
     }
@@ -324,11 +338,19 @@ mod tests {
     fn availability_follows_the_folder_and_its_store() {
         let (_dir, games, other) = folders();
         assert_eq!(availability(&games, false), Availability::Ready);
-        assert_eq!(availability(&other, true), Availability::Missing, "no store yet");
+        assert_eq!(
+            availability(&other, true),
+            Availability::Missing,
+            "no store yet"
+        );
         adopt(&other, &games).unwrap();
         assert_eq!(availability(&other, true), Availability::Ready);
         fs::remove_dir_all(&other).unwrap();
-        assert_eq!(availability(&other, true), Availability::Missing, "drive gone");
+        assert_eq!(
+            availability(&other, true),
+            Availability::Missing,
+            "drive gone"
+        );
     }
 
     #[test]

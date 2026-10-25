@@ -173,10 +173,8 @@ impl Model {
 
     /// Starts moving what the old place still holds; the worker decides what that is.
     fn start_move(&mut self) {
-        let (Some(from), Some(to)) = (
-            self.prefs.unlocked_moving_from.clone(),
-            self.store_root(),
-        ) else {
+        let (Some(from), Some(to)) = (self.prefs.unlocked_moving_from.clone(), self.store_root())
+        else {
             return;
         };
         if self.location.job.is_some() {
@@ -351,7 +349,10 @@ mod tests {
     fn a_new_folder_is_stored_and_the_copies_start_to_move() {
         let mut r = rig();
         r.model.choose_unlocked_folder(r.fast.clone());
-        assert_eq!(r.model.prefs.unlocked_folder.as_deref(), Some(r.fast.as_path()));
+        assert_eq!(
+            r.model.prefs.unlocked_folder.as_deref(),
+            Some(r.fast.as_path())
+        );
         assert_eq!(r.model.store_root().as_deref(), Some(r.fast.as_path()));
         assert_eq!(
             r.model.prefs.unlocked_moving_from.as_deref(),
@@ -360,7 +361,10 @@ mod tests {
         assert_eq!(started(&r.model), Some((r.games.clone(), r.fast.clone())));
         assert!(r.model.location.job.is_some());
         assert!(r.fast.join(".AnyPS5").is_dir());
-        assert!(!r.games.join(".AnyPS5").exists(), "nothing written next to the dumps");
+        assert!(
+            !r.games.join(".AnyPS5").exists(),
+            "nothing written next to the dumps"
+        );
     }
 
     #[test]
@@ -371,7 +375,12 @@ mod tests {
         assert_eq!(r.model.prefs.unlocked_moving_from, None);
         assert!(started(&r.model).is_none());
         assert!(r.model.toast_visible() || r.model.toast.is_some());
-        assert!(fs::read_dir(r.games.join("Stray")).unwrap().next().is_none());
+        assert!(
+            fs::read_dir(r.games.join("Stray"))
+                .unwrap()
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -427,7 +436,10 @@ mod tests {
         }));
         r.model.leave_old_copies();
         assert!(!r.model.moving_games());
-        assert_eq!(r.model.prefs.unlocked_folder.as_deref(), Some(r.fast.as_path()));
+        assert_eq!(
+            r.model.prefs.unlocked_folder.as_deref(),
+            Some(r.fast.as_path())
+        );
     }
 
     #[test]
