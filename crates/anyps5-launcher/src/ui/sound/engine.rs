@@ -21,12 +21,15 @@ pub enum Command {
 
 /// Cues playing at once; a cue beyond that fades the oldest out over 5 ms.
 const VOICES: usize = 8;
+/// Hover ticks sounding at once: a sweep over tiles is a light ratchet, never a pile of ticks.
+pub const HOVER_VOICES: usize = 2;
 /// Commands are read every this many frames (about 1.3 ms at 48 kHz).
 const POLL: u32 = 64;
 const MUSIC_IN_SECONDS: f32 = 2.0;
 const MUSIC_OUT_SECONDS: f32 = 0.8;
 
 struct Voice {
+    cue: Cue,
     samples: Arc<[f32]>,
     frame: usize,
     gain: f32,
@@ -107,10 +110,13 @@ impl Duck {
     fn trigger(&mut self, cue: Cue) {
         let (depth_db, hold) = match cue {
             Cue::Move => (1.5, 0.12),
+            // A pointer sweeping a row must not make the music pump.
+            Cue::Hover => return,
             Cue::Select | Cue::Back | Cue::Error => (3.0, 0.25),
             Cue::Unlocked => (6.0, 1.2),
             Cue::Boot => (6.0, 1.5),
             Cue::Ring => (3.0, 0.6),
+            Cue::Bump => (0.0, 0.0),
         };
         self.floor = self.floor.min(db_to_gain(-depth_db));
         self.hold = self.hold.max((hold * self.rate) as u32);
@@ -201,8 +207,24 @@ impl Engine {
         {
             oldest.fade = 1.0 / (0.005 * self.rate as f32);
         }
+        if cue == Cue::Hover {
+            let sounding = self
+                .voices
+                .iter()
+                .filter(|v| v.cue == Cue::Hover && v.fade == 0.0)
+                .count();
+            if sounding >= HOVER_VOICES
+                && let Some(oldest) = self
+                    .voices
+                    .iter_mut()
+                    .find(|v| v.cue == Cue::Hover && v.fade == 0.0)
+            {
+                oldest.fade = 1.0 / (0.005 * self.rate as f32);
+            }
+        }
         let index = Cue::ALL.iter().position(|&c| c == cue).unwrap_or(0);
         self.voices.push(Voice {
+            cue,
             samples: self.cues[index].clone(),
             frame: 0,
             gain: 1.0,
@@ -338,6 +360,45 @@ mod tests {
         assert!(engine.voices.len() <= VOICES);
     }
 
+    #[test]
+    fn a_sweep_of_hover_ticks_keeps_two_voices_and_stays_clean() {
+        let (tx, rx) = channel();
+        let mut engine = Engine::new(RATE, rx, 1);
+        let one = {
+            tx.send(Command::Cue(Cue::Hover)).unwrap();
+            peak(&take(&mut engine, 0.3))
+        };
+        take(&mut engine, 0.5);
+        // Twelve ticks 20 ms apart: far closer than the gate ever allows.
+        let mut sweep = Vec::new();
+        for _ in 0..12 {
+            tx.send(Command::Cue(Cue::Hover)).unwrap();
+            sweep.extend(take(&mut engine, 0.02));
+            let sounding = engine
+                .voices
+                .iter()
+                .filter(|v| v.cue == Cue::Hover && v.fade == 0.0)
+                .count();
+            assert!(sounding <= HOVER_VOICES, "{sounding} voices");
+        }
+        let top = peak(&sweep);
+        assert!(top < one * 2.0 && top < db_to_gain(-16.0), "{top} vs {one}");
+        // The cut-off voices fade in 5 ms: no sample jump a soft tone could not make.
+        let jump = sweep
+            .chunks(2)
+            .collect::<Vec<_>>()
+            .windows(2)
+            .map(|w| (w[1][0] - w[0][0]).abs())
+            .fold(0.0f32, f32::max);
+        assert!(jump < top * 0.35, "jump {jump} peak {top}");
+    }
+
+    #[test]
+    fn hover_ticks_do_not_dip_the_music() {
+        let mut duck = Duck::new(RATE as f32);
+        duck.trigger(Cue::Hover);
+        assert!((0..RATE).all(|_| duck.next() == 1.0));
+    }
     #[test]
     fn dropping_the_sender_ends_the_source() {
         let (tx, rx) = channel();

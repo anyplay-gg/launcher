@@ -50,6 +50,8 @@ const SHOW_RADIUS: f32 = 12.0;
 pub enum TrophyAction {
     /// The list closed (back, options).
     Close,
+    /// The player revealed the secret at this position of the set.
+    Revealed(usize),
 }
 
 /// The set to show, borrowed for one frame.
@@ -236,6 +238,8 @@ impl TrophyListPanel {
                         if next != self.index {
                             self.index = next;
                             shell.play(Cue::Move);
+                        } else {
+                            shell.play(Cue::Bump);
                         }
                     }
                     Command::Back | Command::Options => {
@@ -251,6 +255,7 @@ impl TrophyListPanel {
                             .is_some_and(|t| self.is_secret(t, self.index, data));
                         if secret {
                             self.reveal(self.index);
+                            actions.push(TrophyAction::Revealed(self.index));
                             shell.play(Cue::Select);
                         }
                     }
@@ -277,6 +282,7 @@ impl TrophyListPanel {
         }
         if let Some(i) = shown.filter(|_| open) {
             self.reveal(i);
+            actions.push(TrophyAction::Revealed(i));
             shell.play(Cue::Select);
         }
         actions
