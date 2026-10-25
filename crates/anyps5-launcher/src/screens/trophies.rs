@@ -22,16 +22,16 @@ use crate::screens::scroll::Follow;
 use crate::screens::side::commands;
 use crate::screens::strings::Extra;
 use crate::ui::Shell;
-use crate::ui::anim::{AnimExt, lerp};
+use crate::ui::anim::{AnimExt, Motion};
 use crate::ui::chrome::fullscreen_panel;
-use crate::ui::components::{corner, paint_progress, paint_shadow};
+use crate::ui::components::{self, corner, paint_progress};
 use crate::ui::glass::GlassStyle;
 use crate::ui::i18n::{Key, Language};
 use crate::ui::icons::Icon;
 use crate::ui::input::{Command, InputEvent};
 use crate::ui::sound::Cue;
 use crate::ui::text;
-use crate::ui::theme::{self, Grade, black, color, fade, mix, radius, shadows, size, ty, white};
+use crate::ui::theme::{self, Grade, color, fade, radius, size, ty, white};
 
 /// Room around the scrolling rows for the focused card's grow and shadow.
 const LIST_MARGIN: f32 = 8.0;
@@ -557,15 +557,26 @@ impl TrophyListPanel {
         }
         let t = ctx.focus_t(("trophy-row-focus", index), focused);
         let r = radius::TROPHY_ROW;
-        // The focused row is the white card of every other panel; ink turns dark with it.
-        let card = rect.expand(lerp(0.0, 3.0, t));
-        paint_shadow(&painter, card, r, shadows::settings_row(t));
-        painter.rect_filled(
-            card,
-            corner(r),
-            mix(color::surface_trophy_row(), Color32::WHITE, t),
+        // The focused row is a row of every other panel: lifted, with the ring.
+        let under_pointer = ctx
+            .pointer_hover_pos()
+            .is_some_and(|p| rect.contains(p));
+        let hover_t = ctx.animate_to(
+            ("trophy-row-hover", index),
+            f32::from(under_pointer),
+            Motion::Hover,
         );
-        let ink = |alpha: f32| fade(mix(Color32::WHITE, Color32::BLACK, t), alpha);
+        components::paint_surface(
+            &painter,
+            rect,
+            r,
+            color::surface_trophy_row(),
+            hover_t,
+            t,
+            0.0,
+            size::FOCUS_RING,
+        );
+        let ink = |alpha: f32| fade(Color32::WHITE, alpha);
 
         // Icon or the secret's lock tile.
         let icon_rect = Rect::from_center_size(
@@ -637,7 +648,7 @@ impl TrophyListPanel {
             } else {
                 value as f32 / target as f32
             };
-            painter.rect_filled(bar, corner(2.0), black(0.14 * t));
+            painter.rect_filled(bar, corner(2.0), white(0.16 * t));
             paint_progress(&painter, bar, fraction.clamp(0.0, 1.0), data.accent);
             text::paint_tabular(
                 &painter,
@@ -650,8 +661,7 @@ impl TrophyListPanel {
 
         // Grade and date, right aligned.
         let right = rect.max.x - 18.0;
-        // Gold and platinum need a darker tone on the white card.
-        let grade_color = mix(grade.color(), Color32::BLACK, 0.5 * t);
+        let grade_color = grade.color();
         let grade_color = if earned {
             grade_color
         } else {
@@ -698,7 +708,7 @@ impl TrophyListPanel {
             if hovered && ctx.input(|i| i.pointer.primary_down()) {
                 area = area.shrink2(vec2(show_w, SHOW_HEIGHT) * 0.02);
             }
-            let fill = black(if hovered { 0.14 } else { 0.08 });
+            let fill = white(if hovered { 0.28 } else { 0.18 });
             painter.rect_filled(area, corner(SHOW_RADIUS), fade(fill, t));
             text::paint(
                 &painter,
@@ -706,7 +716,7 @@ impl TrophyListPanel {
                 Align2::CENTER_CENTER,
                 show_style,
                 show_label,
-                fade(Color32::BLACK, 0.9 * t),
+                fade(Color32::WHITE, t),
             );
             // Only a focused row can be asked to show; a fading pill is not a target yet.
             pill = focused.then_some(area);

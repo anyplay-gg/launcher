@@ -634,20 +634,35 @@ impl<'a> PanelRow<'a> {
             return out;
         }
 
-        // Background, glow and the 1.5 % scale.
-        // A fixed 3 dp grow: a proportional scale would push wide rows 8 dp past their column.
-        let bg_rect = rect.expand(lerp(0.0, 3.0, t));
-        paint_shadow(&painter, bg_rect, radius::ROW, shadows::settings_row(t));
-        let rest = if !focusable {
-            Color32::TRANSPARENT
-        } else if hovered {
-            white(0.10)
-        } else {
+        // The row: hover lifts it, focus lifts it more and draws the ring (DESIGN.md 3.9). Nothing grows.
+        let bg_rect = rect;
+        let rest = if focusable {
             color::surface_row()
+        } else {
+            Color32::TRANSPARENT
         };
-        painter.rect_filled(bg_rect, corner(radius::ROW), mix(rest, Color32::WHITE, t));
+        let hover_t = ctx.animate_to(
+            (out.response.id, "hover"),
+            f32::from(hovered),
+            Motion::Hover,
+        );
+        let press_t = ctx.animate_to(
+            (out.response.id, "press"),
+            f32::from(focusable && out.response.is_pointer_button_down_on()),
+            Motion::Focus,
+        );
+        components::paint_surface(
+            &painter,
+            bg_rect,
+            radius::ROW,
+            rest,
+            hover_t,
+            t,
+            press_t,
+            size::FOCUS_RING,
+        );
 
-        let fg = mix(Color32::WHITE, Color32::BLACK, t);
+        let fg = Color32::WHITE;
         let dim = |factor: f32| fade(fg, factor);
         if self.wide && matches!(self.control, RowControl::Text { .. }) {
             // A field that fills the row would pass for one more row: its outline says it takes text.
@@ -662,7 +677,7 @@ impl<'a> PanelRow<'a> {
         let mut x = rect.min.x + pad;
         if let Some(icon) = self.icon {
             let tint = if destructive {
-                mix(color::destructive_icon(), color::destructive_on_focus(), t)
+                color::destructive_icon()
             } else {
                 dim(0.85)
             };
@@ -685,8 +700,7 @@ impl<'a> PanelRow<'a> {
         }
         let top = rect.center().y - text_height * 0.5;
         let title_color = if destructive {
-            // A focused destructive row stays red on its white fill.
-            mix(color::destructive_text(), color::destructive_on_focus(), t)
+            color::destructive_text()
         } else if focusable {
             fg
         } else {
@@ -971,17 +985,14 @@ impl<'a> PanelRow<'a> {
                     }
                     let pressed = r.is_pointer_button_down_on();
                     let shown = at.shrink(if pressed { 1.0 } else { 0.0 });
-                    // The row rests dark: its buttons are quiet chips. Focused, the row is white, and the
-                    // button the keys would press turns dark on it; the other stays a pale chip.
+                    // The row rests dark: its buttons are quiet chips. With the focus on the row, the
+                    // button the keys would press becomes the primary one (ink fill, dark label); the
+                    // other stays a chip.
                     let picked = index == *selected;
-                    let chip = mix(
-                        white(if hover { 0.18 } else { 0.12 }),
-                        black(if hover { 0.14 } else { 0.08 }),
-                        t,
-                    );
-                    let fill = mix(chip, Color32::BLACK, if picked { t } else { 0.0 });
+                    let chip = white(if hover { 0.20 } else { 0.14 });
+                    let fill = mix(chip, color::primary(), if picked { t } else { 0.0 });
                     components::paint_capsule(&painter, shown, fill);
-                    let ink = mix(fg, Color32::WHITE, if picked { t } else { 0.0 });
+                    let ink = mix(fg, color::on_primary(), if picked { t } else { 0.0 });
                     text::paint(
                         &painter,
                         shown.center(),

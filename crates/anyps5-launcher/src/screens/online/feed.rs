@@ -18,16 +18,16 @@ use crate::screens::online_strings::OnlineText as T;
 use crate::screens::scroll::Follow;
 use crate::screens::side::{self, SideDrawn, SideView};
 use crate::ui::Shell;
-use crate::ui::anim::{AnimExt, lerp};
+use crate::ui::anim::{AnimExt, Motion};
 use crate::ui::chrome::{PanelRow, RowControl};
-use crate::ui::components::{corner, paint_capsule, paint_shadow};
+use crate::ui::components::{self, corner, paint_capsule};
 use crate::ui::i18n::{Arg, Language};
 use crate::ui::icons::Icon;
 use crate::ui::input::Command;
 use crate::ui::sound::Cue;
 use crate::ui::text;
 use crate::ui::theme::{
-    self, TextStyle, Weight, black, color, fade, mix, radius, shadows, size, ty, white,
+    self, TextStyle, Weight, black, color, fade, mix, radius, size, ty, white,
 };
 
 /// Items from the end at which the next older page is fetched.
@@ -736,16 +736,25 @@ fn show_card(
         return rect;
     }
 
-    // The card: a row that grows 3 dp and turns white when it has the focus.
-    let bg = rect.expand(lerp(0.0, 3.0, t));
-    paint_shadow(&painter, bg, radius::ROW, shadows::settings_row(t));
-    let rest = if hovered {
-        white(0.10)
-    } else {
-        color::surface_row()
-    };
-    painter.rect_filled(bg, corner(radius::ROW), mix(rest, Color32::WHITE, t));
-    let fg = mix(Color32::WHITE, Color32::BLACK, t);
+    // The card is a row: lighter under the pointer, lighter with the focus, and the ring when the
+    // card itself (not one of its reactions) has it.
+    let hover_t = ctx.animate_to((response.id, "hover"), f32::from(hovered), Motion::Hover);
+    let bg = rect;
+    components::paint_surface(
+        &painter,
+        bg,
+        radius::ROW,
+        color::surface_row(),
+        hover_t,
+        t,
+        0.0,
+        if focus.is_some_and(|f| f.slot.is_some()) {
+            0.0
+        } else {
+            size::FOCUS_RING
+        },
+    );
+    let fg = Color32::WHITE;
     let dim = |factor: f32| fade(fg, factor);
 
     // The avatar.
@@ -851,26 +860,18 @@ fn show_card(
             ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         // At rest a pill is a quiet shape of the card's own ink; yours is stronger and carries a
-        // check, so it never rests on colour alone; the focused one is solid.
+        // check, so it never rests on colour alone; the focused one has the ring.
         let rest_fill = if own {
-            dim(0.22)
+            dim(0.24)
         } else if pill_hover {
-            dim(0.16)
+            dim(0.18)
         } else {
-            dim(0.09)
+            dim(0.10)
         };
-        let solid = if t > 0.5 { black(0.88) } else { white(0.95) };
-        let fill = mix(rest_fill, solid, pt);
+        let fill = mix(rest_fill, dim(0.34), pt);
         paint_capsule(&painter, pill, fill);
-        let ink = mix(
-            dim(if own { 1.0 } else { 0.82 }),
-            if t > 0.5 {
-                Color32::WHITE
-            } else {
-                Color32::BLACK
-            },
-            pt,
-        );
+        components::paint_focus_ring(&painter, pill, REACTION_HEIGHT * 0.5, pt);
+        let ink = dim(if own { 1.0 } else { 0.88 });
         // The label and the check sit in the middle of the pill.
         let content = galley.size().x + check;
         let mut text_x = pill.center().x - content * 0.5;

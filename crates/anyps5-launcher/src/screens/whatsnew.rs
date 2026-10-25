@@ -16,14 +16,15 @@ use crate::screens::side::commands;
 use crate::screens::strings::Extra;
 use crate::ui::Shell;
 use crate::ui::chrome::fullscreen_panel;
-use crate::ui::components::{ConsoleButton, corner};
+use crate::ui::anim::{AnimExt, Motion};
+use crate::ui::components::{self, ConsoleButton};
 use crate::ui::glass::GlassStyle;
 use crate::ui::i18n::{Arg, Language};
 use crate::ui::icons::Icon;
 use crate::ui::input::{Command, InputEvent};
 use crate::ui::sound::Cue;
 use crate::ui::text;
-use crate::ui::theme::{TextStyle, mix, pad, radius, ty, white};
+use crate::ui::theme::{TextStyle, pad, radius, size, ty, white};
 
 /// Areas shown on their own under Highlights; the rest are gathered in one more group.
 const AREAS: usize = 7;
@@ -496,28 +497,25 @@ fn draw_line(ui: &mut Ui, rect: Rect, line: &Line<'_>, focused: bool, index: usi
     if response.hovered() {
         ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
     }
-    let fill = if focused {
-        Color32::WHITE
-    } else if response.hovered() {
-        white(0.08)
-    } else {
-        Color32::TRANSPARENT
-    };
-    painter.rect_filled(rect, corner(radius::ROW), fill);
-    let ink = if focused {
-        Color32::BLACK
-    } else {
-        Color32::WHITE
-    };
-    let quiet = mix(
-        ink,
-        if focused {
-            Color32::WHITE
-        } else {
-            Color32::BLACK
-        },
-        0.45,
+    let ctx = ui.ctx().clone();
+    let hover_t = ctx.animate_to(
+        ("notes-line-hover", index),
+        f32::from(response.hovered()),
+        Motion::Hover,
     );
+    let focus_t = ctx.focus_t(("notes-line-focus", index), focused);
+    components::paint_surface(
+        &painter,
+        rect,
+        radius::ROW,
+        Color32::TRANSPARENT,
+        hover_t,
+        focus_t,
+        0.0,
+        size::FOCUS_RING,
+    );
+    let ink = Color32::WHITE;
+    let quiet = white(0.55);
     match line {
         Line::Group { key, count, open } => {
             let glyph = if *open {
