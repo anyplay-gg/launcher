@@ -24,6 +24,7 @@ pub mod links;
 pub mod macos;
 pub mod notes;
 pub mod online;
+pub mod openh264;
 pub mod patches;
 pub mod paths;
 pub mod platform;
