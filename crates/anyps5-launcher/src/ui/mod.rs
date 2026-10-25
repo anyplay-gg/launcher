@@ -23,6 +23,7 @@
 // The foundation is consumed by the screens of later PRs; until then most of its API is unused.
 #![allow(dead_code)]
 
+pub mod a11y;
 pub mod anim;
 pub mod artwork;
 pub mod background;
@@ -30,16 +31,23 @@ pub mod blur;
 pub mod caption;
 pub mod chrome;
 pub mod components;
+#[cfg(test)]
+mod contrast;
 pub mod focus;
 pub mod gallery;
 pub mod gamepad;
 pub mod glass;
 pub mod gpu;
+pub mod haptics;
 pub mod home_button;
 pub mod i18n;
 pub mod icons;
 pub mod input;
 pub mod intro;
+pub mod latency;
+pub mod nudge;
+pub mod press;
+pub mod shade;
 pub mod sound;
 pub mod text;
 pub mod theme;
@@ -51,9 +59,12 @@ use egui::{Context, Painter, Rect};
 
 use self::anim::AnimExt;
 use self::background::Backdrop;
+use self::haptics::Haptics;
 use self::home_button::HomeButton;
 use self::i18n::Language;
 use self::input::{Input, InputEvent};
+use self::nudge::Nudge;
+use self::sound::hover::{Frame as HoverFrame, HoverGate};
 use self::sound::{Cue, Sounds};
 use self::theme::{Accent, Theme};
 
@@ -63,11 +74,24 @@ pub struct Shell {
     /// The Home button while a game runs (read by the input threads).
     pub home: Arc<HomeButton>,
     pub sounds: Sounds,
+    hover: HoverGate,
+    /// A cue other than the hover tick played since the last [`Shell::finish_frame`].
+    cue_played: bool,
     pub backdrop: Backdrop,
     pub language: Language,
     /// The accent colour in use (the theme's default unless the user picked one).
     pub accent: Accent,
     scale: f32,
+    /// The edge bump of the focus ring (see [`nudge`]).
+    nudge: Nudge,
+    /// "Animations: Reduced": the ring does not lean.
+    reduced: bool,
+    /// The hold in progress has bumped already.
+    bumped_in_hold: bool,
+    /// Controller vibration (see [`haptics`]).
+    pub haptics: Haptics,
+    /// The launcher had the pad last frame (a game in front takes it).
+    had_pad: bool,
 }
 
 /// What [`Shell::begin_frame`] hands to the screen.
@@ -96,10 +120,17 @@ impl Shell {
             input: Input::new(Some(pad)),
             home,
             sounds: Sounds::new(),
+            hover: HoverGate::default(),
+            cue_played: false,
+            haptics: Haptics::new(),
+            had_pad: true,
             backdrop: Backdrop::new(Theme::Cosmic),
             language,
             accent: Theme::Cosmic.default_accent(),
             scale: 1.0,
+            nudge: Nudge::default(),
+            reduced: false,
+            bumped_in_hold: false,
         }
     }
 
@@ -116,10 +147,17 @@ impl Shell {
             input: Input::new(None),
             home: Arc::new(HomeButton::new(&cc.egui_ctx)),
             sounds,
+            hover: HoverGate::default(),
+            cue_played: false,
+            haptics: Haptics::silent(),
+            had_pad: true,
             backdrop: Backdrop::new(theme),
             language: Language::English,
             accent: theme.default_accent(),
             scale: 1.0,
+            nudge: Nudge::default(),
+            reduced: false,
+            bumped_in_hold: false,
         }
     }
 
@@ -127,9 +165,32 @@ impl Shell {
     pub fn begin_frame(&mut self, ctx: &Context) -> FrameInput {
         self.scale = theme::sync_scale(ctx);
         text::set_pixels_per_point(ctx.pixels_per_point());
+        // The first use of the pad starts the vibration thread, so its first pulse is not late.
+        if self.input.pad_in_use {
+            self.haptics.warm();
+        }
+        // A game that takes the pad takes the motors with it, mid-pulse too.
+        let has_pad = self.home.accepts_pad();
+        if self.had_pad && !has_pad {
+            self.haptics.stop();
+        }
+        self.had_pad = has_pad;
+        let dt = ctx.input(|i| i.unstable_dt).min(0.05);
+        nudge::publish(ctx, self.nudge.step(dt));
+        if !self.nudge.is_settled() {
+            ctx.request_repaint();
+        }
+        let events = self.input.poll(ctx);
+        // A select from a key or the pad presses the focused control in, like a click does.
+        if events
+            .iter()
+            .any(|e| matches!(e, InputEvent::Command(input::Command::Select)))
+        {
+            press::trigger(ctx);
+        }
         FrameInput {
             scale: self.scale,
-            events: self.input.poll(ctx),
+            events,
         }
     }
 
@@ -141,6 +202,7 @@ impl Shell {
 
     /// "Animations: Reduced": swaps springs for short eases and freezes the background.
     pub fn set_reduced_motion(&mut self, ctx: &Context, reduced: bool) {
+        self.reduced = reduced;
         ctx.set_reduced_motion(reduced);
     }
 
@@ -151,9 +213,84 @@ impl Shell {
         self.backdrop.paint(ctx, painter, rect);
     }
 
-    /// Plays a cue (no-op when sounds are off).
+    /// The one place where an action is answered: plays its cue (no-op when sounds are off).
+    /// A bump is answered once per press, not on every repeat of a held direction, and leans
+    /// the focus ring toward the wall unless motion is reduced.
     pub fn play(&mut self, cue: Cue) {
+        self.cue_played |= cue != Cue::Hover;
+        if cue != Cue::Bump {
+            self.bumped_in_hold = false;
+        } else {
+            // One bump per press, and one per hold: the repeats at a wall stay quiet.
+            if self.input.repeating && self.bumped_in_hold {
+                return;
+            }
+            self.bumped_in_hold = true;
+            if !self.reduced
+                && let Some(direction) = self.input.last_direction
+            {
+                self.nudge.kick(direction);
+            }
+        }
         self.sounds.play(cue);
+        // The hand answers only when the pad is what the player is using, and the launcher has it.
+        if self.input.pad_in_use && self.had_pad {
+            self.haptics.play(cue);
+        }
+    }
+
+    /// Sets "Controller Vibration"; off lets go of the motors at once.
+    pub fn set_vibration(&mut self, level: haptics::Level) {
+        let changed = self.haptics.level != level;
+        if level == haptics::Level::Off && changed {
+            self.haptics.stop();
+        }
+        self.haptics.level = level;
+        // Changing it on the pad lets the hand try the new strength.
+        if changed && self.input.pad_in_use && self.had_pad {
+            self.haptics.play(Cue::Select);
+        }
+    }
+
+    /// Call last in every frame: plays the hover tick when the pointer arrived on a new
+    /// interactive element (see [`sound::hover`]). `allowed` is false while a game starts or
+    /// runs and while the launcher window is not in front. The element is whatever
+    /// [`input::hovered`] reported during the frame.
+    pub fn finish_frame(&mut self, ctx: &Context, allowed: bool) {
+        let hovered = input::take_hovered(ctx);
+        let (now, moved, down, clicked, scrolling) = ctx.input(|i| {
+            (
+                i.time,
+                i.pointer.delta() != egui::Vec2::ZERO
+                    || i.events
+                        .iter()
+                        .any(|e| matches!(e, egui::Event::PointerMoved(_))),
+                i.pointer.any_down(),
+                i.pointer.any_click(),
+                i.smooth_scroll_delta != egui::Vec2::ZERO
+                    || i.events
+                        .iter()
+                        .any(|e| matches!(e, egui::Event::MouseWheel { .. })),
+            )
+        });
+        let other_cue = std::mem::take(&mut self.cue_played);
+        let allowed = allowed && self.sounds.enabled;
+        if allowed {
+            self.sounds.warm();
+        }
+        let tick = self.hover.update(&HoverFrame {
+            now,
+            hovered,
+            pointer_moved: moved,
+            pointer_down: down,
+            clicked,
+            scrolling,
+            other_cue,
+            allowed,
+        });
+        if tick {
+            self.sounds.play(Cue::Hover);
+        }
     }
 
     pub fn scale(&self) -> f32 {
@@ -238,10 +375,96 @@ impl Shell {
             input: Input::new(None),
             home: Arc::new(HomeButton::new(ctx)),
             sounds,
+            hover: HoverGate::default(),
+            cue_played: false,
+            haptics: Haptics::silent(),
+            had_pad: true,
             backdrop: Backdrop::new(theme),
             language: Language::English,
             accent: theme.default_accent(),
             scale: 1.0,
+            nudge: Nudge::default(),
+            reduced: false,
+            bumped_in_hold: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod shell_tests {
+    use super::*;
+
+    #[test]
+    fn a_wall_bumps_once_per_hold_and_again_for_every_new_press() {
+        let ctx = Context::default();
+        let mut shell = Shell::for_test(&ctx, Theme::Cosmic);
+        shell.input.last_direction = Some(input::Command::Right);
+        shell.input.repeating = true;
+        shell.play(Cue::Bump);
+        let first = shell.nudge.step(0.02).x;
+        assert!(first > 0.0, "the first bump of a hold leans");
+        shell.play(Cue::Bump);
+        // Nothing was added: the second step only follows the first spring on.
+        let kicked = shell.nudge.step(0.0).x;
+        assert!(kicked <= first + 0.01);
+        shell.input.repeating = false;
+        shell.play(Cue::Bump);
+        assert!(shell.nudge.step(0.01).x > 0.0, "a fresh press bumps again");
+    }
+
+    #[test]
+    fn reduced_motion_keeps_the_ring_still() {
+        let ctx = Context::default();
+        let mut shell = Shell::for_test(&ctx, Theme::Cosmic);
+        shell.reduced = true;
+        shell.input.last_direction = Some(input::Command::Left);
+        shell.play(Cue::Bump);
+        assert!(shell.nudge.is_settled());
+    }
+
+    use self::haptics::Asked;
+
+    fn pad_shell(ctx: &Context) -> Shell {
+        let mut shell = Shell::for_test(ctx, Theme::Cosmic);
+        shell.input.pad_in_use = true;
+        shell
+    }
+
+    #[test]
+    fn the_hand_answers_only_a_pad_that_the_launcher_has() {
+        let ctx = Context::default();
+        // A pad in use: select vibrates.
+        let mut shell = pad_shell(&ctx);
+        shell.play(Cue::Select);
+        assert_eq!(shell.haptics.asked, [Asked::Play(Cue::Select)]);
+        // The keyboard or the mouse is in use: nothing, even with a pad plugged in.
+        let mut shell = Shell::for_test(&ctx, Theme::Cosmic);
+        shell.play(Cue::Select);
+        assert!(shell.haptics.asked.is_empty());
+        // A game has the pad: nothing.
+        let mut shell = pad_shell(&ctx);
+        shell.had_pad = false;
+        shell.play(Cue::Error);
+        assert!(shell.haptics.asked.is_empty());
+        // Moving the focus never vibrates.
+        let mut shell = pad_shell(&ctx);
+        shell.play(Cue::Move);
+        assert!(shell.haptics.asked.is_empty());
+    }
+
+    #[test]
+    fn off_lets_go_at_once_and_a_change_is_felt() {
+        let ctx = Context::default();
+        let mut shell = pad_shell(&ctx);
+        shell.set_vibration(haptics::Level::Off);
+        assert_eq!(shell.haptics.asked, [Asked::Stop]);
+        shell.play(Cue::Select);
+        assert_eq!(shell.haptics.asked, [Asked::Stop], "off stays off");
+        // Back on: the hand gets a sample of the new strength.
+        shell.set_vibration(haptics::Level::Light);
+        assert_eq!(shell.haptics.asked, [Asked::Stop, Asked::Play(Cue::Select)]);
+        // The same value again changes nothing.
+        shell.set_vibration(haptics::Level::Light);
+        assert_eq!(shell.haptics.asked.len(), 2);
     }
 }

@@ -28,6 +28,8 @@ Releases up to v0.1.3 were made under the old name and call their files `AnyPS5-
 
 The Linux build does not update itself yet: download a new version from the releases page. Starting a game with the network bridge is untested on Linux.
 
+The engine's libraries can ask for a newer glibc than the launcher does. When your system is older, Settings, Toolkit says which one they need and names releases that have it, and the line under Play says so too. Games may not start until you move to such a release. The oldest glibc each release ships: Ubuntu 22.04 2.35, Debian 12 2.36, Fedora 39 2.38, Ubuntu 24.04 2.39, Debian 13 2.41.
+
 What games need from your system is up to AnyPS5:
 
 - a CPU with AVX2, FMA, F16C, BMI1, BMI2, LZCNT and MOVBE (Zen 2, Intel Haswell or newer);

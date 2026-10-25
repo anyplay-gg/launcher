@@ -16,6 +16,7 @@ use crate::ui::components::{
 use crate::ui::glass::{GlassStyle, paint_glass};
 use crate::ui::i18n::{Key, Language};
 use crate::ui::icons::Icon;
+use crate::ui::input;
 use crate::ui::text;
 use crate::ui::theme::{self, black, color, fade, mix, radius, shadows, size, ty, white};
 
@@ -351,7 +352,10 @@ pub struct PanelRow<'a> {
     pub detail: Option<&'a str>,
     pub control: RowControl<'a>,
     pub focused: bool,
+    /// Danger: the row removes or ends something (the danger ink).
     pub destructive: bool,
+    /// Caution: a note or row that says something may not work (the amber ink). Never danger.
+    pub warning: bool,
     /// A controller face glyph painted before the title (`✕ Cross`).
     pub pad_glyph: Option<components::PadGlyph>,
     pub force: Option<Force>,
@@ -398,6 +402,7 @@ impl<'a> PanelRow<'a> {
             control,
             focused: false,
             destructive: false,
+            warning: false,
             pad_glyph: None,
             force: None,
             attached: false,
@@ -441,6 +446,10 @@ impl<'a> PanelRow<'a> {
         self.destructive = destructive;
         self
     }
+    pub fn warning(mut self, warning: bool) -> Self {
+        self.warning = warning;
+        self
+    }
 
     fn focusable(&self) -> bool {
         !matches!(self.control, RowControl::Info { .. } | RowControl::Caption)
@@ -452,12 +461,21 @@ impl<'a> PanelRow<'a> {
         let caption = matches!(self.control, RowControl::Caption);
         let width = ui.available_width();
         let inner = width - 2.0 * size::ROW_PADDING_X;
-        let (style, alpha, space) = if caption {
-            (ty::SECTION_CAPTION, 0.55, (14.0, 6.0))
+        let (style, quiet, space) = if caption {
+            (ty::SECTION_CAPTION, color::text_caption(), (14.0, 6.0))
         } else {
-            (ty::NOTE, 0.5, (if self.attached { 0.0 } else { 4.0 }, 4.0))
+            (
+                ty::NOTE,
+                color::text_note(),
+                (if self.attached { 0.0 } else { 4.0 }, 4.0),
+            )
         };
-        let ink = fade(Color32::WHITE, alpha);
+        // A warning note has the ink of the warning line under Play on the home screen.
+        let ink = if self.warning && !caption {
+            color::warning_text()
+        } else {
+            quiet
+        };
         let galley = text::layout(&painter, style, self.title, ink, inner);
         let height = space.0 + galley.size().y + space.1;
         let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
@@ -617,7 +635,12 @@ impl<'a> PanelRow<'a> {
         };
         let (rect, response) = ui.allocate_exact_size(vec2(width, height), sense);
         response.widget_info(|| self.widget_info());
-        let hovered = focusable && (response.hovered() || self.force.is_some());
+        crate::ui::a11y::follow(
+            &ctx,
+            response.id,
+            self.focused && focusable && sense == Sense::click(),
+        );
+        let hovered = focusable && (input::hovered(&ctx, &response) || self.force.is_some());
         if hovered {
             ctx.set_cursor_icon(CursorIcon::PointingHand);
         }
@@ -648,8 +671,13 @@ impl<'a> PanelRow<'a> {
         );
         let press_t = ctx.animate_to(
             (out.response.id, "press"),
-            f32::from(focusable && out.response.is_pointer_button_down_on()),
-            Motion::Focus,
+            f32::from(
+                focusable
+                    && (out.response.is_pointer_button_down_on()
+                        || self.force == Some(Force::Press)
+                        || (self.focused && crate::ui::press::active(&ctx))),
+            ),
+            Motion::Press,
         );
         components::paint_surface(
             &painter,
@@ -673,11 +701,13 @@ impl<'a> PanelRow<'a> {
                 egui::StrokeKind::Inside,
             );
         }
-        let destructive = self.destructive;
+        let (destructive, warning) = (self.destructive, self.warning);
         let mut x = rect.min.x + pad;
         if let Some(icon) = self.icon {
             let tint = if destructive {
                 color::destructive_icon()
+            } else if warning {
+                color::warning_text()
             } else {
                 dim(0.85)
             };
@@ -701,10 +731,12 @@ impl<'a> PanelRow<'a> {
         let top = rect.center().y - text_height * 0.5;
         let title_color = if destructive {
             color::destructive_text()
+        } else if warning {
+            color::warning_text()
         } else if focusable {
             fg
         } else {
-            dim(0.62)
+            color::text_inert()
         };
         let title_h = title_galley.size().y;
         if let (Some(glyph), Some(_)) = (self.pad_glyph, self.icon) {
@@ -719,7 +751,11 @@ impl<'a> PanelRow<'a> {
         }
         painter.galley(pos2(x, top), title_galley, title_color);
         if let Some(detail) = detail_galley {
-            painter.galley(pos2(x, top + title_h + 3.0), detail, dim(0.55));
+            painter.galley(
+                pos2(x, top + title_h + 3.0),
+                detail,
+                color::text_row_detail(),
+            );
         }
 
         // Value control.
@@ -826,7 +862,7 @@ impl<'a> PanelRow<'a> {
                 })
             );
             r.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, name.as_str()));
-            let hover = enabled && r.hovered();
+            let hover = enabled && input::hovered(ctx, &r);
             let press = enabled && r.is_pointer_button_down_on();
             if hover {
                 // A soft disc behind the glyph: the mouse affordance of the otherwise bare chevron.
@@ -862,7 +898,7 @@ impl<'a> PanelRow<'a> {
                     fade(fg, opacity),
                 );
             }
-            if enabled && r.hovered() {
+            if enabled && input::hovered(ctx, &r) {
                 ctx.set_cursor_icon(CursorIcon::PointingHand);
             }
             if enabled && r.clicked() {
@@ -979,7 +1015,7 @@ impl<'a> PanelRow<'a> {
                     right -= w + BUTTON_GAP;
                     let r = ui.interact(at, row_id.with(("button", index)), Sense::click());
                     r.widget_info(|| WidgetInfo::labeled(Role::Button, true, label.as_str()));
-                    let hover = r.hovered();
+                    let hover = input::hovered(ctx, &r);
                     if hover {
                         ctx.set_cursor_icon(CursorIcon::PointingHand);
                     }
@@ -1140,6 +1176,7 @@ pub fn side_panel<R>(
     open: bool,
     title: &str,
     subtitle: Option<&str>,
+    question: bool,
     add_contents: impl FnOnce(&mut Ui) -> R,
 ) -> Option<(SidePanelOutput, R)> {
     let id = Id::unique(id);
@@ -1149,7 +1186,9 @@ pub fn side_panel<R>(
     }
     let screen = ctx.content_rect();
     let width = size::SIDE_PANEL_WIDTH;
-    let offset = (1.0 - v) * width;
+    // Reduced motion: the panel fades where it stands instead of sliding in.
+    let reduced = ctx.reduced_motion();
+    let offset = if reduced { 0.0 } else { (1.0 - v) * width };
     let panel = Rect::from_min_max(
         pos2(screen.max.x - width + offset, screen.min.y),
         pos2(screen.max.x + offset, screen.max.y),
@@ -1174,7 +1213,11 @@ pub fn side_panel<R>(
             );
             let scrim_response = ui.interact(scrim, id.with("scrim"), Sense::click());
             scrim_clicked = scrim_response.clicked();
-            paint_glass(ctx, &painter, panel, GlassStyle::side_panel());
+            let mut glass = GlassStyle::side_panel();
+            if reduced {
+                glass.alpha = v.clamp(0.0, 1.0);
+            }
+            paint_glass(ctx, &painter, panel, glass);
             let edge = Rect::from_min_size(
                 panel.min,
                 vec2(components::hairline_width(&painter), panel.height()),
@@ -1191,6 +1234,9 @@ pub fn side_panel<R>(
                     .max_rect(inner)
                     .layout(Layout::top_down(Align::Min)),
             );
+            if reduced {
+                child.set_opacity(v.clamp(0.0, 1.0));
+            }
             let title_galley = text::layout(
                 &painter,
                 ty::SIDE_PANEL_TITLE,
@@ -1203,20 +1249,39 @@ pub fn side_panel<R>(
             let top = child.cursor().min.y;
             // Title and subtitle start on the edge of the row cards below them.
             let edge = inner.min.x + size::LIST_INSET;
-            painter.galley(pos2(edge, top), title_galley, Color32::WHITE);
+            let ink = if reduced {
+                fade(Color32::WHITE, v)
+            } else {
+                Color32::WHITE
+            };
+            painter.galley(pos2(edge, top), title_galley, ink);
             child.add_space(title_h + 8.0);
             if let Some(subtitle) = subtitle {
                 let top = child.cursor().min.y;
                 // Wraps (the confirmation sentence is long, and longer in Turkish).
-                let galley = text::layout(
+                // A confirmation's question is what the player decides on: body size and ink, with
+                // room between the lines. Any other subtitle is a quiet line.
+                let (style, ink, leading) = if question {
+                    (ty::QUESTION, color::text_label(), 1.45)
+                } else {
+                    (
+                        theme::TextStyle::new(15.0, theme::Weight::Regular),
+                        color::text_detail(),
+                        1.2,
+                    )
+                };
+                let galley = text::layout_font_pretty(
                     &painter,
-                    theme::TextStyle::new(15.0, theme::Weight::Regular),
+                    style.font(),
+                    style.size * leading,
+                    style.tracking,
                     subtitle,
-                    color::text_detail(),
+                    ink,
                     inner.width(),
                 );
                 let height = galley.size().y;
-                painter.galley(pos2(edge, top), galley, color::text_detail());
+                let shown = if reduced { fade(ink, v) } else { ink };
+                painter.galley(pos2(edge, top), galley, shown);
                 child.add_space(height + 8.0);
             }
             child.add_space(18.0);
@@ -1266,7 +1331,12 @@ pub fn fullscreen_panel<R>(
                 ..style
             };
             paint_glass(ctx, &painter, screen, faded);
-            let scale = lerp(1.03, 1.0, v);
+            // Reduced motion: a plain fade, nothing grows.
+            let scale = if ctx.reduced_motion() {
+                1.0
+            } else {
+                lerp(1.03, 1.0, v)
+            };
             let area = scale_rect(screen, scale);
             let mut child = ui.new_child(UiBuilder::new().max_rect(area));
             child.set_opacity(v.clamp(0.0, 1.0));
@@ -1310,7 +1380,8 @@ pub fn toast(
             let (pad_x, pad_y, gap) = (22.0, 14.0, 10.0);
             let w = pad_x * 2.0 + glyph + gap + galley.size().x;
             let h = (pad_y * 2.0 + galley.size().y).max(radius::TOAST * 2.0);
-            let top = size::TOAST_TOP - (1.0 - v) * 80.0;
+            let travel = if ctx.reduced_motion() { 0.0 } else { 80.0 };
+            let top = size::TOAST_TOP - (1.0 - v) * travel;
             let rect = Rect::from_min_size(
                 pos2(screen.center().x - w * 0.5, screen.min.y + top),
                 vec2(w, h),

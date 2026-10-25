@@ -149,7 +149,10 @@ fn stat_width(painter: &Painter, stat: &Stat, language: Language) -> f32 {
         &text::to_upper(&stat.label, language),
     );
     let grades = stat.grades.map_or(0.0, |g| grades_width(painter, g));
-    figure.max(label).max(grades)
+    let points = stat.level.as_ref().map_or(0.0, |l| {
+        text::tabular_width(painter, GRADE_COUNT, &l.points).max(96.0)
+    });
+    figure.max(label).max(grades).max(points)
 }
 
 fn grades_width(painter: &Painter, grades: [u32; 4]) -> f32 {
@@ -606,7 +609,7 @@ fn paint_header(
     ui.interact(rect, Id::unique("profile-header"), Sense::hover())
         .widget_info(|| WidgetInfo::labeled(Role::Label, true, words.join(", ")));
     for (stat, pos) in ready.stats.iter().zip(&header.stats) {
-        paint_stat(&painter, at(*pos), stat, language);
+        paint_stat(&painter, at(*pos), stat, language, settings.accent);
         let rect = Rect::from_min_size(at(*pos), vec2(120.0, 70.0));
         ui.interact(
             rect,
@@ -693,7 +696,7 @@ fn paint_columns(
             );
         }
         if let Some((pos, galley)) = &caption.note {
-            painter.galley(at(*pos), galley.clone(), white(0.66));
+            painter.galley(at(*pos), galley.clone(), color::text_detail());
         }
     }
 
@@ -751,7 +754,13 @@ fn paint_columns(
     }
 }
 
-fn paint_stat(painter: &Painter, pos: egui::Pos2, stat: &Stat, language: Language) {
+fn paint_stat(
+    painter: &Painter,
+    pos: egui::Pos2,
+    stat: &Stat,
+    language: Language,
+    accent: Color32,
+) {
     text::paint_tabular(painter, pos, FIGURE, &stat.figure, Color32::WHITE);
     let label_y = pos.y + FIGURE.line_height() + 2.0;
     text::paint(
@@ -762,6 +771,23 @@ fn paint_stat(painter: &Painter, pos: egui::Pos2, stat: &Stat, language: Languag
         &text::to_upper(&stat.label, language),
         color::text_overline(),
     );
+    if let Some(level) = &stat.level {
+        // The points, and under them the way to the next level: a track and its fill.
+        let y = label_y + ty::INFO_OVERLINE.line_height() + 8.0;
+        let words = text::paint_tabular(
+            painter,
+            pos2(pos.x, y),
+            GRADE_COUNT,
+            &level.points,
+            white(0.8),
+        );
+        let bar = Rect::from_min_size(
+            pos2(pos.x, words.max.y + 8.0),
+            vec2(words.width().max(96.0), 4.0),
+        );
+        painter.rect_filled(bar, corner(2.0), white(0.16));
+        paint_progress_fill(painter, bar, level.fraction, accent);
+    }
     if let Some(grades) = stat.grades {
         let mut x = pos.x;
         let y = label_y + ty::INFO_OVERLINE.line_height() + 8.0;
@@ -830,7 +856,8 @@ fn surface(
             name,
         )
     });
-    let hovered = pressable && response.hovered();
+    crate::ui::a11y::follow(ctx, response.id, focused && pressable);
+    let hovered = pressable && crate::ui::input::hovered(ctx, &response);
     if hovered {
         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
     }
@@ -1173,7 +1200,7 @@ fn paint_state(
         job.halign = Align::Center;
         job.sections[0].format.line_height = Some(1.45 * ty::NOTE.size);
         let galley = painter.layout_job(job);
-        painter.galley(pos2(top_centre.x, y), galley, white(0.62));
+        painter.galley(pos2(top_centre.x, y), galley, color::text_detail());
     }
     if let Some(slot) = retry_slot {
         let label = crate::screens::online_feed_strings::FeedText::TryAgain.text(language);

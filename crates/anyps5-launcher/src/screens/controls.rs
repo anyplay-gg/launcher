@@ -128,6 +128,7 @@ impl ControlsPanel {
         let view = SideView {
             title: data.title,
             subtitle: Some(data.language.text(Key::Controls)),
+            question: false,
             list_id: "controls-rows",
             nav: &self.side.nav,
             accent: data.accent,

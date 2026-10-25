@@ -366,7 +366,7 @@ pub fn paint_card(
         Align2::LEFT_TOP,
         detail_style,
         &detail,
-        fade(white(0.6), alpha),
+        fade(color::text_detail(), alpha),
     );
 
     // The big trophy on the trailing edge, with a vertical gradient from the grade colour down.

@@ -19,6 +19,7 @@ use crate::screens::phone_strings::PhoneText;
 use crate::screens::run_strings::{RunText, friends_line};
 use crate::screens::strings::{Extra, playtime_text};
 use crate::screens::toolkit_pin;
+use crate::screens::update_strings::UpdateText;
 use crate::screens::{
     ScreenCx, StateLabel, paint_gradient_circle, paint_label, paint_spinner, place, state_label,
     wrapped,
@@ -32,6 +33,7 @@ use crate::ui::components::{
 use crate::ui::focus::HomeFocus;
 use crate::ui::i18n::{Arg, Key, Language, byte_text};
 use crate::ui::icons::Icon;
+use crate::ui::input;
 use crate::ui::intro;
 use crate::ui::text;
 use crate::ui::theme::{self, Weight, color, pad, size, ty, white};
@@ -57,10 +59,6 @@ const ACTION_ROW: f32 = size::BUTTON_MIN_HEIGHT;
 /// Longest a failure or diagnosis text gets.
 const MESSAGE_WIDTH: f32 = 520.0;
 
-/// Darkness of the shade under the top bar and in the hero's corner.
-const SCRIM_TOP: f32 = 0.30;
-const SCRIM_HERO: f32 = 0.46;
-
 /// A press the model has to hear about, collected while painting.
 #[derive(Clone, Copy, Debug)]
 enum Press {
@@ -81,7 +79,7 @@ pub fn show(ui: &mut Ui, cx: &mut ScreenCx<'_>) {
     let ctx = cx.ctx.clone();
     let screen = ctx.content_rect();
     let mut presses = Vec::new();
-    paint_scrims(ui.painter(), screen, !cx.model.games.is_empty());
+    crate::ui::shade::paint(ui.painter(), screen, !cx.model.games.is_empty());
     // At launch the parts rise into place one after another (ui::intro).
     staged(ui, &ctx, intro::TOP_BAR, screen, |ui, screen| {
         top_bar(ui, cx, screen, &mut presses);
@@ -130,34 +128,6 @@ fn staged(
     add(&mut child, intro::lift(screen, t));
 }
 
-/// Soft shade behind the hero (bottom left) and the top bar, so white text still reads on bright
-/// artwork. Every side fades to nothing, so it never shows an edge.
-fn paint_scrims(painter: &egui::Painter, screen: Rect, with_hero: bool) {
-    let quad = |rect: Rect, corners: [f32; 4]| {
-        let mut mesh = egui::epaint::Mesh::default();
-        for (pos, alpha) in [
-            (rect.left_top(), corners[0]),
-            (rect.right_top(), corners[1]),
-            (rect.left_bottom(), corners[2]),
-            (rect.right_bottom(), corners[3]),
-        ] {
-            mesh.colored_vertex(pos, theme::black(alpha));
-        }
-        mesh.indices.extend_from_slice(&[0, 1, 2, 1, 3, 2]);
-        painter.add(egui::Shape::mesh(mesh));
-    };
-    let top = Rect::from_min_size(screen.min, vec2(screen.width(), 150.0));
-    quad(top, [SCRIM_TOP, SCRIM_TOP, 0.0, 0.0]);
-    if with_hero {
-        let height = (screen.height() * 0.5).min(480.0);
-        let hero = Rect::from_min_max(
-            pos2(screen.min.x, screen.max.y - height),
-            pos2(screen.min.x + screen.width() * 0.72, screen.max.y),
-        );
-        quad(hero, [0.0, 0.0, SCRIM_HERO, 0.0]);
-    }
-}
-
 /// Focus is only drawn while no overlay covers the home screen.
 fn focus_visible(model: &Model) -> bool {
     model.overlay.is_none() && model.starting.is_none()
@@ -196,8 +166,9 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
     }
 
     // A connected phone sits after the title, out of the focus order: it only reports.
+    let mut after_title = title.max.x;
     if let Some(name) = &cx.model.phone.connected {
-        phone_status(
+        after_title = phone_status(
             ui,
             pos2(title.max.x + PHONE_STATUS_GAP, mid),
             name,
@@ -226,19 +197,35 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
     // network name and, while the cloud answers, a dot in the accent: the player is online.
     let unread = online.social.unread_total();
     let handle = online.account.as_ref().map(|a| a.handle.as_str());
+    let appearing = online.is_online() && online.appears_offline();
     let profile = Profile {
         name: handle.unwrap_or_else(|| OnlineText::SignIn.text(language)),
         signed_in: handle.is_some(),
         online: online.is_online(),
+        appearing: appearing.then(|| OnlineText::AppearingOffline.text(language)),
         unread,
-        label: profile_label(handle, online.is_online(), unread, language),
+        label: profile_label(handle, online.is_online(), appearing, unread, language),
     };
     if profile_button(&mut row, &profile, accent, focused(HomeFocus::PROFILE)).clicked() {
         presses.push(Press::Focus(HomeFocus::PROFILE));
     }
-    let response = IconButton::new(Icon::GEAR_SIX, language.text(Key::Settings))
+    // An update that waits and whose notice was sent away: a quiet dot on the gear, and the name
+    // says why. About holds the rest.
+    let update_waiting =
+        cx.model.update.staged_version().is_some() && cx.model.update_notice().is_none();
+    let gear_name = if update_waiting {
+        UpdateText::SettingsBadge.format(language, &[Arg::Str(language.text(Key::Settings))])
+    } else {
+        language.text(Key::Settings).to_owned()
+    };
+    let response = IconButton::new(Icon::GEAR_SIX, gear_name)
         .focused(focused(HomeFocus::SETTINGS))
         .show(&mut row);
+    if update_waiting {
+        let dot = response.rect.right_top() + vec2(-8.0, 8.0);
+        painter.circle_filled(dot, 6.0, theme::black(0.62));
+        painter.circle_filled(dot, 4.0, white(0.92));
+    }
     if response.clicked() {
         presses.push(Press::Focus(HomeFocus::SETTINGS));
     }
@@ -264,6 +251,138 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
     if response.clicked() {
         presses.push(Press::Focus(HomeFocus::LIBRARY));
     }
+    // A launcher update that waits sits after the title (and the phone), in the room the strip
+    // leaves. It is drawn, and reachable by the pad, only when it fits there.
+    update_notice(
+        ui,
+        cx,
+        pos2(after_title + group_gap, mid),
+        row.min_rect().min.x - group_gap,
+        presses,
+    );
+}
+
+/// The launcher update, quiet: one line in the top bar with the two things to do about it. It
+/// says what is ready; "Restart Now" brings the player back to the same place, "Later" sends it
+/// away until the next start. While a game runs and the restart waits, it says so and offers
+/// "Cancel". It does not grab the focus; the pad reaches it from the library button.
+fn update_notice(
+    ui: &mut Ui,
+    cx: &mut ScreenCx<'_>,
+    left_middle: egui::Pos2,
+    limit_x: f32,
+    presses: &mut Vec<Press>,
+) {
+    let Some(notice) = cx.model.update_notice_wanted() else {
+        return;
+    };
+    let language = cx.language();
+    let ctx = cx.ctx.clone();
+    let visible = focus_visible(cx.model);
+    let t = ctx
+        .animate_from_to(
+            ("home-update-notice", notice.version.clone(), notice.holding),
+            0.0,
+            1.0,
+            Motion::Fade,
+        )
+        .clamp(0.0, 1.0);
+    let version = [Arg::Str(&notice.version)];
+    let text = if notice.holding {
+        UpdateText::NoticeHolding.text(language).to_owned()
+    } else {
+        UpdateText::NoticeReady.format(language, &version)
+    };
+    let group = if notice.holding {
+        UpdateText::NoticeHoldingName.format(language, &version)
+    } else {
+        UpdateText::NoticeName.format(language, &version)
+    };
+    let height = ControlSize::Small.height() + 8.0;
+    let labels: Vec<&str> = if notice.holding {
+        vec![UpdateText::CancelRestart.text(language)]
+    } else {
+        vec![
+            Extra::RestartNow.text(language),
+            UpdateText::Later.text(language),
+        ]
+    };
+    // What it needs: the margin, the glyph, the text and its buttons, each 12 apart.
+    let measure = ui.painter().clone();
+    let needed = 16.0
+        + 18.0
+        + 12.0
+        + text::width(&measure, ty::DETAIL_LARGE, &text)
+        + labels
+            .iter()
+            .map(|label| {
+                12.0 + 2.0 * ControlSize::Small.text_pad() + text::width(&measure, ty::CHIP, label)
+            })
+            .sum::<f32>()
+        + 4.0;
+    // One rule for drawing it and for reaching it (the model's focus order reads this).
+    let fits = left_middle.x + needed <= limit_x;
+    cx.model.notice_fits = fits;
+    if !fits {
+        return;
+    }
+    let rect = Rect::from_min_size(
+        pos2(left_middle.x, left_middle.y - height * 0.5),
+        vec2(needed, height),
+    );
+    let background = ui.painter().add(egui::Shape::Noop);
+    let mut row = ui.new_child(
+        UiBuilder::new()
+            .max_rect(rect)
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    row.multiply_opacity(t);
+    row.spacing_mut().item_spacing.x = 12.0;
+    row.add_space(16.0);
+    let painter = row.painter().clone();
+    let glyph = 18.0;
+    let (icon, _) = row.allocate_exact_size(vec2(glyph, glyph), Sense::hover());
+    painter.text(
+        icon.center(),
+        Align2::CENTER_CENTER,
+        Icon::ARROW_CIRCLE_DOWN.glyph(),
+        Icon::ARROW_CIRCLE_DOWN.font(text::quantize_size(glyph), false),
+        white(0.92),
+    );
+    let label_width = text::width(&painter, ty::DETAIL_LARGE, &text);
+    let (label, response) = row.allocate_exact_size(vec2(label_width, height), Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(Role::Status, true, &group));
+    text::paint(
+        &painter,
+        label.left_center(),
+        Align2::LEFT_CENTER,
+        ty::DETAIL_LARGE,
+        &text,
+        color::text_subtitle(),
+    );
+    for (i, label) in labels.into_iter().enumerate() {
+        let response = ConsoleButton::new(label)
+            .size(ControlSize::Small)
+            .accessible_name(format!("{label}, {group}"))
+            .focused(visible && cx.model.focus == HomeFocus::Update(i as u8))
+            .show(&mut row);
+        if response.clicked() {
+            presses.push(Press::Focus(HomeFocus::Update(i as u8)));
+        }
+    }
+    let used = row.min_rect();
+    let capsule = Rect::from_min_max(
+        pos2(used.min.x, rect.min.y),
+        pos2(used.max.x + 4.0, rect.max.y),
+    );
+    ui.painter().set(
+        background,
+        egui::Shape::rect_filled(
+            capsule,
+            egui::CornerRadius::same(255),
+            color::surface().gamma_multiply(t),
+        ),
+    );
 }
 
 /// Room the colon of the clock takes between the hours and the minutes.
@@ -312,7 +431,7 @@ const PHONE_STATUS_NAME_MAX: f32 = 150.0;
 
 /// The status of a connected phone: its icon and name on the pills' surface, 32 high so it
 /// reads as a note beside the 44 high buttons. Not a button: nothing happens on a press.
-fn phone_status(ui: &mut Ui, left_middle: egui::Pos2, name: &str, language: Language) {
+fn phone_status(ui: &mut Ui, left_middle: egui::Pos2, name: &str, language: Language) -> f32 {
     let painter = ui.painter().clone();
     let shown = text::middle_truncate(&painter, ty::CHIP, name, PHONE_STATUS_NAME_MAX);
     let glyph = 18.0;
@@ -325,7 +444,7 @@ fn phone_status(ui: &mut Ui, left_middle: egui::Pos2, name: &str, language: Lang
     let response = ui.allocate_rect(rect, Sense::hover());
     response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &label));
     if !ui.is_rect_visible(rect) {
-        return;
+        return rect.max.x;
     }
     components::paint_capsule(&painter, rect, color::surface());
     let ink = white(0.92);
@@ -344,6 +463,7 @@ fn phone_status(ui: &mut Ui, left_middle: egui::Pos2, name: &str, language: Lang
         &shown,
         ink,
     );
+    rect.max.x
 }
 
 /// What the profile button shows.
@@ -353,18 +473,28 @@ struct Profile<'a> {
     signed_in: bool,
     /// The cloud answers: a dot at the avatar.
     online: bool,
+    /// The player appears offline to others: the dot is a ring and the words follow the name.
+    appearing: Option<&'a str>,
     unread: u64,
     /// The accessible name.
     label: String,
 }
 
 /// The profile's accessible name: the handle (what is on screen), then what it tells besides.
-fn profile_label(handle: Option<&str>, online: bool, unread: u64, language: Language) -> String {
+fn profile_label(
+    handle: Option<&str>,
+    online: bool,
+    appearing: bool,
+    unread: u64,
+    language: Language,
+) -> String {
     let Some(handle) = handle else {
         return OnlineText::SignIn.text(language).to_owned();
     };
     let mut label = handle.to_owned();
-    if online {
+    if online && appearing {
+        label = format!("{label}, {}", OnlineText::AppearingOffline.text(language));
+    } else if online {
         label = format!("{label}, {}", OnlineText::Online.text(language));
     }
     if unread > 0 {
@@ -417,7 +547,11 @@ fn profile_button(
     } else {
         (text::width(&painter, BADGE, &count) + 12.0).max(BADGE_HEIGHT) + 8.0
     };
-    let width = inset + size::AVATAR + 10.0 + name_width + 16.0 + badge_width;
+    // Appearing offline: the words in quiet ink after the name.
+    let quiet_width = profile
+        .appearing
+        .map_or(0.0, |words| text::width(&painter, ty::CHIP, words) + 10.0);
+    let width = inset + size::AVATAR + 10.0 + name_width + 16.0 + quiet_width + badge_width;
     let it = components::interact(ui, vec2(width, size::ICON_BUTTON), focused, true, None);
     it.response
         .widget_info(|| WidgetInfo::labeled(Role::Button, true, &profile.label));
@@ -442,13 +576,15 @@ fn profile_button(
             .take(1)
             .flat_map(char::to_uppercase)
             .collect();
+        // The initial sits on the middle of the gradient, over the pill: white on a dark accent,
+        // dark on a light one.
         text::paint(
             &painter,
             avatar,
             Align2::CENTER_CENTER,
             theme::TextStyle::new(text::quantize_size(16.0 * s), Weight::Bold),
             &initial,
-            Color32::WHITE,
+            theme::readable_ink(avatar_middle(accent)),
         );
     } else {
         // Nobody yet: the outline of a person in the avatar's footprint, in ink, not accent.
@@ -465,7 +601,12 @@ fn profile_button(
         let dot = avatar + vec2(avatar_r, avatar_r) * 0.72;
         let ring = theme::black(0.62);
         painter.circle_filled(dot, 6.0 * s, ring);
-        painter.circle_filled(dot, 4.0 * s, accent);
+        if profile.appearing.is_some() {
+            // Online for the player, offline for the others: a ring, not the accent's dot.
+            painter.circle_stroke(dot, 3.4 * s, egui::Stroke::new(1.5 * s, white(0.9)));
+        } else {
+            painter.circle_filled(dot, 4.0 * s, accent);
+        }
     }
     let shown = text::paint(
         &painter,
@@ -475,14 +616,25 @@ fn profile_button(
         &name,
         ink,
     );
+    let mut after = shown.max.x;
+    if let Some(words) = profile.appearing {
+        after = text::paint(
+            &painter,
+            pos2(after + 10.0 * s, rect.center().y),
+            Align2::LEFT_CENTER,
+            ty::CHIP,
+            words,
+            white(0.72),
+        )
+        .max
+        .x;
+    }
     if !count.is_empty() {
         // Light, with dark type: the one place a pill carries ink as a fill.
         let w = (text::width(&painter, BADGE, &count) + 12.0).max(BADGE_HEIGHT) * s;
         let h = BADGE_HEIGHT * s;
-        let badge = Rect::from_min_size(
-            pos2(shown.max.x + 8.0 * s, rect.center().y - h * 0.5),
-            vec2(w, h),
-        );
+        let badge =
+            Rect::from_min_size(pos2(after + 8.0 * s, rect.center().y - h * 0.5), vec2(w, h));
         components::paint_capsule(&painter, badge, white(0.92));
         text::paint(
             &painter,
@@ -681,21 +833,19 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
         style.opacity = opacity.clamp(0.0, 1.0);
         let under_pointer = interactive
             && opacity > 0.5
+            && input::pointer_in_use(&ctx)
             && ctx.pointer_hover_pos().is_some_and(|p| rect.contains(p));
         style.hover = ctx.animate_to(key("tile-hover"), f32::from(under_pointer), Motion::Hover);
         chrome::paint_tile(&painter, rect, &style);
 
         if interactive && opacity > 0.5 {
             let state = cx.model.state_of(&game);
-            let label = format!(
-                "{}, {}",
-                game.name,
-                state_label(&state, language, accent).text
-            );
+            let label = format!("{}, {}", game.name, state_label(&state, language).text);
             let response =
                 ui.interact(rect, Id::unique(("tile", game.id.as_str())), Sense::click());
             response.widget_info(|| WidgetInfo::labeled(Role::Button, true, label.as_str()));
-            if response.hovered() {
+            crate::ui::a11y::follow(&ctx, response.id, ring_on && is_selected);
+            if input::hovered(&ctx, &response) {
                 ctx.set_cursor_icon(CursorIcon::PointingHand);
             }
             if response.double_clicked() {
@@ -749,7 +899,7 @@ fn hero(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<Pres
     // The ones on their way out are drawn first, so the incoming hero sits on top.
     let mut still_leaving = Vec::new();
     for id in track.leaving.clone() {
-        let alpha = ctx.animate_to(("hero", id.as_str().to_owned()), 0.0, Motion::Layout);
+        let alpha = ctx.animate_to(("hero", id.as_str().to_owned()), 0.0, Motion::Exit);
         if alpha > 0.01
             && let Some(game) = cx.model.game(&id).cloned()
         {
@@ -866,7 +1016,7 @@ fn paint_hero(
             x,
             title_top - STATE_GAP - ty::STATE_LABEL.line_height() * 0.5,
         ),
-        &state_label(&state, language, cx.accent()),
+        &state_label(&state, language),
         ty::STATE_LABEL,
         width,
         1,
@@ -1316,12 +1466,12 @@ fn empty_library(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut
             &painter,
             theme::TextStyle::new(17.0, Weight::Regular),
             body,
-            white(0.65),
+            color::text_empty(),
             (screen.width() - 2.0 * pad::HOME_X).min(720.0),
             3,
         );
         let body_height = body_galley.size().y;
-        painter.galley(pos2(cx_mid, y), body_galley, white(0.65));
+        painter.galley(pos2(cx_mid, y), body_galley, color::text_empty());
         y += body_height.max(rows[2]);
     }
     y += 18.0;
@@ -1338,7 +1488,7 @@ fn empty_library(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut
             Align2::CENTER_TOP,
             ty::DETAIL,
             &shown,
-            white(0.6),
+            color::text_detail(),
         );
         y += ty::DETAIL.line_height() + 18.0;
     }
@@ -1373,6 +1523,12 @@ fn empty_library(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut
     }
 }
 
+/// The colour under the avatar's initial: the middle of the accent's gradient (accent at 100 % to
+/// 55 %) over the dark of the pill.
+pub(crate) fn avatar_middle(accent: Color32) -> Color32 {
+    theme::mix(Color32::from_rgb(28, 30, 36), accent, 0.775)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1381,15 +1537,22 @@ mod tests {
     fn the_profile_is_named_by_what_it_shows() {
         let english = Language::English;
         // Signed out there is no name to show, only the way in.
-        assert_eq!(profile_label(None, false, 0, english), "Sign In");
+        assert_eq!(profile_label(None, false, false, 0, english), "Sign In");
         assert_eq!(
-            profile_label(None, false, 0, Language::Turkish),
+            profile_label(None, false, false, 0, Language::Turkish),
             "Giriş Yap"
         );
-        assert_eq!(profile_label(Some("Mira"), false, 0, english), "Mira");
         assert_eq!(
-            profile_label(Some("Mira"), true, 3, english),
+            profile_label(Some("Mira"), false, false, 0, english),
+            "Mira"
+        );
+        assert_eq!(
+            profile_label(Some("Mira"), true, false, 3, english),
             "Mira, Online, 3 unread"
+        );
+        assert_eq!(
+            profile_label(Some("Mira"), true, true, 3, english),
+            "Mira, Appearing offline, 3 unread"
         );
     }
 

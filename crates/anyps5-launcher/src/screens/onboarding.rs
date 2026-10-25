@@ -19,8 +19,9 @@ use crate::ui::components::{
 use crate::ui::glass::{GlassStyle, paint_glass};
 use crate::ui::i18n::{Key, Language};
 use crate::ui::icons::Icon;
+use crate::ui::input;
 use crate::ui::text;
-use crate::ui::theme::{self, Theme, black, radius, size, ty, white};
+use crate::ui::theme::{self, Theme, black, color, radius, size, ty, white};
 
 /// Steps slide in from this far to the side.
 const STEP_SLIDE: f32 = 40.0;
@@ -191,7 +192,7 @@ fn language_step(
         Align2::LEFT_TOP,
         ty::ONBOARDING_OVERLINE,
         &text::to_upper(language.text(Key::ChooseLanguage), language),
-        white(0.55),
+        color::text_overline(),
     );
     y += ty::ONBOARDING_OVERLINE.line_height() + 16.0;
     let choice = cx.model.onboarding_choice();
@@ -293,7 +294,8 @@ fn theme_step(
             );
             let label = theme.title(language);
             response.widget_info(|| WidgetInfo::labeled(Role::Button, true, label));
-            if response.hovered() {
+            crate::ui::a11y::follow(&ctx, response.id, focused);
+            if input::hovered(&ctx, &response) {
                 ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
             }
             if response.clicked() {
@@ -411,7 +413,7 @@ fn folder_step(
         Align2::LEFT_TOP,
         ty::DETAIL,
         &shown,
-        white(0.6),
+        color::text_detail(),
     );
     y = card.max.y + 22.0;
 
@@ -476,6 +478,6 @@ fn online_step(
         Align2::LEFT_TOP,
         ty::DETAIL,
         OT::OnlineLater.text(language),
-        white(0.6),
+        color::text_detail(),
     );
 }

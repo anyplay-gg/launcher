@@ -10,7 +10,7 @@
 //!                           saves|saves-empty|restore|
 //!                           online|online-browser|online-friends|online-friends-busy|
 //!                           online-friends-empty|online-requests|online-friend|
-//!                           online-account|online-picker|
+//!                           online-account|online-account-appearing|online-picker|
 //!                           online-party|online-party-picker|online-messages|online-conversation|
 //!                           online-message|online-request|
 //!                           online-party-voice|online-party-member|online-voice|online-voice-key|
@@ -22,6 +22,10 @@
 //!                           profile-own|profile-own-focus|profile-own-end|profile-friend|profile-friend-hidden|
 //!                           profile-request|profile-new|profile-new-friend|profile-private|
 //!                           profile-loading|profile-error|profile-offline|
+//!                           profile-own-appearing|profile-friend-compare|
+//!                           compare|compare-secret|compare-revealed|compare-numbers|
+//!                           compare-loading|compare-offline|compare-error|compare-hidden|
+//!                           compare-empty|
 //!                           feed|feed-reaction|feed-empty|feed-loading|feed-error
 //!                           incoming-call|incoming-call-discord|in-call|in-call-open|in-call-discord|calling|
 //!                           missed-call|party-discord
@@ -43,11 +47,9 @@ use anyps5_core::report::{ReportInput, SystemInfo};
 use anyps5_core::settings::{GameSettings, Preferences};
 use anyps5_core::toolkit::InstalledRelease;
 use anyps5_core::trophies::{Grade, Trophy, TrophySet};
-use egui::{
-    Align2, Color32, ColorImage, Context, Rect, TextureHandle, TextureOptions, Ui, UiBuilder, pos2,
-    vec2,
-};
+use egui::{Color32, ColorImage, Context, Rect, TextureHandle, TextureOptions, Ui, pos2, vec2};
 
+use crate::app::preview::{HomeStand, Scene};
 use crate::screens::advanced::{AdvancedData, AdvancedPanel};
 use crate::screens::banner::{self, BannerLook, BannerTrophy};
 use crate::screens::controls::{ControlsData, ControlsPanel};
@@ -65,18 +67,14 @@ use crate::screens::share_strings::Share;
 use crate::screens::start::{StartData, StartScreen};
 use crate::screens::toolkit_pin::PinChoices;
 use crate::screens::trophies::{IconCache, TrophyData, TrophyListPanel};
-use crate::screens::unlock::{UnlockProgress, UnlockStep, hero_progress};
 use crate::screens::whatsnew::{NotesView, SAMPLE_NOTES, WhatsNewData, WhatsNewPanel};
 use crate::ui::Shell;
 use crate::ui::anim::AnimExt;
-use crate::ui::artwork::paint_artwork;
-use crate::ui::chrome::{Fact, TileImage, TileOverlay, TileStyle, facts_line, paint_tile};
-use crate::ui::components::ConsoleButton;
+use crate::ui::chrome::{TileImage, TileOverlay};
 use crate::ui::i18n::Key;
 use crate::ui::icons::Icon;
 use crate::ui::input::InputEvent;
-use crate::ui::text;
-use crate::ui::theme::{color, size, ty, white};
+use crate::ui::theme::white;
 use anyps5_core::gamefiles::{GameInput, parse_input_ini};
 
 /// The page to show.
@@ -108,7 +106,10 @@ pub enum ScreenPage {
     /// The Toolkit category, in its rows: stable, an update waiting, pinned, a local build.
     Toolkit(ToolkitLook),
     /// The About page with a downloaded launcher update waiting ("Restart Now").
-    AboutUpdate,
+    /// The About page with the launcher's own update in one state.
+    AboutUpdate(UpdateLook),
+    /// The notes of a launcher update, in the "What's New" panel.
+    WhatsNewLauncher,
     /// Behavior with the AnyPlay links registered to this launcher.
     BehaviourLinks,
     /// Behavior with Clips off, on at 30 seconds, and waiting for the clip key.
@@ -130,6 +131,28 @@ pub enum ScreenPage {
     Phone(PhoneLook),
     /// The profile screen over invented players.
     Profile(ProfileLook),
+    /// The trophy comparison with an invented friend, in one of its states.
+    Compare(CompareLook),
+}
+
+/// The trophy comparison's states (docs/DESIGN.md 17, "Trophy compare").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CompareLook {
+    /// Both players' trophies in a game the player has.
+    Ready,
+    /// The focus on a secret trophy, with its Show pill.
+    Secret,
+    /// The same secret after Show.
+    Revealed,
+    /// A game that is not in the player's library: the rows are numbers.
+    Numbers,
+    Loading,
+    Offline,
+    Error,
+    /// The friend keeps their trophies from the player.
+    Hidden,
+    /// Neither has a trophy.
+    Empty,
 }
 
 /// The profile screen's states (docs/DESIGN.md 17, "Profile screen").
@@ -147,6 +170,10 @@ pub enum ProfileLook {
     FriendHidden,
     /// Someone who asked to be friends.
     Request,
+    /// The player's own profile while they appear offline.
+    OwnAppearing,
+    /// A friend, the focus on a game row that opens the comparison.
+    FriendCompare,
     /// The player's own profile of a new account.
     New,
     /// A friend who has done nothing yet.
@@ -162,8 +189,13 @@ impl ProfileLook {
     /// The account the look shows.
     pub fn account(self) -> u64 {
         match self {
-            ProfileLook::Own | ProfileLook::OwnFocus | ProfileLook::OwnEnd | ProfileLook::New => 1,
+            ProfileLook::Own
+            | ProfileLook::OwnFocus
+            | ProfileLook::OwnEnd
+            | ProfileLook::OwnAppearing
+            | ProfileLook::New => 1,
             ProfileLook::Friend
+            | ProfileLook::FriendCompare
             | ProfileLook::Loading
             | ProfileLook::Error
             | ProfileLook::Offline => 2,
@@ -197,6 +229,8 @@ pub enum OnlineLook {
     /// The browser sign-in waits.
     Browser,
     Friends,
+    /// The account page while the player appears offline.
+    AccountAppearing,
     /// Five friend requests wait (three are answered in place), friends play, one is online.
     FriendsBusy,
     /// Signed in with nobody yet.
@@ -276,6 +310,44 @@ pub enum OnlineLook {
     MissedCall,
     /// The party page while the voice is on Discord, for the leader.
     PartyDiscord,
+}
+
+/// What a launcher release's notes look like (the shape of the GitHub release body).
+const LAUNCHER_SAMPLE_NOTES: &str = "## AnyPlay Launcher 0.1.4\n\n### Your Profile\n\n- Your profile button now opens a full-screen profile: your games, hours and trophies.\n- **Edit Profile** opens your account on the web.\n\n### Look and Feel\n\n- Focus is a ring around buttons, rows and cards instead of a white fill.\n- Every control reacts when the mouse is over it.\n\n### Calls\n\n- A call uses Voice Activity while it lasts, so you no longer hold a key to talk.\n";
+
+/// Where the launcher's own update stands on the About page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UpdateLook {
+    Checking,
+    UpToDate,
+    Available,
+    Downloading,
+    Ready,
+    Holding,
+    ReadOnly,
+    Offline,
+    Refused,
+}
+
+impl UpdateLook {
+    fn state(self) -> LauncherUpdate {
+        use crate::screens::settings::UpdateFailure;
+        let version = "0.1.4".to_owned();
+        match self {
+            UpdateLook::Checking => LauncherUpdate::Checking,
+            UpdateLook::UpToDate => LauncherUpdate::UpToDate,
+            UpdateLook::Available => LauncherUpdate::Available(version),
+            UpdateLook::Downloading => LauncherUpdate::Downloading {
+                version,
+                permille: 420,
+            },
+            UpdateLook::Ready => LauncherUpdate::Ready(version),
+            UpdateLook::Holding => LauncherUpdate::Holding(version),
+            UpdateLook::ReadOnly => LauncherUpdate::ReadOnly(version),
+            UpdateLook::Offline => LauncherUpdate::Failed(UpdateFailure::Offline),
+            UpdateLook::Refused => LauncherUpdate::Failed(UpdateFailure::Refused),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -368,7 +440,16 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "log" => ScreenPage::Log,
         "report" => ScreenPage::Report,
         "library" => ScreenPage::Library,
-        "about-update" => ScreenPage::AboutUpdate,
+        "about-update" => ScreenPage::AboutUpdate(UpdateLook::Ready),
+        "about-update-checking" => ScreenPage::AboutUpdate(UpdateLook::Checking),
+        "about-update-current" => ScreenPage::AboutUpdate(UpdateLook::UpToDate),
+        "about-update-available" => ScreenPage::AboutUpdate(UpdateLook::Available),
+        "about-update-downloading" => ScreenPage::AboutUpdate(UpdateLook::Downloading),
+        "about-update-holding" => ScreenPage::AboutUpdate(UpdateLook::Holding),
+        "about-update-readonly" => ScreenPage::AboutUpdate(UpdateLook::ReadOnly),
+        "about-update-offline" => ScreenPage::AboutUpdate(UpdateLook::Offline),
+        "about-update-refused" => ScreenPage::AboutUpdate(UpdateLook::Refused),
+        "whats-new-launcher" => ScreenPage::WhatsNewLauncher,
         "behavior-links" => ScreenPage::BehaviourLinks,
         "behavior-clips-off" => ScreenPage::BehaviourClipsOff,
         "behavior-clips" => ScreenPage::BehaviourClips,
@@ -397,6 +478,7 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "online" => ScreenPage::Online(OnlineLook::Start),
         "online-browser" => ScreenPage::Online(OnlineLook::Browser),
         "online-friends" => ScreenPage::Online(OnlineLook::Friends),
+        "online-account-appearing" => ScreenPage::Online(OnlineLook::AccountAppearing),
         "online-friends-busy" => ScreenPage::Online(OnlineLook::FriendsBusy),
         "online-friends-empty" => ScreenPage::Online(OnlineLook::FriendsEmpty),
         "online-requests" => ScreenPage::Online(OnlineLook::Requests),
@@ -427,6 +509,17 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "online-paused" => ScreenPage::Online(OnlineLook::Paused),
         "online-banned" => ScreenPage::Online(OnlineLook::Banned),
         "profile-own" => ScreenPage::Profile(ProfileLook::Own),
+        "profile-own-appearing" => ScreenPage::Profile(ProfileLook::OwnAppearing),
+        "profile-friend-compare" => ScreenPage::Profile(ProfileLook::FriendCompare),
+        "compare" => ScreenPage::Compare(CompareLook::Ready),
+        "compare-secret" => ScreenPage::Compare(CompareLook::Secret),
+        "compare-revealed" => ScreenPage::Compare(CompareLook::Revealed),
+        "compare-numbers" => ScreenPage::Compare(CompareLook::Numbers),
+        "compare-loading" => ScreenPage::Compare(CompareLook::Loading),
+        "compare-offline" => ScreenPage::Compare(CompareLook::Offline),
+        "compare-error" => ScreenPage::Compare(CompareLook::Error),
+        "compare-hidden" => ScreenPage::Compare(CompareLook::Hidden),
+        "compare-empty" => ScreenPage::Compare(CompareLook::Empty),
         "profile-own-focus" => ScreenPage::Profile(ProfileLook::OwnFocus),
         "profile-own-end" => ScreenPage::Profile(ProfileLook::OwnEnd),
         "profile-friend" => ScreenPage::Profile(ProfileLook::Friend),
@@ -548,6 +641,7 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         id: AccountId(1),
         handle: "Mira".into(),
         email: "mira@example.org".into(),
+        appear_offline: false,
     });
     state.friends = FriendLists {
         friends: vec![
@@ -587,6 +681,11 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         (AccountId(4), Some(count(0, 0, 0, 0))),
     ]);
     state.privacy = Some(Privacy::default());
+    if look == OnlineLook::AccountAppearing
+        && let Some(account) = state.account.as_mut()
+    {
+        account.appear_offline = true;
+    }
     crate::screens::gallery_feed::sample(&mut state, look);
     if matches!(look, OnlineLook::FriendsBusy | OnlineLook::Requests) {
         state.friends.incoming = [
@@ -1348,9 +1447,12 @@ pub struct ScreenGallery {
     online_panel: crate::screens::online::OnlinePanel,
     online: anyps5_core::online::Online,
     profile: crate::screens::profile::ProfileScreen,
+    compare: crate::screens::compare::CompareScreen,
     recommended: RecommendedPanel,
     whats_new: WhatsNewPanel,
     notes: Published,
+    /// The notes of a launcher update.
+    launcher_notes: Published,
     update: UpdateState,
     toolkit_version: String,
     phone: crate::app::phone::PhoneState,
@@ -1365,12 +1467,19 @@ pub struct ScreenGallery {
     log: LogView,
     start: StartScreen,
     banner_icons: IconCache,
+    /// The real home screen the panels are drawn over.
+    home: Option<HomeStand>,
     opened: bool,
 }
 
 impl ScreenGallery {
-    pub fn new(page: ScreenPage, language: crate::ui::i18n::Language) -> Self {
+    pub fn new(
+        page: ScreenPage,
+        language: crate::ui::i18n::Language,
+        theme: crate::ui::theme::Theme,
+    ) -> Self {
         let mut prefs = Preferences::first_run();
+        prefs.theme = crate::screens::convert::theme_to_core(theme);
         // --tr shows the page in Turkish.
         if language == crate::ui::i18n::Language::Turkish {
             prefs.language = anyps5_core::settings::Language::Turkish;
@@ -1416,6 +1525,11 @@ impl ScreenGallery {
                 date: "2026-10-20".into(),
                 notes: ReleaseNotes::parse(SAMPLE_NOTES),
             },
+            launcher_notes: Published {
+                tag: "0.1.4".into(),
+                date: String::new(),
+                notes: ReleaseNotes::parse_launcher(LAUNCHER_SAMPLE_NOTES),
+            },
             update,
             toolkit_version,
             phone,
@@ -1434,11 +1548,17 @@ impl ScreenGallery {
             restore: RestorePanel::default(),
             online_panel: crate::screens::online::OnlinePanel::default(),
             profile: crate::screens::profile::ProfileScreen::default(),
+            compare: crate::screens::compare::CompareScreen::default(),
             online: match page {
                 ScreenPage::Online(look) => sample_online(look),
                 ScreenPage::Profile(look) => {
                     let mut state = sample_online(OnlineLook::Friends);
                     crate::screens::gallery_feed::sample_profile(&mut state, look);
+                    state
+                }
+                ScreenPage::Compare(look) => {
+                    let mut state = sample_online(OnlineLook::Friends);
+                    crate::screens::gallery_feed::sample_compare(&mut state, look);
                     state
                 }
                 _ => anyps5_core::online::Online::default(),
@@ -1452,6 +1572,7 @@ impl ScreenGallery {
             log: LogView::default(),
             start: StartScreen::default(),
             banner_icons: IconCache::default(),
+            home: None,
             opened: false,
         }
     }
@@ -1478,6 +1599,34 @@ impl ScreenGallery {
         {
             calls::call_strip(ctx, &strip, language, 1.0, true);
         }
+    }
+
+    /// The comparison with the invented friend Lumen in the first game.
+    fn compare_screen(&mut self, shell: &mut Shell, ctx: &Context, look: CompareLook) {
+        use crate::screens::compare::{Inputs, view};
+        let mut local = crate::screens::gallery_feed::local(&self.covers, &self.avatars, &NAMES);
+        // A game the player does not have: no name, no picture, no trophy file.
+        let owned = !matches!(look, CompareLook::Numbers | CompareLook::Empty);
+        if !owned {
+            local.games.remove("GAME00001");
+        }
+        let revealed = self.compare.revealed().clone();
+        let language = shell.language;
+        let inputs = Inputs {
+            online: &self.online,
+            local: &local,
+            set: owned.then_some(&self.set),
+            account: anyps5_core::online::api::AccountId(2),
+            title_id: "GAME00001",
+            show_hidden: false,
+            revealed: &revealed,
+            language,
+            utc_offset: Some(0),
+        };
+        let model = view(&inputs);
+        let accent = shell.accent_color();
+        let look = crate::screens::compare::Look { language, accent };
+        self.compare.show(shell, ctx, &[], &model, inputs.set, look);
     }
 
     /// The profile screen over the invented state: the library is the gallery's nine games.
@@ -1605,7 +1754,17 @@ impl ScreenGallery {
         if matches!(self.page, ScreenPage::Banner) {
             self.draw_game_frame(ui);
         } else {
-            self.draw_home(ui, shell, matches!(self.page, ScreenPage::Unlocking));
+            let page = self.page;
+            let unlocking = matches!(page, ScreenPage::Unlocking);
+            let scene = match page {
+                ScreenPage::Unlocking => Scene::HomeUnlocking,
+                ScreenPage::Online(_) | ScreenPage::Profile(_) => Scene::HomeFriends,
+                _ => Scene::Home,
+            };
+            // The real home, as the launcher paints it; its focus stays hidden under a panel.
+            self.home
+                .get_or_insert_with(|| HomeStand::new(&ctx, self.prefs.clone(), scene, !unlocking))
+                .paint(ui, shell);
         }
         let entries: Vec<LibraryEntry> = (0..NAMES.len())
             .map(|i| LibraryEntry {
@@ -1620,7 +1779,7 @@ impl ScreenGallery {
                     StateText {
                         icon: Icon::PLAY_CIRCLE,
                         text: language.text(Key::Running).into(),
-                        tint: accent,
+                        tint: crate::ui::theme::color::text_active(),
                     }
                 } else {
                     StateText {
@@ -1665,11 +1824,14 @@ impl ScreenGallery {
             ),
             update: self.update.clone(),
             recent: &recent,
-            launcher: if matches!(self.page, ScreenPage::AboutUpdate) {
-                LauncherUpdate::Ready("0.1.3".into())
-            } else {
-                LauncherUpdate::None
+            launcher: match self.page {
+                ScreenPage::AboutUpdate(look) => look.state(),
+                _ => LauncherUpdate::None,
             },
+            launcher_notes: matches!(
+                self.page,
+                ScreenPage::AboutUpdate(UpdateLook::Ready | UpdateLook::Holding)
+            ),
             default_screenshots: std::path::Path::new("C:\\Users\\mira\\Pictures\\AnyPS5"),
             links: if matches!(self.page, ScreenPage::BehaviourLinks) {
                 anyps5_core::linkreg::Handler::ThisExe
@@ -1757,15 +1919,19 @@ impl ScreenGallery {
             self.recommended.show(shell, &ctx, &events, &data);
         }
         {
+            let launcher = matches!(self.page, ScreenPage::WhatsNewLauncher);
             let view = if matches!(self.page, ScreenPage::WhatsNewLoading) {
                 NotesView::Loading
+            } else if launcher {
+                NotesView::Ready(&self.launcher_notes)
             } else {
                 NotesView::Ready(&self.notes)
             };
             let data = WhatsNewData {
-                tag: "0.1.3",
+                tag: if launcher { "0.1.4" } else { "0.1.3" },
                 view,
                 language,
+                launcher,
             };
             self.whats_new.show(shell, &ctx, &events, &data);
         }
@@ -1807,6 +1973,9 @@ impl ScreenGallery {
         );
         if let ScreenPage::Profile(look) = self.page {
             self.profile_screen(shell, &ctx, look);
+        }
+        if let ScreenPage::Compare(look) = self.page {
+            self.compare_screen(shell, &ctx, look);
         }
         self.library.show(
             shell,
@@ -1884,7 +2053,9 @@ impl ScreenGallery {
                     OnlineLook::Friend => self
                         .online_panel
                         .show_page(Page::Friend(anyps5_core::online::api::AccountId(2)), &data),
-                    OnlineLook::Account => self.online_panel.show_page(Page::Account, &data),
+                    OnlineLook::Account | OnlineLook::AccountAppearing => {
+                        self.online_panel.show_page(Page::Account, &data);
+                    }
                     OnlineLook::Party => self.online_panel.show_page(Page::Party, &data),
                     OnlineLook::PartyPicker => {
                         self.online_panel.show_page(Page::PartyPicker, &data);
@@ -1958,6 +2129,23 @@ impl ScreenGallery {
                     // The third game row, after the two buttons.
                     self.profile.set_focus(3);
                 }
+                if look == ProfileLook::FriendCompare {
+                    // The first game row that opens the comparison, after the one button.
+                    self.profile.set_focus(1);
+                }
+            }
+            ScreenPage::Compare(look) => {
+                self.compare.open();
+                match look {
+                    // The hidden trophy of the invented set is the seventh row.
+                    CompareLook::Secret => self.compare.set_focus(SECRET_TROPHY),
+                    CompareLook::Revealed => {
+                        self.compare.set_focus(SECRET_TROPHY);
+                        self.compare.reveal(SECRET_TROPHY as u32);
+                    }
+                    CompareLook::Ready => self.compare.set_focus(2),
+                    _ => {}
+                }
             }
             ScreenPage::Controls => self.controls.open(),
             ScreenPage::ControlsCapture => {
@@ -1983,9 +2171,22 @@ impl ScreenGallery {
                     self.settings.focus_row(7);
                 }
             }
-            ScreenPage::AboutUpdate => {
+            ScreenPage::AboutUpdate(look) => {
                 self.settings.open_at(7, true);
-                self.settings.focus_row(2);
+                // The row that acts, when there is one; else the first row that can be focused.
+                self.settings.focus_row(match look {
+                    UpdateLook::Ready
+                    | UpdateLook::Holding
+                    | UpdateLook::ReadOnly
+                    | UpdateLook::Offline
+                    | UpdateLook::Refused => 4,
+                    UpdateLook::UpToDate => 3,
+                    _ => 0,
+                });
+            }
+            ScreenPage::WhatsNewLauncher => {
+                self.whats_new
+                    .open_launcher(&self.launcher_notes.notes, shell.language);
             }
             ScreenPage::BehaviourLinks => self.settings.open_at(3, true),
             ScreenPage::BehaviourClipsOff => {
@@ -2023,169 +2224,6 @@ impl ScreenGallery {
             ScreenPage::Start => self.start.open_at(ctx.clock()),
             ScreenPage::Banner | ScreenPage::Unlocking => {}
         }
-    }
-
-    /// The home screen under the panels: artwork with scrims, the tile row, the title, buttons and
-    /// the facts, at the positions of the original (section 5.3). One tile carries the focus ring
-    /// only on the pages where the home is the subject.
-    fn draw_home(&self, ui: &mut Ui, shell: &Shell, unlocking: bool) {
-        let ctx = ui.ctx().clone();
-        let painter = ui.painter().clone();
-        let screen = ui.max_rect();
-        let language = shell.language;
-        let accent = shell.accent_color();
-        if let Some(hero) = &self.hero {
-            paint_artwork(
-                &painter,
-                screen,
-                hero.id(),
-                16.0 / 9.0,
-                ctx.clock(),
-                true,
-                1.0,
-            );
-        }
-        text::paint(
-            &painter,
-            pos2(64.0, 34.0),
-            Align2::LEFT_TOP,
-            ty::TOP_BAR_TITLE,
-            language.text(Key::Games),
-            Color32::WHITE,
-        );
-        // The tile row: the selected game large, a label column, then small tiles.
-        let selected = Rect::from_min_size(pos2(64.0, 112.0), vec2(176.0, 176.0));
-        let mut style = TileStyle::new(accent);
-        style.image = Some(self.tile(1));
-        style.overlay = if unlocking {
-            TileOverlay::Installing(0.39)
-        } else {
-            TileOverlay::None
-        };
-        paint_tile(&painter, selected, &style);
-        text::paint(
-            &painter,
-            pos2(262.4, 168.0),
-            Align2::LEFT_TOP,
-            ty::TILE_NAME,
-            NAMES[1],
-            Color32::WHITE,
-        );
-        let state = if unlocking {
-            language.text(Key::StepRelink)
-        } else {
-            language.text(Key::Ready)
-        };
-        painter.text(
-            pos2(262.4, 204.0),
-            Align2::LEFT_CENTER,
-            if unlocking {
-                Icon::ARROW_CIRCLE_DOWN.glyph()
-            } else {
-                Icon::CHECK_CIRCLE.glyph()
-            },
-            Icon::CHECK_CIRCLE.font(14.0, true),
-            if unlocking {
-                accent
-            } else {
-                color::state_neutral()
-            },
-        );
-        text::paint(
-            &painter,
-            pos2(282.0, 204.0),
-            Align2::LEFT_CENTER,
-            ty::STATE_LABEL,
-            state,
-            if unlocking {
-                accent
-            } else {
-                color::state_neutral()
-            },
-        );
-        for (n, x) in [556.0, 690.0, 824.0, 958.0].into_iter().enumerate() {
-            let r = Rect::from_min_size(pos2(x, 122.44), vec2(118.0, 118.0));
-            let mut s = TileStyle::new(accent);
-            s.image = Some(self.tile(n + 2));
-            paint_tile(&painter, r, &s);
-        }
-        // Title, buttons, facts.
-        text::paint(
-            &painter,
-            pos2(72.0, 560.0),
-            Align2::LEFT_TOP,
-            ty::HERO_TITLE,
-            NAMES[1],
-            Color32::WHITE,
-        );
-        let mut buttons = ui.new_child(
-            UiBuilder::new().max_rect(Rect::from_min_size(pos2(72.0, 651.0), vec2(900.0, 54.0))),
-        );
-        buttons.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 16.0;
-            ConsoleButton::new(if unlocking {
-                language.text(Key::Cancel)
-            } else {
-                language.text(Key::Play)
-            })
-            .icon(if unlocking { Icon::X } else { Icon::PLAY })
-            .icon_fill(!unlocking)
-            .prominent(true)
-            .min_width(size::PLAY_MIN_WIDTH)
-            .show(ui);
-            ConsoleButton::new("3/8")
-                .icon(Icon::TROPHY)
-                .icon_fill(true)
-                .show(ui);
-            ConsoleButton::icon_only(Icon::DOTS_THREE, language.text(Key::Options)).show(ui);
-            if unlocking {
-                ui.add_space(10.0);
-                hero_progress(
-                    ui,
-                    &UnlockProgress::new(UnlockStep::Relink, 0.55),
-                    language,
-                    accent,
-                );
-            }
-        });
-        let mut facts = ui.new_child(
-            UiBuilder::new().max_rect(Rect::from_min_size(pos2(72.0, 727.0), vec2(1000.0, 96.0))),
-        );
-        let status = if unlocking {
-            language.text(Key::StepRelink)
-        } else {
-            language.text(Key::Ready)
-        };
-        facts_line(
-            &mut facts,
-            &[
-                Fact {
-                    icon: Icon::CIRCLE_DASHED,
-                    title: language.text(Key::Status),
-                    value: status,
-                    value_color: None,
-                },
-                Fact {
-                    icon: Icon::HARD_DRIVE,
-                    title: language.text(Key::Size),
-                    value: "8.39 GB",
-                    value_color: None,
-                },
-                Fact {
-                    icon: Icon::HASH,
-                    title: language.text(Key::TitleID),
-                    value: "PPSA90001",
-                    value_color: None,
-                },
-                Fact {
-                    icon: Icon::TAG,
-                    title: language.text(Key::Version),
-                    value: "01.000.010",
-                    value_color: None,
-                },
-            ],
-            language,
-        );
     }
 
     /// A stand-in game window for the banner page.

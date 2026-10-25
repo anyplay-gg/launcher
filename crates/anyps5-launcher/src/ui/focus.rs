@@ -27,6 +27,8 @@ pub enum HomeFocus {
     Actions(usize),
     /// "How did it run?" below the facts: the four answers (0 to 3), then dismiss (4).
     Ask(usize),
+    /// The launcher update notice after the title: its buttons from the left.
+    Update(u8),
 }
 
 /// What the home screen needs to know to navigate.
@@ -40,6 +42,8 @@ pub struct HomeContext {
     pub has_trophies: bool,
     /// "How did it run?" is on screen.
     pub asking: bool,
+    /// Buttons of the launcher update notice (0 = no notice).
+    pub notice: u8,
 }
 
 impl HomeContext {
@@ -60,6 +64,8 @@ pub enum HomeIntent {
     OpenGameSettings,
     /// Answer "How did it run?" (0 to 3) or dismiss it (4).
     AnswerRun(usize),
+    /// A button of the launcher update notice (0 = the main one).
+    UpdateAction(usize),
     OpenLibrary,
     OpenSettings,
     /// The friends button: the online area on the friends list, or on sign-in while signed out.
@@ -96,6 +102,53 @@ impl HomeFocus {
             1 => HomeIntent::OpenFriends,
             2 => HomeIntent::OpenSettings,
             _ => HomeIntent::OpenOnline,
+        }
+    }
+
+    /// Every stop of the home screen in reading order: the top bar from left to right, the tile
+    /// row (one stop, the arrows pick the tile), the action row and, while asked, the question.
+    pub fn reading_order(ctx: HomeContext) -> Vec<HomeFocus> {
+        let mut order: Vec<HomeFocus> = (0..=Self::LAST_TOP).map(HomeFocus::Top).collect();
+        order.push(HomeFocus::Tiles);
+        if ctx.games > 0 {
+            order.extend((0..ctx.action_count()).map(HomeFocus::Actions));
+            if ctx.asking {
+                order.extend((0..=ASK_LAST).map(HomeFocus::Ask));
+            }
+        }
+        order
+    }
+
+    /// Tab (or Shift+Tab with `backwards`): the next or previous stop in reading order. There is no
+    /// wrap, so the last stop stays put like the arrows do at an end.
+    pub fn tab(self, backwards: bool, ctx: HomeContext) -> HomeStep {
+        let order = Self::reading_order(ctx);
+        // A stop that has gone (the action row shrank, the question was answered) counts as the
+        // nearest one that is left.
+        let tiles = order
+            .iter()
+            .position(|f| *f == HomeFocus::Tiles)
+            .unwrap_or(0);
+        let here = order
+            .iter()
+            .position(|f| *f == self)
+            .unwrap_or_else(|| match self {
+                HomeFocus::Actions(_) | HomeFocus::Ask(_) => order
+                    .iter()
+                    .rposition(|f| matches!(f, HomeFocus::Actions(_)))
+                    .unwrap_or(tiles),
+                _ => tiles,
+            });
+        let there = if backwards {
+            here.saturating_sub(1)
+        } else {
+            (here + 1).min(order.len() - 1)
+        };
+        HomeStep {
+            focus: order[there],
+            selected: ctx.selected.min(ctx.games.saturating_sub(1)),
+            intent: None,
+            sound: (order[there] != self).then_some(Cue::Move),
         }
     }
 
@@ -138,6 +191,9 @@ impl HomeFocus {
                 _ => {}
             },
             HomeFocus::Top(i) => match command {
+                Command::Left if i == 0 && ctx.notice > 0 => {
+                    go(&mut step, HomeFocus::Update(ctx.notice - 1));
+                }
                 Command::Left => go(&mut step, HomeFocus::Top(i.saturating_sub(1))),
                 Command::Right => go(&mut step, HomeFocus::Top((i + 1).min(Self::LAST_TOP))),
                 Command::Down | Command::Back => go(&mut step, HomeFocus::Tiles),
@@ -169,6 +225,15 @@ impl HomeFocus {
                     _ => {}
                 }
             }
+            HomeFocus::Update(i) => match command {
+                Command::Left => go(&mut step, HomeFocus::Update(i.saturating_sub(1))),
+                Command::Right if i + 1 < ctx.notice => go(&mut step, HomeFocus::Update(i + 1)),
+                Command::Right => go(&mut step, HomeFocus::Top(0)),
+                Command::Down | Command::Back => go(&mut step, HomeFocus::Tiles),
+                Command::Select => step.intent = Some(HomeIntent::UpdateAction(usize::from(i))),
+                Command::Options if has_games => step.intent = Some(HomeIntent::OpenGameSettings),
+                _ => {}
+            },
             HomeFocus::Ask(i) => match command {
                 Command::Left => go(&mut step, HomeFocus::Ask(i.saturating_sub(1))),
                 Command::Right => go(&mut step, HomeFocus::Ask((i + 1).min(ASK_LAST))),
@@ -177,6 +242,15 @@ impl HomeFocus {
                 Command::Options if has_games => step.intent = Some(HomeIntent::OpenGameSettings),
                 _ => {}
             },
+        }
+        // A direction that went nowhere has met an edge: a soft bump, so the press is answered.
+        if command.is_direction()
+            && step.intent.is_none()
+            && step.sound.is_none()
+            && step.focus == self
+            && step.selected == ctx.selected.min(last_game)
+        {
+            step.sound = Some(Cue::Bump);
         }
         step
     }
@@ -294,7 +368,7 @@ impl PanelNav {
                         self.row = 0;
                         step(PanelEffect::None, Some(Cue::Move))
                     } else {
-                        step(PanelEffect::None, None)
+                        step(PanelEffect::None, Some(Cue::Bump))
                     }
                 }
                 Command::Right | Command::Select => {
@@ -320,7 +394,7 @@ impl PanelNav {
                         self.row = i;
                         step(PanelEffect::None, Some(Cue::Move))
                     }
-                    None => step(PanelEffect::None, None),
+                    None => step(PanelEffect::None, Some(Cue::Bump)),
                 }
             }
             Command::Left | Command::Right => {
@@ -374,6 +448,7 @@ mod tests {
             selected,
             has_trophies,
             asking: false,
+            notice: 0,
         }
     }
 
@@ -396,10 +471,69 @@ mod tests {
     }
 
     #[test]
+    fn tab_walks_the_home_screen_in_reading_order() {
+        let mut c = ctx(3, 1, true);
+        let mut at = HomeFocus::LIBRARY;
+        let mut seen = vec![at];
+        for _ in 0..12 {
+            let step = at.tab(false, c);
+            if step.focus == at {
+                break;
+            }
+            assert_eq!(step.sound, Some(Cue::Move));
+            assert_eq!(step.selected, 1, "Tab never changes the tile");
+            at = step.focus;
+            seen.push(at);
+        }
+        assert_eq!(
+            seen,
+            [
+                HomeFocus::Top(0),
+                HomeFocus::Top(1),
+                HomeFocus::Top(2),
+                HomeFocus::Top(3),
+                HomeFocus::Tiles,
+                HomeFocus::Actions(0),
+                HomeFocus::Actions(1),
+                HomeFocus::Actions(2),
+            ]
+        );
+        let end = at.tab(false, c);
+        assert_eq!((end.focus, end.sound), (at, None), "no wrap at the end");
+        // Shift+Tab goes back the same way, and stops at the first stop.
+        assert_eq!(HomeFocus::Actions(0).tab(true, c).focus, HomeFocus::Tiles);
+        assert_eq!(HomeFocus::Tiles.tab(true, c).focus, HomeFocus::PROFILE);
+        assert_eq!(HomeFocus::LIBRARY.tab(true, c).focus, HomeFocus::LIBRARY);
+        // The question line joins while it is asked.
+        c.asking = true;
+        assert_eq!(HomeFocus::Actions(2).tab(false, c).focus, HomeFocus::Ask(0));
+        assert_eq!(HomeFocus::Ask(4).tab(false, c).focus, HomeFocus::Ask(4));
+        // A stop that has gone is replaced by the nearest one: Tab from a third action when only two
+        // are left goes to nothing further, Shift+Tab to the one before.
+        let two = ctx(3, 0, false);
+        assert_eq!(
+            HomeFocus::Actions(2).tab(true, two).focus,
+            HomeFocus::Actions(0)
+        );
+        assert_eq!(
+            HomeFocus::Ask(1).tab(false, two).focus,
+            HomeFocus::Actions(1)
+        );
+        // No games: the top bar and the one tile stop (choose a folder).
+        let empty = ctx(0, 0, false);
+        assert_eq!(HomeFocus::PROFILE.tab(false, empty).focus, HomeFocus::Tiles);
+        assert_eq!(HomeFocus::Tiles.tab(false, empty).focus, HomeFocus::Tiles);
+    }
+
+    #[test]
     fn tiles_move_selection_clamped_without_wrap() {
         let c = ctx(3, 0, false);
         let s = HomeFocus::Tiles.navigate(Command::Left, c);
-        assert_eq!((s.selected, s.sound), (0, None), "no wrap, no sound");
+        assert_eq!(
+            (s.selected, s.sound),
+            (0, Some(Cue::Bump)),
+            "no wrap, a bump"
+        );
         let s = HomeFocus::Tiles.navigate(Command::Right, c);
         assert_eq!((s.selected, s.sound), (1, Some(Cue::Move)));
         let s = HomeFocus::Tiles.navigate(Command::Right, ctx(3, 2, false));
@@ -444,9 +578,15 @@ mod tests {
             assert_eq!(nav(pair[1], Command::Left).focus, pair[0]);
         }
         let end = nav(HomeFocus::LIBRARY, Command::Left);
-        assert_eq!((end.focus, end.sound), (HomeFocus::LIBRARY, None));
+        assert_eq!(
+            (end.focus, end.sound),
+            (HomeFocus::LIBRARY, Some(Cue::Bump))
+        );
         let end = nav(HomeFocus::PROFILE, Command::Right);
-        assert_eq!((end.focus, end.sound), (HomeFocus::PROFILE, None));
+        assert_eq!(
+            (end.focus, end.sound),
+            (HomeFocus::PROFILE, Some(Cue::Bump))
+        );
         for (focus, intent) in [
             (HomeFocus::LIBRARY, HomeIntent::OpenLibrary),
             (HomeFocus::FRIENDS, HomeIntent::OpenFriends),
@@ -540,7 +680,7 @@ mod tests {
         let s2 = nav.command(Command::Up, &ROWS);
         assert_eq!(
             (nav.category, s.sound, s2.sound),
-            (0, Some(Cue::Move), None),
+            (0, Some(Cue::Move), Some(Cue::Bump)),
             "clamped"
         );
         let s = nav.command(Command::Right, &ROWS);
@@ -577,13 +717,13 @@ mod tests {
         nav.command(Command::Down, &ROWS);
         assert_eq!(nav.row, 5);
         let s = nav.command(Command::Down, &ROWS);
-        assert_eq!((nav.row, s.sound), (5, None));
+        assert_eq!((nav.row, s.sound), (5, Some(Cue::Bump)));
         nav.command(Command::Up, &ROWS);
         nav.command(Command::Up, &ROWS);
         nav.command(Command::Up, &ROWS);
         assert_eq!(nav.row, 1);
         let s = nav.command(Command::Up, &ROWS);
-        assert_eq!((nav.row, s.sound), (1, None), "row 0 is info");
+        assert_eq!((nav.row, s.sound), (1, Some(Cue::Bump)), "row 0 is info");
     }
 
     #[test]

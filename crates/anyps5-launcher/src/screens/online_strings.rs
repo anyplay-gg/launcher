@@ -138,6 +138,11 @@ pub enum OnlineText {
     RecordNetworkDetail,
     RelayOnly,
     RelayOnlyNote,
+    // Appearing offline
+    AppearOffline,
+    AppearOfflineDetail,
+    /// The quiet words where the player sees their own status.
+    AppearingOffline,
     // Trophies
     /// A friend hides their trophies from the player.
     TrophiesHidden,
@@ -271,6 +276,9 @@ impl OnlineText {
             OnlineText::RecordNetworkDetail => {
                 "Games write what they ask the network for to the Logs folder, to help build online support. Nothing is uploaded."
             }
+            OnlineText::AppearOffline => "Appear Offline",
+            OnlineText::AppearOfflineDetail => "Friends see you as offline",
+            OnlineText::AppearingOffline => "Appearing offline",
             OnlineText::RelayOnly => "Hide Your IP Address",
             OnlineText::RelayOnlyNote => {
                 "Other players reach you only through a relay and never see your IP address. Games can respond a little slower."
@@ -348,7 +356,7 @@ impl OnlineText {
             OnlineText::Block => "Engelle",
             OnlineText::Unblock => "Engeli Kaldır",
             OnlineText::Report => "Şikâyet Et",
-            OnlineText::ReportTitle => "%@ kişisini şikâyet et",
+            OnlineText::ReportTitle => "%@ Kişisini Şikâyet Et",
             OnlineText::Reason => "Neden",
             OnlineText::ReasonCheating => "Hile",
             OnlineText::ReasonHarassment => "Taciz",
@@ -366,7 +374,7 @@ impl OnlineText {
             OnlineText::You => "Sen",
             OnlineText::Account => "Hesap",
             OnlineText::SignOut => "Çıkış Yap",
-            OnlineText::PickerTitle => "%@ oyununa davet et",
+            OnlineText::PickerTitle => "%@ Oyununa Davet Et",
             OnlineText::PickerSubtitle => "En fazla %@ arkadaş seç",
             OnlineText::SendInvitations => "Davetleri Gönder",
             OnlineText::Welcome => "%@ olarak giriş yapıldı",
@@ -402,6 +410,9 @@ impl OnlineText {
             OnlineText::RecordNetworkDetail => {
                 "Oyunlar ağdan ne istediklerini Logs klasörüne yazar; çevrimiçi desteğin geliştirilmesine yardım eder. Hiçbir şey yüklenmez."
             }
+            OnlineText::AppearOffline => "Çevrimdışı Görün",
+            OnlineText::AppearOfflineDetail => "Arkadaşların seni çevrimdışı görür",
+            OnlineText::AppearingOffline => "Çevrimdışı görünüyorsun",
             OnlineText::RelayOnly => "IP Adresini Gizle",
             OnlineText::RelayOnlyNote => {
                 "Diğer oyuncular sana yalnızca bir aktarıcı üzerinden ulaşır ve IP adresini hiç görmez. Oyunlar biraz daha geç tepki verebilir."

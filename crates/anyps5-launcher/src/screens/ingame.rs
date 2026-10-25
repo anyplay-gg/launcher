@@ -39,7 +39,7 @@ impl InGameText {
             InGameText::BackToGame => "Back to Game",
             InGameText::Friends => "Friends and Party",
             InGameText::CloseGame => "Close Game",
-            InGameText::CloseAsk => "Close %@? Progress the game has not saved is lost.",
+            InGameText::CloseAsk => "Close %@? Anything the game has not saved is lost.",
             InGameText::KeepPlaying => "Keep Playing",
         }
     }
@@ -114,7 +114,7 @@ fn rows_of(data: &InGameData<'_>) -> Vec<Row> {
     let mut rows = vec![
         Row::command("resume", InGameText::BackToGame.text(language)).icon(Icon::PLAY_CIRCLE),
         Row::command("trophies", language.text(Key::Trophies)).icon(Icon::TROPHY),
-        Row::command("settings", language.text(Key::GameSettings)).icon(Icon::DOTS_THREE),
+        Row::command("settings", language.text(Key::GameSettings)).icon(Icon::SLIDERS_HORIZONTAL),
     ];
     if data.online {
         rows.push(Row::command("friends", InGameText::Friends.text(language)).icon(Icon::USERS));
@@ -202,6 +202,7 @@ impl InGamePanel {
         let view = SideView {
             title: data.title,
             subtitle: Some(running),
+            question: false,
             list_id: "in-game-rows",
             nav: &self.side.nav,
             accent: data.accent,
@@ -299,6 +300,7 @@ impl CloseGamePanel {
         let view = SideView {
             title: InGameText::CloseGame.text(language),
             subtitle: Some(&ask),
+            question: true,
             list_id: "close-game-rows",
             nav: &self.side.nav,
             accent,

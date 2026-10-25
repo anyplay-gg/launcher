@@ -540,6 +540,8 @@ impl OnlineService {
                 | Purpose::Cards
                 | Purpose::Feed { .. }
                 | Purpose::Profile(_)
+                | Purpose::Compare(_)
+                | Purpose::Secrets { .. }
                 | Purpose::Privacy
                 | Purpose::Party
                 | Purpose::JoinCode
@@ -882,6 +884,7 @@ mod tests {
             id: AccountId(1),
             handle: "Alec".into(),
             email: "a@example.org".into(),
+            appear_offline: false,
         });
         model
     }

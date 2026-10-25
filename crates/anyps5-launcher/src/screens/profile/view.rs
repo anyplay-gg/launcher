@@ -11,11 +11,14 @@
 //!   have is a neutral tile with its title ID.
 //! - The player's own games and trophies come from this PC (playtime, trophy files); another
 //!   player's from the cloud (playtime, favourites) and from their items in the feed.
-//! - Nothing is invented: no points, no ranks. The trophies are counted by grade.
+//! - Nothing is invented: the level and its points are the cloud's (`ProfilePage::level`), shown
+//!   only when it sent them; the trophies are counted by grade.
 
 use std::collections::BTreeMap;
 
-use anyps5_core::online::api::{AccountId, Count, FeedEvent, FeedItem, Friend, Reaction};
+use anyps5_core::online::api::{
+    AccountId, Count, FeedEvent, FeedItem, Friend, Reaction, TrophyLevel,
+};
 use anyps5_core::online::{self, Online};
 
 use crate::screens::format;
@@ -92,6 +95,10 @@ pub enum Press {
     OpenGame(String),
     /// Open the feed on this item (where the reactions are).
     OpenFeed(u64),
+    /// Compare the player's trophies in this game (a title ID) with this account's.
+    Compare(AccountId, String),
+    /// Appear offline to everyone else (`true`), or show again (`false`).
+    AppearOffline(bool),
 }
 
 #[derive(Clone, Debug)]
@@ -117,8 +124,19 @@ pub struct Stat {
     pub label: String,
     /// The trophies by grade (platinum first), drawn under the label.
     pub grades: Option<[u32; 4]>,
+    /// The level's points and the way to the next level, drawn under the label.
+    pub level: Option<LevelFill>,
     /// The words a screen reader says.
     pub name: String,
+}
+
+/// The small progress under the level figure.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LevelFill {
+    /// How far to the next level, 0 to 1 (full at the highest).
+    pub fraction: f32,
+    /// "1,240 points".
+    pub points: String,
 }
 
 #[derive(Clone, Debug)]
@@ -355,7 +373,7 @@ pub fn view(inputs: &Inputs<'_>) -> ProfileView {
     };
     header(inputs, &handle, &mut ready);
     if own {
-        own_parts(inputs, &mut ready);
+        own_parts(inputs, page, &mut ready);
     } else if let Some(page) = page {
         other_parts(inputs, page, &mut ready);
     }
@@ -406,8 +424,18 @@ fn header(inputs: &Inputs<'_>, handle: &str, ready: &mut Ready) {
     };
     match ready.relation {
         Relation::Own => {
+            // Appearing offline says so, quietly, before the line that says what the page is.
+            let text = if online.is_online() && online.appears_offline() {
+                format!(
+                    "{} · {}",
+                    T::AppearingOffline.text(language),
+                    F::OwnSubtitle.text(language)
+                )
+            } else {
+                F::OwnSubtitle.text(language).to_owned()
+            };
             ready.status = Some(Status {
-                text: F::OwnSubtitle.text(language).to_owned(),
+                text,
                 online: false,
             });
             ready
@@ -422,7 +450,18 @@ fn header(inputs: &Inputs<'_>, handle: &str, ready: &mut Ready) {
                 press: Press::FriendsOnline,
                 label,
             });
-            if !online.is_online() {
+            if online.is_online() {
+                // The status the player chose lives where they see themselves: one press away.
+                let appearing = online.appears_offline();
+                let label = if appearing {
+                    P::AppearOnline.text(language)
+                } else {
+                    T::AppearOffline.text(language)
+                };
+                ready
+                    .actions
+                    .push(action(Press::AppearOffline(!appearing), label));
+            } else {
                 ready.note = Some(P::OwnOfflineNote.text(language).to_owned());
             }
         }
@@ -476,6 +515,24 @@ fn stat(figure: String, singular: bool, one: P, many: P, language: Language) -> 
     Stat {
         figure,
         label,
+        grades: None,
+        level: None,
+        name,
+    }
+}
+
+/// The level figure with its points and the way to the next level. The numbers are the cloud's.
+fn level_stat(level: &TrophyLevel, language: Language) -> Stat {
+    let figure = level.level.to_string();
+    let points = format::grouped(u64::from(level.points), language);
+    let name = P::StatLevelName.format(language, &[Arg::Str(&figure), Arg::Str(&points)]);
+    Stat {
+        label: P::StatLevel.text(language).to_owned(),
+        level: Some(LevelFill {
+            fraction: online::level_progress(level),
+            points: P::StatPoints.format(language, &[Arg::Str(&points)]),
+        }),
+        figure,
         grades: None,
         name,
     }
@@ -540,7 +597,7 @@ fn grades_of(count: &Count) -> [u32; 4] {
 // The player's own profile: this PC
 // ---------------------------------------------------------------------------------------------
 
-fn own_parts(inputs: &Inputs<'_>, ready: &mut Ready) {
+fn own_parts(inputs: &Inputs<'_>, page: Option<&online::api::ProfilePage>, ready: &mut Ready) {
     let language = inputs.language;
     let empty = OwnLibrary::default();
     let library = inputs.library.unwrap_or(&empty);
@@ -551,6 +608,10 @@ fn own_parts(inputs: &Inputs<'_>, ready: &mut Ready) {
     let minutes: u64 = library.games.iter().map(|g| g.seconds / 60).sum();
     ready.stats.extend(time_stat(minutes, language));
     ready.stats.extend(trophy_stat(library.grades, language));
+    // The level is the cloud's: without its answer (offline, still loading) there is none.
+    if let Some(level) = page.and_then(|p| p.level.as_ref()) {
+        ready.stats.push(level_stat(level, language));
+    }
 
     let mut games: Vec<&OwnGame> = library.games.iter().collect();
     games.sort_by(|a, b| {
@@ -673,6 +734,9 @@ fn other_parts(inputs: &Inputs<'_>, page: &online::api::ProfilePage, ready: &mut
     if let Some(count) = &page.trophies {
         ready.stats.extend(trophy_stat(grades_of(count), language));
     }
+    if let Some(level) = &page.level {
+        ready.stats.push(level_stat(level, language));
+    }
 
     // What only a friend's page can say: how much of their library is yours.
     let shared = ordered
@@ -688,7 +752,9 @@ fn other_parts(inputs: &Inputs<'_>, page: &online::api::ProfilePage, ready: &mut
         .take(GAMES_SHOWN)
         .map(|(title_id, minutes, rank)| {
             let owned = local.games.get(title_id);
-            other_game_row(title_id, minutes, rank.is_some(), owned, language)
+            // Their trophies can be compared when they show them and the game is the player's.
+            let compare = page.trophies.is_some().then_some(inputs.account);
+            other_game_row(title_id, minutes, rank.is_some(), owned, compare, language)
         })
         .collect();
 
@@ -712,6 +778,7 @@ fn other_game_row(
     minutes: Option<u64>,
     favourite: bool,
     owned: Option<&OwnedGame>,
+    compare: Option<AccountId>,
     language: Language,
 ) -> GameRow {
     let mut parts: Vec<String> = Vec::new();
@@ -720,6 +787,10 @@ fn other_game_row(
     }
     if owned.is_none() {
         parts.push(P::NotInLibraryDetail.text(language).to_owned());
+    }
+    let compare = compare.filter(|_| owned.is_some());
+    if compare.is_some() {
+        parts.push(P::CompareHint.text(language).to_owned());
     }
     let trailing = minutes
         .filter(|m| *m > 0)
@@ -746,10 +817,10 @@ fn other_game_row(
         detail,
         trailing,
         progress: None,
-        press: if owned.is_some() {
-            Press::OpenGame(title_id.to_owned())
-        } else {
-            Press::None
+        press: match (compare, owned) {
+            (Some(account), _) => Press::Compare(account, title_id.to_owned()),
+            (None, Some(_)) => Press::OpenGame(title_id.to_owned()),
+            (None, None) => Press::None,
         },
     }
 }

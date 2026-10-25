@@ -20,6 +20,11 @@ pub enum ProfileText {
     StatMinutes,
     StatTrophy,
     StatTrophies,
+    StatLevel,
+    /// `%@` = the points ("1,240 points").
+    StatPoints,
+    /// The accessible name of the level figure: `%@` = level, `%@` = points.
+    StatLevelName,
     // Sections
     SectionGames,
     SectionTrophies,
@@ -30,6 +35,8 @@ pub enum ProfileText {
     NeverPlayed,
     Favourite,
     NotInLibraryDetail,
+    /// The detail of a game both players have, whose row opens the trophy comparison.
+    CompareHint,
     /// The accessible name of a progress: `%@` = earned, `%@` = all.
     TrophyProgress,
     /// `%@` = the grade (Gold).
@@ -44,6 +51,8 @@ pub enum ProfileText {
     FriendOptions,
     AnswerRequest,
     AddFriend,
+    /// On the player's own profile while they appear offline: the way back.
+    AppearOnline,
     // States
     LoadingNote,
     OfflineTitle,
@@ -84,6 +93,9 @@ impl ProfileText {
             ProfileText::StatMinutes => "Minutes",
             ProfileText::StatTrophy => "Trophy",
             ProfileText::StatTrophies => "Trophies",
+            ProfileText::StatLevel => "Level",
+            ProfileText::StatPoints => "%@ points",
+            ProfileText::StatLevelName => "Level %@, %@ points",
             ProfileText::SectionGames => "Games",
             ProfileText::SectionTrophies => "Recent Trophies",
             ProfileText::SectionActivity => "Recent Activity",
@@ -91,6 +103,7 @@ impl ProfileText {
             ProfileText::NeverPlayed => "Not played yet",
             ProfileText::Favourite => "Favourite",
             ProfileText::NotInLibraryDetail => "Not in your library",
+            ProfileText::CompareHint => "Compare trophies",
             ProfileText::TrophyProgress => "%@ of %@ trophies",
             ProfileText::GradeTrophy => "%@ trophy",
             ProfileText::InAGame => "In a game",
@@ -100,6 +113,7 @@ impl ProfileText {
             ProfileText::FriendOptions => "Friend Options",
             ProfileText::AnswerRequest => "Answer Request",
             ProfileText::AddFriend => "Add Friend",
+            ProfileText::AppearOnline => "Appear Online",
             ProfileText::LoadingNote => "Loading profile…",
             ProfileText::OfflineTitle => "You are offline",
             ProfileText::OfflineNote => "Profiles of other players load when you are back online.",
@@ -134,6 +148,9 @@ impl ProfileText {
             ProfileText::StatMinutes => "Dakika",
             ProfileText::StatTrophy => "Kupa",
             ProfileText::StatTrophies => "Kupa",
+            ProfileText::StatLevel => "Seviye",
+            ProfileText::StatPoints => "%@ puan",
+            ProfileText::StatLevelName => "Seviye %@, %@ puan",
             ProfileText::SectionGames => "Oyunlar",
             ProfileText::SectionTrophies => "Son Kupalar",
             ProfileText::SectionActivity => "Son Etkinlik",
@@ -141,6 +158,7 @@ impl ProfileText {
             ProfileText::NeverPlayed => "Henüz oynanmadı",
             ProfileText::Favourite => "Favori",
             ProfileText::NotInLibraryDetail => "Kitaplığında yok",
+            ProfileText::CompareHint => "Kupaları karşılaştır",
             ProfileText::TrophyProgress => "%@ / %@ kupa",
             ProfileText::GradeTrophy => "%@ kupa",
             ProfileText::InAGame => "Bir oyunda",
@@ -150,6 +168,7 @@ impl ProfileText {
             ProfileText::FriendOptions => "Arkadaş Seçenekleri",
             ProfileText::AnswerRequest => "İsteği Yanıtla",
             ProfileText::AddFriend => "Arkadaş Ekle",
+            ProfileText::AppearOnline => "Çevrimiçi Görün",
             ProfileText::LoadingNote => "Profil yükleniyor…",
             ProfileText::OfflineTitle => "Çevrimdışısın",
             ProfileText::OfflineNote => {
@@ -170,7 +189,7 @@ impl ProfileText {
                 "Çevrimdışısın. Etkinliğin tekrar çevrimiçi olunca geri gelir."
             }
             ProfileText::SharedGames => "Onların oyunlarından %@ tanesi sende de var",
-            ProfileText::ScreenName => "%@ kullanıcısının profili",
+            ProfileText::ScreenName => "%@ Kullanıcısının Profili",
             ProfileText::StatName => "%@ %@",
         }
     }
@@ -200,6 +219,8 @@ mod tests {
         for text in [
             ProfileText::LastPlayed,
             ProfileText::TrophyProgress,
+            ProfileText::StatPoints,
+            ProfileText::StatLevelName,
             ProfileText::GradeTrophy,
             ProfileText::ActivityLine,
             ProfileText::FriendsOnlineUnread,

@@ -70,7 +70,10 @@ pub struct Row {
     pub title: String,
     pub detail: Option<String>,
     pub control: Control,
+    /// Danger: the row removes, ends or blocks something.
     pub destructive: bool,
+    /// Caution: an info row that says something may not work. Never danger.
+    pub warning: bool,
     /// Starts a new group: the list leaves a double gap above it.
     pub group_start: bool,
     /// A note that belongs to the row above: no gap between them.
@@ -89,6 +92,7 @@ impl Row {
             detail: None,
             control,
             destructive: false,
+            warning: false,
             group_start: false,
             attached: false,
             wide: false,
@@ -197,6 +201,11 @@ impl Row {
 
     pub fn destructive(mut self) -> Row {
         self.destructive = true;
+        self
+    }
+
+    pub fn warning(mut self) -> Row {
+        self.warning = true;
         self
     }
 
@@ -605,6 +614,7 @@ fn show_row(
         detail,
         control,
         destructive,
+        warning,
         group_start: _,
         attached,
         wide,
@@ -663,6 +673,7 @@ fn show_row(
         .language(language)
         .focused(focused)
         .destructive(*destructive)
+        .warning(*warning)
         .attached(*attached)
         .wide(*wide)
         .force(force);

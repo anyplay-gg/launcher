@@ -23,7 +23,7 @@ use crate::ui::chrome::{PanelRow, RowControl};
 use crate::ui::components::{self, corner, paint_capsule};
 use crate::ui::i18n::{Arg, Language};
 use crate::ui::icons::Icon;
-use crate::ui::input::Command;
+use crate::ui::input::{self, Command};
 use crate::ui::sound::Cue;
 use crate::ui::text;
 use crate::ui::theme::{self, TextStyle, Weight, black, color, fade, mix, radius, size, ty, white};
@@ -36,7 +36,7 @@ const PAD_Y: f32 = 14.0;
 const AVATAR: f32 = 40.0;
 const AVATAR_GAP: f32 = 14.0;
 /// The reaction buttons.
-const REACTION_HEIGHT: f32 = 36.0;
+const REACTION_HEIGHT: f32 = size::CONTROL_S;
 const REACTION_GAP: f32 = 12.0;
 const REACTION_PAD_X: f32 = 10.0;
 /// Room for the check in front of the label of the player's own reaction.
@@ -704,6 +704,7 @@ fn show_card(
 
     let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::click());
     let card_focused = focus.is_some();
+    crate::ui::a11y::follow(&ctx, response.id, focus.is_some_and(|f| f.slot.is_none()));
     response.widget_info(|| {
         egui::WidgetInfo::labeled(
             egui::Role::Button,
@@ -725,7 +726,7 @@ fn show_card(
             slot: None,
         }));
     }
-    let hovered = response.hovered();
+    let hovered = input::hovered(&ctx, &response);
     if hovered {
         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
     }
@@ -852,14 +853,19 @@ fn show_card(
                 slot: Some(n),
             }));
         }
+        crate::ui::a11y::follow(&ctx, pill_response.id, slot_focused);
         let pt = ctx.focus_t((response.id, "pill", n), slot_focused);
-        let pill_hover = pill_response.hovered();
+        // Like every control: the pointer lights a pill only while it is the device in use.
+        let pill_hover = input::hovered(&ctx, &pill_response);
+        let pill_down = pill_hover && pill_response.is_pointer_button_down_on();
         if pill_hover {
             ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         // At rest a pill is a quiet shape of the card's own ink; yours is stronger and carries a
         // check, so it never rests on colour alone; the focused one has the ring.
-        let rest_fill = if own {
+        let rest_fill = if pill_down {
+            dim(0.34)
+        } else if own {
             dim(0.24)
         } else if pill_hover {
             dim(0.18)
@@ -941,7 +947,7 @@ fn paint_state(ui: &mut Ui, icon: Icon, title: &str, note: Option<&str>) {
     );
     y += title_height + 6.0;
     if let Some(note) = note_galley {
-        painter.galley(pos2(rect.center().x, y), note, white(0.62));
+        painter.galley(pos2(rect.center().x, y), note, color::text_detail());
     }
     ui.add_space(12.0);
 }
@@ -978,7 +984,7 @@ pub fn paint_avatar(
                     Align2::CENTER_CENTER,
                     initial,
                     ty::BUTTON.font(),
-                    Color32::WHITE,
+                    crate::ui::theme::readable_ink(monogram_colour(account)),
                 );
             }
         }

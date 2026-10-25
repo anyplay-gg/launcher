@@ -52,6 +52,23 @@ pub struct ReleaseNotes {
     pub changes: Vec<Change>,
 }
 
+/// The most lines of a launcher's notes kept.
+pub const LAUNCHER_NOTES_MAX: usize = 60;
+
+/// Text of one Markdown line without its marks: bold, italics, code and `[text](address)` links
+/// (the text stays).
+fn plain(line: &str) -> String {
+    static LINK: OnceLock<Regex> = OnceLock::new();
+    let link = LINK.get_or_init(|| Regex::new(r"\[([^\]]*)\]\([^)]*\)").expect("link pattern"));
+    let text = link.replace_all(line, "$1");
+    let text: String = text
+        .replace("**", "")
+        .replace("__", "")
+        .chars()
+        .filter(|c| *c != '`')
+        .collect();
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
 fn bullet() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
@@ -95,8 +112,8 @@ impl ReleaseNotes {
         ReleaseNotes { changes }
     }
 
-    /// `feat` and `perf` changes by area, the busiest area first.
-    pub fn highlights(&self) -> Vec<Group<'_>> {
+    /// `feat` and `perf` changes by area, in the order the areas first appear.
+    pub fn highlights_in_order(&self) -> Vec<Group<'_>> {
         let mut groups: Vec<Group<'_>> = Vec::new();
         for change in self.changes.iter().filter(|c| c.is_highlight()) {
             let scope = change.scope.as_deref().unwrap_or("general");
@@ -108,6 +125,12 @@ impl ReleaseNotes {
                 }),
             }
         }
+        groups
+    }
+
+    /// `feat` and `perf` changes by area, the busiest area first.
+    pub fn highlights(&self) -> Vec<Group<'_>> {
+        let mut groups = self.highlights_in_order();
         groups.sort_by(|a, b| {
             b.changes
                 .len()
@@ -124,6 +147,50 @@ impl ReleaseNotes {
                 .as_deref()
                 .is_some_and(|s| s.starts_with("relinker"))
         })
+    }
+
+    /// The notes of a launcher release, written by hand: `###` headings with `-` bullets. Every
+    /// bullet becomes a highlight under its heading, so the "What's New" panel can show them. A
+    /// heading that only names the release, a changelog link and empty lines are skipped; Markdown
+    /// marks (bold, code, links) are removed. At most [`LAUNCHER_NOTES_MAX`] lines are kept.
+    pub fn parse_launcher(text: &str) -> ReleaseNotes {
+        let mut changes = Vec::new();
+        let mut scope: Option<String> = None;
+        for line in text.lines() {
+            let line = line.trim();
+            if changes.len() >= LAUNCHER_NOTES_MAX {
+                break;
+            }
+            if line.is_empty() || line.starts_with("---") {
+                continue;
+            }
+            if line.starts_with('#') {
+                let title = plain(line.trim_start_matches('#'));
+                let release_title = title.to_ascii_lowercase().contains("launcher")
+                    || title.eq_ignore_ascii_case("what's changed");
+                scope = (!title.is_empty() && !release_title).then_some(title);
+                continue;
+            }
+            let item = line
+                .strip_prefix("- ")
+                .or_else(|| line.strip_prefix("* "))
+                .unwrap_or(line);
+            let subject = plain(item);
+            let link_only = subject.starts_with("http") && !subject.contains(' ');
+            if subject.is_empty()
+                || link_only
+                || subject.to_ascii_lowercase().contains("full changelog")
+            {
+                continue;
+            }
+            changes.push(Change {
+                kind: "feat".into(),
+                scope: Some(scope.clone().unwrap_or_else(|| "Changes".into())),
+                subject: subject.chars().take(280).collect(),
+                pull: None,
+            });
+        }
+        ReleaseNotes { changes }
     }
 }
 
@@ -228,5 +295,53 @@ mod tests {
         let started = std::time::Instant::now();
         assert_eq!(ReleaseNotes::parse(&text).changes.len(), 2_000);
         assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn a_launcher_release_reads_as_highlights_under_its_headings() {
+        let text = "## AnyPlay Launcher 0.2.4\n\n### Your Profile\n\n- Your **profile** button opens a [full-screen profile](https://x.test/p).\n- Edit `Profile` opens your account.\n\n### Calls\n\n* A call uses Voice Activity.\n\n**Full Changelog**: https://github.com/anyplaynet/launcher/compare/v0.2.3...v0.2.4\n";
+        let notes = ReleaseNotes::parse_launcher(text);
+        let seen: Vec<_> = notes
+            .changes
+            .iter()
+            .map(|c| (c.scope.as_deref().unwrap(), c.subject.as_str()))
+            .collect();
+        assert_eq!(
+            seen,
+            [
+                (
+                    "Your Profile",
+                    "Your profile button opens a full-screen profile."
+                ),
+                ("Your Profile", "Edit Profile opens your account."),
+                ("Calls", "A call uses Voice Activity."),
+            ]
+        );
+        assert!(
+            notes
+                .changes
+                .iter()
+                .all(|c| c.is_highlight() && c.pull.is_none())
+        );
+        assert_eq!(notes.highlights().len(), 2);
+        let order: Vec<_> = notes
+            .highlights_in_order()
+            .iter()
+            .map(|g| g.scope)
+            .collect();
+        assert_eq!(order, ["Your Profile", "Calls"]);
+    }
+
+    #[test]
+    fn launcher_notes_without_headings_and_a_huge_body_stay_bounded() {
+        let plain = ReleaseNotes::parse_launcher("Fixes the update check.\n\nSmaller window.");
+        assert_eq!(plain.changes.len(), 2);
+        assert_eq!(plain.changes[0].scope.as_deref(), Some("Changes"));
+        let many = "- line\n".repeat(500);
+        assert_eq!(
+            ReleaseNotes::parse_launcher(&many).changes.len(),
+            LAUNCHER_NOTES_MAX
+        );
+        assert!(ReleaseNotes::parse_launcher("").changes.is_empty());
     }
 }

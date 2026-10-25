@@ -83,13 +83,13 @@ impl PhoneText {
             PhoneText::CodeNote => "Pair only if your phone shows the same code.",
             PhoneText::PairAllow => "Pair Phone",
             PhoneText::PairDeny => "Deny",
-            PhoneText::Paired => "Paired phones",
+            PhoneText::Paired => "Paired Phones",
             PhoneText::PairedNone => {
                 "No phone is paired yet. Open the phone app and choose this PC."
             }
             PhoneText::Remove => "Remove %@",
             PhoneText::PairedOn => "Paired on %@",
-            PhoneText::Controller => "Virtual controller",
+            PhoneText::Controller => "Virtual Controller",
             PhoneText::ControllerReady => "Ready",
             PhoneText::ControllerMissing => "Not installed",
             PhoneText::ControllerNoAccess => "No access",
@@ -143,13 +143,13 @@ impl PhoneText {
             PhoneText::CodeNote => "Yalnızca telefonun aynı kodu gösteriyorsa eşleştir.",
             PhoneText::PairAllow => "Telefonu Eşleştir",
             PhoneText::PairDeny => "Reddet",
-            PhoneText::Paired => "Eşleştirilmiş telefonlar",
+            PhoneText::Paired => "Eşleştirilmiş Telefonlar",
             PhoneText::PairedNone => {
                 "Henüz eşleştirilmiş telefon yok. Telefon uygulamasını açıp bu bilgisayarı seç."
             }
-            PhoneText::Remove => "%@ kaldır",
+            PhoneText::Remove => "%@ Kaldır",
             PhoneText::PairedOn => "%@ tarihinde eşleştirildi",
-            PhoneText::Controller => "Sanal kumanda",
+            PhoneText::Controller => "Sanal Kumanda",
             PhoneText::ControllerReady => "Hazır",
             PhoneText::ControllerMissing => "Kurulu değil",
             PhoneText::ControllerNoAccess => "Erişim yok",

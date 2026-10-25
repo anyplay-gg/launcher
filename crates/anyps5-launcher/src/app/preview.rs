@@ -10,7 +10,7 @@
 //! `home`, `home-actions`, `home-trophies`, `home-locked`, `home-unlocking`, `home-relinking`,
 //! `home-failed`, `home-queued`, `home-running`, `home-outdated`, `home-diagnosis`, `home-messages` (the
 //! profile button with unread messages), `home-friends` (signed in, three friends online),
-//! `home-friends-quiet` (nobody online), `home-phone` (a phone is connected), `home-friends-focus` and `home-signin-focus` (the top bar's
+//! `home-appearing` (signed in, appearing offline), `home-friends-quiet` (nobody online), `home-phone` (a phone is connected), `home-friends-focus` and `home-signin-focus` (the top bar's
 //! two pills focused), `home-theme1`,
 //! `home-ask` (signed in, a session just ended: "How did it run?"), `home-runs` (the community verdict),
 //! `home-glibc` and `home-glibc-locked` (the system's glibc is older than the libraries ask for),
@@ -38,6 +38,7 @@ use crate::app::model::Effect;
 use crate::app::pipeline::{SimPipeline, UnlockStep};
 use crate::app::{Config, LauncherApp};
 use crate::ui::Shell;
+use crate::ui::anim::AnimExt;
 use crate::ui::background::{Backdrop, BackgroundClock, STILL_TIME_FULL};
 use crate::ui::focus::HomeFocus;
 use crate::ui::icons::Icon;
@@ -67,6 +68,8 @@ pub enum Scene {
     HomeMessages,
     /// Signed in with three friends online: the count on the friends button.
     HomeFriends,
+    /// Signed in and appearing offline: the ring on the profile button and its quiet words.
+    HomeAppearing,
     /// Signed in, nobody online: the plain friends button.
     HomeFriendsQuiet,
     /// A paired phone is connected: its name after the title.
@@ -96,6 +99,14 @@ pub enum Scene {
     HomeNoFolder,
     Starting,
     Toast,
+    /// A verified launcher update waits: the notice after the title.
+    HomeUpdate,
+    /// The same with the notice's first button focused.
+    HomeUpdateFocus,
+    /// "Restart Now" was pressed while a game runs: the restart waits.
+    HomeUpdateHolding,
+    /// "Later" was pressed: no notice, a dot on the settings button.
+    HomeUpdateLater,
 }
 
 impl Scene {
@@ -121,6 +132,7 @@ impl Scene {
             "home-diagnosis" => Scene::HomeDiagnosis,
             "home-messages" => Scene::HomeMessages,
             "home-friends" => Scene::HomeFriends,
+            "home-appearing" => Scene::HomeAppearing,
             "home-friends-quiet" => Scene::HomeFriendsQuiet,
             "home-phone" => Scene::HomePhone,
             "home-friends-focus" => Scene::HomeFriendsFocus,
@@ -140,11 +152,15 @@ impl Scene {
             "home-nofolder" => Scene::HomeNoFolder,
             "starting" => Scene::Starting,
             "toast" => Scene::Toast,
+            "home-update" => Scene::HomeUpdate,
+            "home-update-focus" => Scene::HomeUpdateFocus,
+            "home-update-holding" => Scene::HomeUpdateHolding,
+            "home-update-later" => Scene::HomeUpdateLater,
             _ => return None,
         })
     }
 
-    pub const ALL_NAMES: [&'static str; 39] = [
+    pub const ALL_NAMES: [&'static str; 40] = [
         "onboarding0",
         "onboarding1",
         "onboarding2",
@@ -165,6 +181,7 @@ impl Scene {
         "home-diagnosis",
         "home-messages",
         "home-friends",
+        "home-appearing",
         "home-friends-quiet",
         "home-phone",
         "home-friends-focus",
@@ -201,6 +218,10 @@ pub struct Options {
     pub turkish: bool,
     /// `--pad`: hint bars show gamepad buttons instead of keys.
     pub pad: bool,
+    /// `--theme=aurora|sunset|cosmic`: the backdrop theme (the scenes `home-theme1` and `-2` set it too).
+    pub theme: Option<Theme>,
+    /// `--bright`: the selected game's artwork is a pale picture (the UI's white on a light backdrop).
+    pub bright: bool,
     /// `--intro`: play the launch intro (to screenshot it part way with `--frames`).
     pub intro: bool,
     /// `--hover=X,Y`: where the pointer rests, in dp (to screenshot a hover state).
@@ -255,6 +276,8 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Option<Options> {
         fullscreen: false,
         turkish: false,
         pad: false,
+        theme: None,
+        bright: false,
         intro: false,
         hover: None,
         frames: 100,
@@ -292,6 +315,13 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Option<Options> {
                 .and_then(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)));
         } else if arg == "--pad" {
             options.pad = true;
+        } else if let Some(name) = arg.strip_prefix("--theme=") {
+            options.theme = crate::ui::theme::Theme::ALL.into_iter().find(|t| {
+                t.title(crate::ui::i18n::Language::English)
+                    .eq_ignore_ascii_case(name)
+            });
+        } else if arg == "--bright" {
+            options.bright = true;
         } else if arg == "--intro" {
             options.intro = true;
         } else if arg == "--fullscreen" {
@@ -378,6 +408,28 @@ fn make_art(width: u32, height: u32, seed: u64) -> RgbaImage {
     })
 }
 
+/// A pale picture: cream sky, white haze, soft pastel discs. The worst case for white controls and
+/// white text laid over the artwork.
+fn bright_art(width: u32, height: u32) -> RgbaImage {
+    RgbaImage::from_fn(width, height, |x, y| {
+        let (u, v) = (x as f32 / width as f32, y as f32 / height as f32);
+        let sky = [0.97 - 0.06 * v, 0.95 - 0.03 * v, 0.88 + 0.06 * v];
+        let glow =
+            (1.0 - (((u - 0.7).powi(2) * 2.0 + (v - 0.35).powi(2)).sqrt() / 0.5)).clamp(0.0, 1.0);
+        let c = [
+            sky[0] + (1.0 - sky[0]) * glow,
+            sky[1] + (1.0 - sky[1]) * glow,
+            sky[2] + (1.0 - sky[2]) * glow * 0.6,
+        ];
+        Rgba([
+            (c[0] * 255.0) as u8,
+            (c[1] * 255.0) as u8,
+            (c[2] * 255.0) as u8,
+            255,
+        ])
+    })
+}
+
 /// The made-up names; none of them is a real title.
 const NAMES: [&str; 9] = [
     "Lanternfall",
@@ -459,9 +511,8 @@ fn make_trophies(game: &Game, unlocked: usize) -> TrophySet {
 // ---------------------------------------------------------------------------------------------
 
 /// Sets the library and the state of a scene.
-pub fn apply_scene(app: &mut LauncherApp, scene: Scene, games: Vec<Game>) {
+pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Game>) {
     let folder = PathBuf::from("D:\\Games\\PS5");
-    let m = &mut app.model;
     m.edit_prefs(|p| {
         p.games_folder = Some(folder.clone());
         p.profile_name = "Mira".to_owned();
@@ -604,6 +655,12 @@ pub fn apply_scene(app: &mut LauncherApp, scene: Scene, games: Vec<Game>) {
             sign_in(m);
             add_friends(m, 3, 1);
         }
+        Scene::HomeAppearing => {
+            sign_in(m);
+            add_friends(m, 3, 1);
+            m.online.set_appear_offline(true);
+            m.online.take_outbox();
+        }
         Scene::HomePhone => {
             m.phone.connected = Some("Pixel 8".into());
         }
@@ -710,6 +767,10 @@ pub fn apply_scene(app: &mut LauncherApp, scene: Scene, games: Vec<Game>) {
             m.starting = Some(ids[at(1)].clone());
             m.running = Some(ids[at(1)].clone());
         }
+        Scene::HomeUpdateFocus => m.focus = HomeFocus::Update(0),
+        // The restart waits because a game runs.
+        Scene::HomeUpdateHolding => m.running = Some(ids[at(1)].clone()),
+        Scene::HomeUpdateLater => m.update_dismissed = Some("0.1.4".to_owned()),
         Scene::Toast => {
             m.toast("Lanternfall · Ready to play", Icon::LOCK_OPEN);
             if let Some(toast) = m.toast.as_mut() {
@@ -732,6 +793,7 @@ fn sign_in(m: &mut crate::app::model::Model) {
         id: AccountId(1),
         handle: "Mira".into(),
         email: "mira@example.org".into(),
+        appear_offline: false,
     });
 }
 
@@ -842,6 +904,11 @@ impl PreviewApp {
         };
         crate::startup::mark("preview games made");
         let demo = options.scene.is_none();
+        let theme = options.theme.unwrap_or(match options.scene {
+            Some(Scene::HomeTheme(1)) => Theme::Aurora,
+            Some(Scene::HomeTheme(_)) => Theme::Sunset,
+            _ => Theme::Cosmic,
+        });
         let prefs = Preferences {
             language: if options.turkish {
                 CoreLanguage::Turkish
@@ -849,12 +916,8 @@ impl PreviewApp {
                 CoreLanguage::English
             },
             onboarded: demo,
+            theme: crate::screens::convert::theme_to_core(theme),
             ..Preferences::default()
-        };
-        let theme = match options.scene {
-            Some(Scene::HomeTheme(1)) => Theme::Aurora,
-            Some(Scene::HomeTheme(_)) => Theme::Sunset,
-            _ => Theme::Cosmic,
         };
         let mut shell = Shell::headless(cc, theme);
         if demo {
@@ -892,7 +955,23 @@ impl PreviewApp {
                 }
                 pipeline
             }),
-            panels: Box::new(crate::app::panels::PanelHost::new(&cc.egui_ctx, true)),
+            panels: Box::new({
+                use crate::screens::settings::LauncherUpdate;
+                let host = crate::app::panels::PanelHost::new(&cc.egui_ctx, true);
+                match options.scene {
+                    Some(Scene::HomeUpdate | Scene::HomeUpdateFocus | Scene::HomeUpdateLater) => {
+                        host.showing_launcher_update(
+                            &cc.egui_ctx,
+                            LauncherUpdate::Ready("0.1.4".into()),
+                        )
+                    }
+                    Some(Scene::HomeUpdateHolding) => host.showing_launcher_update(
+                        &cc.egui_ctx,
+                        LauncherUpdate::Holding("0.1.4".into()),
+                    ),
+                    _ => host,
+                }
+            }),
             scan_on_start: false,
         };
         let mut inner = LauncherApp::from_shell(shell, &cc.egui_ctx, config);
@@ -909,10 +988,19 @@ impl PreviewApp {
             crate::ui::home_button::test_game_from_env(&inner.shell.home);
         }
         let mut games = games;
+        if options.bright
+            && let Some(path) = &games[1].background
+        {
+            let _ = bright_art(1280, 720).save(path);
+        }
         if let Some(real) = &options.real_art {
             use_real_art(&mut games[1], real);
         }
-        apply_scene(&mut inner, options.scene.unwrap_or(Scene::Home), games);
+        apply_scene(
+            &mut inner.model,
+            options.scene.unwrap_or(Scene::Home),
+            games,
+        );
         if inbox.is_some() {
             inner.attach_links(&cc.egui_ctx, inbox, &[]);
         }
@@ -976,7 +1064,14 @@ impl eframe::App for PreviewApp {
         }
         self.run_script(&ctx);
         self.inner.step(&ctx);
+        // With `--pad` the pointer rests where `--hover` says, like a mouse nobody touches: the pad
+        // stays the device in use (the injected move would hand it back) and the hover must light
+        // nothing (see `ui::input::hovered`).
+        if self.options.pad {
+            crate::ui::input::set_device(&ctx, crate::ui::input::Device::Gamepad);
+        }
         self.inner.paint(ui);
+        self.inner.finish_frame(&ctx);
         self.frames += 1;
         if self.options.scene.is_none() {
             // The demo says how often it draws, to see what an idle launcher costs.
@@ -1027,6 +1122,56 @@ pub fn all_scenes_parse() -> bool {
     Scene::ALL_NAMES
         .iter()
         .all(|n| Scene::from_name(n).is_some())
+}
+
+/// The real home screen with the made-up library, for the gallery pages that show a panel over it:
+/// the same code that paints the app paints the screen under the panel, so a screenshot of a panel
+/// matches the launcher (the top bar, the clock, the hero) and cannot fall behind it.
+pub struct HomeStand {
+    model: crate::app::model::Model,
+    textures: crate::app::textures::Textures,
+    artwork: Vec<GameId>,
+}
+
+impl HomeStand {
+    /// `covered` hides the focus ring, as it is hidden while a panel is open.
+    pub fn new(ctx: &Context, prefs: Preferences, scene: Scene, covered: bool) -> Self {
+        let dir = crate::app::preview_dir();
+        let mut model =
+            crate::app::model::Model::new(prefs, AppPaths::under(&dir.join("appdata")), false);
+        apply_scene(&mut model, scene, make_games(&dir));
+        if covered {
+            model.overlay = Some(crate::app::overlay::Overlay::Library);
+        }
+        Self {
+            model,
+            textures: crate::app::textures::Textures::new(ctx),
+            artwork: Vec::new(),
+        }
+    }
+
+    /// Paints the game artwork and the home screen over what is already drawn (the backdrop).
+    pub fn paint(&mut self, ui: &mut Ui, shell: &Shell) {
+        let ctx = ui.ctx().clone();
+        let screen = ctx.content_rect();
+        self.model.tick(ctx.clock());
+        crate::app::paint_artwork_layer(
+            &ctx,
+            screen,
+            &self.model,
+            &mut self.textures,
+            &mut self.artwork,
+            shell.backdrop.paused,
+        );
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(screen));
+        let mut cx = crate::screens::ScreenCx {
+            model: &mut self.model,
+            shell,
+            textures: &mut self.textures,
+            ctx: &ctx,
+        };
+        crate::screens::home::show(&mut child, &mut cx);
+    }
 }
 
 #[allow(dead_code)]

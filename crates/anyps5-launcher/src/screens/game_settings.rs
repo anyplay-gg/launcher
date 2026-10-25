@@ -144,6 +144,7 @@ impl GameSettingsPanel {
         let view = SideView {
             title,
             subtitle: Some(subtitle),
+            question: false,
             list_id: "game-settings-rows",
             nav: &self.side.nav,
             accent: data.accent,
@@ -484,6 +485,7 @@ impl UninstallPanel {
         let view = SideView {
             title: language.text(Key::Uninstall),
             subtitle: Some(&ask),
+            question: true,
             list_id: "uninstall-rows",
             nav: &self.side.nav,
             accent,

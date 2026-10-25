@@ -2,13 +2,14 @@
 //! and so on). Names, pictures, games and trophies are made up; the title IDs are not real ones.
 
 use anyps5_core::online::api::{
-    Account, AccountId, Count, Feed, FeedEvent, FeedItem, Grade, Profile, ProfileLink, ProfilePage,
-    Reaction, ReactionCounts, TitlePlaytime,
+    Account, AccountId, CompareSide, Count, Feed, FeedEvent, FeedItem, Grade, Profile, ProfileLink,
+    ProfilePage, Reaction, ReactionCounts, Tally, TitlePlaytime, Trophy, TrophyCompare,
+    TrophyLevel,
 };
-use anyps5_core::online::{self, Failure, Online, ProfileEntry};
+use anyps5_core::online::{self, CompareEntry, Failure, Online, ProfileEntry};
 use egui::{Color32, ColorImage, Context, TextureHandle, TextureOptions};
 
-use crate::screens::gallery::{OnlineLook, ProfileLook};
+use crate::screens::gallery::{CompareLook, OnlineLook, ProfileLook};
 use crate::screens::online::{Avatar, Local, OwnedGame};
 
 /// The moment the invented items are told from (see `gallery::SAMPLE_NOW`).
@@ -18,6 +19,12 @@ const NOW: u64 = 1_792_670_400;
 const MIRA: &str = "aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11aa11";
 const LUMEN: &str = "bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22bb22";
 const JUNO: &str = "cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33cc33";
+
+/// The points of the invented counts (1 platinum, 4 gold, 9 silver, 30 bronze): level 9.
+const MIRA_POINTS: u32 = 915;
+
+/// The points of Lumen's invented counts (2 platinum, 9 gold, 21 silver, 52 bronze): level 14.
+const LUMEN_POINTS: u32 = 1_885;
 
 /// The invented games: title ID, and the index of the gallery's cover and name.
 const OWNED: [(&str, usize); 3] = [("GAME00001", 1), ("GAME00002", 4), ("GAME00003", 2)];
@@ -209,6 +216,11 @@ pub fn sample(state: &mut Online, look: OnlineLook) {
 /// feed.
 pub fn sample_profile(state: &mut Online, look: ProfileLook) {
     use ProfileLook as L;
+    if look == L::OwnAppearing
+        && let Some(account) = state.account.as_mut()
+    {
+        account.appear_offline = true;
+    }
     let entry = |page: ProfilePage| ProfileEntry {
         page: Some(page),
         failed: false,
@@ -223,7 +235,7 @@ pub fn sample_profile(state: &mut Online, look: ProfileLook) {
         p
     };
     match look {
-        L::Own | L::OwnFocus | L::OwnEnd => {
+        L::Own | L::OwnFocus | L::OwnEnd | L::OwnAppearing => {
             let p = page(who(1, "Mira"), &|p| {
                 p.about = Some(
                     "Co-op on weekends, trophy hunting when it rains. Always up for a party."
@@ -234,7 +246,6 @@ pub fn sample_profile(state: &mut Online, look: ProfileLook) {
             state.profiles.insert(
                 AccountId(1),
                 entry(ProfilePage {
-                    level: None,
                     profile: p,
                     trophies: Some(Count {
                         bronze: 30,
@@ -242,6 +253,7 @@ pub fn sample_profile(state: &mut Online, look: ProfileLook) {
                         gold: 4,
                         platinum: 1,
                     }),
+                    level: Some(TrophyLevel::of(MIRA_POINTS)),
                     links: vec![ProfileLink {
                         provider: "discord".into(),
                         name: Some("mira.plays".into()),
@@ -253,16 +265,16 @@ pub fn sample_profile(state: &mut Online, look: ProfileLook) {
             state.profiles.insert(
                 AccountId(1),
                 entry(ProfilePage {
-                    level: None,
                     profile: profile(who(1, "Mira")),
                     trophies: Some(Count::default()),
+                    level: Some(TrophyLevel::of(0)),
                     links: Vec::new(),
                 }),
             );
             state.avatars.insert(AccountId(1), None);
             state.feed.merge_newest(Feed::default());
         }
-        L::Friend => {
+        L::Friend | L::FriendCompare => {
             let p = page(who(2, "Lumen"), &|p| {
                 p.about = Some("Speedruns, soft launches and strong opinions about co-op.".into());
                 p.favourites = Some(vec!["GAME00002".into(), "GAME00005".into()]);
@@ -277,14 +289,14 @@ pub fn sample_profile(state: &mut Online, look: ProfileLook) {
             state.profiles.insert(
                 AccountId(2),
                 entry(ProfilePage {
-                    level: None,
                     profile: p,
                     trophies: Some(Count {
-                        bronze: 30,
-                        silver: 9,
-                        gold: 4,
-                        platinum: 1,
+                        bronze: 52,
+                        silver: 21,
+                        gold: 9,
+                        platinum: 2,
                     }),
+                    level: Some(TrophyLevel::of(LUMEN_POINTS)),
                     links: Vec::new(),
                 }),
             );
@@ -300,9 +312,9 @@ pub fn sample_profile(state: &mut Online, look: ProfileLook) {
             state.profiles.insert(
                 AccountId(3),
                 entry(ProfilePage {
-                    level: None,
                     profile: p,
                     trophies: None,
+                    level: None,
                     links: Vec::new(),
                 }),
             );
@@ -314,9 +326,9 @@ pub fn sample_profile(state: &mut Online, look: ProfileLook) {
             state.profiles.insert(
                 AccountId(6),
                 entry(ProfilePage {
-                    level: None,
                     profile: p,
                     trophies: None,
+                    level: None,
                     links: Vec::new(),
                 }),
             );
@@ -325,9 +337,9 @@ pub fn sample_profile(state: &mut Online, look: ProfileLook) {
             state.profiles.insert(
                 AccountId(4),
                 entry(ProfilePage {
-                    level: None,
                     profile: profile(who(4, "Kit")),
                     trophies: None,
+                    level: None,
                     links: Vec::new(),
                 }),
             );
@@ -336,9 +348,9 @@ pub fn sample_profile(state: &mut Online, look: ProfileLook) {
             state.profiles.insert(
                 AccountId(12),
                 entry(ProfilePage {
-                    level: None,
                     profile: profile(who(12, "Tarn")),
                     trophies: None,
+                    level: None,
                     links: Vec::new(),
                 }),
             );
@@ -357,6 +369,101 @@ pub fn sample_profile(state: &mut Online, look: ProfileLook) {
             state.cloud = Some(online::Cloud::Offline);
         }
     }
+}
+
+/// One side of the invented comparison: the totals of the player and the records in the game, as
+/// `(number, grade, earned)`.
+fn compare_side(account: u64, total: Count, records: &[(u16, Grade, u64)]) -> CompareSide {
+    let trophies: Vec<Trophy> = records
+        .iter()
+        .map(|&(number, grade, earned)| Trophy {
+            number,
+            grade,
+            earned,
+        })
+        .collect();
+    let mut counts = Count::default();
+    for trophy in &trophies {
+        match trophy.grade {
+            Grade::Platinum => counts.platinum += 1,
+            Grade::Gold => counts.gold += 1,
+            Grade::Silver => counts.silver += 1,
+            Grade::Bronze => counts.bronze += 1,
+        }
+    }
+    let total = Tally::of(total);
+    CompareSide {
+        account,
+        trophies,
+        title: Tally::of(counts),
+        total,
+        level: TrophyLevel::of(total.points),
+    }
+}
+
+/// The comparison of Mira with Lumen in the first invented game, in the look's state.
+pub fn sample_compare(state: &mut Online, look: CompareLook) {
+    use CompareLook as L;
+    state.avatars.insert(AccountId(1), Some(MIRA.into()));
+    state.avatars.insert(AccountId(2), Some(LUMEN.into()));
+    let key = (AccountId(2), "GAME00001".to_owned());
+    let t = NOW - 6 * 86_400;
+    // The invented trophy set has eight trophies: 0 platinum, 4 gold and 6 gold (a secret).
+    let yours = [
+        (1, Grade::Bronze, t),
+        (3, Grade::Bronze, t + 3_000),
+        (7, Grade::Bronze, t + 75_000),
+    ];
+    let theirs = [
+        (1, Grade::Bronze, t + 86_400),
+        (2, Grade::Silver, t + 2 * 86_400),
+        (3, Grade::Bronze, t + 2 * 86_400 + 600),
+        (4, Grade::Gold, t + 3 * 86_400),
+        (5, Grade::Silver, t + 3 * 86_400 + 7_200),
+    ];
+    let mira = Count {
+        platinum: 1,
+        gold: 4,
+        silver: 9,
+        bronze: 30,
+    };
+    let lumen = Count {
+        platinum: 2,
+        gold: 9,
+        silver: 21,
+        bronze: 52,
+    };
+    let data = |you: &[(u16, Grade, u64)], them: &[(u16, Grade, u64)]| {
+        Some(TrophyCompare {
+            title_id: "GAME00001".into(),
+            you: compare_side(1, mira, you),
+            them: compare_side(2, lumen, them),
+        })
+    };
+    let entry = match look {
+        L::Ready | L::Secret | L::Revealed | L::Numbers => CompareEntry {
+            data: data(&yours, &theirs),
+            ..CompareEntry::default()
+        },
+        L::Empty => CompareEntry {
+            data: data(&[], &[]),
+            ..CompareEntry::default()
+        },
+        L::Error => CompareEntry {
+            failed: true,
+            ..CompareEntry::default()
+        },
+        L::Hidden => CompareEntry {
+            hidden: true,
+            ..CompareEntry::default()
+        },
+        L::Loading => return,
+        L::Offline => {
+            state.cloud = Some(online::Cloud::Offline);
+            return;
+        }
+    };
+    state.compares.insert(key, entry);
 }
 
 /// A picture of invented origin: a gradient, a head and shoulders in lighter tints.

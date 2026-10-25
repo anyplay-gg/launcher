@@ -16,6 +16,7 @@
 
 pub mod avatar;
 mod calls;
+mod compare;
 mod feed;
 mod join;
 mod profile;
@@ -42,6 +43,7 @@ use api::{
     PartyInvitation,
 };
 pub use calls::{CallState, Calls};
+pub use compare::{CompareEntry, CompareKey, level_progress};
 pub use feed::{Ago, FeedState, Rarity, adjusted, party_others, toggled};
 pub use join::{JoinOffer, Step as JoinStep};
 pub use profile::{
@@ -283,6 +285,18 @@ pub enum Status {
     Ended(String),
 }
 
+/// The trophy numbers the cloud accepts, sorted and without repeats.
+fn secret_numbers(numbers: &[u32]) -> Vec<u16> {
+    let mut valid: Vec<u16> = numbers
+        .iter()
+        .filter_map(|n| u16::try_from(*n).ok())
+        .filter(|n| *n < api::MAX_TROPHY_NUMBER)
+        .collect();
+    valid.sort_unstable();
+    valid.dedup();
+    valid
+}
+
 /// A join the launcher checks before it starts the game.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Join {
@@ -347,6 +361,19 @@ pub enum Purpose {
     },
     /// The profile page of an account.
     Profile(AccountId),
+    /// The player's trophies in a title next to an account's.
+    Compare(CompareKey),
+    /// Appearing offline on or off; `before` is what the setting was.
+    AppearOffline {
+        on: bool,
+        before: bool,
+    },
+    /// Secret trophies of a title marked, or revealed (`count` is how many numbers).
+    Secrets {
+        title_id: String,
+        count: usize,
+        reveal: bool,
+    },
     /// Minutes per title and day, as sent.
     UploadPlaytime(Vec<api::PlaytimeEntry>),
     /// A run report ("How did it run?").
@@ -490,6 +517,8 @@ pub struct Online {
     pub feed: FeedState,
     /// The profiles the player looked at, by account.
     pub profiles: BTreeMap<AccountId, ProfileEntry>,
+    /// The trophy comparisons the player looked at, by account and title.
+    pub compares: BTreeMap<CompareKey, CompareEntry>,
     /// Who sees the player's trophies; `None` until the cloud said.
     pub privacy: Option<api::Privacy>,
     /// What players found per title (run reports).
@@ -498,6 +527,11 @@ pub struct Online {
     pub join: JoinOffer,
     /// How many trophies of each title the cloud has recorded since this sign-in.
     uploaded: BTreeMap<String, usize>,
+    /// How many secret trophies of each title the cloud has been told about since this sign-in.
+    secrets_sent: BTreeMap<String, usize>,
+    /// How many earned hidden trophies of each title the cloud was told to show since this
+    /// sign-in.
+    revealed_sent: BTreeMap<String, usize>,
     /// The minutes the cloud has recorded per title and day since this sign-in.
     playtime_sent: BTreeMap<(String, String), u32>,
     waiting: BTreeMap<u64, Purpose>,
@@ -634,6 +668,19 @@ impl Online {
                 let entry = self.profiles.entry(*account).or_default();
                 entry.failed = entry.page.is_none();
             }
+            Purpose::Compare(key) => {
+                let entry = self.compares.entry(key.clone()).or_default();
+                // `not_found`: the other player's trophies are hidden. Anything else is a failure,
+                // unless an answer is shown already.
+                entry.hidden = failure.is(api::ErrorCode::NotFound);
+                entry.failed = !entry.hidden && entry.data.is_none();
+            }
+            Purpose::AppearOffline { before, .. } => {
+                // The choice showed at once; the refusal takes it back.
+                if let Some(account) = self.account.as_mut() {
+                    account.appear_offline = *before;
+                }
+            }
             Purpose::JoinCode => self.join.failed(
                 failure.is(api::ErrorCode::NotFound),
                 failure.is(api::ErrorCode::RateLimited),
@@ -744,6 +791,38 @@ impl Online {
                         },
                     );
                 }
+            }
+            Purpose::Compare(key) => {
+                if let Ok(compare) = serde_json::from_value::<api::TrophyCompare>(value.clone()) {
+                    self.compares.insert(
+                        key.clone(),
+                        CompareEntry {
+                            data: Some(compare),
+                            hidden: false,
+                            failed: false,
+                        },
+                    );
+                }
+            }
+            Purpose::AppearOffline { .. } => {
+                if let Ok(now) = serde_json::from_value::<api::AppearOffline>(value.clone())
+                    && let Some(account) = self.account.as_mut()
+                {
+                    account.appear_offline = now.appear_offline;
+                }
+            }
+            Purpose::Secrets {
+                title_id,
+                count,
+                reveal,
+            } => {
+                let sent = if *reveal {
+                    &mut self.revealed_sent
+                } else {
+                    &mut self.secrets_sent
+                };
+                let known = sent.entry(title_id.clone()).or_default();
+                *known = (*known).max(*count);
             }
             Purpose::Privacy | Purpose::SetPrivacy => {
                 if let Ok(privacy) = serde_json::from_value(value.clone()) {
@@ -1150,6 +1229,144 @@ impl Online {
         self.send(Purpose::Profile(account), Command::Profile { account });
     }
 
+    /// Asks for the comparison of the player's trophies in a title with an account's, unless that
+    /// question waits already. An answer already shown stays until the new one arrives.
+    pub fn request_compare(&mut self, account: AccountId, title_id: &str) {
+        let key = (account, title_id.to_owned());
+        if !self.is_signed_in()
+            || !api::is_title_id(title_id)
+            || self.is_waiting(|p| *p == Purpose::Compare(key.clone()))
+        {
+            return;
+        }
+        self.send(
+            Purpose::Compare(key),
+            Command::Compare {
+                account,
+                title_id: title_id.to_owned(),
+            },
+        );
+    }
+
+    /// Appears offline to everyone else, or shows again. The choice shows at once; the cloud's
+    /// answer settles it, a refusal takes it back, and the `state` event follows with the truth
+    /// (also when another device changes it).
+    pub fn set_appear_offline(&mut self, on: bool) {
+        let Some(account) = self.account.as_mut() else {
+            return;
+        };
+        let before = account.appear_offline;
+        if before == on || self.is_waiting(|p| matches!(p, Purpose::AppearOffline { .. })) {
+            return;
+        }
+        if let Some(account) = self.account.as_mut() {
+            account.appear_offline = on;
+        }
+        self.send(
+            Purpose::AppearOffline { on, before },
+            Command::SetAppearOffline { on },
+        );
+    }
+
+    /// The player appears offline to others.
+    pub fn appears_offline(&self) -> bool {
+        self.account.as_ref().is_some_and(|a| a.appear_offline)
+    }
+
+    /// Tells the cloud which trophies of a title a game hides and the player has not earned: they
+    /// are secret until shown. A trophy that was earned is never secret: the cloud is told to show
+    /// it, as consoles do (`earned_hidden`: the hidden trophies the player has earned). Both
+    /// are idempotent, so this only saves the requests: it sends when the title has more of
+    /// either than the cloud was told of since this sign-in.
+    pub fn mark_secrets(&mut self, title_id: &str, hidden: &[u32], earned_hidden: &[u32]) {
+        self.show_earned(title_id, earned_hidden);
+        self.mark_unearned(title_id, hidden);
+    }
+
+    fn show_earned(&mut self, title_id: &str, earned: &[u32]) {
+        let numbers = secret_numbers(earned);
+        let count = numbers.len();
+        let sending = |p: &Purpose| matches!(p, Purpose::Secrets { title_id: t, reveal: true, count, .. } if t == title_id && *count > 0);
+        if !self.is_online()
+            || count == 0
+            || !api::is_title_id(title_id)
+            || self
+                .revealed_sent
+                .get(title_id)
+                .is_some_and(|&known| known >= count)
+            || self.is_waiting(sending)
+        {
+            return;
+        }
+        let chunks = numbers.chunks(api::MAX_TROPHY_UPLOAD).count();
+        for (index, chunk) in numbers.chunks(api::MAX_TROPHY_UPLOAD).enumerate() {
+            let sent = if index + 1 == chunks { count } else { 0 };
+            self.send(
+                Purpose::Secrets {
+                    title_id: title_id.to_owned(),
+                    count: sent,
+                    reveal: true,
+                },
+                Command::RevealTrophies {
+                    title_id: title_id.to_owned(),
+                    numbers: chunk.to_vec(),
+                },
+            );
+        }
+    }
+
+    fn mark_unearned(&mut self, title_id: &str, hidden: &[u32]) {
+        let numbers = secret_numbers(hidden);
+        let count = numbers.len();
+        let sending = |p: &Purpose| matches!(p, Purpose::Secrets { title_id: t, reveal: false, .. } if t == title_id);
+        if !self.is_online()
+            || count == 0
+            || !api::is_title_id(title_id)
+            || self
+                .secrets_sent
+                .get(title_id)
+                .is_some_and(|&known| known >= count)
+            || self.is_waiting(sending)
+        {
+            return;
+        }
+        let chunks = numbers.chunks(api::MAX_TROPHY_UPLOAD).count();
+        for (index, chunk) in numbers.chunks(api::MAX_TROPHY_UPLOAD).enumerate() {
+            // Only the last part's answer says that the cloud has them all.
+            let sent = if index + 1 == chunks { count } else { 0 };
+            self.send(
+                Purpose::Secrets {
+                    title_id: title_id.to_owned(),
+                    count: sent,
+                    reveal: false,
+                },
+                Command::SecretTrophies {
+                    title_id: title_id.to_owned(),
+                    numbers: chunk.to_vec(),
+                },
+            );
+        }
+    }
+
+    /// The player revealed a secret trophy: everyone who may see their trophies may see it too.
+    pub fn reveal_secret(&mut self, title_id: &str, number: u32) {
+        let numbers = secret_numbers(&[number]);
+        if !self.is_online() || numbers.is_empty() || !api::is_title_id(title_id) {
+            return;
+        }
+        self.send(
+            Purpose::Secrets {
+                title_id: title_id.to_owned(),
+                count: 0,
+                reveal: true,
+            },
+            Command::RevealTrophies {
+                title_id: title_id.to_owned(),
+                numbers,
+            },
+        );
+    }
+
     /// Changes who sees the player's trophies. The cloud replaces the whole setting, so the other
     /// parts go back as the cloud last said; before it said anything, the launcher asks again
     /// instead of guessing them. The choice shows at once and comes back with the answer.
@@ -1195,8 +1412,11 @@ impl Online {
                     self.avatars.clear();
                     self.feed = FeedState::default();
                     self.profiles.clear();
+                    self.compares.clear();
                     self.privacy = None;
                     self.uploaded.clear();
+                    self.secrets_sent.clear();
+                    self.revealed_sent.clear();
                     self.playtime_sent.clear();
                     self.join = JoinOffer::default();
                 }
@@ -1438,6 +1658,7 @@ mod tests {
                 id: AccountId(1),
                 handle: "Alec".into(),
                 email: "a@example.org".into(),
+                appear_offline: false,
             }),
             pending: None,
         }));
@@ -2569,7 +2790,6 @@ mod tests {
         answer_last(
             &mut online,
             api::ProfilePage {
-                level: None,
                 profile: api::Profile {
                     account: account(2, "Lumen"),
                     about: Some("Hi".into()),
@@ -2578,6 +2798,7 @@ mod tests {
                     playtime: None,
                 },
                 trophies: None,
+                level: None,
                 links: Vec::new(),
             },
         );
@@ -2604,5 +2825,217 @@ mod tests {
         }));
         assert!(!online.feed.loaded && online.feed.items.is_empty());
         assert!(online.profiles.is_empty() && online.avatars.is_empty());
+    }
+
+    fn side(account: u64, earned: &[(u16, u64)]) -> api::CompareSide {
+        let trophies: Vec<api::Trophy> = earned
+            .iter()
+            .map(|&(number, at)| api::Trophy {
+                number,
+                grade: api::Grade::Gold,
+                earned: at,
+            })
+            .collect();
+        let counts = api::Count {
+            gold: trophies.len() as u32,
+            ..api::Count::default()
+        };
+        let tally = api::Tally::of(counts);
+        api::CompareSide {
+            account,
+            trophies,
+            title: tally,
+            total: tally,
+            level: api::TrophyLevel::of(tally.points),
+        }
+    }
+
+    #[test]
+    fn appearing_offline_shows_at_once_and_a_refusal_takes_it_back() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        online.take_outbox();
+        assert!(!online.appears_offline());
+        online.set_appear_offline(true);
+        assert!(online.appears_offline(), "the choice shows at once");
+        let lines = online.take_outbox();
+        assert_eq!(lines.len(), 1);
+        let (_, command) = control::parse_command(&lines[0]).unwrap();
+        assert_eq!(command, Command::SetAppearOffline { on: true });
+        // A second press while the first waits sends nothing.
+        online.set_appear_offline(false);
+        assert!(online.take_outbox().is_empty());
+        refuse_last(&mut online, Failure::new(Failure::OFFLINE, "x"));
+        assert!(!online.appears_offline(), "refused: back to what it was");
+    }
+
+    #[test]
+    fn the_answer_and_the_state_event_settle_appearing_offline() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        online.take_outbox();
+        online.set_appear_offline(true);
+        let id = online.next;
+        answer(
+            &mut online,
+            id,
+            api::AppearOffline {
+                appear_offline: true,
+            },
+        );
+        assert!(online.appears_offline());
+        // Another device switches it off.
+        online.apply(event(Event::State {
+            cloud: Cloud::Online,
+            account: Some(SignedIn {
+                id: AccountId(1),
+                handle: "Alec".into(),
+                email: "a@example.org".into(),
+                appear_offline: false,
+            }),
+            pending: None,
+        }));
+        assert!(!online.appears_offline());
+        // Nothing to switch on while signed out.
+        online.apply(event(Event::State {
+            cloud: Cloud::Online,
+            account: None,
+            pending: None,
+        }));
+        online.set_appear_offline(true);
+        assert!(!online.appears_offline());
+    }
+
+    #[test]
+    fn a_comparison_is_kept_by_account_and_title() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        online.take_outbox();
+        online.request_compare(AccountId(2), "GAME00001");
+        online.request_compare(AccountId(2), "GAME00001");
+        let lines = online.take_outbox();
+        assert_eq!(lines.len(), 1, "the same question waits once");
+        let (_, command) = control::parse_command(&lines[0]).unwrap();
+        assert_eq!(
+            command,
+            Command::Compare {
+                account: AccountId(2),
+                title_id: "GAME00001".into()
+            }
+        );
+        online.request_compare(AccountId(2), "not a title");
+        assert!(online.take_outbox().is_empty());
+        let compare = api::TrophyCompare {
+            title_id: "GAME00001".into(),
+            you: side(1, &[(0, 100), (1, 200)]),
+            them: side(2, &[(0, 150)]),
+        };
+        let id = online.next;
+        answer(&mut online, id, &compare);
+        let key = (AccountId(2), "GAME00001".to_owned());
+        assert_eq!(online.compares[&key].data.as_ref(), Some(&compare));
+        // A later refusal because they hide their trophies replaces nothing but says why.
+        online.request_compare(AccountId(2), "GAME00001");
+        refuse_last(&mut online, Failure::new("not_found", "x"));
+        assert!(online.compares[&key].hidden);
+        assert!(!online.compares[&key].failed);
+    }
+
+    #[test]
+    fn a_comparison_that_failed_says_so_until_it_works() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        online.request_compare(AccountId(2), "GAME00001");
+        refuse_last(&mut online, Failure::new(Failure::OFFLINE, "x"));
+        let key = (AccountId(2), "GAME00001".to_owned());
+        assert!(online.compares[&key].failed && !online.compares[&key].hidden);
+        online.apply(event(Event::State {
+            cloud: Cloud::Online,
+            account: None,
+            pending: None,
+        }));
+        assert!(online.compares.is_empty(), "signing out forgets them");
+    }
+
+    #[test]
+    fn hidden_trophies_are_marked_once_and_a_reveal_goes_out_at_once() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        online.take_outbox();
+        online.mark_secrets("GAME00001", &[5, 3, 5, 70_000], &[]);
+        let lines = online.take_outbox();
+        assert_eq!(lines.len(), 1);
+        let (_, command) = control::parse_command(&lines[0]).unwrap();
+        assert_eq!(
+            command,
+            Command::SecretTrophies {
+                title_id: "GAME00001".into(),
+                numbers: vec![3, 5]
+            }
+        );
+        let id = online.next;
+        answer(&mut online, id, api::SecretsChanged { changed: 2 });
+        online.mark_secrets("GAME00001", &[5, 3], &[]);
+        assert!(online.take_outbox().is_empty(), "the cloud knows them");
+        online.mark_secrets("GAME00001", &[5, 3, 9], &[]);
+        assert_eq!(online.take_outbox().len(), 1, "a new hidden trophy is sent");
+        online.reveal_secret("GAME00001", 5);
+        let (_, command) = control::parse_command(&online.take_outbox()[0]).unwrap();
+        assert_eq!(
+            command,
+            Command::RevealTrophies {
+                title_id: "GAME00001".into(),
+                numbers: vec![5]
+            }
+        );
+        online.reveal_secret("GAME00001", 70_000);
+        assert!(online.take_outbox().is_empty());
+    }
+
+    #[test]
+    fn an_earned_hidden_trophy_is_shown_and_an_unearned_one_stays_secret() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        online.take_outbox();
+        // Number 3 is hidden and earned, 5 and 9 are hidden and not yet.
+        online.mark_secrets("GAME00001", &[5, 9], &[3]);
+        let sent: Vec<Command> = online
+            .take_outbox()
+            .iter()
+            .map(|line| control::parse_command(line).unwrap().1)
+            .collect();
+        assert_eq!(
+            sent,
+            [
+                Command::RevealTrophies {
+                    title_id: "GAME00001".into(),
+                    numbers: vec![3]
+                },
+                Command::SecretTrophies {
+                    title_id: "GAME00001".into(),
+                    numbers: vec![5, 9]
+                },
+            ]
+        );
+        let first = online.next - 1;
+        answer(&mut online, first, api::SecretsChanged { changed: 0 });
+        answer(&mut online, first + 1, api::SecretsChanged { changed: 2 });
+        // Nothing again while the cloud knows it all.
+        online.mark_secrets("GAME00001", &[5, 9], &[3]);
+        assert!(online.take_outbox().is_empty());
+        // The player earns 5: it is shown, and no new secret is sent.
+        online.mark_secrets("GAME00001", &[9], &[3, 5]);
+        let sent: Vec<Command> = online
+            .take_outbox()
+            .iter()
+            .map(|line| control::parse_command(line).unwrap().1)
+            .collect();
+        assert_eq!(
+            sent,
+            [Command::RevealTrophies {
+                title_id: "GAME00001".into(),
+                numbers: vec![3, 5]
+            }]
+        );
     }
 }

@@ -87,10 +87,10 @@ in the source but is not used anywhere; it is the documented fallback if the GPU
 
 | Name (EN / TR) | float | hex |
 |---|---|---|
-| Blue / Mavi | (0.31, 0.58, 1.00) | `#4F94FF` |
+| Blue / Mavi | (0.40, 0.64, 1.00) | `#66A3FF` (was `#4F94FF`, 3.0:1 short on Sunset's lit band; 3.10) |
 | Mint / Nane | (0.36, 0.92, 0.74) | `#5CEBBD` |
 | Coral / Mercan | (1.00, 0.50, 0.40) | `#FF8066` |
-| Violet / Mor | (0.66, 0.52, 1.00) | `#A885FF` |
+| Violet / Mor | (0.70, 0.57, 1.00) | `#B391FF` (was `#A885FF`; 3.10) |
 | Gold / Altın | (1.00, 0.80, 0.36) | `#FFCC5C` |
 | White / Beyaz | white 0.94 | `#F0F0F0` |
 
@@ -336,10 +336,12 @@ target changes (SwiftUI springs are interruptible and carry velocity), request r
 | `Motion.focus` | focus/hover feedback, switch, key scroll | 0.32 | 0.82 | 19.63 | 385.5 | 32.2 | 1.1 % | 0.25 s |
 | `Motion.layout` | tile row move, hero swap, onboarding steps, list reflow | 0.45 | 0.86 | 13.96 | 195.0 | 24.0 | 0.5 % | 0.33 s |
 | `Motion.overlay` | opening/closing panels, splash, toast | 0.42 | 0.90 | 14.96 | 223.8 | 26.9 | 0.15 % | 0.30 s |
+| `Motion.exit` (2026-10-25) | what leaves while something else arrives: the old hero | easeOut 0.18 s, the same when reduced | - | - | - | none | gone at 0.18 s |
 | Banner slide | trophy card in | 0.55 | 0.78 | 11.42 | 130.5 | 17.8 | 2.0 % | 0.45 s |
 | Banner pop | trophy icon scale | 0.45 | 0.55 | 13.96 | 195.0 | 15.4 | 12.6 % | 0.52 s, starts after 0.18 s delay |
 
-Overshoot only visibly matters for the banner pop; clamp alpha and colour lerps to [0, 1] but let scale and offset overshoot.
+Measured at 240 Hz (test `settle_times_match_the_design_table`), time to within 2 % of the target: focus 0.200 s, layout 0.308 s,
+overlay 0.317 s; press 0.10 s and exit 0.12 s are eases and take their length. Overshoot only visibly matters for the banner pop; clamp alpha and colour lerps to [0, 1] but let scale and offset overshoot.
 
 ### 2.2 Easing curves
 
@@ -354,7 +356,9 @@ SwiftUI's named curves are the standard cubic Beziers; implement one `cubic_bezi
 ### 2.3 Reduced motion (setting "Animations: Reduced")
 
 `Motion.reduced` swaps: focus -> easeOut 0.12 s; layout -> easeOut 0.15 s; overlay -> easeOut 0.15 s; fade 0.55 s easeInOut ->
-0.15 s easeInOut; banner slide -> easeOut 0.25 s. Also: the theme background is paused (one still frame is drawn), artwork drift
+0.15 s easeInOut; banner slide -> easeOut 0.25 s. Also (2026-10-25): a panel does not slide, a full-screen panel does not grow from 1.03 and the toast does not travel; each fades in
+place (opacity only), because movement is what reduced motion removes and opacity is what it keeps. The edge bump (6.7) leans nothing.
+Also: the theme background is paused (one still frame is drawn), artwork drift
 and splash breathing are off, the user picture does not drift. **Not** affected: the indeterminate progress sweep, the "Press a
 key..." pulse, the banner pop.
 
@@ -365,7 +369,7 @@ key..." pulse, the banner pop.
 | 1 | Tile focus: scale/ring/shadow of the selected tile | `Motion.focus` on `focused` | spring focus; ring alpha 0 -> 0.95, glow 0 -> 0.45, shadow r10 -> 22 |
 | 2 | Tile row move on selection change | `Motion.layout` on `selected` | per tile spring layout on x, y offset, size (see 5.3); previous tiles fade to 0 opacity as they leave left |
 | 3 | Tile size 118 <-> 176 | `Motion.layout` on `size` | spring layout on a `size` scalar (animate size, not scale; text is outside the tile) |
-| 4 | Hero info swap on game change | `.id(game.id)`, insertion opacity + y offset 14, removal opacity, `Motion.layout` | new hero: spring layout 0 -> 1 on opacity and `offset_y = 14 * (1 - v)`; old hero: opacity 1 -> 0 on the same curve; both exist during the transition |
+| 4 | Hero info swap on game change | `.id(game.id)`, insertion opacity + y offset 14, removal opacity, `Motion.layout` | new hero: spring layout 0 -> 1 on opacity (no travel: the hero changes on every arrow press); old hero (2026-10-25): opacity 1 -> 0 on `Motion.exit` (easeOut 0.18 s), quicker than the arriving spring: it is under 0.3 when the new one is half in and the two together never dip below 0.6 of one title (test `the_hero_pair_never_dips_and_the_old_one_leaves_first`) |
 | 5 | Tile-row name label | opacity transition, `Motion.layout` | opacity spring layout |
 | 6 | Backdrop crossfade (theme change, selected-game artwork change) | `easeInOut 0.55` on `theme` and on `selectedGame.id` | keep the previous artwork texture, cross-fade alpha with easeInOut 0.55 |
 | 7 | Artwork decode fade-in | `easeOut 0.35` | alpha 0 -> 1 easeOut 0.35 when the texture becomes ready |
@@ -395,6 +399,8 @@ key..." pulse, the banner pop.
 | 30 | Banner out | after 5 s: easeIn 0.3 s back up and out; next banner starts 0.35 s later | see 5.14 |
 | 31 | Scroll-to-focus in lists | `scrollTo(anchor: .center)` inside `Motion.focus` | spring focus on the scroll offset toward "focused row centred" |
 | 32 | Tile hover | none (only buttons hover: fill white 0.16) | |
+| 34 | Select pulse | a click shows the control pressed while the button is down | a select from a key or the pad holds the focused control pressed for 0.09 s (`ui::press`, `Motion.press`, scale 0.97 on controls, +6 % lift on rows): the same look as a click, in the frame of the cue |
+| 33 | Edge bump (6.7) | none | focus ring leans 3 dp toward the wall and returns: velocity kick 140 dp/s on `Motion::Focus`; off under reduced motion |
 
 Animations 1, 10-15 can share one helper: `focus_t: Spring` per focusable widget id stored in egui memory.
 
@@ -692,9 +698,8 @@ The launcher keeps the port's structure but trims what read as noise next to the
   to Default Keys; community layouts are options of the Layout choice, not a page. The report to
   AnyPS5 reuses the log view for its review, so no new surface exists: a plain sentence (no
   warning box, it warns of nothing) above the text, the primary button on the right.
-- **Home polish.** Two soft scrims sit under the home UI so white text reads on bright artwork:
-  black 0.30 fading out over the top 150 dp, and black 0.46 in the hero's bottom-left corner
-  (72 % of the width, half the height at most 480 dp), both fading to nothing on every side. The
+- **Home polish.** Soft shades sit under the home UI so white text reads on bright artwork (soft-edged patches since
+  round 3, `ui::shade`, 3.10; first a black 0.30 band over the top 150 dp and black 0.46 in the hero's bottom-left corner). The
   selected tile keeps 10 dp more air before the next one (`TILE_LABEL_COLUMN = 10`). While a game
   unlocks, the step is named once, in the state line above the title; the hero shows only a 260 dp
   bar and its percentage on the buttons' centre line. The scanning icon breathes in opacity only.
@@ -772,7 +777,7 @@ The launcher keeps the port's structure but trims what read as noise next to the
   used 16.5 % of a core and 30 % GPU (58 threads) before, 11 % and 15 % (26 threads) after; the
   backdrop is untouched and still draws at 60 Hz while focused. A window without focus, and a game
   running, stop all drawing (0.2 to 2 % of a core). The gamepad thread polls every 100 ms while no
-  pad is connected (8 ms with one). `ANYPS5_GPU=dx12|vulkan|both` and `ANYPS5_POWER=high` undo the
+  pad is connected (4 ms with one). `ANYPS5_GPU=dx12|vulkan|both` and `ANYPS5_POWER=high` undo the
   choice for diagnosis; the log carries `startup t=...ms <step>` lines and the demo an `idle ...
   frames/s` line every 5 s. The demo no longer forces a repaint every frame (it idled at 40 % of a
   core, unlike the launcher).
@@ -860,6 +865,108 @@ middle (two dots on the digits' cap height), so the minute ticking over moves no
 
 **Failed unlock** says what happened and what to do in one headline ("Unlocking stopped. Try again. ..."), with the technical
 message as a quiet line under it.
+
+**Round 2 (2026-10-25).**
+- *Press is immediate.* The press scale (0.97) rides `Motion::Press`: easeOut 0.10 s both ways, retargeted from the
+  current value, so a quick click reverses mid-press. The focus spring (0.32 s) stays for focus only.
+- *The reaction pills of the feed* are Small controls (32), like every answer inside a line of content.
+- *Optical centring.* A right-pointing triangle has its mass on the flat side; `Icon::optical_dx` moves the play glyph 8 % of
+  its size to the right.
+- *The pointer lights nothing while a pad is the device in use* (`input::hovered`, `input::pointer_in_use`): no hover fill,
+  no hover ring and no pointing hand next to the control the pad has focused. Moving the mouse takes the device back.
+- *Screen-reader focus follows the ring* (`ui::a11y`). The model decides the focus and the widgets draw the ring; egui's
+  own focus is what AccessKit announces, so each focusable widget calls `a11y::follow` with whether the model has it
+  focused. egui's focus is only taken when nothing, or our own earlier choice, holds it (a text field being edited, or a
+  control reached with Tab, keeps it); Tab and the arrows are claimed so egui does not move the focus away from the ring;
+  Enter and Space, which egui would also read as a click on the focused widget, are consumed once the model has taken
+  them as "select".
+- *A note marked destructive in a panel* was a warning in this round; it is `Row::warning` since round 3 (3.10). The top scrim
+  of the home screen is 0.40 so the clock and the caption glyphs hold on a pale picture (0.45 since round 3).
+- *Gallery.* The panel scenes draw the real home under the panel (`app::preview::HomeStand`: the same `home::show` and
+  artwork layer as the app, with the focus hidden as under a panel). New flags: `--theme=aurora|sunset|cosmic` (components,
+  panels, home scenes), `--bright` (a pale picture as the selected game's artwork), `--frames=N` (gallery pages, so the real
+  home's pictures have loaded), `--hover=X,Y` with `--pad` rests the pointer without taking the device back from the pad.
+  New page `--gallery=states`: destructive buttons, the switch and rows in every state.
+
+### 3.10 Round 3: contrast measured, one case rule, Tab (2026-10-25)
+
+**Contrast is measured, not estimated.** `ui::contrast` (a test: `cargo test -p anyps5-launcher contrast -- --nocapture` prints the
+table) lays every text token and the status, state and accent inks over the backdrops they meet and measures them with the WCAG
+2.x formula. A pair has to reach 4.5:1 as text, 3:1 as large text (24 dp, or 18.66 dp bold), as a glyph or as a part of a control.
+Inactive and disabled ink (`text_inactive`, a locked trophy's picture) is exempt by the standard. The backdrops come from the theme
+tokens: per theme the deep tone, the lightest tone the shader paints behind text (Sunset's lit lower band; a soft glow under the
+top bar), the panel fill over the theme's lit tone with a row in each state (rest, hover, focus, pressed), the toast fill, and a
+pure white picture under the artwork scrims, the worst a game can bring. The home screen's text is measured where it sits, under
+the shades below. A rendered screenshot is measured with `tools/measure-contrast.mjs` (the backdrop under a box is its median colour, the ink
+is composited on it); the model and the render agreed to within 0.1 on the facts, hints and clock of a white picture.
+
+With the tokens of round 2 the test found 71 of 504 pairs short. What changed (the weakest ratio of the old ink, then the new one;
+the new weakest of every ink is in the test's output):
+
+| Ink | Before | After | Where it was short |
+|---|---|---|---|
+| `text_overline` (facts, captions over rows) | white 0.55, 3.2 to 3.8 | 0.70 | facts on Sunset's band, a focused or pressed row |
+| `text_clock` | 0.78, 4.2 | 0.88 | the clock over a white picture |
+| `text_detail`, `text_row_detail`, `text_inert` | 0.60, 0.55, 0.62; 3.5 to 4.2 | 0.70 | a row in focus or pressed |
+| `text_empty`, `text_subtitle`, `text_path` | 0.65, 0.70, 0.45; 4.3 to 4.5 | 0.72, 0.72, 0.50 | a pressed row |
+| `text_hint`, `text_hint_key` | 0.72, 0.92; 4.4 | 0.78, 1.0 | the hint bar on Sunset's band, the key on its cap |
+| `destructive_text`, `error_state` | (1.0, 0.60, 0.55); 3.6 | (1.0, 0.72, 0.67) | a focused or pressed row |
+| `destructive_icon`, `error_text` | (1.0, 0.55, 0.50), (1.0, 0.70, 0.65) | (1.0, 0.62, 0.57), (1.0, 0.73, 0.68) | a pressed row |
+| state label of Starting, Installing, Playing | the accent; 3.2 for blue on Aurora's teal, worse on Sunset | `text_active`, white 0.92 (5.1 or more) | an accent on its own colour |
+| knob of a switch that is on | white; 1.1 on the White accent, 1.5 on mint or gold | `on_primary`, dark (6.5 or more) | every accent |
+| progress line in Blue and Violet | 2.0 and 2.2 on Sunset's band | Blue `#66A3FF`, Violet `#B391FF` (3.2, 3.3) | the unlock line on a bare Sunset |
+
+The initial in the profile button's avatar (and the monogram of a friend without a picture) takes `theme::readable_ink` of its
+colour: white, or the dark `on_primary` when that reads better (white on Mint, Gold or White was 1.2 to 2.2:1; every accent now
+reaches 4.5). The literal inks the audit found in the screens (white 0.55 to 0.66 as text, 17 places) now use these tokens, and the row text of
+the panels uses `text_row_detail`, `text_inert`, `text_note` (0.50, bare on the panel) and `text_caption`. New text ink is a token,
+so the test sees it.
+
+**The active states are ink, a glyph and a word.** "Starting", "Installing" and "Playing" were set in the player's accent, which can
+be the colour of the theme behind it. They are `color::text_active` now: the glyph (hourglass, arrow, play circle, each its own
+shape) and the word carry the state and no colour is needed. The accent stays where it fills something (the progress line, the
+switch, the online dot).
+
+**Shades, not a ramp** (`ui::shade`). The home screen's scrim was a ramp over the whole lower half, 0.58 in the corner, laid on the
+artwork's own two scrims: on a pale picture that is the grey fog. The artwork scrims already leave a pure white picture at 5.0:1
+under the facts and 6.7:1 under the hints, so the home screen lays only what a bare theme needs: a soft-edged patch under the hero
+(black 0.46 on a plateau from the left edge to 880 dp and from 400 dp above the bottom down, easing out over 360 dp across and 260
+dp up), one under the hint bar (0.28; the right 520 dp, the bottom 110 dp, easing out over 300 and 220 dp) and the band under the
+top bar (0.45, 150 dp). The ease follows the distance from the plateau, so the contours are round and no straight edge shows. A
+patch is as dark as the ink on it needs (Sunset's lit band sets it) and nothing more; the tile row and the middle of the picture
+get none. The facts and the glibc line can run to 880 dp, so the model samples them there too.
+
+**One case rule.** Titles of rows, buttons, captions, headings and the names of a choice are in Title Case ("Save Changes", "Game
+Default", "Top Left", "Report as Installed"): every word capital except the short ones inside (a, an, the, and, or, of, to, in, on,
+for, with, at, by, from, as). What reads as a sentence is in sentence case: details, subtitles, notes, statuses ("Ready to play",
+"Not installed", "Up to date"), toasts, errors, questions and the headlines of empty states ("No games yet"). Turkish follows the
+same rule: every word capital except `ve`, `ile`, `de`, `da`, `mi`, `için`, `veya`. The English and Turkish tables were swept once
+for it (about 70 strings changed, mostly Turkish buttons and captions); new text follows it and the review checks it.
+
+**Warning is not danger.** `Row::destructive` is for a row that removes, ends or blocks something (Remove Installation, Close Game,
+Block): the danger ink. `Row::warning` is for an info row that says something may not work (the glibc note): the amber of the line
+under Play. `PanelRow` has both flags, and the danger ink means danger only.
+
+**The question of a confirmation** (Close Game, Remove, Restore, the toolkit pin) is the sentence the player decides on: 17 dp
+regular in `text_label` ink with 1.45 leading under the panel title, not the quiet 15 dp line of a subtitle (`SideView::question`).
+
+**Tab walks the ring.** Tab and Shift+Tab are the model's keys now (`InputEvent::Tab`; egui no longer sees them). On the home screen
+they step through the stops in reading order: the top bar from left to right, the tile row as one stop (the arrows choose the
+tile), the action row, the question line while it asks; they stop at the ends without wrapping. In a panel they are Down and Up (a
+panel is one column of rows), in the onboarding Right and Left (the choices sit side by side). The library, a grid, reads along the row (Tab is Right, Shift+Tab Left). A text field
+keeps Tab for itself, and while a call rings Tab stays with egui, which focuses the card's buttons (they are for the pointer and for
+Tab; the pad reaches a call through the Invitations row). The strip of a call in progress does not hold Tab: Mute, Deafen and Leave
+Call are rows of the Online panel.
+
+**Screen readers follow the ring on more widgets.** `a11y::follow` is called by the switch (when it is a node of its own), by the
+cards of the theme step of the onboarding, by the rows of the profile page and by the lines of What's New. The language cards,
+rows, tiles, cells and buttons did already.
+
+**The glibc sentence has a next step.** It names the problem and what to do: "Games need glibc 2.38 or newer; this system has 2.35.
+Update to Fedora 39, Ubuntu 24.04 or newer." The releases are the two oldest of a short list that ship at least that glibc (Ubuntu
+22.04 2.35, Debian 12 2.36, Fedora 39 2.38, Ubuntu 24.04 2.39, Debian 13 2.41); past the newest it says "Update to a newer release
+of your distribution." Settings adds a row under the note, "Read the Install Guide", that opens `docs/INSTALL.md` on GitHub
+(`about_strings::INSTALL_GUIDE`, the one new address); INSTALL.md lists the releases and their glibc.
 
 ## 4. Materials and blur on the GPU
 
@@ -1443,7 +1550,7 @@ leaves the link on the clipboard.
 
 The relinker and the `.prx` libraries are ELF files that link against glibc. Their `.gnu.version_r` sections list the symbol versions they need (`GLIBC_2.38`); the newest over all of them is the oldest glibc the toolkit runs on (`anyps5-core::glibc`, reads section headers only, every offset bounded, 32- and 64-bit little-endian; `GLIBC_PRIVATE` and other families such as `GLIBCXX` do not count). The launcher compares it with `gnu_get_libc_version()` once when the toolkit is located. The idea of such a check came from the macOS and desktop launchers of the AnyPS5 community; the design and code here are our own.
 
-When the system is older it says one sentence, the same in three places: "Games need glibc 2.38 or newer; this system has 2.35." A note under the version row in Settings > Toolkit (like the "newer than tested" note, gallery scene `toolkit-glibc`), and a warning line under the primary button of the hero, in the states Locked, Queued, Installing, Failed and Installed (scenes `home-glibc`, `home-glibc-locked`; it takes the line the friends playing use, since it says why a start may fail). It is a notice and never a block: Unlock and Play work as before. Nothing is shown when the system is new enough, when a version cannot be read, on Windows and on macOS.
+When the system is older it says one sentence, the same in three places: "Games need glibc 2.38 or newer; this system has 2.35. Update to Fedora 39, Ubuntu 24.04 or newer." (the next step, and the install-guide row in Settings, are from round 3, 3.10) A note under the version row in Settings > Toolkit (like the "newer than tested" note, gallery scene `toolkit-glibc`), and a warning line under the primary button of the hero, in the states Locked, Queued, Installing, Failed and Installed (scenes `home-glibc`, `home-glibc-locked`; it takes the line the friends playing use, since it says why a start may fail). It is a notice and never a block: Unlock and Play work as before. Nothing is shown when the system is new enough, when a version cannot be read, on Windows and on macOS.
 
 ## 6. Input
 
@@ -1462,8 +1569,9 @@ Original: `Input.swift`, `AppModel.handle`, `panelCommand`, `onboardingCommand`.
 Rules: any key with the **Command** modifier is ignored (Windows: ignore when Ctrl, Alt or the Windows key is held, except the
 shortcut below). While a native dialog is open the launcher does not handle keys. While a text field has focus (profile name) keys go
 to the text field (the original never handles them; the port additionally lets Enter and Esc blur the field, see section 9). While a
-binding waits for a key (controls panel) every key is captured by the panel. Key repeat is the OS's: a held arrow produces repeated
-commands at the OS repeat rate. **Shortcut**: `Cmd+,` opens Settings when onboarded -> `Ctrl+,`. F11 toggles fullscreen (Windows addition).
+binding waits for a key (controls panel) every key is captured by the panel. Key repeat is ours, not the OS's (2026-10-25): the OS repeat events of an arrow
+key are dropped and a held arrow runs the same repeat as a held direction on the pad (6.3), so a list moves the same under a finger
+and under a thumb. It ends when the key is up, when a dialog opens or when a binding starts to wait for a key. **Shortcut**: `Cmd+,` opens Settings when onboarded -> `Ctrl+,`. F11 toggles fullscreen (Windows addition).
 
 ### 6.2 Mouse and wheel
 
@@ -1477,16 +1585,25 @@ uses AppKit's inverted deltas; the intent above is what the user experiences.)
 
 | Control | Command |
 |---|---|
-| D-pad, left stick (axis > 0.55 on an axis, else that axis counts as 0) | direction commands; the dominant axis wins, stick up = up |
+| D-pad, left stick (axis > 0.55 on an axis, else that axis counts as 0, see hysteresis below) | direction commands; the dominant axis wins, stick up = up |
 | A / Cross (South) | select |
 | B / Circle (East) | back |
 | Y / Triangle (North) | options |
 | Menu / Start | options |
 
-**Repeat timing:** when a direction is pressed it fires immediately; if held, after **0.38 s** it repeats every **0.085 s** until released or
-the direction changes (a change cancels the timers and fires the new direction at once). Identical consecutive directions are not
-re-fired. Controller input is not blocked by text fields or panels. The hint bar text is always `✕ / ○ / △` (PlayStation
+**Repeat timing (2026-10-25, replaces 0.38 s / 0.085 s):** when a direction is pressed it fires immediately; if held, after **0.36 s** it
+repeats every **0.10 s**, and after six repeats every **0.06 s**, until released or the direction changes (a change cancels the timers
+and fires the new direction at once). That is 17 rows in a 1.6 s hold, and a long list or the library grid no longer takes ten seconds
+to cross. A slow frame never fires a burst. Identical consecutive directions are not re-fired. Controller input is not blocked by text fields or panels. The hint bar text is always `✕ / ○ / △` (PlayStation
 naming) regardless of the controller.
+
+**Stick hysteresis:** the stick engages at 0.55 and lets go only below **0.38**, so a thumb resting near the threshold does not
+flutter between "right" and "nothing". A held direction gives way to the other axis only when that axis is at least 0.55 and **1.25
+times** the held one, so a thumb near the diagonal does not jump between "right" and "up"; a flick through the middle (right to left)
+changes direction at once. The D-pad beats the stick. The gamepad thread polls every **4 ms** (was 8) while a pad is connected.
+
+**Latency.** `ui::latency` stamps an event when the gamepad thread reads it, when the frame takes it off the channel and when that frame
+is built; with `RUST_LOG=anyplay_launcher::ui::latency=debug` it logs the average and the maximum of both intervals every 40 events.
 
 ### 6.4 Focus model
 
@@ -1570,6 +1687,48 @@ foreground switch against a real game window. The test hook is `--demo` with `AN
 `ANYPS5_PS_TEST_WINDOW=<hwnd>`: that window becomes the running game, each line `ps` on stdin is a press, and the log prints
 the foreground window before and after (`ps-test: ...`).
 
+### 6.7 The edge bump (2026-10-25)
+
+A direction that has nowhere to go (left on the first tile, up in the top bar, down on the last row, the end of the library grid or the
+trophy list, the top or bottom category) is answered like every other press, within the same frame: the `bump` cue (7.3) and a leaning
+focus ring. The ring, and only the ring, moves toward the wall by about **3 dp** and springs back (`ui::nudge`): a velocity kick of
+140 dp/s into a spring pair on `Motion::Focus`, which peaks after 55 ms, undershoots by less than a quarter of a dp and is still
+inside a quarter of a second. Nothing but a transform changes, the layout stays put and the element does not move. Under "Animations:
+Reduced" the ring stays and only the sound is left. A held direction bumps **once per hold**: the repeats at the edge
+are silent and still (`Input::repeating`). The sites that bump are the home screen, the panel rows and categories, the library grid and the trophy list; each calls `Shell::play(Cue::Bump)`, and the shell leans the
+ring toward `Input::last_direction`.
+
+### 6.8 Controller vibration (2026-10-25)
+
+A short, soft pulse answers the actions that have a sound, so the hand and the ear get the same answer in the same frame
+(`Shell::play` is the one place that decides both). Setting **Controller Vibration** (Settings > Behaviour): Off, Light (x0.7),
+Medium (x1, the default), Strong (x1.5). Changing it on the pad plays a select pulse at the new strength.
+
+| Action (cue) | Pulse (ms after start: length, light motor / heavy motor) | Feel |
+|---|---|---|
+| select | 0: 24, 0.32 / 0 | very light tap |
+| back | 0: 18, 0.22 / 0 | lighter |
+| error, refused | 0: 30, 0.42 / 0.14; 90: 30, 0.42 / 0.14 | two short taps |
+| trophy | 0: 24, 0.24 / 0; 70: 30, 0.30 / 0.12; 150: 70, 0.34 / 0.26 | three taps that swell |
+| call (ring) | 0: 60, 0 / 0.24; 110: 40, 0.30 / 0 | a heavy beat, then a light one |
+| edge bump | 0: 14, 0.16 / 0 | barely there |
+| move focus, hover, boot | none | the focus moves dozens of times a minute |
+
+How it runs. `ui::haptics` drives the pad through `gilrs-core` directly: gilrs' own force-feedback server works in 50 ms ticks, which
+cannot make a 14 ms tap and delays every start by up to a tick. A thread of its own holds a pattern as a list of motor states with
+their times, sets each at its moment (it asks Windows for a 1 ms timer) and ends on zero. It starts when the pad is first used,
+so the first pulse is not late. A pulse is lifted to 0.14 before the level scales it (a weaker one is not felt; an estimate to
+tune on hardware), so Light stays below Medium for every cue, and the result is capped at 1. Safe by construction: a pad without force feedback is skipped; the thread zeroes the motors (only when it has lit them: a game's
+own rumble is never overwritten) when a pattern is replaced, when it ends, when the setting goes Off, when a game takes the pad
+(`Shell::begin_frame` sees `HomeButton::accepts_pad` turn false and stops mid-pulse), when the handle is dropped (it joins the
+thread), and a Linux pulse carries its own 200 ms timer. A crash is the one gap: on Windows the pad keeps a pulse of at most
+70 ms until the system resets it. It acts only
+while the pad is the device in use (a keyboard or mouse player with a pad plugged in feels nothing) and never while a game is in
+front. Known limits. Every connected pad with force feedback vibrates, not only the one that was pressed. On Windows `gilrs-core` uses
+Windows.Gaming.Input, which offers vibration to Xbox-style pads only: a DualSense or DualShock gets none there (`is_ff_supported`
+is false), the setting then has no effect. Not verified on hardware: the feel of the strengths and the floor, WGI vibration from a
+second thread and the Linux timer.
+
 ## 7. Sounds and media
 
 ### 7.1 Sounds (`Sounds.swift`): synthesized, nothing bundled
@@ -1629,7 +1788,7 @@ upload; keep at most the current and previous artwork textures.
 
 ### 7.3 Soft cues and home music (deviation from 7.1)
 
-The launcher replaces the four sine cues of 7.1 with five softer ones and adds home screen music. Both are still synthesised at
+The launcher replaces the four sine cues of 7.1 with softer ones (plus `hover`, `error`, `boot` and `ring`) and adds home screen music. Both are still synthesised at
 run time: nothing is bundled and nothing is sampled. Their character follows the PS5 system sounds as measured from recordings
 (register, partials, attack, decay, level, harmony); no recording is used or shipped.
 
@@ -1643,11 +1802,13 @@ decay with time constant τ), followed by a one-pole lowpass and a Freeverb send
 
 | Cue | Notes (relative level) | Partials (ratio, level) | Attack / τ | Peak | Send / RT60 |
 |---|---|---|---|---|---|
-| `move` | F4 | 1; 2 at 0.8; 1.5 at 0.09 | 12 / 38 ms | -22 dBFS | 0.10 / 0.7 s |
+| `move` | F4 | 1; 2 at 0.55; 1.5 at 0.06 | 7 / 26 ms | -22 dBFS | 0.04 / 0.3 s, lowpass 5 kHz |
+| `hover` | the `move` tick | as `move` | as `move` | -25 dBFS | as `move` |
 | `select` | C5, G5 (0.7) 12 ms later | 1; 2 at 0.45; 3 at 0.08 | 10 / 120 ms | -13 dBFS | 0.15 / 0.9 s |
 | `back` | A3, E4 (0.7) | as `select` | 10 / 90 ms | -15 dBFS | 0.12 / 0.8 s |
 | `error` | A3, B♭3 (0.9) | 1; 2 at 0.25 | 12 / 90 ms | -15 dBFS | 0.06 / 0.8 s |
 | `unlocked` | F4 C5 G5 C6 (1, 0.85, 0.7, 0.55), 15 ms apart, each as two voices 5 cents apart | 1; 2 at 0.25 | 25 / 250 ms | -9 dBFS | 0.20 / 1.2 s |
+| `bump` | F3, faint octave, lowpass 1.6 kHz | 1; 2 at 0.25 | 10 / 28 ms | -23 dBFS | 0.04 / 0.4 s |
 | `boot` | F3 C4 G4 C5 F5 (0.9 to 0.45), 70 ms apart, two voices 5 cents apart, glitter at 0.3 s | 1; 2 at 0.25 | 350 / 650 ms | -12 dBFS | 0.35 / 2.2 s |
 
 `unlocked` adds a faint glitter: six sines between 3.15 and 7.88 kHz at 0.12, gone within about 0.1 s. `error` is new and plays
@@ -1660,6 +1821,17 @@ F sus4 (higher), F add 9, D♭ maj9, G♭ add 9 (voicings in `CHORDS`). Each pad
 runs under two rounds of the chords; the third round goes without it and 3 dB quieter. Every 1.4 to 3.6 s a soft note (sine plus
 0.2 octave, 10 ms attack, τ 0.9 s) from the current chord, between F4 and C6, floats above, panned up to ±0.45. Freeverb RT60 5 s,
 damping 0.6. The level sits around -28 dBFS RMS, well under the cues.
+
+**Hover** (`ui::sound::hover`, `Shell::finish_frame`). When the pointer arrives on a new interactive element (control, tile, library cell, row or card: whatever asks `ui::input::hovered`), the `hover` cue plays: the `move` tick of the focus path, 3 dB lower, so mouse, keys and pad sound like one system. `move` was re-cut for this (shorter: 132 ms to -60 dBFS instead of 210 ms; softer octave; a dry tail; rms frequency 455 Hz instead of 517 Hz), and both paths use it. The decision is a pure function of one frame (`HoverGate::update`), and every rule is a unit test:
+
+- once per arrival: nothing while the pointer stays inside, nothing over empty areas or non-interactive surfaces; leaving and coming back ticks again;
+- only a pointer that moves: the arrival must follow a pointer movement by at most 150 ms, so a panel sliding under a resting mouse stays silent; while a pad is in use `hovered` is false, so nothing plays, and the mouse moving again re-arms it;
+- nothing while a button is held (press, drag), while the wheel or a scroll animation moves content (and for 250 ms after), and nothing late for an element that arrived during those;
+- throttle: at least 60 ms between ticks (a sweep over tiles 40 ms apart sounds every second tile, 16 a second at most); an arrival inside the gap is dropped, not delayed; the engine lets at most 2 hover ticks sound at once and cuts the oldest over 5 ms; hover ticks never dip the music;
+- no doubling: another cue in the same frame, one in the 90 ms before, or a click completing in the frame silences the arrival;
+- off with Interface Sounds off, while a game starts or runs, and while the launcher window is not focused. The tick is only ever an extra cue: every hover also has its glow, cursor and focus ring, and nothing depends on hearing it.
+
+Latency: the first cue, the boot cue, opens the device and renders every cue, and `Sounds::warm` repeats that before any hover when sounds are on. The output asks for 512 frames per callback (about 11 ms at 48 kHz) instead of rodio's 50 ms default, falling back to the default when a device refuses; the engine reads commands every 64 frames, and the UI thread only sends a message.
 
 **Mixing.** The music fades in over 2 s and out over 0.8 s (gain = position²) and dips under every cue: `move` 1.5 dB for 0.12 s,
 `select`, `back` and `error` 3 dB for 0.25 s, `unlocked` 6 dB for 1.2 s (15 ms down, 400 ms back up). It plays only while the
@@ -2058,16 +2230,17 @@ list still updates.
 
 ### 9.5 The launcher updates itself
 
-No counterpart in the macOS launcher (Sparkle there). Core module `anyps5_core::selfupdate`, host `app::selfupdate`.
+No counterpart in the macOS launcher (Sparkle there). Core module `anyps5_core::selfupdate`, host `app::selfupdate`. Windows only for now: a Linux build is replaced from the releases page.
 
-- **Check.** Once per start, in the background, when the *Check for Updates* preference is on: the latest release of `anyplaynet/launcher` (the same request and HTTP client as the toolkit check). A newer semver (pre-release tags sort below their release) is downloaded and verified at once; garbage tags are never newer. Previews, the demo, the gallery and the tests never check.
-- **Verify.** The portable `AnyPlay-Launcher-<v>-x64.exe` (or, in a release without it, `AnyPS5-Launcher-<v>-x64.exe`; every release carries both, 9.7) goes to `%LOCALAPPDATA%\AnyPS5\Updates`. Its SHA-256 must match the line in the release's `SHA256SUMS.txt`; a missing line, a wrong hash or a file that does not start with `MZ` refuses the update and leaves nothing behind. The file gets its final name only after that, so a file of that name is always a verified one.
-- **Swap.** Windows cannot overwrite a running exe but can rename it. The staged file is copied beside the running exe (`<name>.new`, it may be on another drive), the running exe is renamed to `<name>.old`, the copy takes its place. A failure in the second step moves the old one back. The next start deletes `.old` files and stale downloads (one still in use stays until a later start). It works for the installed exe (`%LOCALAPPDATA%\Programs\AnyPlay Launcher`, or `...\AnyPS5 Launcher` for an install from v0.1.x) and for the portable exe in any writable folder. The swap keeps the exe's file name; nothing depends on it. A folder that refuses new files is reported before anything is downloaded: About shows "<v> available, but this folder is read-only" and nothing else happens.
-- **When.** A calm toast when the update is ready: "Launcher <v> is ready. It installs when you close the launcher." The swap runs on exit, after the preferences are saved. An update staged by a run that closed too early is offered again at the next start without a second download.
-- **About.** The *Version* row reads "<v>" and, with a staged update, "<v> ready" with a *Restart Now* row above *Quit*. It closes the launcher, swaps, and starts the new exe with the same arguments. Under it, from a gap: *AnyPlay Website* (anyplaynet.com), *AnyPlay Discord* (news, help and other players), *Privacy Policy* and *Terms of Service* open their pages in the browser (`about_strings`; the launcher opens only these), then a line on who it builds on (AnyPS5 by boykopovar; the launcher began as utkuhalis’ AnyPS5-ARM launcher), and *Quit* last.
-- **What’s New.** The highlights group the toolkit’s changes under names players know (Graphics, Trophies, Saves, Sound, Controllers, Online, Starting games, System; `area_title`), merging areas that share a name; an unknown area keeps its own. *Everything* below keeps the exact scopes.
-- **Signed manifest.** The step above is the *unsigned* path and runs only while `data/update-keys.txt` holds no trusted key (it holds none yet). From the first key on, the launcher takes updates only through the release's `latest.json` and `latest.json.sig`: an Ed25519 signature by a trusted key, an unexpired manifest, a version newer than the running one, a running version not below the manifest's `minimum_version`, and a download with the manifest's SHA-256 and size. The tag and `SHA256SUMS.txt` are then not used, and there is no fallback to the unsigned path: a release without a manifest is refused. A refusal only logs, offline the check just fails, and neither touches the installed exe. Nothing the player sees changes. The format, the rules, the migration and the key ceremony (making, storing, adding and rotating the key) are in [UPDATES.md](UPDATES.md).
-- **Not done.** The exe is not code-signed. Without a trusted key the checksum list comes from the same release as the exe, so it guards against a damaged or substituted download, not against a compromised release; the signed manifest is what does.
+- **Check.** At the start and then every 6 hours while the launcher stays open (after a check that could not reach GitHub, every 30 minutes), in the background, when the *Check for Updates* preference is on. *Check Now* on the About page checks once whatever the preference says. The request is conditional: the release data of `anyplaynet/launcher` is asked for with the ETag of the last answer, so a check that finds nothing new costs one small reply that GitHub does not count against its rate limit. The last copy is never taken for an answer when the network fails: an offline launcher does not call itself up to date. A newer semver (pre-release tags sort below their release) is downloaded and verified at once; garbage tags are never newer. Previews, the demo, the gallery and the tests never check.
+- **Verify.** From the first trusted key on (`data/update-keys.txt` holds "anyplay 2026" since 0.2.0) the launcher takes updates only through the release's signed `latest.json` and `latest.json.sig`: an Ed25519 signature by a trusted key, an unexpired manifest, a version newer than the running one, a running version not below the manifest's `minimum_version`, and a download with exactly the manifest's SHA-256 and size. The portable `AnyPlay-Launcher-<v>-x64.exe` (or `AnyPS5-Launcher-<v>-x64.exe`, which every release also carries, 9.7) goes to `%LOCALAPPDATA%\AnyPS5\Updates` under its final name only after that. There is no fallback to the unsigned `SHA256SUMS.txt` flow. The format, the rules, the migration and the key ceremony are in [UPDATES.md](UPDATES.md).
+- **Swap.** Windows cannot overwrite a running exe but can rename it. The staged file is copied beside the running exe (`<name>.new`, it may be on another drive), hashed again, the running exe is renamed to `<name>.old`, the copy takes its place. A failure in the second step moves the old one back. The next start deletes `.old` files and stale downloads (one still in use stays until a later start). It works for the installed exe (`%LOCALAPPDATA%\Programs\AnyPlay Launcher`, or `...\AnyPS5 Launcher` for an install from v0.1.x) and for the portable exe in any writable folder. The swap keeps the exe's file name; nothing depends on it. A folder that refuses new files is reported before anything is downloaded.
+- **Where the player sees it.** An update is visible in two places, and never as a toast or a progress bar in the way.
+  - *About*, under *Version* (which always shows the version that runs): the row *Launcher Update* with one short value and, under it, one sentence and at most one row that acts. Checking: "Checking…". Nothing newer: "Up to date" and *Check Now*. Downloading: "Downloading 42%", then "Verifying"; this is the only place with progress. Ready: "0.2.5 ready", "Restart now, or it installs the next time you close the launcher.", *Restart Now* and *What's New in 0.2.5*. Held for a game: "Waiting for your game", *Cancel Restart*. A read-only folder, a release that was refused (signature, expiry, hash, size) or any other failure: "Not installed" or "0.2.5 available" with the one thing to do, *Download from GitHub*. Offline: "Not reachable" and *Check Now*; the launcher tries again by itself. A refusal is logged and says nothing anywhere else.
+  - *The notice on the home screen*, after the title, only while a verified update waits and the player has not sent it away: "Launcher 0.2.5 is ready" with *Restart Now* (the one primary button) and *Later*. *Later* hides it until the next start; the About row stays. While a restart waits for a game, the notice says "Restarts when your game closes" with *Cancel Restart*. The pad reaches it from the library button (left of it), so every action has a key and a pad path. It is out of the way of the top bar and only appears where it fits.
+- **Restart Now.** Closes the launcher, swaps, starts the new exe with the same flags and **opens where the player was**: the link of the selected game (`anyps5://game/<TITLEID>`, which selects it again) or, from the settings, `anyps5://settings/about`. It never interrupts a running game: while a game runs or starts, the restart is held, the About row and the notice say so, and it goes ahead the moment no game runs. Closing the launcher by hand still installs the update, without starting it again.
+- **What's New.** The notes of the staged release are taken from the release data the check fetched anyway (display only; nothing is decided by them) and shown in the same full-screen panel as the toolkit's notes: every `###` heading of the release is a group, every bullet a line, all groups unfolded. *Back* returns to About.
+- **Not done.** The exe is not code-signed (Windows SmartScreen); that costs money and is the owner's decision. Provenance (GitHub attestations) is separate, see UPDATES.md.
 
 ### 9.6 Deep links, single instance and folder entry
 
@@ -2187,7 +2360,7 @@ The shared UI layer of this specification. Screens use these modules and nothing
 | `components` | `ConsoleButton`, `IconButton`, `Switch`, `ProgressLine`, `IndeterminateLine`, hint bar, key caps, `PadGlyph`, focus glow and ring |
 | `chrome` | `paint_tile` (5.1), `info_card` / `facts_line` (5.3), `PanelRow` with all kinds (5.8), `side_panel` (5.9), `fullscreen_panel`, `toast` (5.6), `language_card`, `onboarding_dots` |
 | `text`, `icons` | line height, tracking, middle truncation, tabular figures; Phosphor constants (5.16) |
-| `sound` | section 7.3 (replaces 7.1): five cues rendered once, home music generated live, one mixer on its own thread, lazy device |
+| `sound` | section 7.3 (replaces 7.1): eight cues rendered once, home music generated live, one mixer on its own thread, lazy device |
 | `i18n` | section 8: 212 keys, `Language::text/format`, `byte_text`, Windows replacements of 9.3 applied |
 | `input`, `focus`, `gamepad` | section 6: `Command`, `Input::poll`, `HomeFocus::navigate`, `PanelNav::command` |
 | `gallery` | hidden `--gallery[=components|panels|themes|bg0|bg1|bg2] [--screenshot=out.png] [--size=WxH] [--time=T]` |
@@ -2203,7 +2376,7 @@ Decisions made while implementing:
   blurred backdrop with saturation 1.25 and a 6 % white tint (both estimates, tune against the original).
 - **Keyboard repeat** of select/back/options is suppressed (a held Enter must not re-fire); held arrows repeat at the OS rate.
 - **Row padding**: panel rows keep 10 dp above and below their text even when the title wraps (the original has none).
-- The gamepad thread only translates events; the 0.38 s / 0.085 s repeat runs on the UI clock (`input::Repeater`).
+- The gamepad thread only translates events; the 0.36 s / 0.10 s / 0.06 s repeat runs on the UI clock (`input::Repeater`).
 
 ---
 
@@ -2321,10 +2494,11 @@ Rows keep their identity by their `RowId` and their place among rows of the same
 Hints that explain a text field or a toggle stand under it with the normal 8 dp row gap, not attached: the focused row grows 3 dp and would touch an attached note. A command waiting for the net service says "Sending…" in its detail line.
 
 **Profile screen** (`screens::profile`, its host `app::panels::profile`, the return path `app::profile`; network `spec/cloud-api.md` Profiles, ADR 0024). A full-screen overlay (`Overlay::Profile`) for a player's profile, the player's own or another's, on the frame of the trophy list: glass, 90 dp of side padding, the hint bar at the top right. It replaced the profile page of the side panel, whose banner is gone. `profile` answers a `ProfilePage`: the parts the player may see (`about`, `favourites`, `avatar`, `playtime`), the trophy counts (null when hidden) and the linked accounts. What is shown is decided in `screens::profile::view`, a function from what the launcher knows to plain data (`ProfileView`), and tested without a window; the painter decides nothing.
-  - *Entry and Back.* The profile button of the top bar (own, once signed in), Your Profile on the online Home, View Profile on a friend's page, and a card of the feed (the account of the card). Back leaves for where the player came from (`app::profile::Back`): Home for the button; for the others the online panel opens again on the page it was left on, with the focus on the row it was on. Signed out, the button keeps its old meaning and opens sign-in. On the player's own profile the buttons under the name are Edit Profile (opens the account web, as before; the one prominent button) and Friends & Online (the online panel on its first page: friends, requests, messages, parties, the account and its settings). On a friend's: Friend Options (their page in the panel: Join Game, Message, Invite, Remove, Block, Report). On someone who asked: Answer Request. On a stranger: Add Friend. Entering through a profile never closes the way back to anything the old page offered.
-  - *Header.* One column, no banner: the avatar (120 dp; the first letter of the handle on one of six calm colours without a picture), the handle as the title (40 light), under it a line with a chip for how you know each other ("Friend", "Request sent", "Wants to be friends"; nothing for a stranger or for yourself) and the status (their presence: Online, Playing a game, Offline, with a dot in the accent while they are online; for the own profile "This is what other players see"), then the text about them (17, white 86 %, at most three lines, 640 dp wide; the status line above it is the small one: 15 medium, 70 %), then the buttons. On a friend's profile a quiet line under the text says what only a friend's page can: "You have 3 of their games" (their titles that are in the player's library; left out at none). "Playing Neon Orchard" says what they play and nothing about joining: the profile has no Join button (that is on their page in the panel, one press away through Friend Options). The only colour that is the player's own is a soft wash behind the top-left of the page: the avatar's colour (`banner_colour`, or the monogram's colour) at 22 % in the corner, to nothing 520 dp down and 70 % across; text keeps its contrast with the glass because the wash is never stronger than that. Behind the 120 dp avatar and the handle it is the one thing on the page that could only be this player's.
-  - *Figures.* On the right of the header, plain, no boxes: games, hours (minutes below one hour), trophies, each a 34 light tabular figure over a small tracked label, the trophies with their grades as four coloured trophy glyphs and counts under the label (platinum first, a grade without trophies left out). Points are not shown: the launcher has no points of its own and does not invent them. A figure whose part is hidden is left out and the others close ranks; with only one figure left there is no strip at all (one number alone only repeats the caption of its section).
+  - *Entry and Back.* The profile button of the top bar (own, once signed in), Your Profile on the online Home, View Profile on a friend's page, and a card of the feed (the account of the card). Back leaves for where the player came from (`app::profile::Back`): Home for the button; for the others the online panel opens again on the page it was left on, with the focus on the row it was on. Signed out, the button keeps its old meaning and opens sign-in. On the player's own profile the buttons under the name are Edit Profile (opens the account web, as before; the one prominent button), Friends & Online and, while the cloud answers, **Appear Offline** (Appear Online while it is on; the same button both ways, `Press::AppearOffline`) (the online panel on its first page: friends, requests, messages, parties, the account and its settings). On a friend's: Friend Options (their page in the panel: Join Game, Message, Invite, Remove, Block, Report). On someone who asked: Answer Request. On a stranger: Add Friend. Entering through a profile never closes the way back to anything the old page offered.
+  - *Header.* One column, no banner: the avatar (120 dp; the first letter of the handle on one of six calm colours without a picture), the handle as the title (40 light), under it a line with a chip for how you know each other ("Friend", "Request sent", "Wants to be friends"; nothing for a stranger or for yourself) and the status (their presence: Online, Playing a game, Offline, with a dot in the accent while they are online; for the own profile "This is what other players see", and "Appearing offline · This is what other players see" while appearing offline, without a dot), then the text about them (17, white 86 %, at most three lines, 640 dp wide; the status line above it is the small one: 15 medium, 70 %), then the buttons. On a friend's profile a quiet line under the text says what only a friend's page can: "You have 3 of their games" (their titles that are in the player's library; left out at none). "Playing Neon Orchard" says what they play and nothing about joining: the profile has no Join button (that is on their page in the panel, one press away through Friend Options). The only colour that is the player's own is a soft wash behind the top-left of the page: the avatar's colour (`banner_colour`, or the monogram's colour) at 22 % in the corner, to nothing 520 dp down and 70 % across; text keeps its contrast with the glass because the wash is never stronger than that. Behind the 120 dp avatar and the handle it is the one thing on the page that could only be this player's.
+  - *Figures.* On the right of the header, plain, no boxes: games, hours (minutes below one hour), trophies, each a 34 light tabular figure over a small tracked label, the trophies with their grades as four coloured trophy glyphs and counts under the label (platinum first, a grade without trophies left out). After the trophies comes **Level**: the level (34 light) over its label, under it the points ("1,240 points", 14 medium tabular) and a 96 dp or text-wide track with the way to the next level in the accent. Level, points and the track are the cloud's (`ProfilePage.level`, network ADR 0029); the launcher only draws the fraction, and without the cloud's answer (hidden trophies, loading, offline) there is no Level. A figure whose part is hidden is left out and the others close ranks; with only one figure left there is no strip at all (one number alone only repeats the caption of its section).
   - *Sections.* Games, Recent Trophies and Recent Activity, in at most two columns, and a section with nothing to show for another player is not there at all, so no one sees that a part was hidden: three sections put the games on the left (45 % of the width) and the other two stacked on the right; two sections one column each; one stands on the left. The own profile keeps all three and says in one sentence what fills an empty one ("Earn a trophy in a game and it shows up here."). A section has a 20 semibold caption (with the count of games in 14 beside it), rows 8 dp apart and 40 dp between sections. Nothing sits in a box at rest: a row is text on the page; the pointer makes it a faint surface (white 7 %), the focus makes it the white card of every list (3 dp grow, dark ink, shadow).
+  - *Compare.* A game row of another player's profile whose trophies the player may see and that is in the player's library says "Compare trophies" in its detail and opens the trophy compare screen (it replaces "open on Home" for these rows; the player's own games and rows without trophies keep it).
   - *Games.* The own profile lists the library from this PC, the last played first, then the most played: the art (52 dp), the name, "42 h · Last played 2 h ago" (or "Not played yet"), and at the end the trophy progress as "9/40" with a 4 dp bar in the accent under it (counted from the trophy file once read). Another player's: their titles from `playtime` and `favourites`, favourites first in their order, then by time (at most eight; the figure counts them all): the name and a detail ("Favourite", "Not in your library") and at the end their time. **A game's name and art come only from the player's own copy**: a title the player does not have is a neutral tile with its title ID as the name and no press; one they have opens on Home with that game selected.
   - *Trophies.* The own profile: the five newest earned trophies from the trophy files (first set only, as the network records), by name, the game and when. Another player's: the trophy items of their feed, a trophy named from the player's own copy of the game ("First Light") or, without one, "Gold trophy", the game's name or "In a game", when, and at the end the rarity ("Rare, 2.3%") when the cloud has one. A grade is a 44 dp tile in the grade's colour (glyph and a 14 % wash) and never colour alone: the words carry it too ("Gold trophy" for an unnamed one; "Gold · Ember Drift · 40 min ago" under a named one). The rarity is the last part of that line ("… · Rare, 2.3%"), not a fact hanging at the far end of the row. Select on another player's trophy opens the feed on that item, where the reactions are; on the player's own trophy it opens the game on Home.
   - *Activity.* Their feed items without the trophies (those have their own section): avatar (36 dp), the sentence with the handle ("Lumen earned a gold trophy in …", "You and Sol are friends now"), the time and the reactions that were given ("GG 3 · Same 1"; read only). Select opens the feed on that item.
@@ -2334,7 +2508,13 @@ Hints that explain a text field or a toggle stand under it with the normal 8 dp 
   - *Trophy names.* Never from the cloud. A sentence names a trophy only when the player has the game, its trophy file is read (`Effect::LoadTrophies`, off the UI thread, once per game) and the trophy is not hidden, or hidden and earned by the player.
   - *Words.* Sentence-style notes, title-case buttons and captions, no exclamation marks. English and Turkish in `profile_strings.rs` and `online_feed_strings.rs`.
 
-Gallery scenes (1600 x 900 and 1920 x 1200): `profile-own`, `profile-own-focus`, `profile-own-end` (scrolled to the last row, the header faded), `profile-friend`, `profile-friend-hidden` (trophies and playtime hidden), `profile-request`, `profile-new` (a new account's own profile), `profile-new-friend`, `profile-private`, `profile-loading`, `profile-error`, `profile-offline`.
+**Trophy compare** (`screens::compare`, view `screens::compare::view`, host `app::panels::compare`, state `app::compare`; network `spec/cloud-api.md` Comparing, ADR 0029; control command `compare`). A full-screen overlay (`Overlay::Compare`) on the frame of the trophy list: the game's art and name (36 light) with "Compare Trophies" over it and "With Lumen" under it; on the right two heads over two 236 dp columns, each with avatar and name ("You" or the handle), "Level 9 · 915 points" with the track to the next level, the game's trophies by grade, and "130 points in this game"; then one row per trophy (picture 52 dp, name, "Gold · what it asks for") with, in each column, a check and the day it was earned or "Not yet". Everything numeric is the cloud's. **Names, texts and pictures come only from the player's own trophy file**; for a game that is not in the library the rows read "Trophy 4", the grade, and one quiet line says why. A hidden trophy the player has not earned is a secret in both columns ("Hidden Trophy", a lock, the Show pill on the focused row; select or Show reveals it and sends `reveal_trophies`, as on the trophy list); "Always Show Hidden Trophies" shows it. The other column is what that player's profile shows the player, so their secrets are not in it. States, one block of words under the header: loading, offline ("You are offline"), failed (Try Again, the one focus stop), hidden ("Their trophies are hidden"), empty ("Nothing to compare yet"). Up and down walk the rows, Back and Options return to the profile on the row it was left from. English and Turkish in `compare_strings.rs`.
+
+**Appear Offline** (network ADR 0028, control command `set_appear_offline`, `account.appear_offline` of the `state` event). `Online::set_appear_offline` shows the choice at once, a refusal takes it back with a toast, and the `state` event settles it (also when another device changes it). Where it shows: the switch "Appear Offline" (detail "Friends see you as offline") on the Account page of the online panel; the button on the own profile; "Appearing offline" in the panel's subtitle, the profile's status line and, in quiet ink (white 72 %), after the name in the top bar's profile pill, whose accent dot becomes a ring while it is on (its accessible name says "Appearing offline" instead of "Online"). Offline from the cloud the player is simply offline: nothing is shown.
+
+**Secret trophies.** The launcher tells the cloud which hidden trophies of a game the player has not earned (`secret_trophies`, once per title and sign-in, whenever the trophy file is read). An earned trophy is never secret: the hidden ones the player has earned are revealed (`reveal_trophies`) as soon as the trophy file shows them earned, as consoles do. The player reveals an unearned one by showing it on the trophy list or the compare screen.
+
+Gallery scenes (1600 x 900 and 1920 x 1200): `profile-own-appearing`, `profile-friend-compare`, `online-account-appearing`, `home-appearing` (the real home with the pill), `compare`, `compare-secret`, `compare-revealed`, `compare-numbers`, `compare-loading`, `compare-offline`, `compare-error`, `compare-hidden`, `compare-empty`, and `profile-own`, `profile-own-focus`, `profile-own-end` (scrolled to the last row, the header faded), `profile-friend`, `profile-friend-hidden` (trophies and playtime hidden), `profile-request`, `profile-new` (a new account's own profile), `profile-new-friend`, `profile-private`, `profile-loading`, `profile-error`, `profile-offline`.
 
 **Feed page.** `feed` answers a page of items; `react` sets or takes back the player's one reaction. The page asks when it opens (and for the player's own profile, for the avatar), again for each `feed` event, and for older items near the end of the list.
   - *Card.* A card is a row's surface: 40 dp avatar, the handle ("You" for the player's own items; 17 medium) with the time at the trailing edge (13), one sentence (14, at most three lines) and, for a trophy with a rarity, a line with the grade's trophy icon in its colour and "Rare, 2.3%"; under them the four reactions Nice, GG, Wow and Same as 36 dp pills 12 dp apart, all of one width so the columns line up from card to card, each with its count when it is above zero (99+ above ninety-nine). The player's own reaction is stronger (22 % of the ink instead of 9 %) and carries a check, so it never rests on colour alone. The sentences: "earned the gold trophy “First Light” in Ember Drift", "earned a gold trophy in Ember Drift" (trophy not readable here), "earned a gold trophy in a game" (game not owned), "became friends with Nox", "played Paper Moon for the first time" or "played a game for the first time", "started a party with Nox and Kit". Rarity steps: under 1 % Extremely rare, under 5 % Rare, under 20 % Uncommon, else Common; none below ten players. Times: Just now, 5 min ago, 3 h ago, Yesterday, 3 d ago, then the day (Oct 12).

@@ -29,6 +29,8 @@ pub mod advanced;
 pub mod banner;
 pub mod calls;
 pub mod clips_strings;
+pub mod compare;
+pub mod compare_strings;
 pub mod controls;
 pub mod convert;
 pub mod dialogs;
@@ -71,6 +73,7 @@ pub mod strings;
 pub mod toolkit_pin;
 pub mod trophies;
 pub mod unlock;
+pub mod update_strings;
 pub mod whatsnew;
 
 pub use shared::*;

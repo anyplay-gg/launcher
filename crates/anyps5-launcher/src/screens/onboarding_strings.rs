@@ -23,7 +23,7 @@ impl OnboardingText {
 
     pub const fn english(self) -> &'static str {
         match self {
-            OnboardingText::OnlineTitle => "Play together",
+            OnboardingText::OnlineTitle => "Play Together",
             OnboardingText::OnlineSubtitle => {
                 "Sign in to see your friends, join their parties and calls, and keep your trophies on your profile. Signing in opens your browser for a moment."
             }
@@ -34,7 +34,7 @@ impl OnboardingText {
 
     pub const fn turkish(self) -> &'static str {
         match self {
-            OnboardingText::OnlineTitle => "Birlikte oyna",
+            OnboardingText::OnlineTitle => "Birlikte Oyna",
             OnboardingText::OnlineSubtitle => {
                 "Arkadaşlarını görmek, partilerine ve aramalarına katılmak ve kupalarını profilinde tutmak için giriş yap. Giriş için tarayıcın kısa bir süre açılır."
             }

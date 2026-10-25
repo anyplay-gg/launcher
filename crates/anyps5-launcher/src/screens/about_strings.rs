@@ -9,6 +9,8 @@ pub const DISCORD: &str = "https://discord.gg/9zYqf8fEsh";
 pub const PRIVACY: &str = "https://anyplaynet.com/privacy";
 pub const TERMS: &str = "https://anyplaynet.com/terms";
 pub const PAGES: [&str; 4] = [WEBSITE, DISCORD, PRIVACY, TERMS];
+/// The install guide, which Settings opens from the glibc note (Linux): which systems work.
+pub const INSTALL_GUIDE: &str = "https://github.com/anyplaynet/launcher/blob/main/docs/INSTALL.md";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum AboutText {
@@ -80,6 +82,11 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_install_guide_is_ours_and_secure() {
+        assert!(INSTALL_GUIDE.starts_with("https://github.com/anyplaynet/"));
     }
 
     #[test]

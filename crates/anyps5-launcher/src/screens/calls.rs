@@ -199,6 +199,13 @@ impl CallsUi {
     }
 }
 
+/// A call is ringing: the card's buttons keep Tab. The strip of a call in progress does not need
+/// it (Mute, Deafen and Leave Call are rows of the Online panel), so Tab keeps walking the ring
+/// for as long as the call lasts.
+pub fn ringing(online: &net::Online) -> bool {
+    card_data(online, unix_now()).is_some()
+}
+
 /// The call that rings now, if any.
 pub fn card_data(online: &net::Online, now: u64) -> Option<CardData> {
     let invitation = online.incoming_call(now)?;
