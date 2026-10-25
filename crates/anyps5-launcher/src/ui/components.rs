@@ -85,12 +85,19 @@ pub fn paint_focus_stroke(painter: &Painter, rect: Rect, radius: f32, width: f32
     let t = t.clamp(0.0, 1.0);
     if t > 0.001 {
         let width = snap_width(painter, width);
-        // A hairline of shade outside the ring keeps it visible on a light picture.
+        // A hairline of shade in the gap keeps the ring apart from a light fill and one outside it keeps
+        // it visible on a light picture.
+        painter.add(RectShape::stroke(
+            snap_rect(painter, rect.expand(1.0)),
+            corner(radius + 1.0),
+            Stroke::new(snap_width(painter, 1.0), black(0.30 * t)),
+            StrokeKind::Inside,
+        ));
         let outer = width * 1.6 + 1.0;
         painter.add(RectShape::stroke(
             snap_rect(painter, rect.expand(outer)),
             corner(radius + outer),
-            Stroke::new(1.0, black(0.35 * t)),
+            Stroke::new(snap_width(painter, 1.0), black(0.35 * t)),
             StrokeKind::Inside,
         ));
         painter.add(RectShape::stroke(
@@ -213,8 +220,13 @@ pub fn interact(
     let focus = ui.ctx().focus_t((id, "focus"), focused && enabled);
     let (rect, response) = ui.allocate_exact_size(size, sense);
     debug_assert_eq!(response.id, id);
+    // The pointer only counts while it is the device in use: with a gamepad, a resting mouse must
+    // not leave a second control lit beside the focused one.
+    let pointer_in_use = input::device(ui.ctx()) != Device::Gamepad;
     let hovered = enabled
-        && (response.hovered() || force == Some(Force::Hover) || force == Some(Force::Press));
+        && ((response.hovered() && pointer_in_use)
+            || force == Some(Force::Hover)
+            || force == Some(Force::Press));
     let pressed = enabled && (response.is_pointer_button_down_on() || force == Some(Force::Press));
     let ctx = ui.ctx();
     let hover = ctx.animate_to(
@@ -376,7 +388,13 @@ pub fn paint_control(
             ),
         );
     }
-    paint_focus_ring(painter, rect, radius, it.focus * a);
+    // The primary has no hairline to brighten: under the pointer it draws the ring at 45 %, like a tile.
+    let ring = if variant == Variant::Primary {
+        it.focus.max(0.45 * it.hover)
+    } else {
+        it.focus
+    };
+    paint_focus_ring(painter, rect, radius, ring * a);
     ink
 }
 
@@ -1203,8 +1221,8 @@ pub fn hint_bar_size(painter: &Painter, language: Language, options: bool) -> (f
 }
 
 /// A key cap of the controls panel: 30 x 28 minimum, radius 7, 13.5 semibold, 1 px stroke at 0.18.
-/// `keyboard` keys fill at 0.12, mouse and wheel sources at 0.06; `focus` (0..=1, the row's focus amount) inverts to black.
-pub fn key_cap(ui: &mut Ui, label: &str, keyboard: bool, focus: f32) -> Response {
+/// `keyboard` keys fill at 0.12, mouse and wheel sources at 0.06; `focus` (the row's focus amount) is kept for callers: the ink no longer inverts.
+pub fn key_cap(ui: &mut Ui, label: &str, keyboard: bool, _focus: f32) -> Response {
     let painter = ui.painter().clone();
     let galley = text::layout(
         &painter,
@@ -1217,7 +1235,7 @@ pub fn key_cap(ui: &mut Ui, label: &str, keyboard: bool, focus: f32) -> Response
     let height = size::KEYCAP_MIN.1.max(galley.size().y);
     let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
     if ui.is_rect_visible(rect) {
-        let ink = mix(Color32::WHITE, Color32::BLACK, focus);
+        let ink = Color32::WHITE;
         let fill = fade(ink, if keyboard { 0.12 } else { 0.06 });
         painter.rect_filled(rect, corner(radius::KEYCAP), fill);
         paint_hairline(&painter, rect, radius::KEYCAP, fade(ink, 0.18));

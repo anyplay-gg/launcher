@@ -160,6 +160,10 @@ pub struct GameTarget {
 pub trait Pipeline {
     /// The toolkit version unlocked copies are compared against; `None` when this PC has no toolkit.
     fn toolkit_version(&self) -> Option<String>;
+    /// The glibc the toolkit needs against the system's, when the system's is older (Linux).
+    fn glibc_shortfall(&self) -> Option<anyps5_core::glibc::Shortfall> {
+        None
+    }
     /// Runs a command. Never blocks.
     fn submit(&mut self, command: PipelineCommand, cx: &PipelineContext<'_>);
     /// Events since the last call. `now` is the UI clock in seconds.
@@ -227,6 +231,8 @@ pub struct SimPipeline {
     pub fail_with: Option<String>,
     /// The releases the simulation has beside its own (a game can stay on one of them).
     pub installed: Vec<String>,
+    /// A glibc shortfall to show (the gallery has no Linux toolkit to read).
+    pub glibc: Option<anyps5_core::glibc::Shortfall>,
 }
 
 impl SimPipeline {
@@ -241,6 +247,7 @@ impl SimPipeline {
             window_seconds: 2.5,
             fail_with: None,
             installed: Vec::new(),
+            glibc: None,
         }
     }
 }
@@ -248,6 +255,10 @@ impl SimPipeline {
 impl Pipeline for SimPipeline {
     fn toolkit_version(&self) -> Option<String> {
         Some(self.version.clone())
+    }
+
+    fn glibc_shortfall(&self) -> Option<anyps5_core::glibc::Shortfall> {
+        self.glibc
     }
 
     fn pinned_toolkit(&mut self, pin: &str, _global: Option<&str>) -> GameToolkit {

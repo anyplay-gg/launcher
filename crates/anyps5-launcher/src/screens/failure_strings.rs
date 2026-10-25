@@ -16,7 +16,7 @@ impl FailureText {
     pub const fn english(self) -> &'static str {
         match self {
             FailureText::UnlockStopped => {
-                "Unlocking stopped. Try again. If it stops again, Options > Log shows why, and Report a Problem sends it to us."
+                "Unlocking stopped. Try again. If it stops again, Options > Log shows why, and Report a Problem sends it to us."
             }
         }
     }

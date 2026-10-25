@@ -182,6 +182,7 @@ impl LauncherApp {
         let simulated = !config.persist;
         let mut model = Model::new(config.prefs, config.paths, config.persist);
         model.toolkit = config.pipeline.toolkit_version();
+        model.glibc = config.pipeline.glibc_shortfall();
         let repaint = ctx.clone();
         let wake: std::sync::Arc<dyn Fn() + Send + Sync> =
             std::sync::Arc::new(move || repaint.request_repaint());
@@ -260,6 +261,7 @@ impl LauncherApp {
             self.model.on_core(event);
         }
         self.model.toolkit = self.pipeline.toolkit_version();
+        self.model.glibc = self.pipeline.glibc_shortfall();
         self.model.game_toolkits = self.pinned_toolkits();
         self.model.patches_dir = self.pipeline.patches_dir();
         for event in self.pipeline.poll(now) {
