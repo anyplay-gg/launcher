@@ -1041,6 +1041,8 @@ impl Online {
                 offers,
                 watching,
             } => notices.extend(self.screen_event(can_share, can_watch, hosting, offers, watching)),
+            // The feed has changed: the feed views fetch it with `feed` when they open.
+            Event::Feed => {}
             Event::Unknown => {}
         }
         notices
