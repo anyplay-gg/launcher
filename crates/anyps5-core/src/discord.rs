@@ -34,7 +34,7 @@ const IMAGE_TEXT: &str = "AnyPlay";
 /// each address up to 512, both over https.
 pub const JOIN_LABEL: &str = "Join on AnyPlay";
 pub const GET_LABEL: &str = "Get AnyPlay";
-pub const GET_URL: &str = "https://github.com/anyplay-gg/launcher/releases/latest";
+pub const GET_URL: &str = "https://github.com/anyplaynet/launcher/releases/latest";
 const MAX_LABEL: usize = 32;
 const MAX_BUTTON_URL: usize = 512;
 const _: () = assert!(JOIN_LABEL.len() <= MAX_LABEL && GET_LABEL.len() <= MAX_LABEL);

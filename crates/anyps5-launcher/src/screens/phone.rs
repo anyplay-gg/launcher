@@ -20,7 +20,7 @@ pub const REMOVE_ROWS: [&str; 8] = [
 pub const VIGEM_DOWNLOAD: &str = "https://github.com/nefarius/ViGEmBus/releases/latest";
 /// The guide for the Linux side.
 pub const UINPUT_GUIDE: &str =
-    "https://github.com/anyplay-gg/launcher/blob/main/docs/DESIGN.md#18-phone-as-controller";
+    "https://github.com/anyplaynet/launcher/blob/main/docs/DESIGN.md#18-phone-as-controller";
 
 /// What the host has to do after a change on this page.
 #[derive(Clone, Debug, PartialEq, Eq)]

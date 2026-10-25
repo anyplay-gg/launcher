@@ -16,7 +16,7 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: "ci"
-  # The online crates are path dependencies on ../network (anyplay-gg/network, checked out beside
+  # The online crates are path dependencies on ../network (anyplaynet/network, checked out beside
   # the launcher in CI). Dependabot checks out this repository alone, so it may report that it
   # cannot resolve them; see docs/supply-chain.md.
   - package-ecosystem: cargo

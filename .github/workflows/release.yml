@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       network_ref:
-        description: The anyplay-gg/network commit to build the net service from (full SHA); empty takes the repository variable NETWORK_REF, then network.ref
+        description: The anyplaynet/network commit to build the net service from (full SHA); empty takes the repository variable NETWORK_REF, then network.ref
         required: false
 
 # Nothing writes by default; the one job that publishes asks for what it needs (see `publish`).
@@ -36,7 +36,7 @@ jobs:
   notices:
     runs-on: ubuntu-latest
     outputs:
-      # The exact anyplay-gg/network commit of the pin (network.ref), resolved once. Every job below builds
+      # The exact anyplaynet/network commit of the pin (network.ref), resolved once. Every job below builds
       # from it, so the files of one release cannot come from two revisions of main.
       network: ${{ steps.network.outputs.commit }}
     defaults:
@@ -47,7 +47,7 @@ jobs:
         with:
           persist-credentials: false
           path: launcher
-      # The anyplay-gg/network revision whose net service the launcher carries: the input of a run
+      # The anyplaynet/network revision whose net service the launcher carries: the input of a run
       # by hand, else the repository variable NETWORK_REF, else the commit in network.ref. A full
       # commit SHA, never a branch: a release is built from a revision somebody chose. Bump
       # network.ref by a pull request.
@@ -63,7 +63,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          repository: anyplay-gg/network
+          repository: anyplaynet/network
           ref: ${{ steps.network-pin.outputs.ref }}
           path: network
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
@@ -94,11 +94,11 @@ jobs:
         with:
           persist-credentials: false
           path: launcher
-      # The online crates come from anyplay-gg/network, checked out beside the launcher.
+      # The online crates come from anyplaynet/network, checked out beside the launcher.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          repository: anyplay-gg/network
+          repository: anyplaynet/network
           ref: ${{ needs.notices.outputs.network }}
           path: network
 
@@ -226,11 +226,11 @@ jobs:
         with:
           persist-credentials: false
           path: launcher
-      # The online crates come from anyplay-gg/network, checked out beside the launcher.
+      # The online crates come from anyplaynet/network, checked out beside the launcher.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          repository: anyplay-gg/network
+          repository: anyplaynet/network
           ref: ${{ needs.notices.outputs.network }}
           path: network
 
@@ -317,7 +317,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          repository: anyplay-gg/network
+          repository: anyplaynet/network
           ref: ${{ needs.notices.outputs.network }}
           path: network
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
@@ -365,7 +365,7 @@ jobs:
           {
             echo "AnyPlay Launcher $VERSION"
             echo "launcher: https://github.com/$GITHUB_REPOSITORY/commit/$GITHUB_SHA"
-            echo "network:  https://github.com/anyplay-gg/network/commit/$NETWORK_COMMIT (the net service inside the launcher)"
+            echo "network:  https://github.com/anyplaynet/network/commit/$NETWORK_COMMIT (the net service inside the launcher)"
             echo "workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           } > "dist/AnyPlay-Launcher-$VERSION-BUILD-INFO.txt"
           cat "dist/AnyPlay-Launcher-$VERSION-BUILD-INFO.txt"
@@ -527,7 +527,7 @@ jobs:
           path: dist
 
       # Signed provenance for every file of the release: which workflow, from which commit, built
-      # it. `gh attestation verify <file> --repo anyplay-gg/launcher` checks it (docs/UPDATES.md).
+      # it. `gh attestation verify <file> --repo anyplaynet/launcher` checks it (docs/UPDATES.md).
       - name: Attest the release files
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:

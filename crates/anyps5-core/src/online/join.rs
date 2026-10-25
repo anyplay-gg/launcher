@@ -13,7 +13,7 @@
 //! The code and its link are secrets of a sort (whoever has them can ask for an invitation), so
 //! nothing here prints them, `Debug` included.
 //!
-//! [ADR 0022]: https://github.com/anyplay-gg/network/blob/main/docs/adr/0022-a-join-link-asks-it-never-joins.md
+//! [ADR 0022]: https://github.com/anyplaynet/network/blob/main/docs/adr/0022-a-join-link-asks-it-never-joins.md
 
 use std::fmt;
 
