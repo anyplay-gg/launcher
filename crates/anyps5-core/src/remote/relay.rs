@@ -60,7 +60,12 @@ pub struct Relay {
     bridge_port: u16,
 }
 
-pub(super) fn bind_phone_socket(preferred: u16) -> io::Result<UdpSocket> {
+/// The LAN-facing UDP socket: every interface (dual-stack where IPv6 exists), or only `bind` when
+/// given (tests bind loopback, so no firewall prompt appears).
+pub(super) fn bind_phone_socket(bind: Option<IpAddr>, preferred: u16) -> io::Result<UdpSocket> {
+    if let Some(ip) = bind {
+        return UdpSocket::bind((ip, preferred)).or_else(|_| UdpSocket::bind((ip, 0)));
+    }
     for port in [preferred, 0] {
         if let Ok(socket) = Socket::new(Domain::IPV6, Type::DGRAM, Some(Protocol::UDP))
             && socket.set_only_v6(false).is_ok()
@@ -85,8 +90,14 @@ fn bind_bridge_socket(preferred: u16) -> io::Result<UdpSocket> {
 
 impl Relay {
     /// `phone_port` and `bridge_port` are preferences; a busy port falls back to a random one.
-    pub fn start(phone_port: u16, bridge_port: u16, on_ready: ReadyCallback) -> io::Result<Relay> {
-        let phone_socket = bind_phone_socket(phone_port)?;
+    /// `bind` limits the phone socket to one address (`None`: every interface).
+    pub fn start(
+        bind: Option<IpAddr>,
+        phone_port: u16,
+        bridge_port: u16,
+        on_ready: ReadyCallback,
+    ) -> io::Result<Relay> {
+        let phone_socket = bind_phone_socket(bind, phone_port)?;
         let bridge_socket = bind_bridge_socket(bridge_port)?;
         for socket in [&phone_socket, &bridge_socket] {
             socket.set_read_timeout(Some(Duration::from_millis(100)))?;
@@ -296,7 +307,7 @@ mod tests {
     }
 
     fn relay() -> Relay {
-        Relay::start(0, 0, Arc::new(|_| {})).unwrap()
+        Relay::start(Some(Ipv4Addr::LOCALHOST.into()), 0, 0, Arc::new(|_| {})).unwrap()
     }
 
     fn recv(socket: &UdpSocket) -> Option<Vec<u8>> {

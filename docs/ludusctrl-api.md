@@ -21,6 +21,7 @@ pub struct LudusConfig {
     pub port: u16,                    // LUDUS_PORT
     pub beacon: Option<BeaconTarget>, // Some(BeaconTarget::default()) = broadcast to 255.255.255.255:45990; None = no beacon
     pub allow_all: bool,              // pair without asking (tests only)
+    pub bind: Option<IpAddr>,         // None = every interface (the launcher); tests bind 127.0.0.1
 }
 impl LudusConfig { pub fn new(store_file: PathBuf) -> LudusConfig }
 

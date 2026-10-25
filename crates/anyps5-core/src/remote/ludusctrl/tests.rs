@@ -71,6 +71,7 @@ fn rig() -> Rig {
     };
     let mut config = LudusConfig::new(dir.path().join("LudusCtrl.json"));
     config.port = 0;
+    config.bind = Some(Ipv4Addr::LOCALHOST.into());
     config.beacon = Some(BeaconTarget {
         to,
         from: Some(vec![Ipv4Addr::LOCALHOST]),

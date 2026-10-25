@@ -21,7 +21,7 @@ pub mod vpad;
 use std::{
     collections::BTreeMap,
     io,
-    net::Ipv4Addr,
+    net::{IpAddr, Ipv4Addr},
     path::PathBuf,
     sync::{
         Arc,
@@ -91,6 +91,9 @@ pub struct RemoteConfig {
     pub control_port: u16,
     /// Pair every phone without asking (tests only).
     pub allow_all: bool,
+    /// Listen on this address only; `None` is every interface. Tests bind loopback, so a test
+    /// run never asks the firewall for a port.
+    pub bind: Option<IpAddr>,
 }
 
 impl RemoteConfig {
@@ -101,6 +104,7 @@ impl RemoteConfig {
             advertise: true,
             control_port: CONTROL_PORT,
             allow_all: false,
+            bind: None,
         }
     }
 }
@@ -140,11 +144,12 @@ impl RemoteServer {
         let stop = Arc::new(AtomicBool::new(false));
         let ready_events = events.clone();
         let relay = Arc::new(Relay::start(
+            config.bind,
             PHONE_UDP_PORT,
             BRIDGE_PORT,
             Arc::new(move |ready| ready_events.pad_ready(ready)),
         )?);
-        let listener = control::bind_listener(config.control_port)?;
+        let listener = control::bind_listener(config.bind, config.control_port)?;
         let control_port = listener.local_addr()?.port();
         let (hub_tx, hub_rx) = channel();
         control::spawn_listener(listener, hub_tx.clone(), stop.clone())?;
@@ -177,6 +182,9 @@ impl RemoteServer {
                     (None, lan_addresses(), Some(error))
                 }
             }
+        } else if config.bind.is_some() {
+            // Bound to one address: no LAN address to show (and no socket opened to find one).
+            (None, Vec::new(), None)
         } else {
             (None, lan_addresses(), None)
         };

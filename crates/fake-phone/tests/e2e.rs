@@ -60,6 +60,7 @@ fn rig() -> Rig {
     let mut config = RemoteConfig::new("Test PC".into(), dir.path().join("RemoteDevices.json"));
     config.advertise = false;
     config.control_port = 0;
+    config.bind = Some(std::net::Ipv4Addr::LOCALHOST.into());
     let server = RemoteServer::start(config, Arc::new(Recorder(Mutex::new(tx)))).unwrap();
     server.publish(Message::Library {
         games: vec![],

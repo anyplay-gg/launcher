@@ -125,6 +125,9 @@ pub struct LudusConfig {
     pub beacon: Option<BeaconTarget>,
     /// Pair every phone without asking (tests only).
     pub allow_all: bool,
+    /// Listen on this address only; `None` is every interface. Tests bind loopback, so a test
+    /// run never asks the firewall for a port.
+    pub bind: Option<IpAddr>,
 }
 
 impl LudusConfig {
@@ -134,6 +137,7 @@ impl LudusConfig {
             port: LUDUS_PORT,
             beacon: Some(BeaconTarget::default()),
             allow_all: false,
+            bind: None,
         }
     }
 }
@@ -175,7 +179,7 @@ impl LudusServer {
         config: LudusConfig,
         events: Arc<dyn LudusEvents>,
     ) -> Result<LudusServer, RemoteError> {
-        let socket = bind_phone_socket(config.port)?;
+        let socket = bind_phone_socket(config.bind, config.port)?;
         socket.set_read_timeout(Some(TICK))?;
         let port = socket.local_addr()?.port();
         if port != config.port {

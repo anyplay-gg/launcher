@@ -70,6 +70,7 @@ fn rig(allow_all: bool) -> Rig {
     config.advertise = false;
     config.control_port = 0;
     config.allow_all = allow_all;
+    config.bind = Some(std::net::Ipv4Addr::LOCALHOST.into());
     let server = RemoteServer::start(config, Arc::new(Recorder(Mutex::new(tx)))).unwrap();
     Rig {
         server,
