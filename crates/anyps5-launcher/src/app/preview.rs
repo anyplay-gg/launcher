@@ -1028,6 +1028,7 @@ impl eframe::App for PreviewApp {
             crate::ui::input::set_device(&ctx, crate::ui::input::Device::Gamepad);
         }
         self.inner.paint(ui);
+        self.inner.finish_frame(&ctx);
         self.frames += 1;
         if self.options.scene.is_none() {
             // The demo says how often it draws, to see what an idle launcher costs.

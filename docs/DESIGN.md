@@ -1651,7 +1651,7 @@ upload; keep at most the current and previous artwork textures.
 
 ### 7.3 Soft cues and home music (deviation from 7.1)
 
-The launcher replaces the four sine cues of 7.1 with five softer ones and adds home screen music. Both are still synthesised at
+The launcher replaces the four sine cues of 7.1 with softer ones (plus `hover`, `error`, `boot` and `ring`) and adds home screen music. Both are still synthesised at
 run time: nothing is bundled and nothing is sampled. Their character follows the PS5 system sounds as measured from recordings
 (register, partials, attack, decay, level, harmony); no recording is used or shipped.
 
@@ -1665,7 +1665,8 @@ decay with time constant τ), followed by a one-pole lowpass and a Freeverb send
 
 | Cue | Notes (relative level) | Partials (ratio, level) | Attack / τ | Peak | Send / RT60 |
 |---|---|---|---|---|---|
-| `move` | F4 | 1; 2 at 0.8; 1.5 at 0.09 | 12 / 38 ms | -22 dBFS | 0.10 / 0.7 s |
+| `move` | F4 | 1; 2 at 0.55; 1.5 at 0.06 | 7 / 26 ms | -22 dBFS | 0.04 / 0.3 s, lowpass 5 kHz |
+| `hover` | the `move` tick | as `move` | as `move` | -25 dBFS | as `move` |
 | `select` | C5, G5 (0.7) 12 ms later | 1; 2 at 0.45; 3 at 0.08 | 10 / 120 ms | -13 dBFS | 0.15 / 0.9 s |
 | `back` | A3, E4 (0.7) | as `select` | 10 / 90 ms | -15 dBFS | 0.12 / 0.8 s |
 | `error` | A3, B♭3 (0.9) | 1; 2 at 0.25 | 12 / 90 ms | -15 dBFS | 0.06 / 0.8 s |
@@ -1682,6 +1683,17 @@ F sus4 (higher), F add 9, D♭ maj9, G♭ add 9 (voicings in `CHORDS`). Each pad
 runs under two rounds of the chords; the third round goes without it and 3 dB quieter. Every 1.4 to 3.6 s a soft note (sine plus
 0.2 octave, 10 ms attack, τ 0.9 s) from the current chord, between F4 and C6, floats above, panned up to ±0.45. Freeverb RT60 5 s,
 damping 0.6. The level sits around -28 dBFS RMS, well under the cues.
+
+**Hover** (`ui::sound::hover`, `Shell::finish_frame`). When the pointer arrives on a new interactive element (control, tile, library cell, row or card: whatever asks `ui::input::hovered`), the `hover` cue plays: the `move` tick of the focus path, 3 dB lower, so mouse, keys and pad sound like one system. `move` was re-cut for this (shorter: 132 ms to -60 dBFS instead of 210 ms; softer octave; a dry tail; rms frequency 455 Hz instead of 517 Hz), and both paths use it. The decision is a pure function of one frame (`HoverGate::update`), and every rule is a unit test:
+
+- once per arrival: nothing while the pointer stays inside, nothing over empty areas or non-interactive surfaces; leaving and coming back ticks again;
+- only a pointer that moves: the arrival must follow a pointer movement by at most 150 ms, so a panel sliding under a resting mouse stays silent; while a pad is in use `hovered` is false, so nothing plays, and the mouse moving again re-arms it;
+- nothing while a button is held (press, drag), while the wheel or a scroll animation moves content (and for 250 ms after), and nothing late for an element that arrived during those;
+- throttle: at least 60 ms between ticks (a sweep over tiles 40 ms apart sounds every second tile, 16 a second at most); an arrival inside the gap is dropped, not delayed; the engine lets at most 2 hover ticks sound at once and cuts the oldest over 5 ms; hover ticks never dip the music;
+- no doubling: another cue in the same frame, one in the 90 ms before, or a click completing in the frame silences the arrival;
+- off with Interface Sounds off, while a game starts or runs, and while the launcher window is not focused. The tick is only ever an extra cue: every hover also has its glow, cursor and focus ring, and nothing depends on hearing it.
+
+Latency: the first cue, the boot cue, opens the device and renders every cue, and `Sounds::warm` repeats that before any hover when sounds are on. The output asks for 512 frames per callback (about 11 ms at 48 kHz) instead of rodio's 50 ms default, falling back to the default when a device refuses; the engine reads commands every 64 frames, and the UI thread only sends a message.
 
 **Mixing.** The music fades in over 2 s and out over 0.8 s (gain = position²) and dips under every cue: `move` 1.5 dB for 0.12 s,
 `select`, `back` and `error` 3 dB for 0.25 s, `unlocked` 6 dB for 1.2 s (15 ms down, 400 ms back up). It plays only while the
@@ -2197,7 +2209,7 @@ The shared UI layer of this specification. Screens use these modules and nothing
 | `components` | `ConsoleButton`, `IconButton`, `Switch`, `ProgressLine`, `IndeterminateLine`, hint bar, key caps, `PadGlyph`, focus glow and ring |
 | `chrome` | `paint_tile` (5.1), `info_card` / `facts_line` (5.3), `PanelRow` with all kinds (5.8), `side_panel` (5.9), `fullscreen_panel`, `toast` (5.6), `language_card`, `onboarding_dots` |
 | `text`, `icons` | line height, tracking, middle truncation, tabular figures; Phosphor constants (5.16) |
-| `sound` | section 7.3 (replaces 7.1): five cues rendered once, home music generated live, one mixer on its own thread, lazy device |
+| `sound` | section 7.3 (replaces 7.1): eight cues rendered once, home music generated live, one mixer on its own thread, lazy device |
 | `i18n` | section 8: 212 keys, `Language::text/format`, `byte_text`, Windows replacements of 9.3 applied |
 | `input`, `focus`, `gamepad` | section 6: `Command`, `Input::poll`, `HomeFocus::navigate`, `PanelNav::command` |
 | `gallery` | hidden `--gallery[=components|panels|themes|bg0|bg1|bg2] [--screenshot=out.png] [--size=WxH] [--time=T]` |

@@ -55,6 +55,7 @@ use self::background::Backdrop;
 use self::home_button::HomeButton;
 use self::i18n::Language;
 use self::input::{Input, InputEvent};
+use self::sound::hover::{Frame as HoverFrame, HoverGate};
 use self::sound::{Cue, Sounds};
 use self::theme::{Accent, Theme};
 
@@ -64,6 +65,9 @@ pub struct Shell {
     /// The Home button while a game runs (read by the input threads).
     pub home: Arc<HomeButton>,
     pub sounds: Sounds,
+    hover: HoverGate,
+    /// A cue other than the hover tick played since the last [`Shell::finish_frame`].
+    cue_played: bool,
     pub backdrop: Backdrop,
     pub language: Language,
     /// The accent colour in use (the theme's default unless the user picked one).
@@ -97,6 +101,8 @@ impl Shell {
             input: Input::new(Some(pad)),
             home,
             sounds: Sounds::new(),
+            hover: HoverGate::default(),
+            cue_played: false,
             backdrop: Backdrop::new(Theme::Cosmic),
             language,
             accent: Theme::Cosmic.default_accent(),
@@ -117,6 +123,8 @@ impl Shell {
             input: Input::new(None),
             home: Arc::new(HomeButton::new(&cc.egui_ctx)),
             sounds,
+            hover: HoverGate::default(),
+            cue_played: false,
             backdrop: Backdrop::new(theme),
             language: Language::English,
             accent: theme.default_accent(),
@@ -154,7 +162,49 @@ impl Shell {
 
     /// Plays a cue (no-op when sounds are off).
     pub fn play(&mut self, cue: Cue) {
+        self.cue_played |= cue != Cue::Hover;
         self.sounds.play(cue);
+    }
+
+    /// Call last in every frame: plays the hover tick when the pointer arrived on a new
+    /// interactive element (see [`sound::hover`]). `allowed` is false while a game starts or
+    /// runs and while the launcher window is not in front. The element is whatever
+    /// [`input::hovered`] reported during the frame.
+    pub fn finish_frame(&mut self, ctx: &Context, allowed: bool) {
+        let hovered = input::take_hovered(ctx);
+        let (now, moved, down, clicked, scrolling) = ctx.input(|i| {
+            (
+                i.time,
+                i.pointer.delta() != egui::Vec2::ZERO
+                    || i.events
+                        .iter()
+                        .any(|e| matches!(e, egui::Event::PointerMoved(_))),
+                i.pointer.any_down(),
+                i.pointer.any_click(),
+                i.smooth_scroll_delta != egui::Vec2::ZERO
+                    || i.events
+                        .iter()
+                        .any(|e| matches!(e, egui::Event::MouseWheel { .. })),
+            )
+        });
+        let other_cue = std::mem::take(&mut self.cue_played);
+        let allowed = allowed && self.sounds.enabled;
+        if allowed {
+            self.sounds.warm();
+        }
+        let tick = self.hover.update(&HoverFrame {
+            now,
+            hovered,
+            pointer_moved: moved,
+            pointer_down: down,
+            clicked,
+            scrolling,
+            other_cue,
+            allowed,
+        });
+        if tick {
+            self.sounds.play(Cue::Hover);
+        }
     }
 
     pub fn scale(&self) -> f32 {
@@ -239,6 +289,8 @@ impl Shell {
             input: Input::new(None),
             home: Arc::new(HomeButton::new(ctx)),
             sounds,
+            hover: HoverGate::default(),
+            cue_played: false,
             backdrop: Backdrop::new(theme),
             language: Language::English,
             accent: theme.default_accent(),

@@ -8,13 +8,15 @@
 
 mod cues;
 mod engine;
+pub mod hover;
 mod music;
 mod synth;
 
 use std::sync::mpsc::{Sender, channel};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rodio::DeviceSinkBuilder;
+use rodio::cpal::BufferSize;
+use rodio::{DeviceSinkBuilder, DeviceSinkError, MixerDeviceSink};
 
 pub use self::cues::Cue;
 use self::engine::{Command, Engine};
@@ -69,6 +71,15 @@ impl Sounds {
         }
     }
 
+    /// Opens the device and renders the cues ahead of the first one, so the first hover tick
+    /// starts as fast as the hundredth. Cheap to call every frame; does nothing while sounds are
+    /// off, so a launcher with sounds off never touches the device.
+    pub fn warm(&mut self) {
+        if self.enabled && !self.silent && self.output.is_none() {
+            self.output = Some(Output::open());
+        }
+    }
+
     /// Fades the home music in (`true`) or out. Cheap to call every frame.
     pub fn set_music(&mut self, on: bool) {
         if on == self.music {
@@ -90,6 +101,25 @@ impl Sounds {
     }
 }
 
+/// Frames the output asks for per callback: about 11 ms at 48 kHz, where rodio's default of 50 ms
+/// would put the hover tick a few frames behind the pointer. A device that refuses it gets the
+/// default.
+const LOW_LATENCY_FRAMES: u32 = 512;
+
+/// Opens the default output with a short buffer, or with rodio's defaults when that fails.
+fn open_sink() -> Result<MixerDeviceSink, DeviceSinkError> {
+    let short = DeviceSinkBuilder::from_default_device()
+        .map(|b| b.with_buffer_size(BufferSize::Fixed(LOW_LATENCY_FRAMES)))
+        .and_then(DeviceSinkBuilder::open_stream);
+    match short {
+        Ok(sink) => Ok(sink),
+        Err(err) => {
+            tracing::info!("no short audio buffer ({err}), using the default");
+            DeviceSinkBuilder::open_default_sink()
+        }
+    }
+}
+
 impl Output {
     fn open() -> Self {
         let (commands, receiver) = channel();
@@ -100,7 +130,7 @@ impl Output {
         let spawned = std::thread::Builder::new()
             .name("sound".into())
             .spawn(move || {
-                let mut sink = match DeviceSinkBuilder::open_default_sink() {
+                let mut sink = match open_sink() {
                     Ok(sink) => sink,
                     Err(err) => {
                         tracing::warn!("no audio output, sounds and music stay off: {err}");
@@ -126,6 +156,7 @@ impl Output {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::mpsc::channel;
 
     #[test]
     fn disabled_sounds_never_open_the_device() {
@@ -143,5 +174,21 @@ mod tests {
         sounds.play(Cue::Select);
         sounds.set_music(true);
         assert!(sounds.output.is_none());
+    }
+
+    #[test]
+    #[ignore = "plays on the real device: cargo test the_short_buffer -- --ignored --nocapture"]
+    fn the_short_buffer_opens_and_a_tick_plays() {
+        let sink = open_sink().expect("an output device");
+        let buffer = format!("{:?}", sink.config().buffer_size());
+        println!("buffer {buffer}, rate {}", sink.config().sample_rate());
+        let (tx, rx) = channel();
+        sink.mixer()
+            .add(Engine::new(sink.config().sample_rate().get(), rx, 1));
+        for _ in 0..4 {
+            tx.send(Command::Cue(Cue::Hover)).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(120));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
     }
 }
