@@ -814,6 +814,53 @@ works on; the rest follow the global choice (Stable, Pinned, Local Build, 3.7).
 - Gallery scenes `game-toolkit` (the row, on a pinned game), `toolkit-unused` (two removable
   releases) and the home scenes `home-toolkit` and `home-toolkit-missing` (the fact; the question).
 
+### 3.9 One control family and one focus (2026-10-25, replaces the white focus of 1.2, 1.4 and 5.x)
+
+The audit is `docs/ui-audit-2026-10-25.md`. The owner's findings were: the focused profile pill turns white and
+covers its neighbours, the buttons are three families, hover is missing, the clock looks odd. The rules:
+
+**Controls are capsules, containers are rounded rectangles.** Every button, pill and icon button is a capsule (a glyph alone
+makes a circle); rows, cards, cells and tiles keep their radii (12, 16, 20, 12 %). Three heights, nothing between:
+
+| Size | Height | Text | Glyph | Used for |
+|---|---|---|---|---|
+| Large | 54 | 19 semibold, 30 padding | 17 (22 alone) | the action row of the game page, dialogs |
+| Medium | 44 | 16 semibold, 20 padding | 18 (20 alone) | the top bar: library, friends, settings, profile |
+| Small | 32 | 14 medium, 14 padding | 14 | an answer inside a line of text ("How did it run?") |
+
+Neighbouring controls are always 12 apart (`size::CONTROL_GAP`), in the top bar and the action row alike. The profile pill is a
+control like the three buttons; only the clock, which is a status and not a control, sits 28 dp further out.
+
+**Two variants.** *Primary* is ink, not accent: white 0.92 fill, a dark label (`color::on_primary`, 16:1), one per view
+(Play, Unlock, Accept). *Secondary* is everything else: white 0.10 fill, a 1 px white 0.12 hairline, white ink. Destructive is
+a secondary with the destructive ink.
+
+| State | Secondary | Primary |
+|---|---|---|
+| Rest | fill 0.10, hairline 0.12 | fill 0.92 |
+| Hover (pointer only, eases in 120 ms) | fill 0.16, hairline 0.32, pointing-hand cursor | fill 1.0 |
+| Pressed | fill 0.26, scale 0.97 | fill 0.78, scale 0.97 |
+| Focused | fill 0.20, hairline 0.32, **ring** | fill 1.0, **ring** |
+| Disabled | 40 %, no hover, no cursor | 40 % |
+
+**Focus is a ring.** One treatment everywhere: a white 0.95 ring outside the shape with a 1.2 dp gap, 2 dp wide on controls
+(`size::FOCUS_RING`) and 3 dp on tiles, cards and cells, plus a fill one step lighter. Nothing grows, nothing swaps its ink and no
+glow sits behind a translucent fill (a shadow under a translucent fill shows through as a seam). The layout never moves when focus
+moves, so the 12 dp gap holds. The ring is the focus indicator for keyboard and gamepad: it is white on dark artwork and on every
+fill of the family (a primary focused is a white ring around a white capsule, separated by the gap). Containers (rows, cards,
+cells) use `components::paint_surface`: rest fill, +5 % white on hover, +9 % and the ring on focus, +6 % pressed.
+
+**Hover** exists on every control the pointer can reach and answers like the tiles do: the tiles draw the focus ring at 45 % under
+the pointer, controls lighten and show a brighter hairline. Only colour and opacity change, in 120 ms (`Motion::Hover`, the same
+under reduced motion because it moves nothing); the press scale (0.97) is the only transform.
+
+**The clock** is a status line, not a control: 17 medium, white 0.78, set in a box four digits wide with the colon fixed in the
+middle (two dots on the digits' cap height), so the minute ticking over moves nothing and the digits need no tabular cells
+(whose spaced 1s read as a typo). Centred on the bar's centre line with the buttons.
+
+**Failed unlock** says what happened and what to do in one headline ("Unlocking stopped. Try again. ..."), with the technical
+message as a quiet line under it.
+
 ## 4. Materials and blur on the GPU
 
 SwiftUI `.ultraThinMaterial` is a backdrop blur with a light tint and some saturation; it is used under every panel. egui has no
@@ -886,9 +933,9 @@ Vertical stack, spacing 0: **TopBar**, **TileRow** (or **EmptyLibrary**), flexib
 
 **Top bar** (padding h 64, top 34): left "Games" (24 semibold), a small spinner while scanning; right-aligned, left to right:
 library button (glyph: 3x3 grid), friends button (glyph: two people; see below), settings button (glyph: gear), 12 dp apart; then 32 dp
-on, the profile; then 32 dp on, the clock (HH:mm, local time, updated every minute, 20 medium tabular white 0.92). Icon buttons: 44
-circle, white 0.10 fill; focused: white fill, black glyph, scale 1.1, glow. The profile and the friends button are pills of the same
-height on the same surface, hover and focus (white 0.10, white 0.16 on hover, white with black ink when focused). Everything sits on
+on, the profile (12 dp, the same gap), then 28 dp on, the clock (HH:mm, local time, 17 medium white 0.78, colon fixed; 3.9). Icon buttons: 44
+circle, a secondary control of the family in 3.9. The profile and the friends button are pills of the same
+height on the same surface, hover and focus (3.9: a ring and a lighter fill, never white). Everything sits on
 one centre line, the clock's digits included. (S-home.)
 
 - **Profile.** Signed in: the avatar (a 36 dp circle with an accent-to-accent-0.55 diagonal gradient and the first letter of the

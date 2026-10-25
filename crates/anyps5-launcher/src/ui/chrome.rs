@@ -54,6 +54,8 @@ pub struct TileStyle {
     pub focus: f32,
     /// The focus ring is visible (focus on the tiles and no overlay open); also animated by `focus`.
     pub ring: bool,
+    /// The pointer rests on the tile: a quieter ring than the focus ring (0..=1).
+    pub hover: f32,
     pub accent: Color32,
     /// Overall opacity (tiles left of the selection fade out).
     pub opacity: f32,
@@ -68,6 +70,7 @@ impl TileStyle {
             overlay: TileOverlay::None,
             focus: 0.0,
             ring: false,
+            hover: 0.0,
             accent,
             opacity: 1.0,
             time: 0.0,
@@ -86,6 +89,8 @@ pub fn paint_tile(painter: &Painter, rect: Rect, style: &TileStyle) {
     if style.ring {
         components::paint_focus_glow(painter, rect, r, 3.0, style.focus * alpha);
     }
+    // Focus is the full ring; the pointer alone draws it at 45 %.
+    let ring_t = (if style.ring { style.focus } else { 0.0 }).max(0.45 * style.hover);
     paint_shadow(
         painter,
         rect,
@@ -130,8 +135,8 @@ pub fn paint_tile(painter: &Painter, rect: Rect, style: &TileStyle) {
         }
     }
     paint_tile_overlay(painter, rect, r, style, alpha);
-    if style.ring {
-        components::paint_focus_stroke(painter, rect, r, 3.0, style.focus * alpha);
+    if ring_t > 0.0 {
+        components::paint_focus_stroke(painter, rect, r, 3.0, ring_t * alpha);
     }
 }
 

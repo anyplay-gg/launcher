@@ -46,8 +46,6 @@ pub enum Page {
     Background(Theme),
     /// A panel of the launcher (`screens::gallery`).
     Screen(crate::screens::gallery::ScreenPage),
-    /// The real home screen (`screens::gallery_home`).
-    Home(crate::screens::gallery_home::HomeLook),
 }
 
 /// Parsed command line of the gallery.
@@ -59,8 +57,6 @@ pub struct Options {
     pub time: Option<f32>,
     pub language: Language,
     pub live: bool,
-    /// Where the pointer rests, in dp (`--hover=x,y`).
-    pub hover: Option<(f32, f32)>,
 }
 
 /// Returns the gallery options when `--gallery` is on the command line.
@@ -72,7 +68,6 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Option<Options> {
         time: None,
         language: Language::English,
         live: false,
-        hover: None,
     };
     let mut seen = false;
     for arg in args {
@@ -87,10 +82,9 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Option<Options> {
                 "bg0" | "cosmic" => Page::Background(Theme::Cosmic),
                 "bg1" | "aurora" => Page::Background(Theme::Aurora),
                 "bg2" | "sunset" => Page::Background(Theme::Sunset),
-                other => crate::screens::gallery_home::parse(other).map_or_else(
-                    || crate::screens::gallery::parse(other).map_or(Page::Components, Page::Screen),
-                    Page::Home,
-                ),
+                other => {
+                    crate::screens::gallery::parse(other).map_or(Page::Components, Page::Screen)
+                }
             };
         } else if let Some(path) = arg.strip_prefix("--screenshot=") {
             options.screenshot = Some(PathBuf::from(path));
@@ -105,10 +99,6 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Option<Options> {
             options.language = Language::Turkish;
         } else if arg == "--live" {
             options.live = true;
-        } else if let Some(at) = arg.strip_prefix("--hover=") {
-            options.hover = at
-                .split_once(',')
-                .and_then(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)));
         }
     }
     seen.then_some(options)
@@ -138,7 +128,6 @@ struct Gallery {
     shot_requested: bool,
     sample_art: Option<TextureHandle>,
     screens: Option<crate::screens::gallery::ScreenGallery>,
-    home: Option<crate::screens::gallery_home::HomeGallery>,
 }
 
 impl Gallery {
@@ -161,10 +150,6 @@ impl Gallery {
             frames: 0,
             shot_requested: false,
             sample_art: None,
-            home: match page {
-                Page::Home(look) => Some(crate::screens::gallery_home::HomeGallery::new(look)),
-                _ => None,
-            },
             screens: match page {
                 Page::Screen(page) => {
                     Some(crate::screens::gallery::ScreenGallery::new(page, language))
@@ -205,14 +190,6 @@ impl Gallery {
 }
 
 impl eframe::App for Gallery {
-    fn raw_input_hook(&mut self, _ctx: &Context, raw_input: &mut egui::RawInput) {
-        if let Some((x, y)) = self.options.hover {
-            raw_input
-                .events
-                .push(egui::Event::PointerMoved(pos2(x, y)));
-        }
-    }
-
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let _ = self.shell.begin_frame(&ctx);
@@ -234,11 +211,6 @@ impl eframe::App for Gallery {
             Page::Screen(_) => {
                 if let Some(screens) = self.screens.as_mut() {
                     screens.ui(&mut self.shell, ui);
-                }
-            }
-            Page::Home(_) => {
-                if let Some(home) = self.home.as_mut() {
-                    home.ui(&self.shell, ui);
                 }
             }
             Page::Themes => themes_page(&ctx, ui, &self.shell, self.options.time),
@@ -376,7 +348,7 @@ fn components_page(ui: &mut Ui, shell: &Shell) {
 
     heading(ui, "Top-bar icon buttons: rest, hover, focused");
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 24.0;
+        ui.spacing_mut().item_spacing.x = size::CONTROL_GAP;
         IconButton::new(Icon::SQUARES_FOUR, language.text(Key::Library)).show(ui);
         IconButton::new(Icon::GEAR_SIX, language.text(Key::Settings))
             .force(Some(Force::Hover))
@@ -386,6 +358,58 @@ fn components_page(ui: &mut Ui, shell: &Shell) {
             .show(ui);
     });
     ui.add_space(26.0);
+
+    heading(
+        ui,
+        "The family: large, medium, small x rest, hover, press, focus, disabled (ink, secondary, circle)",
+    );
+    for size_ in [
+        components::ControlSize::Large,
+        components::ControlSize::Medium,
+        components::ControlSize::Small,
+    ] {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = size::CONTROL_GAP;
+            let states = [
+                (None, false, true),
+                (Some(Force::Hover), false, true),
+                (Some(Force::Press), false, true),
+                (None, true, true),
+                (None, false, false),
+            ];
+            for (force, focused, enabled) in states {
+                ConsoleButton::new("Play")
+                    .icon(Icon::PLAY)
+                    .icon_fill(true)
+                    .prominent(true)
+                    .size(size_)
+                    .force(force)
+                    .focused(focused)
+                    .enabled(enabled)
+                    .show(ui);
+            }
+            for (force, focused, enabled) in states {
+                ConsoleButton::new("3/8")
+                    .icon(Icon::TROPHY)
+                    .icon_fill(true)
+                    .tabular(true)
+                    .size(size_)
+                    .force(force)
+                    .focused(focused)
+                    .enabled(enabled)
+                    .show(ui);
+            }
+            ConsoleButton::icon_only(Icon::GEAR_SIX, "Settings")
+                .size(size_)
+                .show(ui);
+            ConsoleButton::icon_only(Icon::GEAR_SIX, "Settings")
+                .size(size_)
+                .focused(true)
+                .show(ui);
+        });
+        ui.add_space(8.0);
+    }
+    ui.add_space(14.0);
 
     heading(ui, "Switch, progress, indeterminate");
     ui.horizontal(|ui| {

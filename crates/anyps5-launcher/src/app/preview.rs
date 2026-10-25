@@ -183,6 +183,8 @@ pub struct Options {
     pub pad: bool,
     /// `--intro`: play the launch intro (to screenshot it part way with `--frames`).
     pub intro: bool,
+    /// `--hover=X,Y`: where the pointer rests, in dp (to screenshot a hover state).
+    pub hover: Option<(f32, f32)>,
     pub frames: u32,
     /// Commands fed to the app one after the other (`--script=right,select,wait60`).
     pub script: Vec<Step>,
@@ -234,6 +236,7 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Option<Options> {
         turkish: false,
         pad: false,
         intro: false,
+        hover: None,
         frames: 100,
         script: Vec::new(),
         real_art: std::env::var_os("ANYPS5_PREVIEW_REAL_ART").map(PathBuf::from),
@@ -263,6 +266,10 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Option<Options> {
             options.frames = frames.parse().unwrap_or(100);
         } else if let Some(script) = arg.strip_prefix("--script=") {
             options.script = parse_script(script);
+        } else if let Some(at) = arg.strip_prefix("--hover=") {
+            options.hover = at
+                .split_once(',')
+                .and_then(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)));
         } else if arg == "--pad" {
             options.pad = true;
         } else if arg == "--intro" {
@@ -893,6 +900,14 @@ impl PreviewApp {
 }
 
 impl eframe::App for PreviewApp {
+    fn raw_input_hook(&mut self, _ctx: &Context, raw_input: &mut egui::RawInput) {
+        if let Some((x, y)) = self.options.hover {
+            raw_input
+                .events
+                .push(egui::Event::PointerMoved(egui::pos2(x, y)));
+        }
+    }
+
     fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
         if self.options.scene.is_none() && self.frames == 0 {
             crate::app::window_chrome::apply(frame);

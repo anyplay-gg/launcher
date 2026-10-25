@@ -11,6 +11,7 @@ use egui::{
 };
 
 use crate::app::model::{GameState, Model, SizeState};
+use crate::screens::failure_strings::FailureText;
 use crate::screens::online_social_strings::SocialText;
 use crate::screens::online_strings::OnlineText;
 use crate::screens::phone_strings::PhoneText;
@@ -416,13 +417,7 @@ fn profile_button(
         (text::width(&painter, BADGE, &count) + 12.0).max(BADGE_HEIGHT) + 8.0
     };
     let width = inset + size::AVATAR + 10.0 + name_width + 16.0 + badge_width;
-    let it = components::interact(
-        ui,
-        vec2(width, size::ICON_BUTTON),
-        focused,
-        true,
-        None,
-    );
+    let it = components::interact(ui, vec2(width, size::ICON_BUTTON), focused, true, None);
     it.response
         .widget_info(|| WidgetInfo::labeled(Role::Button, true, &profile.label));
     if !ui.is_rect_visible(it.rect) {
@@ -487,11 +482,7 @@ fn profile_button(
             pos2(shown.max.x + 8.0 * s, rect.center().y - h * 0.5),
             vec2(w, h),
         );
-        components::paint_capsule(
-            &painter,
-            badge,
-            white(0.92),
-        );
+        components::paint_capsule(&painter, badge, white(0.92));
         text::paint(
             &painter,
             badge.center(),
@@ -687,6 +678,10 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
         style.focus = ring_t;
         style.ring = ring_t > 0.002;
         style.opacity = opacity.clamp(0.0, 1.0);
+        let under_pointer = interactive
+            && opacity > 0.5
+            && ctx.pointer_hover_pos().is_some_and(|p| rect.contains(p));
+        style.hover = ctx.animate_to(key("tile-hover"), f32::from(under_pointer), Motion::Hover);
         chrome::paint_tile(&painter, rect, &style);
 
         if interactive && opacity > 0.5 {
@@ -1129,16 +1124,28 @@ fn action_row_status(
             });
         }
         GameState::Failed(message) => {
-            let galley = wrapped(
+            // What happened and what to do, in words; the technical message stays under it, quiet.
+            let headline = wrapped(
                 &painter,
-                ty::DETAIL_LARGE,
-                message,
+                ty::ROW_TITLE,
+                FailureText::UnlockStopped.text(language),
                 color::error_text(),
                 MESSAGE_WIDTH,
                 2,
             );
-            let pos = pos2(x, mid - galley.size().y * 0.5);
-            painter.galley(pos, galley, color::error_text());
+            let detail = wrapped(
+                &painter,
+                ty::DETAIL,
+                message,
+                color::text_detail(),
+                MESSAGE_WIDTH,
+                1,
+            );
+            let gap = 4.0;
+            let top = mid - (headline.size().y + gap + detail.size().y) * 0.5;
+            let detail_top = top + headline.size().y + gap;
+            painter.galley(pos2(x + 16.0, top), headline, color::error_text());
+            painter.galley(pos2(x + 16.0, detail_top), detail, color::text_detail());
         }
         _ => {
             if let Some(summary) = cx.model.diagnoses.get(&game.id) {
