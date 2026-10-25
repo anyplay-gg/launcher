@@ -1,7 +1,7 @@
 //! The launcher's side against the real net service: the process starts, answers the hello over
 //! its standard streams, reports its state, and ends when its input closes.
 //!
-//! The net service is built in anyplay-gg/network. The test uses `ANYPLAY_NET`, or the debug
+//! The net service is built in anyplaynet/network. The test uses `ANYPLAY_NET`, or the debug
 //! build of a clone next to this repository; without either it has nothing to run and says so.
 
 use std::path::PathBuf;

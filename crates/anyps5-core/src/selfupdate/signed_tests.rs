@@ -622,7 +622,7 @@ fn a_manifest_published_in_the_future_or_valid_for_too_long_is_refused() {
 fn addresses_are_judged_by_their_parsed_host() {
     // Fine: https, no user name, GitHub's hosts.
     for ok in [
-        "https://github.com/anyplay-gg/launcher/releases/download/v1/latest.json",
+        "https://github.com/anyplaynet/launcher/releases/download/v1/latest.json",
         "https://objects.githubusercontent.com/x?y=1",
         "https://release-assets.githubusercontent.com/x",
     ] {
