@@ -97,6 +97,28 @@ pub struct ToolSpec {
     pub args: Vec<OsString>,
     pub cwd: Option<PathBuf>,
     pub env: Vec<(OsString, OsString)>,
+    pub priority: Priority,
+}
+
+/// How much of the machine a tool may take. The player is waiting for `Low`; `Idle` is for work
+/// nobody asked for yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Priority {
+    #[default]
+    Normal,
+    Low,
+    Idle,
+}
+
+/// Puts the calling thread into the background (low CPU and I/O priority) for the rest of its life.
+pub fn enter_background_mode() {
+    #[cfg(windows)]
+    crate::win::enter_background_mode();
+    #[cfg(target_os = "linux")]
+    // SAFETY: plain system call; on Linux `who` 0 is the calling thread.
+    unsafe {
+        libc::setpriority(libc::PRIO_PROCESS, 0, 10);
+    }
 }
 
 /// How a tool ended.
@@ -140,7 +162,13 @@ impl ToolProcess {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+            // CREATE_NO_WINDOW, and the priority class the tool starts in.
+            let class = match spec.priority {
+                Priority::Normal => 0,
+                Priority::Low => 0x0000_4000, // BELOW_NORMAL_PRIORITY_CLASS
+                Priority::Idle => 0x0000_0040, // IDLE_PRIORITY_CLASS
+            };
+            command.creation_flags(0x0800_0000 | class);
         }
         crate::platform::isolate_group(&mut command);
         let child = command.spawn()?;
@@ -153,13 +181,73 @@ impl ToolProcess {
                 .and_then(|job| job.assign(child.as_raw_handle()).map(|()| job))
                 .ok()
         };
-        Ok(ToolProcess(Arc::new(Shared {
+        let process = ToolProcess(Arc::new(Shared {
             child: Mutex::new(child),
             reader: Mutex::new(Some(reader)),
             killed: AtomicBool::new(false),
             #[cfg(windows)]
             job,
-        })))
+        }));
+        #[cfg(unix)]
+        process.set_priority(spec.priority);
+        Ok(process)
+    }
+
+    /// Changes how much of the machine the tool may take, while it runs (an unlock the player
+    /// now waits for stops being a background job).
+    pub fn set_priority(&self, priority: Priority) {
+        #[cfg(windows)]
+        if let Some(job) = &self.0.job {
+            job.set_priority(crate::win::priority_class(
+                priority == Priority::Low,
+                priority == Priority::Idle,
+            ));
+        }
+        #[cfg(unix)]
+        {
+            let pid = self.id() as libc::id_t;
+            let nice = match priority {
+                Priority::Normal => 0,
+                Priority::Low => 5,
+                Priority::Idle => 15,
+            };
+            // SAFETY: plain system call on a process of ours; a failure changes nothing.
+            unsafe {
+                libc::setpriority(libc::PRIO_PROCESS, pid, nice);
+            }
+        }
+        #[cfg(not(any(windows, unix)))]
+        let _ = priority;
+    }
+
+    /// Freezes the tool and its children without losing what they did.
+    pub fn pause(&self) {
+        #[cfg(windows)]
+        if let Some(job) = &self.0.job {
+            job.suspend();
+        }
+        #[cfg(unix)]
+        self.signal_group(libc::SIGSTOP);
+    }
+
+    /// Lets a paused tool go on.
+    pub fn resume(&self) {
+        #[cfg(windows)]
+        if let Some(job) = &self.0.job {
+            job.resume();
+        }
+        #[cfg(unix)]
+        self.signal_group(libc::SIGCONT);
+    }
+
+    #[cfg(unix)]
+    fn signal_group(&self, signal: libc::c_int) {
+        if let Ok(pid) = libc::pid_t::try_from(self.id()) {
+            // SAFETY: plain system call; a negative pid addresses the process group.
+            unsafe {
+                libc::kill(-pid, signal);
+            }
+        }
     }
 
     pub fn id(&self) -> u32 {

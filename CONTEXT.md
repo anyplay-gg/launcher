@@ -77,8 +77,20 @@ An unlocked copy made by a different toolkit version than the current one. The p
 _Avoid_: Stale, old
 
 **Unlock queue**:
-The games waiting to be unlocked. Only one is unlocked at a time.
+The games waiting to be unlocked. Only one is unlocked at a time; a game the player asked for goes before a game that is only being prepared.
 _Avoid_: Job list
+
+**Prepare**:
+Unlock a game the player has not asked for yet: the launcher does it by itself for a game that appeared in the games folder (or that a toolkit update left outdated), one at a time, at the lowest priority, and only while the PC is idle. The tile says "Preparing". The word the player sees for the work they ask for stays Unlock.
+_Avoid_: Install, download, pre-install
+
+**Idle gate**:
+The check before and during a preparation: no game starts or runs, the PC is on mains power, enough memory is free and the processors are not busy. When it closes, a preparation in progress stands still (it keeps what it did) and goes on when it opens.
+_Avoid_: Scheduler, throttle
+
+**Kept relinker output**:
+When an unlock again finds nothing the relinker reads changed (the dump's executable and modules, the toolkit release, the flags, the patches), it lays the converted files of the copy it replaces into the new copy instead of relinking. The record's relink key says whether that is so.
+_Avoid_: Cache
 
 ### Toolkit
 

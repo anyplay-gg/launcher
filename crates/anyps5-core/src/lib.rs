@@ -14,6 +14,7 @@ pub mod fsx;
 pub mod gamefiles;
 pub mod glibc;
 pub mod hostcpu;
+pub mod idle;
 pub mod issue;
 pub mod launch;
 pub mod library;

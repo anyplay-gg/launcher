@@ -384,6 +384,7 @@ impl PanelHost {
         match action {
             SettingsAction::Close => model.dismiss_overlay(),
             SettingsAction::GamesFolderChosen(_) => {
+                model.forget_known_games();
                 model.selected = 0;
                 model.rescan();
             }
@@ -1355,7 +1356,7 @@ impl PanelHost {
                 LibraryEntry {
                     name: game.name.clone(),
                     icon,
-                    overlay: tile_overlay(&state),
+                    overlay: tile_overlay(&state, &cx.model.prep.weights),
                     state: StateText {
                         icon: label.icon,
                         text: label.text,

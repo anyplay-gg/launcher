@@ -11,7 +11,6 @@ use egui::{
 };
 
 use crate::app::model::{GameState, Model, SizeState};
-use crate::screens::failure_strings::FailureText;
 use crate::screens::glibc_strings::shortfall_text;
 use crate::screens::online_social_strings::SocialText;
 use crate::screens::online_strings::OnlineText;
@@ -731,14 +730,18 @@ const BADGE_HEIGHT: f32 = 20.0;
 // ---------------------------------------------------------------------------------------------
 
 /// The overlay a tile shows for a state (DESIGN.md 5.1).
-pub fn tile_overlay(state: &GameState) -> TileOverlay {
+pub fn tile_overlay(state: &GameState, weights: &crate::app::pipeline::StepWeights) -> TileOverlay {
     match state {
         GameState::Locked => TileOverlay::Locked,
         GameState::Unreadable => TileOverlay::Unreadable,
         GameState::Queued => TileOverlay::Queued,
         GameState::Installing { step, fraction } => {
-            TileOverlay::Installing(step.overall(*fraction))
+            TileOverlay::Installing(weights.overall(*step, *fraction))
         }
+        GameState::Preparing { progress, paused } => TileOverlay::Preparing {
+            fraction: progress.map(|(step, fraction)| weights.overall(step, fraction)),
+            paused: *paused,
+        },
         GameState::Failed(_) => TileOverlay::Failed,
         GameState::Installed { .. } => TileOverlay::None,
         GameState::Starting => TileOverlay::Starting,
@@ -759,7 +762,7 @@ pub fn icon_resolution(ctx: &Context, side: f32) -> u32 {
 pub fn tile_style(cx: &mut ScreenCx<'_>, game: &Game, side: f32, accent: Color32) -> TileStyle {
     let mut style = TileStyle::new(accent);
     style.time = cx.ctx.clock();
-    style.overlay = tile_overlay(&cx.model.state_of(game));
+    style.overlay = tile_overlay(&cx.model.state_of(game), &cx.model.prep.weights);
     if let Some(icon) = &game.icon {
         let max = icon_resolution(cx.ctx, side);
         style.image = cx.textures.get(icon, max).map(|l| TileImage {
@@ -837,6 +840,17 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
             && ctx.pointer_hover_pos().is_some_and(|p| rect.contains(p));
         style.hover = ctx.animate_to(key("tile-hover"), f32::from(under_pointer), Motion::Hover);
         chrome::paint_tile(&painter, rect, &style);
+        if let TileOverlay::Preparing { fraction, paused } = style.overlay {
+            let percent = fraction.map(|f| (f * 100.0) as u32);
+            let caption = crate::screens::prepare_strings::tile_label(percent, paused, language);
+            let caption = text::middle_truncate(
+                &painter,
+                ty::STATE_LABEL_SMALL,
+                &caption,
+                chrome::preparing_caption_width(rect),
+            );
+            chrome::paint_preparing_caption(&painter, rect, &caption, style.opacity);
+        }
 
         if interactive && opacity > 0.5 {
             let state = cx.model.state_of(&game);
@@ -1244,6 +1258,7 @@ fn ask_line(
 fn primary_look(state: &GameState, language: Language) -> (&'static str, Icon, bool) {
     match state {
         GameState::Installed { .. } => (language.text(Key::Play), Icon::PLAY, true),
+        GameState::Preparing { .. } => (language.text(Key::Play), Icon::PLAY, true),
         GameState::Locked | GameState::Unreadable => {
             (language.text(Key::Unlock), Icon::LOCK_OPEN, true)
         }
@@ -1269,12 +1284,19 @@ fn action_row_status(
     let accent = cx.accent();
     let painter = ui.painter().clone();
     let mid = top + ACTION_ROW * 0.5;
+    let running = match state {
+        GameState::Installing { step, fraction } => Some((*step, *fraction, false)),
+        GameState::Preparing { progress, paused } => progress.map(|(s, f)| (s, f, *paused)),
+        _ => None,
+    };
     match state {
-        GameState::Installing { step, fraction } => {
+        _ if running.is_some() => {
+            let (step, fraction, paused) = running.expect("checked");
+            let (step, fraction) = (&step, &fraction);
             // The state line above the title already names the step: the bar and its percentage
             // sit on the buttons' centre line.
             let left = x + 16.0;
-            let overall = step.overall(*fraction);
+            let overall = cx.model.overall(*step, *fraction);
             let block = size::HERO_PROGRESS_WIDTH;
             let percent = format!("{}%", (overall * 100.0) as u32);
             text::paint_tabular(
@@ -1287,6 +1309,39 @@ fn action_row_status(
                 &percent,
                 white(0.85),
             );
+            // The time left, from the measured speed; nothing until there is enough to tell.
+            let note = if paused {
+                Some(crate::screens::prepare_strings::paused_note(language).to_owned())
+            } else {
+                cx.model
+                    .time_left(&game.id)
+                    .map(|s| crate::screens::prepare_strings::time_left(s, language))
+            };
+            let spoken = format!(
+                "{} {percent}{}",
+                language.text(step.title_key()),
+                note.as_deref()
+                    .map(|n| format!(", {n}"))
+                    .unwrap_or_default()
+            );
+            let status =
+                Rect::from_min_size(pos2(left, mid - 12.0), vec2(block + 14.0 + 48.0, 24.0));
+            ui.allocate_rect(status, Sense::hover())
+                .widget_info(|| WidgetInfo::labeled(Role::Label, true, spoken.as_str()));
+            if let Some(note) = note {
+                let w = text::tabular_width(&painter, ty::PROGRESS_PERCENT, &percent);
+                text::paint(
+                    &painter,
+                    pos2(
+                        left + block + 14.0 + w + 14.0,
+                        mid - ty::DETAIL_LARGE.line_height() * 0.5,
+                    ),
+                    egui::Align2::LEFT_TOP,
+                    ty::DETAIL_LARGE,
+                    &note,
+                    color::text_subtitle(),
+                );
+            }
             let bar = Rect::from_min_size(
                 pos2(left, mid - size::PROGRESS_HEIGHT * 0.5),
                 vec2(block, size::PROGRESS_HEIGHT),
@@ -1295,19 +1350,35 @@ fn action_row_status(
                 if *step == crate::app::pipeline::UnlockStep::Relink && *fraction == 0.0 {
                     IndeterminateLine::new(accent).width(block).show(ui);
                 } else {
-                    ProgressLine::new(overall, accent)
+                    ProgressLine::new(overall, if paused { white(0.55) } else { accent })
                         .width(block)
                         .label(language.text(step.title_key()))
                         .show(ui);
                 }
             });
         }
+        GameState::Preparing {
+            progress: None,
+            paused,
+        } => {
+            let note = crate::screens::prepare_strings::hero_note(*paused, language);
+            let galley = wrapped(
+                &painter,
+                ty::DETAIL_LARGE,
+                note,
+                color::text_subtitle(),
+                MESSAGE_WIDTH,
+                2,
+            );
+            let top = mid - galley.size().y * 0.5;
+            painter.galley(pos2(x + 16.0, top), galley, color::text_subtitle());
+        }
         GameState::Failed(message) => {
             // What happened and what to do, in words; the technical message stays under it, quiet.
             let headline = wrapped(
                 &painter,
                 ty::ROW_TITLE,
-                FailureText::UnlockStopped.text(language),
+                crate::screens::prepare_strings::failure_headline(language),
                 color::error_text(),
                 MESSAGE_WIDTH,
                 2,
@@ -1318,7 +1389,7 @@ fn action_row_status(
                 message,
                 color::text_subtitle(),
                 MESSAGE_WIDTH,
-                1,
+                2,
             );
             let gap = 4.0;
             let top = mid - (headline.size().y + gap + detail.size().y) * 0.5;
@@ -1328,7 +1399,10 @@ fn action_row_status(
                 pos2(x + 16.0, top),
                 vec2(MESSAGE_WIDTH, detail_top + detail.size().y - top),
             );
-            let name = format!("{} {message}", FailureText::UnlockStopped.text(language));
+            let name = format!(
+                "{} {message}",
+                crate::screens::prepare_strings::failure_headline(language)
+            );
             ui.allocate_rect(total, Sense::hover())
                 .widget_info(|| WidgetInfo::labeled(Role::Label, true, name.as_str()));
             painter.galley(pos2(x + 16.0, detail_top), detail, color::text_subtitle());

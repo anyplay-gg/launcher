@@ -55,7 +55,7 @@ The Mac package does not yet embed `anyplay-net`, so online integration needs a 
 
 ## Releases
 
-A release is made by pushing a tag `v<version>` that matches the version in `Cargo.toml`. The [release workflow](../.github/workflows/release.yml) builds the net service from [anyplaynet/network](https://github.com/anyplaynet/network) at the commit in `network.ref` and embeds it, then builds the portable exe and the installer (`tools/installer/anyplay-launcher.iss`, Inno Setup), the Linux AppImage and tarball, and a licence file for every third-party crate. It publishes all of them with their checksums in `SHA256SUMS.txt`. Started by hand it only builds them and keeps them as workflow artifacts. Release notes live in [docs/releases](releases).
+A release is made by pushing a tag `v<version>` that matches the version in `Cargo.toml`. The [release workflow](../.github/workflows/release.yml) builds the net service from [anyplaynet/network](https://github.com/anyplaynet/network) at the commit in `network.ref` and embeds it, then builds the portable exe and the installer (`tools/installer/anyplay-launcher.iss`, Inno Setup), the Linux AppImage and tarball, and a licence file for every third-party crate. It publishes all of them with their checksums in `SHA256SUMS.txt`. Started by hand it only builds them and keeps them as workflow artifacts. Release notes live in [docs/releases](releases). Before the tag, refresh the README screenshots in `docs/media` from the release build, taken with a separate profile and no personal data.
 
 ## More
 

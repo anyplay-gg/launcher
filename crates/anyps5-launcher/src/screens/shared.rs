@@ -81,6 +81,16 @@ pub fn state_label(state: &GameState, language: Language) -> StateLabel {
             color::text_active(),
             language.text(step.title_key()).to_owned(),
         ),
+        GameState::Preparing { paused, .. } => (
+            Icon::ARROW_CIRCLE_DOWN,
+            false,
+            if *paused {
+                color::state_neutral()
+            } else {
+                color::text_active()
+            },
+            crate::screens::prepare_strings::state_label(*paused, language).to_owned(),
+        ),
         GameState::Failed(_) => (
             Icon::WARNING,
             true,
