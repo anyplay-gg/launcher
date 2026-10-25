@@ -659,10 +659,14 @@ impl Key {
             Key::Welcome => "Welcome to AnyPlay",
             Key::WelcomeSubtitle => "Play PS5 games on your PC. Let's set a few things up first.",
             Key::ChooseLanguage => "Language",
-            Key::ChooseTheme => "Pick a theme",
-            Key::ChooseThemeSubtitle => "You can change it later in Settings, or use your own picture or video.",
+            Key::ChooseTheme => "Pick a Theme",
+            Key::ChooseThemeSubtitle => {
+                "You can change it later in Settings, or use your own picture or video."
+            }
             Key::ChooseFolder => "Where are your games?",
-            Key::ChooseFolderSubtitle => "Choose the folder that holds your PS5 dumps. Subfolders are scanned too, and new games show up on their own.",
+            Key::ChooseFolderSubtitle => {
+                "Choose the folder that holds your PS5 dumps. Subfolders are scanned too, and new games show up on their own."
+            }
             Key::PickFolder => "Choose Folder",
             Key::ChangeFolder => "Change Folder",
             Key::GamesFound => "%d games found",
@@ -687,7 +691,9 @@ impl Key {
             Key::UpdateAvailable => "Can be installed again with the new version",
             Key::Failed => "Could not unlock",
             Key::Starting => "Starting…",
-            Key::StartingText => "The game is opening, please wait. The first start can take a few minutes while the game gets ready for Windows.",
+            Key::StartingText => {
+                "The game is opening, please wait. The first start can take a few minutes while the game gets ready for Windows."
+            }
             Key::Running => "Playing",
             Key::StepUnwrap => "Opening the game files",
             Key::StepRelink => "Converting for Windows",
@@ -701,7 +707,7 @@ impl Key {
             Key::Folder => "Folder",
             Key::GameSettings => "Game Settings",
             Key::Resolution => "Resolution",
-            Key::ResolutionDefault => "Game default",
+            Key::ResolutionDefault => "Game Default",
             Key::Display => "Display",
             Key::Windowed => "Window",
             Key::Fullscreen => "Full Screen",
@@ -716,24 +722,26 @@ impl Key {
             Key::OverlayBottomLeft => "Bottom Left",
             Key::OverlayBottomRight => "Bottom Right",
             Key::GameLanguage => "Game Language",
-            Key::FollowLauncher => "Same as the launcher",
+            Key::FollowLauncher => "Same as the Launcher",
             Key::Reinstall => "Unlock Again",
             Key::ShowInFinder => "Show in Explorer",
             Key::OpenLog => "Open Log",
             Key::Uninstall => "Remove Installation",
             Key::ClearShaderCache => "Clear Shader Cache",
-            Key::UninstallConfirm => "Remove the installation? Your game files stay; the game shows as locked again.",
+            Key::UninstallConfirm => {
+                "Remove the installation? Your game files stay; the game shows as locked again."
+            }
             Key::UninstallDone => "Installation removed",
             Key::CacheCleared => "Shader cache cleared",
             Key::Appearance => "Appearance",
             Key::Theme => "Theme",
             Key::Accent => "Accent Color",
             Key::Background => "Background",
-            Key::BackgroundTheme => "Theme animation",
-            Key::BackgroundImage => "My picture",
-            Key::BackgroundVideo => "My video",
+            Key::BackgroundTheme => "Theme Animation",
+            Key::BackgroundImage => "My Picture",
+            Key::BackgroundVideo => "My Video",
             Key::ChooseFile => "Choose File",
-            Key::GameArtwork => "Show the selected game's artwork",
+            Key::GameArtwork => "Show the Selected Game's Artwork",
             Key::Motion => "Animations",
             Key::MotionFull => "Full",
             Key::MotionReduced => "Reduced",
@@ -741,7 +749,9 @@ impl Key {
             Key::Language => "Language",
             Key::Storage => "Library",
             Key::Rescan => "Scan Again",
-            Key::InstalledSize => "Unlocked games are kept in the .AnyPS5 folder inside your games folder.",
+            Key::InstalledSize => {
+                "Unlocked games are kept in the .AnyPS5 folder inside your games folder."
+            }
             Key::About => "About",
             Key::AboutText => "AnyPlay Launcher runs PS5 games natively on Windows with AnyPS5.",
             Key::ToolkitVersion => "Toolkit",
@@ -752,16 +762,22 @@ impl Key {
             Key::RosettaInstall => "Install Rosetta",
             Key::RosettaInstalled => "Rosetta is installed",
             Key::MoveToApplications => "Move AnyPS5 to Applications",
-            Key::MoveToApplicationsText => "macOS opens downloaded apps from a locked, read-only copy. Let me move it to Applications and reopen it, so this never gets in the way again.",
+            Key::MoveToApplicationsText => {
+                "macOS opens downloaded apps from a locked, read-only copy. Let me move it to Applications and reopen it, so this never gets in the way again."
+            }
             Key::MoveNow => "Move and Reopen",
             Key::Later => "Later",
-            Key::NoToolkit => "This copy has no conversion tools. Use the installer from the release.",
+            Key::NoToolkit => {
+                "This copy has no conversion tools. Use the installer from the release."
+            }
             Key::EmptyLibraryTitle => "No games yet",
-            Key::EmptyLibraryText => "Put PS5 dumps in your games folder and they show up here on their own.",
+            Key::EmptyLibraryText => {
+                "Put PS5 dumps in your games folder and they show up here on their own."
+            }
             Key::Scanning => "Looking for games",
             Key::AllGames => "All Games",
-            Key::SortName => "By name",
-            Key::PlayTime => "Last played",
+            Key::SortName => "By Name",
+            Key::PlayTime => "Last Played",
             Key::ThemeCosmic => "Cosmic",
             Key::ThemeAurora => "Aurora",
             Key::ThemeSunset => "Sunset",
@@ -778,7 +794,9 @@ impl Key {
             Key::Confirm => "Confirm",
             Key::UnreadableDump => "This dump is encrypted or damaged and cannot be opened.",
             Key::Controls => "Controls",
-            Key::ControlsHint => "Pick a row, then press the key you want for it. Esc cancels. A connected controller keeps its own buttons.",
+            Key::ControlsHint => {
+                "Pick a row, then press the key you want for it. Esc cancels. A connected controller keeps its own buttons."
+            }
             Key::PressKey => "Press a key…",
             Key::ResetControls => "Reset to Default Keys",
             Key::NoKey => "None",
@@ -818,11 +836,15 @@ impl Key {
             Key::FontsFolder => "System Fonts Folder",
             Key::FontsNone => "None",
             Key::FontsReset => "Remove the Fonts Folder",
-            Key::FontsHint => "F12 in a game saves a screenshot. Games that ask for the console's system fonts use the files in the fonts folder.",
-            Key::SectionSticks => "Controller sticks",
+            Key::FontsHint => {
+                "F12 in a game saves a screenshot. Games that ask for the console's system fonts use the files in the fonts folder."
+            }
+            Key::SectionSticks => "Controller Sticks",
             Key::LeftDeadzone => "Left Stick Deadzone",
             Key::RightDeadzone => "Right Stick Deadzone",
-            Key::DeadzoneDetail => "How much of the travel reads as centered; stops a drifting stick",
+            Key::DeadzoneDetail => {
+                "How much of the travel reads as centered; stops a drifting stick"
+            }
             Key::SectionMouse => "Mouse as the camera (middle button or F7)",
             Key::MouseSensitivity => "Mouse Sensitivity",
             Key::MouseSensitivityDetail => "Higher turns fully with less movement",
@@ -840,7 +862,9 @@ impl Key {
             Key::MouseDecayDetail => "How soon the camera stops after the mouse does",
             Key::SectionKeyboard => "Keyboard",
             Key::StickModifierScale => "Slow Movement Amount",
-            Key::StickModifierScaleDetail => "How far the sticks tilt while Slow Movement is held (set in Controls)",
+            Key::StickModifierScaleDetail => {
+                "How far the sticks tilt while Slow Movement is held (set in Controls)"
+            }
             Key::KeyboardRamp => "Stick Ramp",
             Key::KeyboardRampDetail => "How long a key takes to tilt the stick fully",
             Key::TriggerRamp => "Trigger Ramp",
@@ -861,8 +885,12 @@ impl Key {
             Key::SettingsImportedOther => "Settings from %@ imported",
             Key::SettingsFileFailed => "This is not an AnyPlay settings file",
             Key::StickModifier => "Slow Movement",
-            Key::DiagnosisMissingModule => "Missing module: %@. Unlocking the game again may fix it.",
-            Key::DiagnosisUnsupported => "The game asked for a system function that is not supported yet: %@",
+            Key::DiagnosisMissingModule => {
+                "Missing module: %@. Unlocking the game again may fix it."
+            }
+            Key::DiagnosisUnsupported => {
+                "The game asked for a system function that is not supported yet: %@"
+            }
             Key::DiagnosisGpuLost => "The GPU stopped responding.",
             Key::DiagnosisOutOfMemory => "The game ran out of memory.",
             Key::DiagnosisEngineError => "Engine error: %@",
@@ -873,13 +901,17 @@ impl Key {
 
     const fn turkish(self) -> &'static str {
         match self {
-            Key::Welcome => "AnyPlay'e hoş geldin",
+            Key::Welcome => "AnyPlay'e Hoş Geldin",
             Key::WelcomeSubtitle => "PS5 oyunlarını PC'nde oyna. Önce birkaç şeyi ayarlayalım.",
             Key::ChooseLanguage => "Dil",
-            Key::ChooseTheme => "Bir tema seç",
-            Key::ChooseThemeSubtitle => "Sonra Ayarlar'dan değiştirebilir, kendi resmini ya da videonu koyabilirsin.",
+            Key::ChooseTheme => "Bir Tema Seç",
+            Key::ChooseThemeSubtitle => {
+                "Sonra Ayarlar'dan değiştirebilir, kendi resmini ya da videonu koyabilirsin."
+            }
             Key::ChooseFolder => "Oyunların nerede?",
-            Key::ChooseFolderSubtitle => "PS5 dump'larının olduğu klasörü seç. Alt klasörleri de tararım, yeni oyunları kendim bulurum.",
+            Key::ChooseFolderSubtitle => {
+                "PS5 dump'larının olduğu klasörü seç. Alt klasörleri de tararım, yeni oyunları kendim bulurum."
+            }
             Key::PickFolder => "Klasör Seç",
             Key::ChangeFolder => "Klasörü Değiştir",
             Key::GamesFound => "%d oyun bulundu",
@@ -904,7 +936,9 @@ impl Key {
             Key::UpdateAvailable => "Yeni sürümle yeniden kurulabilir",
             Key::Failed => "Kilit açılamadı",
             Key::Starting => "Başlatılıyor…",
-            Key::StartingText => "Oyun açılıyor, lütfen bekle. İlk açılış, oyun Windows için hazırlanırken birkaç dakika sürebilir.",
+            Key::StartingText => {
+                "Oyun açılıyor, lütfen bekle. İlk açılış, oyun Windows için hazırlanırken birkaç dakika sürebilir."
+            }
             Key::Running => "Oynanıyor",
             Key::StepUnwrap => "Oyun dosyaları açılıyor",
             Key::StepRelink => "Windows için çevriliyor",
@@ -918,7 +952,7 @@ impl Key {
             Key::Folder => "Klasör",
             Key::GameSettings => "Oyun Ayarları",
             Key::Resolution => "Çözünürlük",
-            Key::ResolutionDefault => "Oyunun varsayılanı",
+            Key::ResolutionDefault => "Oyunun Varsayılanı",
             Key::Display => "Görüntü",
             Key::Windowed => "Pencere",
             Key::Fullscreen => "Tam Ekran",
@@ -933,24 +967,26 @@ impl Key {
             Key::OverlayBottomLeft => "Sol Alt",
             Key::OverlayBottomRight => "Sağ Alt",
             Key::GameLanguage => "Oyun Dili",
-            Key::FollowLauncher => "Launcher ile aynı",
+            Key::FollowLauncher => "Launcher ile Aynı",
             Key::Reinstall => "Kilidi Yeniden Aç",
             Key::ShowInFinder => "Dosya Gezgini'nde Göster",
             Key::OpenLog => "Günlüğü Aç",
             Key::Uninstall => "Kurulumu Kaldır",
             Key::ClearShaderCache => "Shader Önbelleğini Temizle",
-            Key::UninstallConfirm => "Kurulum kaldırılsın mı? Oyun dosyaların silinmez, oyun tekrar kilitli görünür.",
+            Key::UninstallConfirm => {
+                "Kurulum kaldırılsın mı? Oyun dosyaların silinmez, oyun tekrar kilitli görünür."
+            }
             Key::UninstallDone => "Kurulum kaldırıldı",
             Key::CacheCleared => "Shader önbelleği temizlendi",
             Key::Appearance => "Görünüm",
             Key::Theme => "Tema",
             Key::Accent => "Vurgu Rengi",
             Key::Background => "Arka Plan",
-            Key::BackgroundTheme => "Tema animasyonu",
-            Key::BackgroundImage => "Kendi resmim",
-            Key::BackgroundVideo => "Kendi videom",
+            Key::BackgroundTheme => "Tema Animasyonu",
+            Key::BackgroundImage => "Kendi Resmim",
+            Key::BackgroundVideo => "Kendi Videom",
             Key::ChooseFile => "Dosya Seç",
-            Key::GameArtwork => "Seçili oyunun görselini göster",
+            Key::GameArtwork => "Seçili Oyunun Görselini Göster",
             Key::Motion => "Animasyonlar",
             Key::MotionFull => "Tam",
             Key::MotionReduced => "Azaltılmış",
@@ -958,27 +994,37 @@ impl Key {
             Key::Language => "Dil",
             Key::Storage => "Kütüphane",
             Key::Rescan => "Yeniden Tara",
-            Key::InstalledSize => "Kilidi açılan oyunlar oyun klasörünün içindeki .AnyPS5 klasöründe saklanır.",
+            Key::InstalledSize => {
+                "Kilidi açılan oyunlar oyun klasörünün içindeki .AnyPS5 klasöründe saklanır."
+            }
             Key::About => "Hakkında",
-            Key::AboutText => "AnyPlay Launcher, PS5 oyunlarını AnyPS5 ile Windows'ta yerel olarak çalıştırır.",
-            Key::ToolkitVersion => "Araç seti",
+            Key::AboutText => {
+                "AnyPlay Launcher, PS5 oyunlarını AnyPS5 ile Windows'ta yerel olarak çalıştırır."
+            }
+            Key::ToolkitVersion => "Araç Seti",
             Key::ProfileName => "Profil Adı",
             Key::Behaviour => "Davranış",
-            Key::HideWhilePlaying => "Oyun açılınca launcher'ı gizle",
+            Key::HideWhilePlaying => "Oyun Açılınca Launcher'ı Gizle",
             Key::RosettaMissing => "Oyunlar Rosetta ile çalışır, bu Mac'te kurulu değil.",
             Key::RosettaInstall => "Rosetta'yı Kur",
             Key::RosettaInstalled => "Rosetta kurulu",
-            Key::MoveToApplications => "AnyPS5'i Uygulamalar'a taşı",
-            Key::MoveToApplicationsText => "macOS indirilen uygulamaları kilitli, salt okunur bir kopyadan açıyor. Uygulamalar klasörüne taşıyıp yeniden açayım, bir daha bununla uğraşmazsın.",
+            Key::MoveToApplications => "AnyPS5'i Uygulamalar'a Taşı",
+            Key::MoveToApplicationsText => {
+                "macOS indirilen uygulamaları kilitli, salt okunur bir kopyadan açıyor. Uygulamalar klasörüne taşıyıp yeniden açayım, bir daha bununla uğraşmazsın."
+            }
             Key::MoveNow => "Taşı ve Yeniden Aç",
             Key::Later => "Sonra",
-            Key::NoToolkit => "Bu kopyada dönüştürme araçları yok. Release'deki kurulum dosyasını kullan.",
+            Key::NoToolkit => {
+                "Bu kopyada dönüştürme araçları yok. Release'deki kurulum dosyasını kullan."
+            }
             Key::EmptyLibraryTitle => "Henüz oyun yok",
-            Key::EmptyLibraryText => "Oyun klasörüne PS5 dump'larını koy, burada otomatik görünsünler.",
+            Key::EmptyLibraryText => {
+                "Oyun klasörüne PS5 dump'larını koy, burada otomatik görünsünler."
+            }
             Key::Scanning => "Oyunlar aranıyor",
             Key::AllGames => "Tüm Oyunlar",
-            Key::SortName => "Ada göre",
-            Key::PlayTime => "Son oynanan",
+            Key::SortName => "Ada Göre",
+            Key::PlayTime => "Son Oynanan",
             Key::ThemeCosmic => "Kozmik",
             Key::ThemeAurora => "Aurora",
             Key::ThemeSunset => "Gün Batımı",
@@ -995,7 +1041,9 @@ impl Key {
             Key::Confirm => "Onayla",
             Key::UnreadableDump => "Bu dump şifreli ya da bozuk, açılamaz.",
             Key::Controls => "Tuş Atamaları",
-            Key::ControlsHint => "Bir satır seç, sonra atamak istediğin tuşa bas. Esc vazgeçer. Kumanda bağlıysa kendi tuşlarıyla çalışır.",
+            Key::ControlsHint => {
+                "Bir satır seç, sonra atamak istediğin tuşa bas. Esc vazgeçer. Kumanda bağlıysa kendi tuşlarıyla çalışır."
+            }
             Key::PressKey => "Bir tuşa bas…",
             Key::ResetControls => "Varsayılan Tuşlara Dön",
             Key::NoKey => "Yok",
@@ -1035,8 +1083,10 @@ impl Key {
             Key::FontsFolder => "Sistem Fontları Klasörü",
             Key::FontsNone => "Seçilmedi",
             Key::FontsReset => "Font Klasörünü Kaldır",
-            Key::FontsHint => "Oyunda F12 bir ekran görüntüsü kaydeder. Konsolun sistem fontlarını isteyen oyunlar, font klasöründeki dosyaları kullanır.",
-            Key::SectionSticks => "Kumanda çubukları",
+            Key::FontsHint => {
+                "Oyunda F12 bir ekran görüntüsü kaydeder. Konsolun sistem fontlarını isteyen oyunlar, font klasöründeki dosyaları kullanır."
+            }
+            Key::SectionSticks => "Kumanda Çubukları",
             Key::LeftDeadzone => "Sol Çubuk Ölü Bölge",
             Key::RightDeadzone => "Sağ Çubuk Ölü Bölge",
             Key::DeadzoneDetail => "Ortada sayılan kısım; kayan bir çubuğu durdurur",
@@ -1057,11 +1107,15 @@ impl Key {
             Key::MouseDecayDetail => "Fare durunca kameranın durma süresi",
             Key::SectionKeyboard => "Klavye",
             Key::StickModifierScale => "Yavaş Hareket Oranı",
-            Key::StickModifierScaleDetail => "Yavaş Hareket tuşu basılıyken çubuğun eğimi (Tuş Atamaları'nda)",
+            Key::StickModifierScaleDetail => {
+                "Yavaş Hareket tuşu basılıyken çubuğun eğimi (Tuş Atamaları'nda)"
+            }
             Key::KeyboardRamp => "Çubuk Geçişi",
             Key::KeyboardRampDetail => "Tuşla çubuğun tam eğime varma süresi",
             Key::TriggerRamp => "Tetik Geçişi",
-            Key::TriggerRampDetail => "Tuşla L2/R2'nin sonuna kadar basılma süresi, yarış oyunları için",
+            Key::TriggerRampDetail => {
+                "Tuşla L2/R2'nin sonuna kadar basılma süresi, yarış oyunları için"
+            }
             Key::SectionGraphics => "Görüntü",
             Key::ShaderCache => "Shader Önbelleği",
             Key::ShaderCacheDetail => "Kapalıyken her açılışta shader'lar yeniden derlenir",
@@ -1079,7 +1133,9 @@ impl Key {
             Key::SettingsFileFailed => "Bu dosya bir AnyPlay ayar dosyası değil",
             Key::StickModifier => "Yavaş Hareket",
             Key::DiagnosisMissingModule => "Eksik modül: %@. Kilidi yeniden açmak çözebilir.",
-            Key::DiagnosisUnsupported => "Oyun henüz desteklenmeyen bir sistem fonksiyonu istedi: %@",
+            Key::DiagnosisUnsupported => {
+                "Oyun henüz desteklenmeyen bir sistem fonksiyonu istedi: %@"
+            }
             Key::DiagnosisGpuLost => "GPU ile bağlantı koptu.",
             Key::DiagnosisOutOfMemory => "Bellek yetmedi.",
             Key::DiagnosisEngineError => "Motor hatası: %@",

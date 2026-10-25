@@ -387,6 +387,7 @@ impl AdvancedPanel {
         let view = SideView {
             title: &data.game.name,
             subtitle: Some(data.language.text(Key::AdvancedTitle)),
+            question: false,
             list_id: "advanced-rows",
             nav: &self.side.nav,
             accent: data.accent,
@@ -401,7 +402,7 @@ impl AdvancedPanel {
                     self.apply(shell, data, change, &mut out);
                 }
                 if drawn.scrim_clicked {
-                    shell.play(Cue::Back);
+                    shell.play(Cue::Close);
                     self.side.close();
                     out.actions.push(AdvancedAction::Close);
                 }

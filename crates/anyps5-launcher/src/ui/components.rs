@@ -84,6 +84,8 @@ pub fn paint_focus_glow(painter: &Painter, rect: Rect, radius: f32, width: f32, 
 pub fn paint_focus_stroke(painter: &Painter, rect: Rect, radius: f32, width: f32, t: f32) {
     let t = t.clamp(0.0, 1.0);
     if t > 0.001 {
+        // An edge bump leans the ring toward the wall (ui::nudge); only a ring in focus follows.
+        let rect = rect.translate(crate::ui::nudge::offset(painter.ctx()) * t);
         let width = snap_width(painter, width);
         // A hairline of shade in the gap keeps the ring apart from a light fill and one outside it keeps
         // it visible on a light picture.
@@ -227,7 +229,10 @@ pub fn interact(
         && (input::hovered(ui.ctx(), &response)
             || force == Some(Force::Hover)
             || force == Some(Force::Press));
-    let pressed = enabled && (response.is_pointer_button_down_on() || force == Some(Force::Press));
+    // A select from a key or the pad holds the focused control pressed for a moment, like a click.
+    let selected = focused && crate::ui::press::active(ui.ctx());
+    let pressed = enabled
+        && (response.is_pointer_button_down_on() || force == Some(Force::Press) || selected);
     let ctx = ui.ctx();
     let hover = ctx.animate_to(
         (response.id, "hover"),
@@ -746,6 +751,8 @@ impl Switch {
         let (on, label, enabled) = (self.on, self.label.as_str(), self.enabled);
         if self.announce {
             response.widget_info(|| WidgetInfo::selected(Role::Switch, enabled, on, label));
+            // A switch of its own is what the ring sits on; inside a row the row follows.
+            crate::ui::a11y::follow(ui.ctx(), response.id, self.focus >= 1.0 && enabled);
         }
         let hovered = self.enabled && input::hovered(ui.ctx(), &response);
         if hovered {
@@ -774,7 +781,10 @@ impl Switch {
         if self.enabled {
             paint_shadow(painter, knob_rect, knob * 0.5, shadows::switch_knob());
         }
-        painter.circle_filled(centre, knob * 0.5, fade(Color32::WHITE, a));
+        // White on the off track; on the accent the knob turns dark, because white on mint or gold
+        // is 1.5:1 and the knob is what shows the state (DESIGN.md 3.10).
+        let knob_ink = mix(Color32::WHITE, color::on_primary(), t);
+        painter.circle_filled(centre, knob * 0.5, fade(knob_ink, a));
         response
     }
 }

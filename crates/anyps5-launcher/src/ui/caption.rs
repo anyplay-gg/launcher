@@ -143,7 +143,7 @@ fn caption_buttons(
                 let response = ui.allocate_rect(cell, Sense::click());
                 let hover = ctx.animate_bool_with_time(
                     Id::unique(("caption-hover", index)),
-                    response.hovered(),
+                    crate::ui::input::hovered(ctx, &response),
                     0.1,
                 );
                 paint_button(ui.painter(), cell, which, maximized, hover, visible, unit);

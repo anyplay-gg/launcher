@@ -55,7 +55,7 @@ pub struct StateLabel {
     pub text: String,
 }
 
-pub fn state_label(state: &GameState, language: Language, accent: Color32) -> StateLabel {
+pub fn state_label(state: &GameState, language: Language) -> StateLabel {
     let (icon, fill, tint, text) = match state {
         GameState::Locked => (
             Icon::LOCK,
@@ -78,7 +78,7 @@ pub fn state_label(state: &GameState, language: Language, accent: Color32) -> St
         GameState::Installing { step, .. } => (
             Icon::ARROW_CIRCLE_DOWN,
             true,
-            accent,
+            color::text_active(),
             language.text(step.title_key()).to_owned(),
         ),
         GameState::Preparing { paused, .. } => (
@@ -112,13 +112,13 @@ pub fn state_label(state: &GameState, language: Language, accent: Color32) -> St
         GameState::Starting => (
             Icon::HOURGLASS,
             false,
-            accent,
+            color::text_active(),
             language.text(Key::Starting).to_owned(),
         ),
         GameState::Running => (
             Icon::PLAY_CIRCLE,
             true,
-            accent,
+            color::text_active(),
             language.text(Key::Running).to_owned(),
         ),
     };

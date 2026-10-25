@@ -196,7 +196,7 @@ impl LogView {
                         break;
                     }
                     Command::Back | Command::Select => {
-                        shell.play(Cue::Back);
+                        shell.play(Cue::Close);
                         self.close();
                         actions.push(LogAction::Close);
                         break;
@@ -219,7 +219,7 @@ impl LogView {
         if self.open {
             match clicked {
                 Some(LogAction::Close) => {
-                    shell.play(Cue::Back);
+                    shell.play(Cue::Close);
                     self.close();
                     actions.push(LogAction::Close);
                 }
@@ -373,7 +373,7 @@ fn draw(ui: &mut Ui, data: &LogData<'_>, clicked: &mut Option<LogAction>) {
             Align2::CENTER_CENTER,
             theme::TextStyle::new(15.0, theme::Weight::Regular),
             Extra::EmptyLog.text(language),
-            white(0.6),
+            color::text_detail(),
         );
         return;
     }

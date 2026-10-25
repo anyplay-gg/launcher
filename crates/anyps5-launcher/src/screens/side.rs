@@ -101,6 +101,8 @@ impl<A> Default for Output<A> {
 pub struct SideView<'a> {
     pub title: &'a str,
     pub subtitle: Option<&'a str>,
+    /// The subtitle is the question of a confirmation: set in body size and ink, not as a quiet line.
+    pub question: bool,
     pub list_id: &'static str,
     pub nav: &'a PanelNav,
     pub accent: egui::Color32,
@@ -134,9 +136,15 @@ pub fn draw_with_header(
         focus: Some(view.nav.row),
         force: view.force,
     };
-    chrome::side_panel(ctx, SIDE_ID, open, view.title, view.subtitle, |ui| {
-        rows::list_with_header(ui, view.list_id, rows, &opts, header)
-    })
+    chrome::side_panel(
+        ctx,
+        SIDE_ID,
+        open,
+        view.title,
+        view.subtitle,
+        view.question,
+        |ui| rows::list_with_header(ui, view.list_id, rows, &opts, header),
+    )
     .map(|(output, events)| SideDrawn {
         scrim_clicked: output.scrim_clicked,
         events,
@@ -152,7 +160,7 @@ pub fn frame<R>(
     subtitle: Option<&str>,
     contents: impl FnOnce(&mut Ui) -> R,
 ) -> Option<(bool, R)> {
-    chrome::side_panel(ctx, SIDE_ID, open, title, subtitle, contents)
+    chrome::side_panel(ctx, SIDE_ID, open, title, subtitle, false, contents)
         .map(|(output, r)| (output.scrim_clicked, r))
 }
 

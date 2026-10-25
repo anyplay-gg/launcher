@@ -345,6 +345,7 @@ dependencies = [
  "egui-wgpu",
  "embed-resource",
  "gilrs",
+ "gilrs-core",
  "image",
  "libc",
  "naga",

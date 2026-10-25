@@ -73,6 +73,7 @@ pub mod strings;
 pub mod toolkit_pin;
 pub mod trophies;
 pub mod unlock;
+pub mod update_strings;
 pub mod whatsnew;
 
 pub use shared::*;

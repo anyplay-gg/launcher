@@ -46,9 +46,10 @@ use egui::{Context, Ui, ViewportCommand};
 
 use crate::app::clock;
 use crate::app::links;
+use crate::app::model::UpdateRequest;
 use crate::app::model::{Effect, GameState, Model};
 use crate::app::overlay::{Overlay, OverlayCx, OverlayHost};
-use crate::app::selfupdate::{SelfUpdateEvent, SelfUpdateService};
+use crate::app::selfupdate::{Restart, SelfUpdateService};
 use crate::app::toolkit::{NotesState, ToolkitEvent, ToolkitService};
 use crate::screens::advanced::{AdvancedAction, AdvancedData, AdvancedPanel};
 use crate::screens::banner::{BannerHost, BannerTrophy};
@@ -186,10 +187,11 @@ pub struct PanelHost {
     work_rx: Receiver<Work>,
     ctx: Context,
     checked_at_start: bool,
-    /// The launcher's own update: checked once per start, swapped in when it closes.
+    /// The launcher's own update: checked at the start and every few hours, swapped in when it
+    /// closes or on "Restart Now".
     launcher: SelfUpdateService,
-    /// The version the "ready" toast was shown for (once per session).
-    launcher_toasted: Option<String>,
+    /// The notes of the staged update as the "What's New" panel shows them, while it shows them.
+    launcher_published: Option<anyps5_core::releases::Published>,
     /// The first-start download of the toolkit was tried (once per session; the settings retry).
     toolkit_auto_tried: bool,
     /// Who answers `anyps5://` links, read when the settings open and after a change.
@@ -199,6 +201,16 @@ pub struct PanelHost {
 }
 
 impl PanelHost {
+    /// A host that shows the launcher's update in `state` and never checks (the previews).
+    pub fn showing_launcher_update(
+        mut self,
+        ctx: &Context,
+        state: crate::screens::settings::LauncherUpdate,
+    ) -> Self {
+        self.launcher = SelfUpdateService::showing(ctx, state, None);
+        self
+    }
+
     /// `simulated`: the demo and the tests; the toolkit service then never goes online.
     pub fn new(ctx: &Context, simulated: bool) -> Self {
         let (work_tx, work_rx) = channel();
@@ -249,7 +261,7 @@ impl PanelHost {
             ctx: ctx.clone(),
             checked_at_start: simulated,
             launcher: SelfUpdateService::new(ctx, simulated),
-            launcher_toasted: None,
+            launcher_published: None,
             toolkit_auto_tried: simulated,
             links: LinkHandler::Absent,
             simulated,
@@ -323,6 +335,7 @@ impl PanelHost {
             recent: &self.toolkit.recent,
             unused: &unused,
             launcher: self.launcher.state.clone(),
+            launcher_notes: self.launcher.notes().is_some(),
             default_screenshots: &default_screenshots,
             links: self.links.clone(),
             cjk_fonts: anyps5_core::fonts::cjk_state(&cx.model.paths, &crate::fonts::BUNDLE),
@@ -419,6 +432,7 @@ impl PanelHost {
                 self.toolkit.remove(&model.paths, &tag, in_use);
             }
             SettingsAction::OpenWhatsNew(tag) => {
+                self.launcher_published = None;
                 self.toolkit.load_notes(
                     &model.paths,
                     &model.prefs.toolkit_repository,
@@ -428,12 +442,10 @@ impl PanelHost {
                 self.settings_return = Category::ALL.iter().position(|c| *c == Category::Toolkit);
                 model.switch_overlay(Overlay::WhatsNew);
             }
-            SettingsAction::RestartNow => {
-                // The swap and the new exe follow in `exit`, once the preferences are saved.
-                if self.launcher.request_restart() {
-                    cx.ctx.send_viewport_cmd(ViewportCommand::Close);
-                }
-            }
+            SettingsAction::RestartNow => self.restart_launcher(model, cx.ctx),
+            SettingsAction::CancelRestart => self.launcher.cancel_hold(),
+            SettingsAction::CheckLauncherUpdate => self.launcher.check_now(),
+            SettingsAction::OpenLauncherNotes => self.open_launcher_notes(model),
             SettingsAction::SetLinks(on) => self.set_links(model, on),
             SettingsAction::OpenPage(page) => open_known_url(page),
             SettingsAction::Phone(crate::screens::phone::PhoneAction::OpenDriverPage) => {
@@ -1211,20 +1223,31 @@ impl PanelHost {
 
     fn whats_new_ui(&mut self, cx: &mut OverlayCx<'_>, wanted: bool) {
         let events = self.take_events(wanted);
+        let language = cx.model.language();
         if wanted && !self.whats_new.is_active() {
-            self.whats_new.open();
+            match &self.launcher_published {
+                Some(published) => self.whats_new.open_launcher(&published.notes, language),
+                None => self.whats_new.open(),
+            }
         } else if !wanted && self.whats_new.is_active() {
             self.whats_new.close();
         }
-        let view = match &self.toolkit.notes {
-            NotesState::Ready(published) => NotesView::Ready(published),
-            NotesState::Unavailable => NotesView::Unavailable,
-            NotesState::Idle | NotesState::Loading => NotesView::Loading,
+        let launcher = self.launcher_published.is_some();
+        let view = match (&self.launcher_published, &self.toolkit.notes) {
+            (Some(published), _) => NotesView::Ready(published),
+            (None, NotesState::Ready(published)) => NotesView::Ready(published),
+            (None, NotesState::Unavailable) => NotesView::Unavailable,
+            (None, NotesState::Idle | NotesState::Loading) => NotesView::Loading,
+        };
+        let tag = match &self.launcher_published {
+            Some(published) => published.tag.as_str(),
+            None => self.whats_new_tag.as_str(),
         };
         let data = WhatsNewData {
-            tag: &self.whats_new_tag,
+            tag,
             view,
-            language: cx.model.language(),
+            language,
+            launcher,
         };
         let actions = self.whats_new.show(cx.shell, cx.ctx, &events, &data);
         for action in actions {
@@ -1300,7 +1323,7 @@ impl PanelHost {
             .iter()
             .map(|game| {
                 let state = cx.model.state_of(game);
-                let label = state_label(&state, language, accent);
+                let label = state_label(&state, language);
                 let icon = game.icon.as_ref().and_then(|path| {
                     cx.textures.get(path, LIBRARY_ICON).map(|loaded| TileImage {
                         texture: loaded.id,
@@ -1650,17 +1673,49 @@ impl PanelHost {
         }
     }
 
-    fn poll_launcher(&mut self, model: &mut Model) {
-        for event in self.launcher.poll() {
-            if let SelfUpdateEvent::Ready(staged) = event
-                && self.launcher_toasted.as_deref() != Some(&staged.version)
-            {
-                let text =
-                    Extra::LauncherToast.format(model.language(), &[Arg::Str(&staged.version)]);
-                model.toast(text, Icon::CHECK_CIRCLE);
-                self.launcher_toasted = Some(staged.version);
-            }
+    /// The launcher update, every frame: results in, the state out to the screens, the notice's
+    /// buttons in, and a restart that waited for a game goes ahead once the game is over. There is
+    /// no toast: the update shows in About and as the notice on the home screen.
+    fn poll_launcher(&mut self, cx: &mut OverlayCx<'_>) {
+        self.launcher.poll();
+        let model = &mut *cx.model;
+        if model.update != self.launcher.state {
+            model.update.clone_from(&self.launcher.state);
         }
+        match model.update_request.take() {
+            Some(UpdateRequest::Restart) => self.restart_launcher(model, cx.ctx),
+            Some(UpdateRequest::CancelRestart) => self.launcher.cancel_hold(),
+            None => {}
+        }
+        let game_running = model.running.is_some() || model.starting.is_some();
+        if self.launcher.hold_released(game_running) {
+            cx.ctx.send_viewport_cmd(ViewportCommand::Close);
+        }
+    }
+
+    /// "Restart Now". The swap and the new exe follow in `exit`, once the preferences are saved;
+    /// a running game is never closed for it, the restart waits (see `SelfUpdateService`).
+    fn restart_launcher(&mut self, model: &mut Model, ctx: &Context) {
+        let game_running = model.running.is_some() || model.starting.is_some();
+        let resume = resume_link(model);
+        if self.launcher.request_restart(game_running, resume) == Restart::Now {
+            ctx.send_viewport_cmd(ViewportCommand::Close);
+        }
+    }
+
+    /// The notes of the staged update in the "What's New" panel.
+    fn open_launcher_notes(&mut self, model: &mut Model) {
+        let (Some(version), Some(notes)) = (self.launcher.staged_version(), self.launcher.notes())
+        else {
+            return;
+        };
+        self.launcher_published = Some(anyps5_core::releases::Published {
+            tag: version.to_owned(),
+            date: String::new(),
+            notes,
+        });
+        self.settings_return = Category::ALL.iter().position(|c| *c == Category::About);
+        model.switch_overlay(Overlay::WhatsNew);
     }
 
     /// Trophies earned by the running game raise banners (own viewport) and refresh the list.
@@ -1745,10 +1800,9 @@ impl OverlayHost for PanelHost {
         }
         self.poll_work(cx.model);
         self.poll_toolkit(cx.model);
-        if cx.model.prefs.check_for_updates {
-            self.launcher.start(&cx.model.paths);
-        }
-        self.poll_launcher(cx.model);
+        let paths = cx.model.paths.clone();
+        self.launcher.tick(&paths, cx.model.prefs.check_for_updates);
+        self.poll_launcher(cx);
         // No toolkit on this PC: fetch it now, already during the onboarding, so the first unlock
         // needs no visit to the settings. The result shows as a toast (see `poll_toolkit`).
         if !self.toolkit_auto_tried && cx.model.toolkit.is_none() {
@@ -1847,9 +1901,37 @@ fn spawn(name: &str, work: impl FnOnce() + Send + 'static) {
     }
 }
 
+/// Where a restarted launcher should open, as a deep link: the About page when the restart came
+/// from the settings, else the game that is selected. `None` with an empty library.
+fn resume_link(model: &Model) -> Option<String> {
+    if model.overlay == Some(Overlay::Settings) {
+        return Some(format!("{}://settings/about", anyps5_core::links::SCHEME));
+    }
+    let game = model.selected_game()?;
+    // The title ID comes from the game's files: it only goes into a link the strict parser accepts
+    // as a plain game link.
+    let link = format!("{}://game/{}", anyps5_core::links::SCHEME, game.title_id);
+    matches!(
+        anyps5_core::links::parse(&link),
+        Ok(anyps5_core::links::Link::Game { .. })
+    )
+    .then_some(link)
+}
+/// A release page of the launcher itself: `.../releases/tag/v` and a version of digits, letters,
+/// dots and dashes, nothing else.
+fn launcher_release_page(url: &str) -> bool {
+    url.strip_prefix("https://github.com/anyplaynet/launcher/releases/tag/v")
+        .is_some_and(|version| {
+            !version.is_empty()
+                && version
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+        })
+}
+
 /// Opens a page of the toolkit's repository in the browser. Nothing else is opened.
 fn open_url(url: &str) {
-    if !url.starts_with("https://github.com/boykopovar/AnyPS5/") {
+    if !url.starts_with("https://github.com/boykopovar/AnyPS5/") && !launcher_release_page(url) {
         return;
     }
     if let Err(error) = anyps5_core::platform::open_url(url) {
@@ -1866,6 +1948,8 @@ fn open_known_url(url: &str) {
         crate::screens::about_strings::DISCORD,
         crate::screens::about_strings::PRIVACY,
         crate::screens::about_strings::TERMS,
+        crate::screens::about_strings::INSTALL_GUIDE,
+        crate::screens::update_strings::RELEASES,
     ];
     if !known.contains(&url) {
         return;
@@ -2334,5 +2418,22 @@ mod tests {
         assert!(!copy.exists());
         let selected = rig.app.model.selected;
         assert!(rig.app.model.games[selected].unlocked_with.is_none());
+    }
+
+    #[test]
+    fn only_a_release_page_of_the_launcher_may_be_opened_from_the_notes() {
+        let page = "https://github.com/anyplaynet/launcher/releases/tag/v";
+        assert!(launcher_release_page(&format!("{page}0.2.5")));
+        assert!(launcher_release_page(&format!("{page}0.3.0-rc.1")));
+        for bad in [
+            page.to_owned(),
+            format!("{page}0.2.5/../../x"),
+            format!("{page}0.2.5@evil.example"),
+            format!("{page}0.2.5?x=1"),
+            "https://github.com/anyplaynet/launcher/releases/tag/".to_owned(),
+            "https://evil.example/anyplaynet/launcher/releases/tag/v1".to_owned(),
+        ] {
+            assert!(!launcher_release_page(&bad), "{bad}");
+        }
     }
 }

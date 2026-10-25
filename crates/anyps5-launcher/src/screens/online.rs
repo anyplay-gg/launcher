@@ -480,6 +480,7 @@ impl OnlinePanel {
         let view = SideView {
             title: &title,
             subtitle: subtitle.as_deref(),
+            question: false,
             list_id: "online-rows",
             nav: &self.side.nav,
             accent: data.accent,
@@ -507,7 +508,7 @@ impl OnlinePanel {
                     self.handle(ctx, change, data, &mut actions);
                 }
                 if drawn.scrim_clicked {
-                    shell.play(crate::ui::sound::Cue::Back);
+                    shell.play(crate::ui::sound::Cue::Close);
                     self.close_panel(data, &mut actions);
                 }
             }

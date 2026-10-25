@@ -426,6 +426,17 @@ pub enum Backdrop {
     Video,
 }
 
+/// How strongly the controller vibrates to answer an action ("Controller Vibration").
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Vibration {
+    Off,
+    Light,
+    #[default]
+    Medium,
+    Strong,
+}
+
 /// Which CPU conversion the relinker is asked for (D1).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -499,6 +510,9 @@ pub struct Preferences {
     /// and the launcher.
     #[serde(default = "yes")]
     pub ps_button: bool,
+    /// How strongly the controller vibrates to answer an action; never while a game has the pad.
+    #[serde(default)]
+    pub vibration: Vibration,
     /// Hidden trophies that are not earned show their name and description in the trophy list.
     /// Local only: the network never sees it.
     #[serde(default)]
@@ -597,6 +611,7 @@ impl Default for Preferences {
             known_games: None,
             prepare_pending: BTreeSet::new(),
             ps_button: true,
+            vibration: Vibration::Medium,
             show_hidden_trophies: false,
             fullscreen: true,
             profile_name: default_profile_name(),

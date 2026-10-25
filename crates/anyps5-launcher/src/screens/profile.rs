@@ -167,7 +167,7 @@ impl ProfileScreen {
     fn command(&mut self, shell: &mut Shell, command: Command, actions: &mut Vec<ProfileAction>) {
         match command {
             Command::Back | Command::Options => {
-                shell.play(Cue::Back);
+                shell.play(Cue::Close);
                 actions.push(ProfileAction::Close);
             }
             Command::Select => self.press(shell, self.focus, actions),

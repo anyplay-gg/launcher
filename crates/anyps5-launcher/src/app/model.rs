@@ -82,6 +82,23 @@ pub struct Toast {
     pub until: f64,
 }
 
+/// The launcher update notice on the home screen.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UpdateNotice {
+    pub version: String,
+    /// The restart waits for a running game.
+    pub holding: bool,
+    /// How many buttons it has (the focus stops of [`HomeFocus::Update`]).
+    pub buttons: u8,
+}
+
+/// What a button of the notice asks the host for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UpdateRequest {
+    Restart,
+    CancelRestart,
+}
+
 /// Where the first-run setup stands.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Onboarding {
@@ -241,6 +258,15 @@ pub struct Model {
     /// Why each game stopped the last time it was started, when it stopped on an error.
     pub diagnoses: HashMap<GameId, String>,
     pub toast: Option<Toast>,
+    /// Where the launcher's own update stands, copied in every frame by the panel host.
+    pub update: crate::screens::settings::LauncherUpdate,
+    /// The version whose notice the player sent away with "Later" (until the next start).
+    pub update_dismissed: Option<String>,
+    /// What the notice asked for since the host looked: restart now, or cancel the held restart.
+    pub update_request: Option<UpdateRequest>,
+    /// The notice fits in the top bar as drawn last frame. The focus order reads it, so the pad
+    /// never lands on a notice that is not there.
+    pub notice_fits: bool,
     /// The toolkit version on this PC (`None`: no toolkit, nothing can be unlocked).
     pub toolkit: Option<String>,
     /// The toolkit needs a newer glibc than this system has (Linux); a notice, not a block.
@@ -319,6 +345,10 @@ impl Model {
             trophies: HashMap::new(),
             diagnoses: HashMap::new(),
             toast: None,
+            update: Default::default(),
+            update_dismissed: None,
+            update_request: None,
+            notice_fits: true,
             toolkit: None,
             glibc: None,
             game_toolkits: HashMap::new(),
@@ -447,11 +477,27 @@ impl Model {
         self.online.upload_playtime(entries);
     }
 
-    /// Shows a toast; a warning also plays the error cue.
+    /// Shows a toast; a warning plays the error cue, every other one the soft chime.
     pub fn toast(&mut self, text: impl Into<String>, icon: Icon) {
-        if icon == Icon::WARNING {
-            self.sound(Cue::Error);
+        // Only a failure sounds by itself: the other toasts answer an action that has its own cue,
+        // or choose one with `toast_with` (an unasked-for event: a request, a missed call).
+        if matches!(
+            icon,
+            Icon::WARNING | Icon::X_CIRCLE | Icon::MICROPHONE_SLASH | Icon::PROHIBIT | Icon::CLOCK
+        ) {
+            self.toast_with(text, icon, Cue::Error);
+        } else {
+            self.toast_silent(text, icon);
         }
+    }
+
+    /// A toast with its own cue: a message, an invitation.
+    pub fn toast_with(&mut self, text: impl Into<String>, icon: Icon, cue: Cue) {
+        self.sound(cue);
+        self.toast_silent(text, icon);
+    }
+
+    fn toast_silent(&mut self, text: impl Into<String>, icon: Icon) {
         self.toast_counter += 1;
         self.toast = Some(Toast {
             id: self.toast_counter,
@@ -556,6 +602,7 @@ impl Model {
             selected: self.selected,
             has_trophies: self.has_trophies(),
             asking: self.run_question().is_some(),
+            notice: self.update_notice().map_or(0, |n| n.buttons),
         }
     }
 
@@ -695,7 +742,8 @@ impl Model {
                 Some(set) => {
                     if let Some(title_id) = self.game(&game).map(|g| g.title_id.clone()) {
                         self.online.upload_trophies(&title_id, &set.earned());
-                        self.online.mark_secrets(&title_id, &set.hidden());
+                        self.online
+                            .mark_secrets(&title_id, &set.hidden(), &set.hidden_earned());
                     }
                     self.trophies.insert(game, set);
                 }
@@ -1015,7 +1063,7 @@ impl Model {
 
     pub fn open(&mut self, overlay: Overlay) {
         self.switch_overlay(overlay);
-        self.sound(Cue::Select);
+        self.sound(Cue::Open);
     }
 
     /// Opens or replaces the overlay without a sound: the panel modules play their own cues.
@@ -1042,7 +1090,7 @@ impl Model {
 
     pub fn close_overlay(&mut self) {
         self.overlay = None;
-        self.sound(Cue::Back);
+        self.sound(Cue::Close);
     }
 
     // --- home input --------------------------------------------------------------------------
@@ -1064,13 +1112,17 @@ impl Model {
         }
         // The launcher is in front because of the Home button: Back goes back to the game.
         if self.summoned && self.running.is_some() && command == Command::Back {
-            self.sound(Cue::Back);
+            self.sound(Cue::Close);
             self.return_to_game();
             return Routed::Done;
         }
         // The question line may have gone (answered, signed out) while the focus was on it.
         if matches!(self.focus, HomeFocus::Ask(_)) && self.run_question().is_none() {
             self.focus = HomeFocus::Actions(0);
+        }
+        // The notice may have gone (sent away, installed) while the focus was on it.
+        if matches!(self.focus, HomeFocus::Update(_)) && self.update_notice().is_none() {
+            self.focus = HomeFocus::Tiles;
         }
         let step = self.focus.navigate(command, self.home_context());
         self.focus = step.focus;
@@ -1088,11 +1140,28 @@ impl Model {
         Routed::Done
     }
 
+    /// Tab on the home screen: the next (or, with Shift, the previous) stop in reading order.
+    /// Panels turn Tab into Down and Up, the onboarding into Right and Left (see `App::handle_event`).
+    pub fn tab_home(&mut self, backwards: bool) {
+        if self.overlay.is_some() || self.starting.is_some() || !self.onboarded() {
+            return;
+        }
+        if matches!(self.focus, HomeFocus::Ask(_)) && self.run_question().is_none() {
+            self.focus = HomeFocus::Actions(0);
+        }
+        let step = self.focus.tab(backwards, self.home_context());
+        self.focus = step.focus;
+        if let Some(cue) = step.sound {
+            self.sound(cue);
+        }
+    }
+
     /// What a select on the home screen leads to (also used by mouse clicks).
     pub fn apply_intent(&mut self, intent: HomeIntent) {
         match intent {
             HomeIntent::PrimaryAction => self.primary_action(),
             HomeIntent::AnswerRun(i) => self.answer_run(i),
+            HomeIntent::UpdateAction(i) => self.update_action(i),
             HomeIntent::OpenTrophies => self.open(Overlay::Trophies),
             HomeIntent::OpenGameSettings => self.open(Overlay::GameSettings),
             HomeIntent::OpenLibrary => self.open(Overlay::Library),
@@ -1102,6 +1171,58 @@ impl Model {
             // The profile button: the own profile once signed in, the sign-in page before.
             HomeIntent::OpenOnline => self.open_profile_button(),
             HomeIntent::ChooseFolder => self.request_folder_dialog(),
+        }
+    }
+
+    // --- the launcher update notice -------------------------------------------------------------
+
+    /// The notice on the home screen as the player meets it: wanted, and with room in the bar.
+    pub fn update_notice(&self) -> Option<UpdateNotice> {
+        self.update_notice_wanted().filter(|_| self.notice_fits)
+    }
+
+    /// The notice that is wanted, room or not: a verified update waits and the player has not
+    /// sent it away, or its restart waits for the game to end.
+    pub fn update_notice_wanted(&self) -> Option<UpdateNotice> {
+        use crate::screens::settings::LauncherUpdate;
+        if !self.onboarded() {
+            return None;
+        }
+        match &self.update {
+            LauncherUpdate::Ready(v) if self.update_dismissed.as_deref() != Some(v) => {
+                Some(UpdateNotice {
+                    version: v.clone(),
+                    holding: false,
+                    buttons: 2,
+                })
+            }
+            LauncherUpdate::Holding(v) => Some(UpdateNotice {
+                version: v.clone(),
+                holding: true,
+                buttons: 1,
+            }),
+            _ => None,
+        }
+    }
+
+    /// A button of the notice: "Restart Now" and "Later", or while the restart waits, "Cancel".
+    fn update_action(&mut self, index: usize) {
+        let Some(notice) = self.update_notice() else {
+            return;
+        };
+        self.sound(Cue::Select);
+        match (notice.holding, index) {
+            (false, 0) => self.update_request = Some(UpdateRequest::Restart),
+            (false, _) => {
+                self.update_dismissed = Some(notice.version);
+                self.focus = HomeFocus::Tiles;
+            }
+            (true, _) => {
+                // The player said no to the restart: the notice does not come back asking again.
+                self.update_request = Some(UpdateRequest::CancelRestart);
+                self.update_dismissed = Some(notice.version);
+                self.focus = HomeFocus::Tiles;
+            }
         }
     }
 
@@ -1115,6 +1236,7 @@ impl Model {
             HomeFocus::Actions(_) => HomeIntent::OpenGameSettings,
             HomeFocus::Tiles => HomeIntent::PrimaryAction,
             HomeFocus::Ask(i) => HomeIntent::AnswerRun(i),
+            HomeFocus::Update(i) => HomeIntent::UpdateAction(usize::from(i)),
         };
         self.apply_intent(intent);
     }
@@ -1496,7 +1618,12 @@ mod tests {
         ]);
         m.handle(Command::Left);
         assert_eq!(m.selected, 0);
-        assert!(sounds(&mut m).is_empty());
+        assert_eq!(
+            sounds(&mut m),
+            vec![Cue::Bump],
+            "the end of the row is a bump"
+        );
+        m.effects.clear();
         m.handle(Command::Right);
         assert_eq!(m.selected, 1);
         assert_eq!(sounds(&mut m), vec![Cue::Move]);
@@ -2087,5 +2214,39 @@ mod tests {
         });
         assert_eq!(m.overlay, None);
         assert!(!m.summoned);
+    }
+
+    #[test]
+    fn the_update_notice_needs_room_and_does_not_come_back_after_a_no() {
+        use crate::screens::settings::LauncherUpdate;
+        let mut m = model_with(Vec::new());
+        assert_eq!(m.update_notice(), None);
+        m.update = LauncherUpdate::Ready("0.3.0".into());
+        let notice = m.update_notice().expect("a ready update is noticed");
+        assert_eq!((notice.holding, notice.buttons), (false, 2));
+        // No room in the top bar: nothing to draw and nothing for the pad to land on.
+        m.notice_fits = false;
+        assert_eq!(m.update_notice(), None);
+        assert_eq!(m.home_context().notice, 0);
+        m.notice_fits = true;
+        assert_eq!(m.home_context().notice, 2);
+
+        // "Later" sends it away for this version only.
+        m.update_action(1);
+        assert_eq!(m.update_notice(), None);
+        m.update = LauncherUpdate::Ready("0.3.1".into());
+        assert!(m.update_notice().is_some());
+
+        // "Restart Now" asks the host; while a game runs the notice offers only "Cancel", and a
+        // "Cancel" is a no: the notice does not return asking again.
+        m.update_action(0);
+        assert_eq!(m.update_request.take(), Some(UpdateRequest::Restart));
+        m.update = LauncherUpdate::Holding("0.3.1".into());
+        let held = m.update_notice().unwrap();
+        assert_eq!((held.holding, held.buttons), (true, 1));
+        m.update_action(0);
+        assert_eq!(m.update_request.take(), Some(UpdateRequest::CancelRestart));
+        m.update = LauncherUpdate::Ready("0.3.1".into());
+        assert_eq!(m.update_notice(), None);
     }
 }

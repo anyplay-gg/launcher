@@ -292,7 +292,7 @@ impl FeedText {
             FeedText::HoursMinutes => "%@ sa %@ dk",
             FeedText::Hours => "%@ sa",
             FeedText::Minutes => "%@ dk",
-            FeedText::BannerName => "%@ kullanıcısının profili",
+            FeedText::BannerName => "%@ Kullanıcısının Profili",
         }
     }
 

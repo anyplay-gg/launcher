@@ -32,9 +32,9 @@ impl RunText {
     pub const fn english(self) -> &'static str {
         match self {
             RunText::Question => "How did it run?",
-            RunText::NoStart => "Doesn't start",
+            RunText::NoStart => "Doesn't Start",
             RunText::Menus => "Menus",
-            RunText::InGame => "In game",
+            RunText::InGame => "In Game",
             RunText::Playable => "Playable",
             RunText::Dismiss => "Dismiss",
             RunText::Runs => "Runs",

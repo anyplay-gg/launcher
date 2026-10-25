@@ -92,6 +92,7 @@ impl RecommendedPanel {
         let view = SideView {
             title: data.title,
             subtitle: Some(Extra::RecTitle.text(data.language)),
+            question: false,
             list_id: "recommended-rows",
             nav: &self.side.nav,
             accent: data.accent,
@@ -297,7 +298,7 @@ mod tests {
         assert_eq!(rows[0].title, "Missing PlayGo Data");
         assert_eq!(
             rows[0].control,
-            rows::Control::Info(Some("Default → Report as installed".into()))
+            rows::Control::Info(Some("Default → Report as Installed".into()))
         );
         assert_eq!(rows.iter().filter(|r| r.id == "apply").count(), 1);
     }

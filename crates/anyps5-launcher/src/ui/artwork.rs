@@ -77,10 +77,25 @@ pub fn paint_artwork(
 /// Horizontal scrim (black 0.78 at 0, 0.35 at 0.5, clear at 0.85) and vertical scrim (black 0.55 at
 /// 0, clear at 0.3 and 0.55, black 0.85 at 1), both scaled by `alpha`.
 pub fn paint_scrims(painter: &Painter, rect: Rect, alpha: f32) {
-    let horizontal = [(0.0, 0.78), (0.5, 0.35), (0.85, 0.0), (1.0, 0.0)];
-    let vertical = [(0.0, 0.55), (0.3, 0.0), (0.55, 0.0), (1.0, 0.85)];
-    painter.add(Shape::mesh(gradient(rect, &horizontal, true, alpha)));
-    painter.add(Shape::mesh(gradient(rect, &vertical, false, alpha)));
+    painter.add(Shape::mesh(gradient(rect, &SCRIM_HORIZONTAL, true, alpha)));
+    painter.add(Shape::mesh(gradient(rect, &SCRIM_VERTICAL, false, alpha)));
+}
+
+const SCRIM_HORIZONTAL: [(f32, f32); 4] = [(0.0, 0.78), (0.5, 0.35), (0.85, 0.0), (1.0, 0.0)];
+const SCRIM_VERTICAL: [(f32, f32); 4] = [(0.0, 0.55), (0.3, 0.0), (0.55, 0.0), (1.0, 0.85)];
+
+/// The two scrims at a point of the artwork (`u` and `v` in 0..=1 across it), as one black alpha.
+pub fn scrim_alpha(u: f32, v: f32) -> f32 {
+    let at = |stops: &[(f32, f32)], t: f32| {
+        stops
+            .windows(2)
+            .find(|w| t <= w[1].0)
+            .map_or(stops[stops.len() - 1].1, |w| {
+                let k = ((t - w[0].0) / (w[1].0 - w[0].0)).max(0.0);
+                lerp(w[0].1, w[1].1, k)
+            })
+    };
+    1.0 - (1.0 - at(&SCRIM_HORIZONTAL, u)) * (1.0 - at(&SCRIM_VERTICAL, v))
 }
 
 /// A black gradient with `(position 0..1, alpha)` stops along one axis.

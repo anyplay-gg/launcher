@@ -11,10 +11,24 @@ pub enum Cue {
     Move,
     /// The pointer entered a new control, tile or row: the Move tick, a touch quieter.
     Hover,
-    /// Something opened, an action ran, advance in onboarding.
+    /// An action ran, a choice was made, advance in onboarding.
     Select,
-    /// Closing, leaving, cancelling.
+    /// Leaving a level, cancelling, a step back.
     Back,
+    /// A switch turned on: two quick notes up a fourth.
+    On,
+    /// A switch turned off: the same two notes, down.
+    Off,
+    /// A screen or panel opened: a rising fifth, F4 under C5.
+    Open,
+    /// A screen or panel closed: the fifth falling.
+    Close,
+    /// Something happened that was not asked for (a toast, a friend request): a soft chime.
+    Notify,
+    /// A message arrived: two short notes up a fourth, lower than the chime.
+    Message,
+    /// An invitation arrived: F4, C5, F5 one after the other, slowly.
+    Invite,
     /// Unlock finished, onboarding finished, trophy banner.
     Unlocked,
     /// Something failed (a warning toast).
@@ -23,18 +37,28 @@ pub enum Cue {
     Boot,
     /// A call rings: two soft stacked fifths, repeated by the caller of the cue.
     Ring,
+    /// A direction had nowhere to go: the end of a row or a list. Barely there.
+    Bump,
 }
 
 impl Cue {
-    pub const ALL: [Cue; 8] = [
+    pub const ALL: [Cue; 16] = [
         Cue::Move,
         Cue::Hover,
         Cue::Select,
         Cue::Back,
+        Cue::On,
+        Cue::Off,
+        Cue::Open,
+        Cue::Close,
+        Cue::Notify,
+        Cue::Message,
+        Cue::Invite,
         Cue::Unlocked,
         Cue::Error,
         Cue::Boot,
         Cue::Ring,
+        Cue::Bump,
     ];
 }
 
@@ -65,6 +89,8 @@ const F3: f32 = 174.61;
 const A3: f32 = 220.0;
 const B_FLAT3: f32 = 233.08;
 const C4: f32 = 261.63;
+const A4: f32 = 440.0;
+const D5: f32 = 587.33;
 const E4: f32 = 329.63;
 const F4: f32 = 349.23;
 const G4: f32 = 392.0;
@@ -122,6 +148,113 @@ fn recipe(cue: Cue) -> (Mix, Draw) {
                 tone(o, r, 0.0, E4, 0.7, shape(0.010, 0.09), ROUND, 0.0);
             },
         ),
+        // A switch: C5 then F5, 55 ms apart, short and nearly dry; the off switch plays them down.
+        Cue::On => (
+            Mix {
+                peak_db: -18.0,
+                send: 0.08,
+                rt60: 0.5,
+                cutoff: 7000.0,
+                length: 0.5,
+            },
+            |o, r| {
+                tone(o, r, 0.0, C5, 1.0, shape(0.008, 0.05), TICK, 0.0);
+                tone(o, r, 0.055, F5, 0.9, shape(0.008, 0.07), TICK, 0.0);
+            },
+        ),
+        Cue::Off => (
+            Mix {
+                peak_db: -19.0,
+                send: 0.08,
+                rt60: 0.5,
+                cutoff: 6000.0,
+                length: 0.5,
+            },
+            |o, r| {
+                tone(o, r, 0.0, F5, 0.9, shape(0.008, 0.05), TICK, 0.0);
+                tone(o, r, 0.055, C5, 1.0, shape(0.008, 0.07), TICK, 0.0);
+            },
+        ),
+        // A screen opens: F4 with C5 a breath later, a rounded attack and some room.
+        Cue::Open => (
+            Mix {
+                peak_db: -16.0,
+                send: 0.18,
+                rt60: 1.0,
+                cutoff: 6500.0,
+                length: 1.0,
+            },
+            |o, r| {
+                tone(o, r, 0.0, F4, 1.0, shape(0.018, 0.14), ROUND, 0.0);
+                tone(o, r, 0.07, C5, 0.7, shape(0.018, 0.14), ROUND, 0.0);
+            },
+        ),
+        // ... and closes: the same two notes the other way round, a little quieter.
+        Cue::Close => (
+            Mix {
+                peak_db: -17.0,
+                send: 0.16,
+                rt60: 0.9,
+                cutoff: 5500.0,
+                length: 0.9,
+            },
+            |o, r| {
+                tone(o, r, 0.0, C5, 0.7, shape(0.014, 0.11), ROUND, 0.0);
+                tone(o, r, 0.07, F4, 1.0, shape(0.014, 0.11), ROUND, 0.0);
+            },
+        ),
+        // A chime: G5 and C6, the C a moment later, a long soft tail.
+        Cue::Notify => (
+            Mix {
+                peak_db: -16.0,
+                send: 0.25,
+                rt60: 1.2,
+                cutoff: 9000.0,
+                length: 1.4,
+            },
+            |o, r| {
+                tone(o, r, 0.0, G5, 1.0, shape(0.015, 0.20), PURE, 0.0);
+                tone(o, r, 0.04, C6, 0.6, shape(0.015, 0.20), PURE, 0.0);
+            },
+        ),
+        // A message: A4 then D5, 90 ms apart, short.
+        Cue::Message => (
+            Mix {
+                peak_db: -17.0,
+                send: 0.12,
+                rt60: 0.7,
+                cutoff: 7000.0,
+                length: 0.8,
+            },
+            |o, r| {
+                tone(o, r, 0.0, A4, 1.0, shape(0.012, 0.07), TICK, 0.0);
+                tone(o, r, 0.09, D5, 0.9, shape(0.012, 0.09), TICK, 0.0);
+            },
+        ),
+        // An invitation: F4, C5, F5 as a slow arpeggio, 70 ms apart.
+        Cue::Invite => (
+            Mix {
+                peak_db: -15.0,
+                send: 0.22,
+                rt60: 1.2,
+                cutoff: 8000.0,
+                length: 1.6,
+            },
+            |o, r| {
+                for (k, (freq, amp)) in [F4, C5, F5].into_iter().zip([1.0, 0.85, 0.7]).enumerate() {
+                    tone(
+                        o,
+                        r,
+                        k as f32 * 0.07,
+                        freq,
+                        amp,
+                        shape(0.02, 0.16),
+                        PURE,
+                        0.0,
+                    );
+                }
+            },
+        ),
         // Two close low tones, A3 and B flat 3, rubbing softly.
         Cue::Error => (
             Mix {
@@ -135,6 +268,18 @@ fn recipe(cue: Cue) -> (Mix, Draw) {
                 tone(o, r, 0.0, A3, 1.0, shape(0.012, 0.09), PURE, 0.0);
                 tone(o, r, 0.0, B_FLAT3, 0.9, shape(0.012, 0.09), PURE, 0.0);
             },
+        ),
+        // A low, dull knock: F3 with a faint octave, cut off at 1.6 kHz, gone in 80 ms. The
+        // quietest cue; it says "that is the end" without being a note.
+        Cue::Bump => (
+            Mix {
+                peak_db: -23.0,
+                send: 0.04,
+                rt60: 0.4,
+                cutoff: 1600.0,
+                length: 0.3,
+            },
+            |o, r| tone(o, r, 0.0, F3, 1.0, shape(0.010, 0.028), PURE, 0.0),
         ),
         // A call: F4 with C5 over it, then the same a step later and softer, slow attacks, a
         // little room. Warm and low, so it asks without alarming.
@@ -394,5 +539,101 @@ mod tests {
         );
         let at = m.iter().position(|s| s.abs() > peak * 0.98).unwrap();
         assert!(at < (0.012 * RATE as f32) as usize, "peak at sample {at}");
+    }
+
+    fn peak_db(cue: Cue) -> f32 {
+        let out = render(cue, 48_000);
+        let peak = out.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+        20.0 * peak.log10()
+    }
+
+    /// Loudness over the first 300 ms, the part a cue is heard in (RMS in dBFS).
+    fn early_rms_db(cue: Cue) -> f32 {
+        let out = render(cue, 48_000);
+        let n = (0.3 * 48_000.0) as usize * 2;
+        let part = &out[..n.min(out.len())];
+        let mean = part.iter().map(|s| s * s).sum::<f32>() / part.len() as f32;
+        10.0 * mean.log10()
+    }
+
+    #[test]
+    fn the_sound_map_is_balanced() {
+        // The three ticks are the quietest cues and a run of them stays soft.
+        let ticks = [Cue::Hover, Cue::Move, Cue::Bump];
+        let loudest_tick = ticks.iter().map(|&c| peak_db(c)).fold(f32::MIN, f32::max);
+        for cue in Cue::ALL {
+            if !ticks.contains(&cue) {
+                assert!(
+                    peak_db(cue) > loudest_tick,
+                    "{cue:?} should be louder than a tick"
+                );
+            }
+        }
+        // Routine feedback sits under the confirmation, and the confirmation under the trophy.
+        for quiet in [Cue::On, Cue::Off, Cue::Message] {
+            assert!(peak_db(quiet) < peak_db(Cue::Select), "{quiet:?}");
+        }
+        assert!(peak_db(Cue::Select) < peak_db(Cue::Unlocked));
+        // Nothing is shouting, nothing vanishes: the early loudness of the cues that are not
+        // ticks spans at most 12 dB, and every tick is quieter than every other cue.
+        let others: Vec<(Cue, f32)> = Cue::ALL
+            .iter()
+            .filter(|&&c| c != Cue::Boot && !ticks.contains(&c))
+            .map(|&c| (c, early_rms_db(c)))
+            .collect();
+        let (low, high) = others
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(l, h), &(_, v)| (l.min(v), h.max(v)));
+        assert!(
+            high - low < 12.0,
+            "early loudness spans {:.1} dB",
+            high - low
+        );
+        for tick in ticks {
+            assert!(
+                early_rms_db(tick) < low,
+                "{tick:?} is quieter than the rest"
+            );
+        }
+    }
+
+    /// Writes every cue to `$ANYPS5_CUE_DIR/<name>.wav` (16-bit stereo, 48 kHz) to listen to:
+    /// `ANYPS5_CUE_DIR=... cargo test render_the_cues_to_wav -- --ignored`.
+    #[test]
+    #[ignore = "writes files; run by hand to listen"]
+    fn render_the_cues_to_wav() {
+        let Some(dir) = std::env::var_os("ANYPS5_CUE_DIR") else {
+            return;
+        };
+        let dir = std::path::PathBuf::from(dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for cue in Cue::ALL {
+            let samples = render(cue, 48_000);
+            let mut wav = Vec::with_capacity(44 + samples.len() * 2);
+            let data_len = (samples.len() * 2) as u32;
+            wav.extend_from_slice(b"RIFF");
+            wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+            wav.extend_from_slice(b"WAVEfmt ");
+            wav.extend_from_slice(&16u32.to_le_bytes());
+            wav.extend_from_slice(&1u16.to_le_bytes());
+            wav.extend_from_slice(&2u16.to_le_bytes());
+            wav.extend_from_slice(&48_000u32.to_le_bytes());
+            wav.extend_from_slice(&(48_000u32 * 4).to_le_bytes());
+            wav.extend_from_slice(&4u16.to_le_bytes());
+            wav.extend_from_slice(&16u16.to_le_bytes());
+            wav.extend_from_slice(b"data");
+            wav.extend_from_slice(&data_len.to_le_bytes());
+            for s in &samples {
+                wav.extend_from_slice(&((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes());
+            }
+            let name = format!("{cue:?}").to_lowercase();
+            std::fs::write(dir.join(format!("{name}.wav")), wav).unwrap();
+            println!(
+                "{name}: peak {:.1} dBFS, early RMS {:.1} dBFS, {:.2} s",
+                peak_db(cue),
+                early_rms_db(cue),
+                samples.len() as f32 / 96_000.0
+            );
+        }
     }
 }

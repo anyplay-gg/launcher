@@ -122,16 +122,49 @@ pub enum UpdateState {
     Failed,
 }
 
-/// Where the launcher's own update stands (the About page).
+/// Where the launcher's own update stands (the About page and the notice on the home screen).
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum LauncherUpdate {
-    /// Nothing to show: up to date, not checked, or the check failed.
+    /// Nothing to show: not checked yet, or checking is off.
     #[default]
     None,
+    /// A check runs.
+    Checking,
+    /// The last check found nothing newer.
+    UpToDate,
+    /// A newer version exists; its download begins: its version.
+    Available(String),
+    /// The download runs: the version and its share in thousandths.
+    Downloading { version: String, permille: u16 },
     /// A newer version is downloaded and verified: its version.
     Ready(String),
+    /// The player asked to restart while a game runs: the restart waits for the game's end.
+    Holding(String),
     /// A newer version exists but this folder cannot be written to: its version.
     ReadOnly(String),
+    /// The check or the download failed.
+    Failed(UpdateFailure),
+}
+
+/// Why the last check or download failed, as far as a player needs to know.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UpdateFailure {
+    /// GitHub could not be reached.
+    Offline,
+    /// The release was refused (it could not be verified).
+    Refused,
+    /// Anything else.
+    Other,
+}
+
+impl LauncherUpdate {
+    /// A verified update waits (the notice, "Restart Now" and the notes belong to these states).
+    pub fn staged_version(&self) -> Option<&str> {
+        match self {
+            LauncherUpdate::Ready(v) | LauncherUpdate::Holding(v) => Some(v),
+            _ => None,
+        }
+    }
 }
 
 /// What the settings show that is not a preference.
@@ -149,6 +182,8 @@ pub struct SettingsEnv<'a> {
     /// newest first, with their size: the page offers to remove them.
     pub unused: &'a [InstalledRelease],
     pub launcher: LauncherUpdate,
+    /// The staged update has notes the player can read (the "What's New" row).
+    pub launcher_notes: bool,
     /// The folder screenshots go to when the preference is unset.
     pub default_screenshots: &'a std::path::Path,
     /// Who answers `anyps5://` links on this PC.
@@ -185,6 +220,12 @@ pub enum SettingsAction {
     RemoveToolkit(String),
     /// "Restart Now" on the About page: close, and start the staged launcher.
     RestartNow,
+    /// "Cancel Restart" while the restart waits for a game.
+    CancelRestart,
+    /// "Check Now" on the launcher's own update row.
+    CheckLauncherUpdate,
+    /// Open the notes of the staged launcher update.
+    OpenLauncherNotes,
     /// One of the About page's links (website, Discord, privacy, terms).
     OpenPage(&'static str),
     /// "Open AnyPlay Links with This Launcher" was switched: write or remove the registration.
@@ -414,6 +455,21 @@ pub fn build_categories(
         .icon(Icon::GAME_CONTROLLER),
     );
     behaviour.push(
+        Row::choice(
+            "vibration",
+            Extra::Vibration.text(language),
+            vec![
+                t(Key::Off),
+                Extra::VibrationLight.text(language).to_owned(),
+                Extra::VibrationMedium.text(language).to_owned(),
+                Extra::VibrationStrong.text(language).to_owned(),
+            ],
+            convert::vibration_index(prefs.vibration),
+        )
+        .detail(Extra::VibrationDetail.text(language))
+        .icon(Icon::WAVE_SINE),
+    );
+    behaviour.push(
         Row::toggle(
             "hiddenTrophies",
             Extra::ShowHiddenTrophies.text(language),
@@ -472,8 +528,15 @@ pub fn build_categories(
                 None,
             )
             .attached()
-            // On a note, `destructive` is the amber warning ink (the line under Play on the home screen).
-            .destructive(),
+            // The amber ink of the warning line under Play on the home screen.
+            .warning(),
+        );
+        toolkit.push(
+            Row::command(
+                "toolkitGlibcGuide",
+                crate::screens::glibc_strings::guide_title(language),
+            )
+            .icon(Icon::FILE_TEXT),
         );
     }
     toolkit.push(
@@ -671,27 +734,16 @@ pub fn build_categories(
     }
 
     // About
-    let version = match &env.launcher {
-        LauncherUpdate::Ready(v) => Extra::LauncherReady.format(language, &[Arg::Str(v)]),
-        _ => env.app_version.to_owned(),
-    };
     let mut about = vec![
         Row::info("text", t(Key::AboutText), None),
         // The toolkit version lives on the Toolkit page only.
-        Row::info("version", t(Key::Version), Some(version)),
+        Row::info("version", t(Key::Version), Some(env.app_version.to_owned())),
     ];
-    match &env.launcher {
-        LauncherUpdate::Ready(_) => about.push(
-            Row::command("restartNow", Extra::RestartNow.text(language))
-                .icon(Icon::ARROW_CLOCKWISE),
-        ),
-        LauncherUpdate::ReadOnly(v) => about.push(Row::info(
-            "launcherUpdate",
-            t(Key::Status),
-            Some(Extra::LauncherReadOnly.format(language, &[Arg::Str(v)])),
-        )),
-        LauncherUpdate::None => {}
-    }
+    about.extend(launcher_update_rows(
+        &env.launcher,
+        env.launcher_notes,
+        language,
+    ));
     {
         use crate::screens::about_strings::AboutText as A;
         about.push(
@@ -724,14 +776,115 @@ pub fn build_categories(
     .collect()
 }
 
+/// The rows under *Version* that tell where the launcher's own update stands. Nothing while
+/// there is nothing to say. The status row is short; what it means follows as a note, and the
+/// one thing to do next as a row.
+fn launcher_update_rows(
+    launcher: &LauncherUpdate,
+    has_notes: bool,
+    language: Language,
+) -> Vec<Row> {
+    use crate::screens::update_strings::UpdateText as U;
+    let status = |value: String| Row::info("launcherUpdate", U::Row.text(language), Some(value));
+    let note = |text: String| Row::info("launcherUpdateNote", text, None).attached();
+    let check = || {
+        Row::command("launcherCheck", Extra::CheckNow.text(language)).icon(Icon::ARROW_CLOCKWISE)
+    };
+    let download =
+        || Row::command("launcherDownload", U::Download.text(language)).icon(Icon::DOWNLOAD_SIMPLE);
+    match launcher {
+        LauncherUpdate::None => Vec::new(),
+        LauncherUpdate::Checking => vec![status(U::Checking.text(language).to_owned())],
+        LauncherUpdate::UpToDate => vec![status(U::UpToDate.text(language).to_owned()), check()],
+        LauncherUpdate::Available(v) => vec![
+            status(U::Available.format(language, &version(v))),
+            note(U::NoteDownloading.format(language, &version(v))),
+        ],
+        LauncherUpdate::Downloading {
+            version: v,
+            permille,
+        } => {
+            // The last tenth of a percent is the check of the file.
+            let value = if *permille >= 1000 {
+                U::Verifying.text(language).to_owned()
+            } else {
+                let percent = format!("{}%", permille / 10);
+                U::Downloading.format(language, &[Arg::Str(&percent)])
+            };
+            vec![
+                status(value),
+                note(U::NoteDownloading.format(language, &version(v))),
+            ]
+        }
+        LauncherUpdate::Ready(v) => {
+            let mut rows = vec![
+                status(U::Ready.format(language, &version(v))),
+                note(U::NoteReady.text(language).to_owned()),
+                Row::command("restartNow", Extra::RestartNow.text(language))
+                    .icon(Icon::ARROW_CLOCKWISE),
+            ];
+            if has_notes {
+                rows.push(whats_new_row(v, language));
+            }
+            rows
+        }
+        LauncherUpdate::Holding(v) => {
+            let mut rows = vec![
+                status(U::WaitingForGame.text(language).to_owned()),
+                note(U::NoteHolding.format(language, &version(v))),
+                Row::command("cancelRestart", U::CancelRestart.text(language)).icon(Icon::X),
+            ];
+            if has_notes {
+                rows.push(whats_new_row(v, language));
+            }
+            rows
+        }
+        LauncherUpdate::ReadOnly(v) => vec![
+            status(U::Available.format(language, &version(v))),
+            note(U::NoteReadOnly.text(language).to_owned()),
+            download(),
+        ],
+        LauncherUpdate::Failed(UpdateFailure::Offline) => vec![
+            status(U::NotReachable.text(language).to_owned()),
+            note(U::NoteOffline.text(language).to_owned()),
+            check(),
+        ],
+        LauncherUpdate::Failed(failure) => vec![
+            status(U::NotInstalled.text(language).to_owned()),
+            note(
+                match failure {
+                    UpdateFailure::Refused => U::NoteRefused,
+                    _ => U::NoteOther,
+                }
+                .text(language)
+                .to_owned(),
+            ),
+            download(),
+        ],
+    }
+}
+
+fn version(v: &str) -> [Arg<'_>; 1] {
+    [Arg::Str(v)]
+}
+
+fn whats_new_row(version: &str, language: Language) -> Row {
+    use crate::screens::update_strings::UpdateText as U;
+    Row::command(
+        "launcherNotes",
+        U::WhatsNewIn.format(language, &[Arg::Str(version)]),
+    )
+    .icon(Icon::SPARKLE)
+}
 /// The page an About row opens.
 fn about_page(row: &str) -> Option<&'static str> {
-    use crate::screens::about_strings::{DISCORD, PRIVACY, TERMS, WEBSITE};
+    use crate::screens::about_strings::{DISCORD, INSTALL_GUIDE, PRIVACY, TERMS, WEBSITE};
     Some(match row {
         "aboutWebsite" => WEBSITE,
         "aboutDiscord" => DISCORD,
         "aboutPrivacy" => PRIVACY,
         "aboutTerms" => TERMS,
+        "toolkitGlibcGuide" => INSTALL_GUIDE,
         _ => return None,
     })
 }
@@ -746,6 +899,7 @@ pub fn apply_preferences(shell: &mut Shell, ctx: &Context, prefs: &Preferences) 
     shell.language = convert::language(prefs.language);
     shell.set_reduced_motion(ctx, prefs.reduced_motion);
     shell.sounds.enabled = prefs.sounds;
+    shell.set_vibration(convert::vibration(prefs.vibration));
 }
 
 /// Writes one change into the preferences. Dialogs (a picture, a folder) are the caller's
@@ -783,6 +937,10 @@ pub fn apply_value(prefs: &mut Preferences, change: &Change) -> bool {
             }
         }
         Change::Toggle { row: "sounds", on } => prefs.sounds = *on,
+        Change::Choice {
+            row: "vibration",
+            index,
+        } => prefs.vibration = convert::vibration_to_core(*index),
         Change::Toggle { row: "music", on } => prefs.music = *on,
         Change::Toggle { row: "discord", on } => prefs.discord_presence = *on,
         Change::Toggle {
@@ -1110,6 +1268,20 @@ impl SettingsPanel {
                 }
             }
             Change::Run { row: "restartNow" } => out.actions.push(SettingsAction::RestartNow),
+            Change::Run {
+                row: "cancelRestart",
+            } => out.actions.push(SettingsAction::CancelRestart),
+            Change::Run {
+                row: "launcherCheck",
+            } => out.actions.push(SettingsAction::CheckLauncherUpdate),
+            Change::Run {
+                row: "launcherNotes",
+            } => out.actions.push(SettingsAction::OpenLauncherNotes),
+            Change::Run {
+                row: "launcherDownload",
+            } => out.actions.push(SettingsAction::OpenPage(
+                crate::screens::update_strings::RELEASES,
+            )),
             Change::Run { row } if about_page(row).is_some() => {
                 if let Some(page) = about_page(row) {
                     out.actions.push(SettingsAction::OpenPage(page));
@@ -1297,6 +1469,7 @@ mod tests {
             glibc: None,
             update,
             launcher: LauncherUpdate::None,
+            launcher_notes: false,
             default_screenshots: std::path::Path::new("C:\\Users\\me\\Pictures\\AnyPS5"),
             links: Handler::Absent,
             cjk_fonts: CjkState::Missing,
@@ -1338,6 +1511,28 @@ mod tests {
             ["theme", "accent", "backdrop", "file", "artwork", "motion"],
             "the file row appears with a picture backdrop"
         );
+    }
+
+    #[test]
+    fn vibration_is_a_choice_that_reaches_the_preferences() {
+        let mut prefs = Preferences::default();
+        assert_eq!(prefs.vibration, anyps5_core::settings::Vibration::Medium);
+        for (index, want) in [
+            (0, anyps5_core::settings::Vibration::Off),
+            (1, anyps5_core::settings::Vibration::Light),
+            (2, anyps5_core::settings::Vibration::Medium),
+            (3, anyps5_core::settings::Vibration::Strong),
+        ] {
+            apply_value(
+                &mut prefs,
+                &Change::Choice {
+                    row: "vibration",
+                    index,
+                },
+            );
+            assert_eq!(prefs.vibration, want);
+            assert_eq!(convert::vibration_index(prefs.vibration), index);
+        }
     }
 
     #[test]
@@ -1403,15 +1598,22 @@ mod tests {
             .collect()
     }
 
+    fn row_ids(rows: &[(&'static str, Option<String>)]) -> Vec<&'static str> {
+        rows.iter().map(|(id, _)| *id).collect()
+    }
+
     #[test]
-    fn about_shows_the_version_and_offers_the_restart_only_with_a_staged_update() {
+    fn about_always_shows_the_running_version_and_offers_the_restart_only_with_a_staged_update() {
         let plain = about_rows(LauncherUpdate::None);
         assert!(plain.contains(&("version", Some("0.1.0".into()))));
-        assert!(!plain.iter().any(|(id, _)| *id == "restartNow"));
+        assert!(!row_ids(&plain).contains(&"launcherUpdate"));
+        assert!(!row_ids(&plain).contains(&"restartNow"));
 
         let ready = about_rows(LauncherUpdate::Ready("0.2.0".into()));
-        assert!(ready.contains(&("version", Some("0.2.0 ready".into()))));
-        let ids: Vec<_> = ready.iter().map(|(id, _)| *id).collect();
+        // The version row keeps the version that runs; the update has its own row.
+        assert!(ready.contains(&("version", Some("0.1.0".into()))));
+        assert!(ready.contains(&("launcherUpdate", Some("0.2.0 ready".into()))));
+        let ids = row_ids(&ready);
         let (restart, quit) = (
             ids.iter().position(|i| *i == "restartNow"),
             ids.iter().position(|i| *i == "quit"),
@@ -1420,13 +1622,74 @@ mod tests {
             restart.is_some() && restart < quit,
             "Restart Now sits before Quit"
         );
-
-        let read_only = about_rows(LauncherUpdate::ReadOnly("0.2.0".into()));
-        assert!(read_only.contains(&("version", Some("0.1.0".into()))));
-        assert!(read_only.iter().any(|(id, _)| *id == "launcherUpdate"));
-        assert!(!read_only.iter().any(|(id, _)| *id == "restartNow"));
+        assert!(!ids.contains(&"launcherNotes"), "the notes row needs notes");
     }
 
+    #[test]
+    fn every_state_of_the_update_says_one_thing_and_offers_at_most_one_next_step() {
+        let status = |u: LauncherUpdate| {
+            about_rows(u)
+                .into_iter()
+                .find(|(id, _)| *id == "launcherUpdate")
+                .and_then(|(_, v)| v)
+        };
+        assert_eq!(
+            status(LauncherUpdate::Checking).as_deref(),
+            Some("Checking…")
+        );
+        assert_eq!(
+            status(LauncherUpdate::UpToDate).as_deref(),
+            Some("Up to date")
+        );
+        assert_eq!(
+            status(LauncherUpdate::Downloading {
+                version: "0.2.0".into(),
+                permille: 427
+            })
+            .as_deref(),
+            Some("Downloading 42%")
+        );
+        assert_eq!(
+            status(LauncherUpdate::Downloading {
+                version: "0.2.0".into(),
+                permille: 1000
+            })
+            .as_deref(),
+            Some("Verifying")
+        );
+        assert_eq!(
+            status(LauncherUpdate::Holding("0.2.0".into())).as_deref(),
+            Some("Waiting for your game")
+        );
+        let holding = row_ids(&about_rows(LauncherUpdate::Holding("0.2.0".into())));
+        assert!(holding.contains(&"cancelRestart") && !holding.contains(&"restartNow"));
+
+        // A folder that cannot be written to and a refused release lead to the download page.
+        for failed in [
+            LauncherUpdate::ReadOnly("0.2.0".into()),
+            LauncherUpdate::Failed(UpdateFailure::Refused),
+            LauncherUpdate::Failed(UpdateFailure::Other),
+        ] {
+            let rows = row_ids(&about_rows(failed));
+            assert!(rows.contains(&"launcherDownload"), "{rows:?}");
+            assert!(!rows.contains(&"restartNow"));
+        }
+        // Offline: a retry, never a download.
+        let offline = row_ids(&about_rows(LauncherUpdate::Failed(UpdateFailure::Offline)));
+        assert!(offline.contains(&"launcherCheck") && !offline.contains(&"launcherDownload"));
+    }
+
+    #[test]
+    fn the_notes_row_appears_with_notes() {
+        let prefs = Preferences::first_run();
+        let mut e = env(None, UpdateState::Unknown);
+        e.launcher = LauncherUpdate::Ready("0.2.0".into());
+        e.launcher_notes = true;
+        let cats = build_categories(&prefs, &e, Language::English);
+        let about = cats.iter().find(|c| c.category == Category::About).unwrap();
+        let row = about.rows.iter().find(|r| r.id == "launcherNotes").unwrap();
+        assert_eq!(row.title, "What's New in 0.2.0");
+    }
     fn fonts_row(prefs: &Preferences, cjk: CjkState) -> (String, Vec<&'static str>) {
         let mut e = env(None, UpdateState::Unknown);
         e.cjk_fonts = cjk;

@@ -10,9 +10,12 @@
 //! - egui's focus is only taken when nothing, or this module's own earlier choice, holds it. A text
 //!   field being edited, or a control the player reached with Tab, keeps it ([`foreign_focus`]).
 //! - Tab and the arrows must not move egui's focus away from the ring: the widget's event filter
-//!   claims them (the model reads the arrows itself; Tab does nothing, as before). Tab with no
-//!   followed widget still lets egui focus one, which then owns the keys (a control reached with
-//!   Tab, as in the call card) until Enter or Escape lets it go.
+//!   claims them (the model reads the arrows itself). Tab is the model's too: `Input::poll` turns
+//!   it into `InputEvent::Tab` and [`consume_tab`] takes it out of egui's input, so Tab and
+//!   Shift+Tab walk the ring in reading order (home: top bar, tiles, actions, question; a panel:
+//!   down and up, in the library right and left; the onboarding: right and left). While a call rings
+//!   (`Input::tab_for_egui`) Tab stays with egui, which focuses their buttons; that focus then
+//!   owns the keys until Enter or Escape lets it go.
 //! - Enter and Space activate a focused widget in egui; the model already turns them into "select",
 //!   so [`consume_activation`] removes them from egui's input once the model has taken them.
 
@@ -65,6 +68,23 @@ pub fn foreign_focus(ctx: &Context) -> bool {
         None => false,
         Some(id) => owned(ctx) != Some(id),
     }
+}
+
+/// Takes Tab out of egui's input once the model has taken it as a move along the reading order,
+/// so egui does not also move its own focus off the ring.
+pub fn consume_tab(ctx: &Context) {
+    ctx.input_mut(|i| {
+        i.events.retain(|e| {
+            !matches!(
+                e,
+                egui::Event::Key {
+                    key: Key::Tab,
+                    pressed: true,
+                    ..
+                }
+            )
+        });
+    });
 }
 
 /// Takes Enter and Space out of egui's input when the model has handled them (or ignores them on

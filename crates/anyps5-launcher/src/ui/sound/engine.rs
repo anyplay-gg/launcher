@@ -116,6 +116,10 @@ impl Duck {
             Cue::Unlocked => (6.0, 1.2),
             Cue::Boot => (6.0, 1.5),
             Cue::Ring => (3.0, 0.6),
+            Cue::Bump => (0.0, 0.0),
+            Cue::On | Cue::Off => (1.5, 0.12),
+            Cue::Open | Cue::Close => (3.0, 0.25),
+            Cue::Notify | Cue::Message | Cue::Invite => (3.0, 0.5),
         };
         self.floor = self.floor.min(db_to_gain(-depth_db));
         self.hold = self.hold.max((hold * self.rate) as u32);
