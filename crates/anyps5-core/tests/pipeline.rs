@@ -276,6 +276,62 @@ fn forced_copy_mode_makes_independent_files_and_says_so() {
     );
 }
 
+fn needed_bytes(error: &UnlockError) -> u64 {
+    match error {
+        UnlockError::NotEnoughSpace { needed, .. } => *needed,
+        other => panic!("expected NotEnoughSpace, got {other}"),
+    }
+}
+
+#[test]
+fn too_little_free_space_stops_before_anything_is_written() {
+    let w = world(&[]);
+    let mut request = w.dump("Tight", "PPSA00020", &elf_bytes());
+    request.free_space_override = Some(1024 * 1024);
+    let (result, events) = run(&request);
+    let error = result.unwrap_err();
+    assert!(matches!(error, UnlockError::NotEnoughSpace { free, .. } if free == 1024 * 1024));
+    assert!(error.to_string().starts_with("needs "));
+    let games = w.root.join(".AnyPS5/Games");
+    assert!(!games.exists() || fs::read_dir(&games).unwrap().count() == 0);
+    no_leftovers(&w.root);
+    assert!(!w.root.join(".AnyPS5/Work").exists());
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, UnlockEvent::Progress { .. }))
+    );
+}
+
+#[test]
+fn the_space_check_is_exact_when_files_are_copied() {
+    let w = world(&[]);
+    let mut request = w.dump("Edge", "PPSA00021", &elf_bytes());
+    request.link_mode = LinkMode::ForceCopy;
+    request.free_space_override = Some(0);
+    let (result, events) = run(&request);
+    let needed = needed_bytes(&result.unwrap_err());
+    assert!(
+        logs(&events)
+            .iter()
+            .any(|l| l.starts_with("files copied, not linked")),
+        "the reason is logged at once"
+    );
+    request.free_space_override = Some(needed - 1);
+    assert_eq!(needed_bytes(&run(&request).0.unwrap_err()), needed);
+    no_leftovers(&w.root);
+    request.free_space_override = Some(needed);
+    run(&request).0.unwrap();
+}
+
+#[test]
+fn unknown_free_space_never_blocks() {
+    let w = world(&[]);
+    let request = w.dump("Open", "PPSA00022", &elf_bytes());
+    assert!(request.free_space_override.is_none());
+    run(&request).0.unwrap();
+}
+
 #[test]
 fn reconversion_ignores_old_host_guest_modules_but_converts_the_original() {
     let w = world(&[]);
