@@ -186,6 +186,8 @@ pub struct SettingsEnv<'a> {
     pub app_version: &'a str,
     /// The installed toolkit's version, `None` when there is none.
     pub toolkit_version: Option<&'a str>,
+    /// The day the installed AnyPlay engine was built (`2026-10-25`), when that channel is in use.
+    pub engine_built: Option<&'a str>,
     /// The toolkit needs a newer glibc than this system has (Linux).
     pub glibc: Option<anyps5_core::glibc::Shortfall>,
     pub update: UpdateState,
@@ -226,6 +228,8 @@ pub enum SettingsAction {
     AdoptToolkitFolder(PathBuf),
     /// The channel is stable again (already stored in the preferences): use the newest installed.
     UseStableToolkit,
+    /// Use the AnyPlay engine (already stored in the preferences): install it if needed.
+    UseEngineToolkit,
     /// Stay on this release (`v0.1.3`, already stored in the preferences): install it if needed.
     PinToolkit(String),
     /// Download the Japanese, Chinese and Korean fonts of the built-in set.
@@ -540,6 +544,16 @@ pub fn build_categories(
         }
         _ => {}
     }
+    if let (ToolkitChannel::Engine, Some(day)) = (channel, env.engine_built) {
+        toolkit.push(
+            Row::info(
+                "engineBuilt",
+                Extra::EngineBuilt.format(language, &[Arg::Str(day)]),
+                None,
+            )
+            .attached(),
+        );
+    }
     if let Some(short) = env.glibc {
         toolkit.push(
             Row::info(
@@ -565,13 +579,15 @@ pub fn build_categories(
             Extra::ChannelTitle.text(language),
             vec![
                 Extra::ChannelStable.text(language).to_owned(),
+                Extra::ChannelEngine.text(language).to_owned(),
                 Extra::ChannelPinned.text(language).to_owned(),
                 Extra::ChannelLocal.text(language).to_owned(),
             ],
             match channel {
                 ToolkitChannel::Stable => 0,
-                ToolkitChannel::Pinned => 1,
-                ToolkitChannel::Local => 2,
+                ToolkitChannel::Engine => 1,
+                ToolkitChannel::Pinned => 2,
+                ToolkitChannel::Local => 3,
             },
         )
         .detail(
@@ -579,6 +595,7 @@ pub fn build_categories(
                 ToolkitChannel::Stable => Extra::ChannelStableDetail,
                 ToolkitChannel::Pinned => Extra::ChannelPinnedDetail,
                 ToolkitChannel::Local => Extra::ChannelLocalDetail,
+                ToolkitChannel::Engine => Extra::ChannelEngineDetail,
             }
             .text(language),
         )
@@ -606,9 +623,11 @@ pub fn build_categories(
             Row::action("toolkitFolder", Extra::ToolkitChooseFolder.text(language))
                 .icon(Icon::FOLDER),
         ),
-        ToolkitChannel::Stable => {}
+        ToolkitChannel::Stable | ToolkitChannel::Engine => {}
     }
-    if let Some(tag) = whats_new_tag(env) {
+    // The notes of a nightly build are commit messages, not a release; the engine has none to read.
+    let notes_tag = whats_new_tag(env).filter(|_| channel != ToolkitChannel::Engine);
+    if let Some(tag) = notes_tag {
         let detail = match &env.update {
             UpdateState::Available(_) if channel == ToolkitChannel::Stable => {
                 Extra::UpdateAvailable.format(language, &[Arg::Str(&format!("v{tag}"))])
@@ -622,8 +641,8 @@ pub fn build_categories(
         );
     }
     let missing = env.toolkit_version.is_none() && channel != ToolkitChannel::Local;
-    let update_ready =
-        channel == ToolkitChannel::Stable && matches!(env.update, UpdateState::Available(_));
+    let follows_updates = matches!(channel, ToolkitChannel::Stable | ToolkitChannel::Engine);
+    let update_ready = follows_updates && matches!(env.update, UpdateState::Available(_));
     if missing || update_ready {
         let text = if missing {
             Extra::ToolkitInstall
@@ -632,7 +651,7 @@ pub fn build_categories(
         };
         toolkit.push(Row::command("install", text.text(language)).icon(Icon::DOWNLOAD_SIMPLE));
     }
-    if channel == ToolkitChannel::Stable {
+    if follows_updates {
         let status = match &env.update {
             UpdateState::Unknown => None,
             UpdateState::Checking => Some(Extra::Checking.text(language).to_owned()),
@@ -1393,6 +1412,7 @@ impl SettingsPanel {
                 index: 0,
             } => {
                 prefs.toolkit = None;
+                prefs.toolkit_engine = false;
                 prefs.toolkit_pinned = None;
                 changed = true;
                 out.actions.push(SettingsAction::UseStableToolkit);
@@ -1401,6 +1421,16 @@ impl SettingsPanel {
                 row: "channel",
                 index: 1,
             } => {
+                prefs.toolkit = None;
+                prefs.toolkit_pinned = None;
+                prefs.toolkit_engine = true;
+                changed = true;
+                out.actions.push(SettingsAction::UseEngineToolkit);
+            }
+            Change::Choice {
+                row: "channel",
+                index: 2,
+            } => {
                 // Stay on what is installed now; the list offers the other releases.
                 let tag = env
                     .toolkit_version
@@ -1408,6 +1438,7 @@ impl SettingsPanel {
                     .map(|t| format!("v{t}"))
                     .or_else(|| env.recent.first().cloned());
                 if let Some(tag) = tag {
+                    prefs.toolkit_engine = false;
                     prefs.toolkit = None;
                     prefs.toolkit_pinned = Some(tag.clone());
                     changed = true;
@@ -1416,7 +1447,7 @@ impl SettingsPanel {
             }
             Change::Choice {
                 row: "channel",
-                index: 2,
+                index: 3,
             } if prefs.toolkit.is_none() => {
                 if let Some(folder) =
                     dialogs::pick_folder(shell, Extra::ToolkitChooseFolder.text(language), None)
@@ -1643,6 +1674,7 @@ mod tests {
             games_found: 9,
             app_version: "0.1.0",
             toolkit_version: toolkit,
+            engine_built: None,
             glibc: None,
             update,
             launcher: LauncherUpdate::None,
@@ -2140,6 +2172,67 @@ mod tests {
             !local.contains(&"whatsNew"),
             "a local build has no release notes"
         );
+    }
+
+    #[test]
+    fn the_engine_channel_follows_updates_but_has_no_release_notes() {
+        let prefs = Preferences {
+            toolkit_engine: true,
+            ..Default::default()
+        };
+        let mut with = env(
+            Some("anyplay-30d0fe9"),
+            UpdateState::Available("anyplay-a1b2c3d".into()),
+        );
+        with.engine_built = Some("2026-10-25");
+        let cats = build_categories(&prefs, &with, Language::English);
+        let rows = &cats
+            .iter()
+            .find(|c| c.category == Category::Toolkit)
+            .unwrap()
+            .rows;
+        let ids: Vec<&str> = rows.iter().map(|r| r.id).collect();
+        for row in [
+            "channel",
+            "engineBuilt",
+            "updateCheck",
+            "checkNow",
+            "install",
+        ] {
+            assert!(ids.contains(&row), "the engine has {row}");
+        }
+        assert!(!ids.contains(&"whatsNew") && !ids.contains(&"pinned"));
+        let channel = rows.iter().find(|r| r.id == "channel").unwrap();
+        assert_eq!(
+            channel.detail.as_deref(),
+            Some(Extra::ChannelEngineDetail.text(Language::English))
+        );
+        let built = rows.iter().find(|r| r.id == "engineBuilt").unwrap();
+        assert_eq!(built.title, "Built on 2026-10-25");
+        assert!(built.attached, "the day hangs under the version row");
+    }
+
+    #[test]
+    fn the_build_day_shows_only_on_the_engine_channel() {
+        let mut with = env(Some("0.1.3-abc"), UpdateState::UpToDate);
+        with.engine_built = Some("2026-10-25");
+        let cats = build_categories(&Preferences::default(), &with, Language::English);
+        let rows = &cats
+            .iter()
+            .find(|c| c.category == Category::Toolkit)
+            .unwrap()
+            .rows;
+        assert!(rows.iter().all(|r| r.id != "engineBuilt"));
+    }
+
+    #[test]
+    fn the_engine_without_a_build_offers_the_download() {
+        let prefs = Preferences {
+            toolkit_engine: true,
+            ..Default::default()
+        };
+        let ids = toolkit_ids(&prefs, None);
+        assert!(ids.contains(&"install"));
     }
 
     #[test]

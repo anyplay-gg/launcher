@@ -50,7 +50,7 @@ use crate::app::model::UpdateRequest;
 use crate::app::model::{Effect, GameState, Model};
 use crate::app::overlay::{Overlay, OverlayCx, OverlayHost};
 use crate::app::selfupdate::{Restart, SelfUpdateService};
-use crate::app::toolkit::{NotesState, ToolkitEvent, ToolkitService};
+use crate::app::toolkit::{EngineFailure, NotesState, ToolkitEvent, ToolkitService};
 use crate::screens::advanced::{AdvancedAction, AdvancedData, AdvancedPanel};
 use crate::screens::banner::{BannerHost, BannerTrophy};
 use crate::screens::controls::{ControlsAction, ControlsData, ControlsPanel};
@@ -167,6 +167,8 @@ pub struct PanelHost {
     catalog: Catalog,
     catalog_asked: bool,
     last_check: Option<std::time::Instant>,
+    /// The build day of the installed engine, read once per version: (version, day).
+    engine_built: Option<(String, Option<String>)>,
     banners: BannerHost,
     toolkit: ToolkitService,
     /// Commands and raw keys routed here by the model, in order.
@@ -248,6 +250,7 @@ impl PanelHost {
             catalog: Catalog::embedded(),
             catalog_asked: simulated,
             last_check: None,
+            engine_built: None,
             banners: BannerHost::default(),
             toolkit: ToolkitService::new(ctx, simulated),
             events: Vec::new(),
@@ -317,6 +320,7 @@ impl PanelHost {
         let events = self.take_events(wanted);
         let toolkit_version = cx.model.toolkit.clone();
         let default_screenshots = cx.model.paths.default_screenshots();
+        let engine_built = self.engine_built_of(cx.model);
         if wanted {
             self.toolkit.load_installed(&cx.model.paths);
         }
@@ -343,6 +347,7 @@ impl PanelHost {
             games_found: cx.model.games.len(),
             app_version: env!("CARGO_PKG_VERSION"),
             toolkit_version: toolkit_version.as_deref(),
+            engine_built: engine_built.as_deref(),
             glibc: cx.model.glibc,
             update: self.toolkit.state.clone(),
             recent: &self.toolkit.recent,
@@ -400,6 +405,9 @@ impl PanelHost {
                 open_folder(&folder);
             }
             SettingsAction::CheckForUpdates => self.check_toolkit(model),
+            SettingsAction::InstallToolkit if model.prefs.toolkit_engine => {
+                self.install_engine(model);
+            }
             SettingsAction::InstallToolkit => {
                 // The row of the settings shows the download; the toast only confirms the start.
                 let pinned = model.prefs.toolkit_pinned.clone();
@@ -429,6 +437,17 @@ impl PanelHost {
                 model.effects.push(Effect::ReloadToolkit);
                 self.last_check = None;
                 self.check_toolkit(model);
+            }
+            SettingsAction::UseEngineToolkit => {
+                self.resolutions.clear();
+                model.effects.push(Effect::ReloadToolkit);
+                if anyps5_core::toolkit::open_engine(&model.paths).is_some() {
+                    self.last_check = None;
+                    self.check_toolkit(model);
+                } else {
+                    // Nothing to use yet: the download is the switch.
+                    self.install_engine(model);
+                }
             }
             SettingsAction::PinToolkit(tag) => {
                 // Installed already: switch to it. Otherwise fetch it first.
@@ -514,15 +533,46 @@ impl PanelHost {
         self.refresh_links();
     }
 
-    /// Asks for the newest release. Only the stable channel follows it: a pinned release or a
-    /// local build is left alone.
+    /// The day the installed engine was built, for the settings; read from its record when the
+    /// version in use changes, not on every frame.
+    fn engine_built_of(&mut self, model: &Model) -> Option<String> {
+        if !model.prefs.toolkit_engine {
+            return None;
+        }
+        let version = model.toolkit.clone()?;
+        if self
+            .engine_built
+            .as_ref()
+            .is_none_or(|(seen, _)| *seen != version)
+        {
+            let day = toolkit::engine_installed(&model.paths).and_then(|i| i.built);
+            self.engine_built = Some((version, day));
+        }
+        self.engine_built.as_ref().and_then(|(_, day)| day.clone())
+    }
+
+    /// Downloads the nightly build of the AnyPlay engine; the settings row shows the download.
+    fn install_engine(&mut self, model: &mut Model) {
+        if self.toolkit.install_engine(&model.paths) {
+            let text = Extra::ToolkitDownloading.text(model.language());
+            model.toast(text, Icon::DOWNLOAD_SIMPLE);
+        }
+    }
+
+    /// Asks for the newest release. Only the stable channel and the engine channel follow one: a
+    /// pinned release or a local build is left alone.
     fn check_toolkit(&mut self, model: &Model) {
-        if model.prefs.toolkit_channel() != ToolkitChannel::Stable {
+        let channel = model.prefs.toolkit_channel();
+        if !matches!(channel, ToolkitChannel::Stable | ToolkitChannel::Engine) {
             return;
         }
         self.last_check = Some(std::time::Instant::now());
-        self.toolkit
-            .check(&model.paths, &model.prefs.toolkit_repository);
+        if channel == ToolkitChannel::Engine {
+            self.toolkit.check_engine(&model.paths);
+        } else {
+            self.toolkit
+                .check(&model.paths, &model.prefs.toolkit_repository);
+        }
     }
 
     // --- game settings and its pages -----------------------------------------------------------
@@ -1640,8 +1690,12 @@ impl PanelHost {
                     model.edit_prefs(|p| p.toolkit_checked_at = Some(stamp));
                     // Told, not installed: the settings offer the download.
                     if let Some(tag) = found.filter(|_| model.toolkit.is_some()) {
-                        let text = Extra::ToolkitAvailable
-                            .format(language, &[Arg::Str(&format!("v{tag}"))]);
+                        let text = if model.prefs.toolkit_engine {
+                            Extra::EngineAvailable.text(language).to_owned()
+                        } else {
+                            Extra::ToolkitAvailable
+                                .format(language, &[Arg::Str(&format!("v{tag}"))])
+                        };
                         model.toast(text, Icon::DOWNLOAD_SIMPLE);
                     }
                 }
@@ -1679,10 +1733,27 @@ impl PanelHost {
                     model.edit_prefs(|p| {
                         p.toolkit = Some(folder);
                         p.toolkit_pinned = None;
+                        p.toolkit_engine = false;
                     });
                     model.effects.push(Effect::ReloadToolkit);
                     let text = Extra::ToolkitReady.format(language, &[Arg::Str(&version)]);
                     model.toast(text, Icon::CHECK_CIRCLE);
+                }
+                ToolkitEvent::EngineInstalled(Ok(version)) => {
+                    self.resolutions.clear();
+                    self.engine_built = None;
+                    model.effects.push(Effect::ReloadToolkit);
+                    let text = Extra::ToolkitReady.format(language, &[Arg::Str(&version)]);
+                    model.toast(text, Icon::CHECK_CIRCLE);
+                }
+                ToolkitEvent::EngineInstalled(Err(error)) => {
+                    let text = match error {
+                        EngineFailure::NoBuild => Extra::EngineNoBuild,
+                        EngineFailure::Unverified => Extra::EngineUnverified,
+                        EngineFailure::Other => Extra::ToolkitFailed,
+                    }
+                    .text(language);
+                    model.toast(text, Icon::WARNING);
                 }
                 ToolkitEvent::Installed(Err(error)) => {
                     tracing::warn!("toolkit install: {error}");
@@ -1831,12 +1902,16 @@ impl OverlayHost for PanelHost {
         if !self.toolkit_auto_tried && cx.model.toolkit.is_none() {
             self.toolkit_auto_tried = true;
             let model = &*cx.model;
-            self.toolkit.install(
-                &model.paths,
-                &model.prefs.toolkit_repository,
-                model.prefs.toolkit_pinned.as_deref(),
-                model.prefs.kept_toolkit_tags(),
-            );
+            if model.prefs.toolkit_engine {
+                self.toolkit.install_engine(&model.paths);
+            } else {
+                self.toolkit.install(
+                    &model.paths,
+                    &model.prefs.toolkit_repository,
+                    model.prefs.toolkit_pinned.as_deref(),
+                    model.prefs.kept_toolkit_tags(),
+                );
+            }
         }
         if !self.checked_at_start && cx.model.onboarded() {
             self.checked_at_start = true;

@@ -26,6 +26,8 @@ pub enum ToolkitEvent {
     Checked(Result<Option<String>, String>),
     /// The download ended: the installed version.
     Installed(Result<String, String>),
+    /// The AnyPlay engine download ended: the installed version, or why nothing was installed.
+    EngineInstalled(Result<String, EngineFailure>),
     /// A folder was adopted: the folder and the version.
     Adopted(Result<(std::path::PathBuf, String), String>),
     /// A release a game stays on was downloaded: the installed version. The global choice is
@@ -33,6 +35,17 @@ pub enum ToolkitEvent {
     PinInstalled(Result<String, String>),
     /// An unused release was removed: its tag.
     Removed(Result<String, String>),
+}
+
+/// Why the engine was not installed, as far as the player is told.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EngineFailure {
+    /// The nightly build has no engine for this system.
+    NoBuild,
+    /// The download could not be checked against the release's checksums, or is not the build it names.
+    Unverified,
+    /// Anything else (the network, the disk); the log has the details.
+    Other,
 }
 
 /// The "What's new" notes of one release.
@@ -183,6 +196,51 @@ impl ToolkitService {
             let _ = tx.send(Inbox::Event(ToolkitEvent::Checked(result)));
             ctx.request_repaint();
         });
+    }
+
+    /// Asks whether the nightly build of the AnyPlay engine is newer than the installed one.
+    /// Ignored while a check or a download runs.
+    pub fn check_engine(&mut self, paths: &AppPaths) {
+        if self.checking || self.installing {
+            return;
+        }
+        self.checking = true;
+        self.state = UpdateState::Checking;
+        let (tx, ctx, paths) = (self.tx.clone(), self.ctx.clone(), paths.clone());
+        let simulated = self.simulated;
+        spawn("engine check", move || {
+            let result = if simulated {
+                std::thread::sleep(Duration::from_millis(700));
+                Ok(None)
+            } else {
+                check_engine(&paths)
+            };
+            let _ = tx.send(Inbox::Event(ToolkitEvent::Checked(result)));
+            ctx.request_repaint();
+        });
+    }
+
+    /// Downloads and installs the current nightly build of the AnyPlay engine. False when a
+    /// download already runs.
+    pub fn install_engine(&mut self, paths: &AppPaths) -> bool {
+        if self.installing {
+            return false;
+        }
+        self.installing = true;
+        self.state = UpdateState::Downloading;
+        let (tx, ctx, paths) = (self.tx.clone(), self.ctx.clone(), paths.clone());
+        let simulated = self.simulated;
+        spawn("engine install", move || {
+            let result = if simulated {
+                std::thread::sleep(Duration::from_millis(900));
+                Err(EngineFailure::Other)
+            } else {
+                install_engine(&paths)
+            };
+            let _ = tx.send(Inbox::Event(ToolkitEvent::EngineInstalled(result)));
+            ctx.request_repaint();
+        });
+        true
     }
 
     /// Downloads and installs a release: `tag`, or the latest. False when a download already runs.
@@ -396,6 +454,15 @@ impl ToolkitService {
                             self.installed_stale = true;
                         }
                         ToolkitEvent::Removed(_) => self.installed_stale = true,
+                        ToolkitEvent::EngineInstalled(result) => {
+                            self.installed_stale = true;
+                            self.installing = false;
+                            self.state = if result.is_ok() {
+                                UpdateState::UpToDate
+                            } else {
+                                UpdateState::Failed
+                            };
+                        }
                         ToolkitEvent::Installed(result) => {
                             self.installed_stale = true;
                             self.installing = false;
@@ -483,4 +550,40 @@ fn install_release(
         toolkit::download_and_install_keeping(&info, paths, None, keep, &mut |_, _| {}, &cancel)
             .map_err(describe)?;
     Ok(installed.version().to_owned())
+}
+
+/// The engine check: the version of the nightly build when it is not the installed one.
+fn check_engine(paths: &AppPaths) -> Result<Option<String>, String> {
+    let build =
+        toolkit::check_engine(paths, &toolkit::EngineEndpoints::github()).map_err(describe)?;
+    let installed = toolkit::engine_installed(paths);
+    Ok(toolkit::engine_update_available(installed.as_ref(), &build).then_some(build.version))
+}
+
+/// Downloads and installs the nightly build. A refusal (no build, checksum, archive) is told apart
+/// from other failures; the log has every detail.
+fn install_engine(paths: &AppPaths) -> Result<String, EngineFailure> {
+    let endpoints = toolkit::EngineEndpoints::github();
+    let result = toolkit::check_engine(paths, &endpoints).and_then(|build| {
+        toolkit::install_engine(
+            &build,
+            paths,
+            &endpoints,
+            &mut |_, _| {},
+            &CancelToken::new(),
+        )
+    });
+    match result {
+        Ok(installed) => Ok(installed.version().to_owned()),
+        Err(error) => {
+            tracing::warn!("engine install: {error}");
+            Err(match error {
+                ToolkitError::NoEngine(_) => EngineFailure::NoBuild,
+                ToolkitError::Engine(_) | ToolkitError::Digest | ToolkitError::BadArchive(_) => {
+                    EngineFailure::Unverified
+                }
+                _ => EngineFailure::Other,
+            })
+        }
+    }
 }

@@ -247,6 +247,8 @@ impl CorePipeline {
             Some(folder) => adopt_folder(folder)
                 .ok()
                 .or_else(|| Toolkit::locate(&self.paths, None)),
+            // The engine channel never falls back to another release: no engine, no toolkit.
+            None if prefs.toolkit_engine => anyps5_core::toolkit::open_engine(&self.paths),
             None => Toolkit::locate(&self.paths, pinned.as_ref()),
         };
         self.glibc = self.toolkit.as_ref().and_then(anyps5_core::glibc::check);
