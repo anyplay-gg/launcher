@@ -527,6 +527,9 @@ pub fn build_categories(
         .detail(Extra::VibrationDetail.text(language))
         .icon(Icon::WAVE_SINE),
     );
+    // Where a player looks when the launcher does not react to the pad.
+    behaviour
+        .push(Row::info("controllerHelp", Extra::ControllerHelp.text(language), None).attached());
     behaviour.push(
         Row::toggle(
             "hiddenTrophies",

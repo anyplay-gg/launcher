@@ -7,12 +7,13 @@
 //! switches between the game and the launcher (`ui::home_button`), and while a game is in front
 //! it and Create (which saves a clip) are the only buttons that count.
 
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
-use gilrs::{Axis, Button, EventType, Gilrs};
+use gilrs::{Axis, Button, EventType, Gamepad, GamepadId, Gilrs, MappingSource};
 
 use crate::ui::home_button::HomeButton;
 use crate::ui::input::{Command, PadMessage};
@@ -114,14 +115,126 @@ pub fn spawn(ctx: egui::Context, home: Arc<HomeButton>) -> Receiver<PadMessage> 
     rx
 }
 
+/// How long to wait before the backend is started again after it failed or panicked.
+const RESTART_AFTER: Duration = Duration::from_secs(5);
+
+/// What the pad layer reads through: Windows.Gaming.Input on Windows (gilrs' default; it only
+/// delivers input while a window of ours has focus), evdev on Linux, IOKit HID on macOS.
+const BACKEND: &str = if cfg!(windows) {
+    "WGI"
+} else if cfg!(target_os = "linux") {
+    "evdev"
+} else {
+    "HID"
+};
+
+/// Sony's USB vendor id and the DualSense (0CE6) and DualSense Edge (0DF2) product ids. SDL's
+/// controller database that gilrs bundles has a mapping for both.
+const SONY: u16 = 0x054C;
+const DUALSENSE: [u16; 2] = [0x0CE6, 0x0DF2];
+
+/// Whether a vendor and product id name a DualSense.
+fn is_dualsense(vendor: Option<u16>, product: Option<u16>) -> bool {
+    vendor == Some(SONY) && product.is_some_and(|p| DUALSENSE.contains(&p))
+}
+
+/// The line the log gets for a pad that was found: who it is, which mapping it got and through
+/// which backend it is read, so a "my controller is not detected" report can be answered from
+/// `launcher.log` alone.
+fn describe(
+    name: &str,
+    vendor: Option<u16>,
+    product: Option<u16>,
+    uuid: &str,
+    mapping: Option<&str>,
+    source: MappingSource,
+) -> String {
+    let id = |v: Option<u16>| v.map_or_else(|| "????".to_owned(), |v| format!("{v:04X}"));
+    let mapped = match (source, mapping) {
+        (MappingSource::SdlMappings, Some(map)) => format!("mapped \"{map}\""),
+        (MappingSource::SdlMappings, None) => "mapped".to_owned(),
+        _ => "no SDL mapping (default layout)".to_owned(),
+    };
+    let kind = if is_dualsense(vendor, product) {
+        " [DualSense]"
+    } else {
+        ""
+    };
+    format!(
+        "gamepad found: \"{name}\"{kind} vid {} pid {} uuid {uuid}, {mapped}, backend {BACKEND}",
+        id(vendor),
+        id(product)
+    )
+}
+
+fn uuid_text(bytes: [u8; 16]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn log_pad(pad: &Gamepad<'_>) {
+    let line = describe(
+        pad.os_name(),
+        pad.vendor_id(),
+        pad.product_id(),
+        &uuid_text(pad.uuid()),
+        pad.map_name(),
+        pad.mapping_source(),
+    );
+    if pad.mapping_source() == MappingSource::SdlMappings {
+        tracing::info!("{line}");
+    } else {
+        tracing::warn!("{line}");
+    }
+}
+
+fn log_all(gilrs: &Gilrs) {
+    let mut count = 0;
+    for (_, pad) in gilrs.gamepads() {
+        log_pad(&pad);
+        count += 1;
+    }
+    if count == 0 {
+        tracing::info!(
+            "no gamepad found at start (backend {BACKEND}); pads plugged in later are logged"
+        );
+    }
+}
+
+fn log_connected(gilrs: &Gilrs, id: GamepadId) {
+    if let Some(pad) = gilrs.connected_gamepad(id) {
+        log_pad(&pad);
+    }
+}
+
+/// Runs the pad layer for as long as the launcher lives. The backend is started again when it
+/// could not start (one odd device on the machine can fail it) or when it panicked, because a
+/// dead pad thread would otherwise leave the launcher without a controller until it is restarted.
 fn poll(ctx: &egui::Context, tx: &Sender<PadMessage>, home: &HomeButton) {
+    let mut attempt = 0u32;
+    loop {
+        let run = panic::catch_unwind(AssertUnwindSafe(|| session(ctx, tx, home, &mut attempt)));
+        if run.is_err() {
+            tracing::warn!("gamepad thread panicked; starting it again");
+        }
+        thread::sleep(RESTART_AFTER);
+    }
+}
+
+/// One run of the backend; returns only when it could not start.
+fn session(ctx: &egui::Context, tx: &Sender<PadMessage>, home: &HomeButton, attempt: &mut u32) {
     let mut gilrs = match Gilrs::new() {
         Ok(gilrs) => gilrs,
         Err(err) => {
-            tracing::warn!("gamepad backend unavailable: {err}");
+            // Once, then about once a minute.
+            if (*attempt).is_multiple_of(12) {
+                tracing::warn!("gamepad backend unavailable ({BACKEND}): {err}; trying again");
+            }
+            *attempt += 1;
             return;
         }
     };
+    *attempt = 0;
+    log_all(&gilrs);
     let mut dirs = Directions::default();
     let mut last = None;
     loop {
@@ -165,7 +278,9 @@ fn poll(ctx: &egui::Context, tx: &Sender<PadMessage>, home: &HomeButton) {
                     Axis::DPadY => dirs.dpad.1 = value,
                     _ => {}
                 },
+                EventType::Connected => log_connected(&gilrs, event.id),
                 EventType::Disconnected => {
+                    tracing::info!("gamepad removed");
                     dirs = Directions::default();
                 }
                 _ => {}
@@ -187,6 +302,47 @@ fn poll(ctx: &egui::Context, tx: &Sender<PadMessage>, home: &HomeButton) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_dualsense_is_known_by_its_ids() {
+        assert!(is_dualsense(Some(0x054C), Some(0x0CE6)));
+        assert!(is_dualsense(Some(0x054C), Some(0x0DF2)));
+        assert!(!is_dualsense(Some(0x054C), Some(0x09CC)), "a DualShock 4");
+        assert!(!is_dualsense(Some(0x045E), Some(0x0CE6)));
+        assert!(!is_dualsense(None, None));
+    }
+
+    #[test]
+    fn the_log_line_says_who_what_mapping_and_backend() {
+        let line = describe(
+            "PS5 Controller",
+            Some(0x054C),
+            Some(0x0CE6),
+            "030000004c050000e60c000000000000",
+            Some("PS5 Controller"),
+            MappingSource::SdlMappings,
+        );
+        assert!(line.contains("[DualSense]"), "{line}");
+        assert!(line.contains("vid 054C pid 0CE6"), "{line}");
+        assert!(line.contains("mapped \"PS5 Controller\""), "{line}");
+        assert!(line.contains(&format!("backend {BACKEND}")), "{line}");
+        let line = describe("Pad", None, None, "00", None, MappingSource::Driver);
+        assert!(line.contains("vid ???? pid ????"), "{line}");
+        assert!(line.contains("no SDL mapping"), "{line}");
+        assert!(!line.contains("DualSense"), "{line}");
+    }
+
+    #[test]
+    fn the_uuid_is_written_as_sdl_writes_it() {
+        let mut bytes = [0u8; 16];
+        bytes[0] = 0x03;
+        bytes[4] = 0x4c;
+        bytes[5] = 0x05;
+        assert_eq!(
+            uuid_text(bytes),
+            format!("030000004c050000{}", "0".repeat(16))
+        );
+    }
 
     #[test]
     fn dominant_axis_wins() {

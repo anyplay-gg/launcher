@@ -57,6 +57,8 @@ pub enum Extra {
     VibrationLight,
     VibrationMedium,
     VibrationStrong,
+    /// Settings note under the vibration row: what to try when the controller is not found.
+    ControllerHelp,
     /// Settings row: the running game on Discord.
     DiscordPresence,
     DiscordPresenceDetail,
@@ -298,6 +300,9 @@ impl Extra {
             Extra::VibrationDetail => {
                 "A short, soft pulse answers a press on the controller. Never while a game is in front."
             }
+            Extra::ControllerHelp => {
+                "Controller not working? Steam Input and DS4Windows can hold it back. Turn off PlayStation support in Steam, or quit both, then reconnect the controller."
+            }
             Extra::VibrationLight => "Light",
             Extra::VibrationMedium => "Medium",
             Extra::VibrationStrong => "Strong",
@@ -499,6 +504,9 @@ impl Extra {
             Extra::VibrationDetail => {
                 "Kolda bir tuşa basınca kısa, yumuşak bir titreşim karşılık verir. Oyun öndeyken asla."
             }
+            Extra::ControllerHelp => {
+                "Kol çalışmıyor mu? Steam Input ve DS4Windows kolu tutabilir. Steam'de PlayStation desteğini kapat ya da ikisinden de çık, sonra kolu yeniden bağla."
+            }
             Extra::VibrationLight => "Hafif",
             Extra::VibrationMedium => "Orta",
             Extra::VibrationStrong => "Güçlü",
@@ -665,7 +673,7 @@ impl Extra {
         substitute(self.text(language), args)
     }
 
-    pub const ALL: [Extra; 150] = [
+    pub const ALL: [Extra; 151] = [
         Extra::Toolkit,
         Extra::UpdateCheck,
         Extra::UpdateCheckDetail,
@@ -704,6 +712,7 @@ impl Extra {
         Extra::VibrationLight,
         Extra::VibrationMedium,
         Extra::VibrationStrong,
+        Extra::ControllerHelp,
         Extra::DiscordPresence,
         Extra::DiscordPresenceDetail,
         Extra::ShowHiddenTrophies,
