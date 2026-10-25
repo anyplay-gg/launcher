@@ -20,6 +20,34 @@ pub fn language_to_core(value: Language) -> core::Language {
     }
 }
 
+pub fn vibration(value: core::Vibration) -> crate::ui::haptics::Level {
+    use crate::ui::haptics::Level;
+    match value {
+        core::Vibration::Off => Level::Off,
+        core::Vibration::Light => Level::Light,
+        core::Vibration::Medium => Level::Medium,
+        core::Vibration::Strong => Level::Strong,
+    }
+}
+
+pub fn vibration_to_core(index: usize) -> core::Vibration {
+    match index {
+        0 => core::Vibration::Off,
+        1 => core::Vibration::Light,
+        3 => core::Vibration::Strong,
+        _ => core::Vibration::Medium,
+    }
+}
+
+pub fn vibration_index(value: core::Vibration) -> usize {
+    match value {
+        core::Vibration::Off => 0,
+        core::Vibration::Light => 1,
+        core::Vibration::Medium => 2,
+        core::Vibration::Strong => 3,
+    }
+}
+
 pub fn theme(value: core::Theme) -> Theme {
     match value {
         core::Theme::Cosmic => Theme::Cosmic,

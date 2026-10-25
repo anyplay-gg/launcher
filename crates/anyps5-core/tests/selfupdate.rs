@@ -14,7 +14,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 use anyps5_core::paths::AppPaths;
-use anyps5_core::selfupdate::{Staged, cleanup, pending, updates_dir};
+use anyps5_core::selfupdate::{Platform, Staged, cleanup, pending, updates_dir};
 use support::*;
 
 const MARKER: &[u8] = b"\0\0SELF-UPDATE-MARKER-0.2.0";
@@ -49,6 +49,7 @@ fn a_running_exe_is_replaced_and_its_old_file_removed_after_it_stops() {
         version: "0.2.0".into(),
         path,
         sha256: None,
+        platform: Platform::Windows,
     };
 
     let mut running = start(&exe);
@@ -122,6 +123,7 @@ fn restart_swaps_and_starts_the_new_exe() {
         version: "0.2.0".into(),
         path,
         sha256: None,
+        platform: Platform::Windows,
     };
     staged
         .restart(&exe, ["--fake-sleeper".into()])

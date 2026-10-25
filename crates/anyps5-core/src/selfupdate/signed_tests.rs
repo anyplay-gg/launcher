@@ -423,6 +423,33 @@ fn a_download_with_another_size_is_refused_and_leaves_nothing() {
 }
 
 #[test]
+fn a_download_cancelled_because_the_launcher_closes_leaves_nothing() {
+    let key = generate_signing_key();
+    let keys = TrustedKeys::of(key.verifying_key());
+    let (_base, stop, json) = serve_signed(&key, PROGRAM, |_| {});
+    let (api, api_stop) = serve(vec![("/repos/o/r/releases/latest", json.into_bytes())]);
+    let release = check_with(&api, "o/r", "0.1.3", &keys, Platform::Windows)
+        .unwrap()
+        .unwrap();
+    let (_root, paths, exe) = fixture();
+    // The host cancels the token when the window closes (`SelfUpdateService::finish`).
+    let cancel = CancelToken::new();
+    cancel.cancel();
+    let result = stage(&release, &exe, &paths, &mut |_| {}, &cancel);
+    stop.store(true, AtomicOrdering::SeqCst);
+    api_stop.store(true, AtomicOrdering::SeqCst);
+    assert!(
+        matches!(result, Err(SelfUpdateError::Cancelled)),
+        "{result:?}"
+    );
+    assert_eq!(fs::read_dir(updates_dir(&paths)).unwrap().count(), 0);
+    assert_eq!(
+        fs::read(&exe).unwrap(),
+        b"MZ-old-launcher",
+        "the installed exe is untouched"
+    );
+}
+#[test]
 fn a_manifest_that_points_somewhere_unsafe_is_refused_even_when_signed() {
     let key = generate_signing_key();
     let keys = TrustedKeys::of(key.verifying_key());

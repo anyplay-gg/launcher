@@ -51,6 +51,12 @@ pub enum Extra {
     /// Settings row: the home screen music toggle.
     HomeMusic,
     HomeMusicDetail,
+    /// Settings row: how strongly the controller vibrates to answer an action.
+    Vibration,
+    VibrationDetail,
+    VibrationLight,
+    VibrationMedium,
+    VibrationStrong,
     /// Settings row: the running game on Discord.
     DiscordPresence,
     DiscordPresenceDetail,
@@ -79,8 +85,6 @@ pub enum Extra {
     RestartNow,
     /// About row value: `%@` = the new version, but the folder cannot be written to.
     LauncherReadOnly,
-    /// About row value: `%@` = the new version; this launcher cannot install it, the player downloads it.
-    LauncherManual,
     /// Toast when "Restart Now" or the swap on exit fails.
     LauncherUpdateFailed,
     /// Settings row: the launcher answers anyps5:// links and folders.
@@ -284,6 +288,13 @@ impl Extra {
             Extra::HomeMusicDetail => {
                 "Plays quiet ambient music on the home screen. It fades out while a game runs."
             }
+            Extra::Vibration => "Controller Vibration",
+            Extra::VibrationDetail => {
+                "A short, soft pulse answers a press on the controller. Never while a game is in front."
+            }
+            Extra::VibrationLight => "Light",
+            Extra::VibrationMedium => "Medium",
+            Extra::VibrationStrong => "Strong",
             Extra::DiscordPresence => "Show Game on Discord",
             Extra::DiscordPresenceDetail => {
                 "With Discord open, your profile shows the game and for how long."
@@ -310,7 +321,6 @@ impl Extra {
             }
             Extra::RestartNow => "Restart Now",
             Extra::LauncherReadOnly => "%@ available, but this folder is read-only",
-            Extra::LauncherManual => "%@ available. Download it from the releases page",
             Extra::LauncherUpdateFailed => {
                 "Could not install the launcher update. Download it from GitHub instead."
             }
@@ -467,6 +477,13 @@ impl Extra {
             Extra::HomeMusicDetail => {
                 "Ana ekranda sakin bir ortam müziği çalar. Oyun çalışırken susar."
             }
+            Extra::Vibration => "Kol Titreşimi",
+            Extra::VibrationDetail => {
+                "Kolda bir tuşa basınca kısa, yumuşak bir titreşim karşılık verir. Oyun öndeyken asla."
+            }
+            Extra::VibrationLight => "Hafif",
+            Extra::VibrationMedium => "Orta",
+            Extra::VibrationStrong => "Güçlü",
             Extra::DiscordPresence => "Oyunu Discord'da Göster",
             Extra::DiscordPresenceDetail => {
                 "Discord açıksa profilinde oyunun adı ve süresi görünür."
@@ -491,7 +508,6 @@ impl Extra {
             Extra::LauncherToast => "Başlatıcı %@ hazır. Başlatıcıyı kapattığında kurulur.",
             Extra::RestartNow => "Şimdi yeniden başlat",
             Extra::LauncherReadOnly => "%@ var, ama bu klasör salt okunur",
-            Extra::LauncherManual => "%@ var. Sürümler sayfasından indir",
             Extra::LauncherUpdateFailed => {
                 "Başlatıcı güncellemesi kurulamadı. Bunun yerine GitHub'dan indir."
             }
@@ -619,7 +635,7 @@ impl Extra {
         substitute(self.text(language), args)
     }
 
-    pub const ALL: [Extra; 140] = [
+    pub const ALL: [Extra; 144] = [
         Extra::Toolkit,
         Extra::UpdateCheck,
         Extra::UpdateCheckDetail,
@@ -653,6 +669,11 @@ impl Extra {
         Extra::ToolkitFolderInvalid,
         Extra::HomeMusic,
         Extra::HomeMusicDetail,
+        Extra::Vibration,
+        Extra::VibrationDetail,
+        Extra::VibrationLight,
+        Extra::VibrationMedium,
+        Extra::VibrationStrong,
         Extra::DiscordPresence,
         Extra::DiscordPresenceDetail,
         Extra::ShowHiddenTrophies,
@@ -670,7 +691,6 @@ impl Extra {
         Extra::LauncherToast,
         Extra::RestartNow,
         Extra::LauncherReadOnly,
-        Extra::LauncherManual,
         Extra::LauncherUpdateFailed,
         Extra::Links,
         Extra::LinksDetail,

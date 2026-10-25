@@ -94,7 +94,8 @@ jobs:
           # SHA256SUMS.txt lists, like the exe's.
           appimage=()
           image="AnyPlay-Launcher-$version-x86_64.AppImage"
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -qx "$image"; then
+          assets=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          if grep -qx "$image" <<< "$assets"; then
             gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$image" --dir dist
             (cd dist && grep " \*$image$" SHA256SUMS.txt | sha256sum -c -)
             appimage=(--appimage "dist/$image")

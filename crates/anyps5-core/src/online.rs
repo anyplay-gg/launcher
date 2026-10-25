@@ -529,6 +529,9 @@ pub struct Online {
     uploaded: BTreeMap<String, usize>,
     /// How many secret trophies of each title the cloud has been told about since this sign-in.
     secrets_sent: BTreeMap<String, usize>,
+    /// How many earned hidden trophies of each title the cloud was told to show since this
+    /// sign-in.
+    revealed_sent: BTreeMap<String, usize>,
     /// The minutes the cloud has recorded per title and day since this sign-in.
     playtime_sent: BTreeMap<(String, String), u32>,
     waiting: BTreeMap<u64, Purpose>,
@@ -811,9 +814,14 @@ impl Online {
             Purpose::Secrets {
                 title_id,
                 count,
-                reveal: false,
+                reveal,
             } => {
-                let known = self.secrets_sent.entry(title_id.clone()).or_default();
+                let sent = if *reveal {
+                    &mut self.revealed_sent
+                } else {
+                    &mut self.secrets_sent
+                };
+                let known = sent.entry(title_id.clone()).or_default();
                 *known = (*known).max(*count);
             }
             Purpose::Privacy | Purpose::SetPrivacy => {
@@ -1265,11 +1273,49 @@ impl Online {
         self.account.as_ref().is_some_and(|a| a.appear_offline)
     }
 
-    /// Tells the cloud which trophies of a title a game hides. The cloud keeps a number secret
-    /// until it is revealed, and marking one again changes nothing, so this only saves the
-    /// request: it sends when the title has more hidden trophies than the cloud was told of
-    /// since this sign-in.
-    pub fn mark_secrets(&mut self, title_id: &str, hidden: &[u32]) {
+    /// Tells the cloud which trophies of a title a game hides and the player has not earned: they
+    /// are secret until shown. A trophy that was earned is never secret: the cloud is told to show
+    /// it, as consoles do (`earned_hidden`: the hidden trophies the player has earned). Both
+    /// are idempotent, so this only saves the requests: it sends when the title has more of
+    /// either than the cloud was told of since this sign-in.
+    pub fn mark_secrets(&mut self, title_id: &str, hidden: &[u32], earned_hidden: &[u32]) {
+        self.show_earned(title_id, earned_hidden);
+        self.mark_unearned(title_id, hidden);
+    }
+
+    fn show_earned(&mut self, title_id: &str, earned: &[u32]) {
+        let numbers = secret_numbers(earned);
+        let count = numbers.len();
+        let sending = |p: &Purpose| matches!(p, Purpose::Secrets { title_id: t, reveal: true, count, .. } if t == title_id && *count > 0);
+        if !self.is_online()
+            || count == 0
+            || !api::is_title_id(title_id)
+            || self
+                .revealed_sent
+                .get(title_id)
+                .is_some_and(|&known| known >= count)
+            || self.is_waiting(sending)
+        {
+            return;
+        }
+        let chunks = numbers.chunks(api::MAX_TROPHY_UPLOAD).count();
+        for (index, chunk) in numbers.chunks(api::MAX_TROPHY_UPLOAD).enumerate() {
+            let sent = if index + 1 == chunks { count } else { 0 };
+            self.send(
+                Purpose::Secrets {
+                    title_id: title_id.to_owned(),
+                    count: sent,
+                    reveal: true,
+                },
+                Command::RevealTrophies {
+                    title_id: title_id.to_owned(),
+                    numbers: chunk.to_vec(),
+                },
+            );
+        }
+    }
+
+    fn mark_unearned(&mut self, title_id: &str, hidden: &[u32]) {
         let numbers = secret_numbers(hidden);
         let count = numbers.len();
         let sending = |p: &Purpose| matches!(p, Purpose::Secrets { title_id: t, reveal: false, .. } if t == title_id);
@@ -1311,7 +1357,7 @@ impl Online {
         self.send(
             Purpose::Secrets {
                 title_id: title_id.to_owned(),
-                count: 1,
+                count: 0,
                 reveal: true,
             },
             Command::RevealTrophies {
@@ -1370,6 +1416,7 @@ impl Online {
                     self.privacy = None;
                     self.uploaded.clear();
                     self.secrets_sent.clear();
+                    self.revealed_sent.clear();
                     self.playtime_sent.clear();
                     self.join = JoinOffer::default();
                 }
@@ -2915,7 +2962,7 @@ mod tests {
         let mut online = Online::default();
         signed_in(&mut online);
         online.take_outbox();
-        online.mark_secrets("GAME00001", &[5, 3, 5, 70_000]);
+        online.mark_secrets("GAME00001", &[5, 3, 5, 70_000], &[]);
         let lines = online.take_outbox();
         assert_eq!(lines.len(), 1);
         let (_, command) = control::parse_command(&lines[0]).unwrap();
@@ -2928,9 +2975,9 @@ mod tests {
         );
         let id = online.next;
         answer(&mut online, id, api::SecretsChanged { changed: 2 });
-        online.mark_secrets("GAME00001", &[5, 3]);
+        online.mark_secrets("GAME00001", &[5, 3], &[]);
         assert!(online.take_outbox().is_empty(), "the cloud knows them");
-        online.mark_secrets("GAME00001", &[5, 3, 9]);
+        online.mark_secrets("GAME00001", &[5, 3, 9], &[]);
         assert_eq!(online.take_outbox().len(), 1, "a new hidden trophy is sent");
         online.reveal_secret("GAME00001", 5);
         let (_, command) = control::parse_command(&online.take_outbox()[0]).unwrap();
@@ -2943,5 +2990,52 @@ mod tests {
         );
         online.reveal_secret("GAME00001", 70_000);
         assert!(online.take_outbox().is_empty());
+    }
+
+    #[test]
+    fn an_earned_hidden_trophy_is_shown_and_an_unearned_one_stays_secret() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        online.take_outbox();
+        // Number 3 is hidden and earned, 5 and 9 are hidden and not yet.
+        online.mark_secrets("GAME00001", &[5, 9], &[3]);
+        let sent: Vec<Command> = online
+            .take_outbox()
+            .iter()
+            .map(|line| control::parse_command(line).unwrap().1)
+            .collect();
+        assert_eq!(
+            sent,
+            [
+                Command::RevealTrophies {
+                    title_id: "GAME00001".into(),
+                    numbers: vec![3]
+                },
+                Command::SecretTrophies {
+                    title_id: "GAME00001".into(),
+                    numbers: vec![5, 9]
+                },
+            ]
+        );
+        let first = online.next - 1;
+        answer(&mut online, first, api::SecretsChanged { changed: 0 });
+        answer(&mut online, first + 1, api::SecretsChanged { changed: 2 });
+        // Nothing again while the cloud knows it all.
+        online.mark_secrets("GAME00001", &[5, 9], &[3]);
+        assert!(online.take_outbox().is_empty());
+        // The player earns 5: it is shown, and no new secret is sent.
+        online.mark_secrets("GAME00001", &[9], &[3, 5]);
+        let sent: Vec<Command> = online
+            .take_outbox()
+            .iter()
+            .map(|line| control::parse_command(line).unwrap().1)
+            .collect();
+        assert_eq!(
+            sent,
+            [Command::RevealTrophies {
+                title_id: "GAME00001".into(),
+                numbers: vec![3, 5]
+            }]
+        );
     }
 }
