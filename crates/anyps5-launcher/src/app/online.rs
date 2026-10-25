@@ -1752,4 +1752,32 @@ mod tests {
         assert!(crate::app::together::card(&model).is_none());
         assert!(model.online.take_outbox()[0].contains("answer_invitation"));
     }
+
+    #[test]
+    fn back_closes_a_blocker_then_turns_an_offer_down_then_goes_home() {
+        use crate::ui::input::Command as Key;
+        let mut model = lan_model();
+        crate::app::together::join(&mut model, offer("01.100.000"));
+        assert!(model.together.blocked.is_some());
+        model.handle(Key::Back);
+        assert!(model.together.blocked.is_none());
+
+        let invitation = net::api::Invitation {
+            id: "i1".into(),
+            from: mira(),
+            session: "s1".into(),
+            kind: net::api::SessionKind::Lan,
+            title_id: "PPSA17221".into(),
+            title: "Minecraft".into(),
+            version: "01.044.000".into(),
+            expires: 0,
+        };
+        model.online.invitations.push(invitation);
+        assert!(crate::app::together::card(&model).is_some());
+        model.handle(Key::Back);
+        assert!(crate::app::together::card(&model).is_none());
+        assert!(model.online.take_outbox()[0].contains("answer_invitation"));
+        // No card: Back is the home screen's again.
+        assert!(!crate::app::together::escape(&mut model));
+    }
 }

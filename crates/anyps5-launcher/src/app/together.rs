@@ -270,6 +270,20 @@ pub fn card(model: &Model) -> Option<Card> {
     None
 }
 
+/// Back (Esc, the pad's back button) with the card on screen: a blocker closes, an offer is turned
+/// down. True when the card took the press.
+pub fn escape(model: &mut Model) -> bool {
+    let action = match card(model) {
+        Some(Card::Blocked(_)) => Action::Close,
+        Some(Card::Offer {
+            key, invitation, ..
+        }) => Action::Dismiss { key, invitation },
+        None => return false,
+    };
+    apply(model, action);
+    true
+}
+
 /// Carries out what the player did on the card.
 pub fn apply(model: &mut Model, action: Action) {
     match action {

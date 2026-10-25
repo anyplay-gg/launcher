@@ -1132,6 +1132,11 @@ impl Model {
         if let Some(overlay) = self.overlay {
             return Routed::Overlay(overlay);
         }
+        // Back answers the Play Together card first: it closes a blocker and says "not now" to an offer.
+        if command == Command::Back && crate::app::together::escape(self) {
+            self.sound(Cue::Close);
+            return Routed::Done;
+        }
         // The launcher is in front because of the Home button: Back goes back to the game.
         if self.summoned && self.running.is_some() && command == Command::Back {
             self.sound(Cue::Close);
