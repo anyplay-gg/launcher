@@ -328,7 +328,7 @@ impl OnlineService {
                 model.toast(text, Icon::USERS);
             }
             // A message toast only tells what the open panel does not already show.
-            Notice::Message { message, .. } if model.overlay != Some(Overlay::Online) => {
+            Notice::Message { message, .. } if model.overlay != Some(Overlay::Friends) => {
                 let text = S::MessageArrived.format(
                     language,
                     &[
@@ -338,7 +338,7 @@ impl OnlineService {
                 );
                 model.toast(text, Icon::ENVELOPE_SIMPLE);
             }
-            Notice::MessageRequest(request) if model.overlay != Some(Overlay::Online) => {
+            Notice::MessageRequest(request) if model.overlay != Some(Overlay::Friends) => {
                 let me = model.online.account.as_ref().map(|a| a.id);
                 let from = net::others(&request, me.unwrap_or(net::api::AccountId(0)))
                     .first()
@@ -351,8 +351,8 @@ impl OnlineService {
             Notice::Dialog(_) => {
                 // The game asked to invite friends: the launcher comes forward with the picker.
                 model.effects.push(Effect::RestoreWindow);
-                if model.overlay != Some(Overlay::Online) {
-                    model.open(Overlay::Online);
+                if model.overlay != Some(Overlay::Friends) {
+                    model.open(Overlay::Friends);
                 }
             }
             Notice::VoiceFailed(problem) => {
@@ -517,8 +517,8 @@ impl OnlineService {
             // lists it with Join and Decline. Nothing joins by itself.
             (Purpose::JoinRedeem, Ok(_)) => {
                 model.effects.push(Effect::RestoreWindow);
-                if model.overlay != Some(Overlay::Online) {
-                    model.open(Overlay::Online);
+                if model.overlay != Some(Overlay::Friends) {
+                    model.open(Overlay::Friends);
                 }
             }
             (Purpose::JoinRedeem, Err(failure)) => {
@@ -566,7 +566,7 @@ impl OnlineService {
             (Purpose::SetVoiceDevice(_), Err(failure)) => {
                 tracing::info!("net service: {}: {}", failure.code, failure.message);
                 // A device chosen earlier may be unplugged now; only a player who looks is told.
-                if model.overlay == Some(Overlay::Online) {
+                if model.overlay == Some(Overlay::Friends) {
                     model.toast(VT::ToastNoDevice.text(language), Icon::WARNING);
                 }
                 model.online.request_voice_devices();
@@ -1098,7 +1098,7 @@ mod tests {
             "one line, the sender first"
         );
         model.toast = None;
-        model.open(Overlay::Online);
+        model.open(Overlay::Friends);
         service().notice(&mut model, notice(), &mut ready);
         assert!(model.toast.is_none(), "the open panel shows it already");
     }
@@ -1272,7 +1272,7 @@ mod tests {
             ),
             &mut ready,
         );
-        assert_eq!(model.overlay, Some(Overlay::Online));
+        assert_eq!(model.overlay, Some(Overlay::Friends));
         assert!(ready.is_empty(), "no game starts");
         assert!(model.online.take_outbox().is_empty(), "no join is sent");
         assert!(model.starting.is_none() && model.running.is_none());

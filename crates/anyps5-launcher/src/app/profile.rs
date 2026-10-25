@@ -1,7 +1,7 @@
 //! Which profile the profile screen is on and where Back leads (docs/DESIGN.md 17, "Profile
 //! screen"). The screen is a full-screen overlay; it remembers where the player came from so Back
-//! returns there: Home (the profile button), or the online panel on the page it was left on (a
-//! friend's page, the feed, Home).
+//! returns there: Home (the profile button), or the Friends screen on the page it was left on (a
+//! friend's page, the activity, Home).
 
 use anyps5_core::online::api::AccountId;
 
@@ -13,8 +13,8 @@ use crate::ui::sound::Cue;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Back {
     Home,
-    /// The online panel, on the page it was left on.
-    Online,
+    /// The Friends screen, on the page it was left on.
+    Friends,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,25 +31,43 @@ impl Model {
     }
 
     /// The profile button of the top bar: the player's own profile once signed in, the sign-in
-    /// page of the online panel before.
+    /// page of the Friends screen before.
     pub fn open_profile_button(&mut self) {
         match self.online.account.as_ref().map(|a| a.id) {
             Some(me) => {
                 self.open_profile(me, Back::Home);
                 self.sound(Cue::Select);
             }
-            None => self.open(Overlay::Online),
+            None => self.open(Overlay::Friends),
         }
     }
 
     /// Back from the profile screen, to where it was opened from.
     pub fn close_profile(&mut self) {
         match self.profile.map(|t| t.back) {
-            Some(Back::Online) => {
+            Some(Back::Friends) => {
                 self.online_resume = true;
-                self.switch_overlay(Overlay::Online);
+                self.switch_overlay(Overlay::Friends);
             }
             _ => self.dismiss_overlay(),
+        }
+    }
+
+    /// The profile screen sends the player on to the Friends screen: Back from there leads here.
+    pub fn open_friends_from_profile(&mut self) {
+        self.friends_back = self.profile;
+        self.switch_overlay(Overlay::Friends);
+    }
+
+    /// Back from the first page of the Friends screen: to the profile it was opened from, else
+    /// home.
+    pub fn close_friends(&mut self) {
+        match self.friends_back.take() {
+            Some(target) => {
+                self.profile = Some(target);
+                self.switch_overlay(Overlay::Profile);
+            }
+            None => self.dismiss_overlay(),
         }
     }
 }
@@ -78,7 +96,7 @@ mod tests {
         m.open_profile_button();
         assert_eq!(
             m.overlay,
-            Some(Overlay::Online),
+            Some(Overlay::Friends),
             "signed out: the sign-in page"
         );
         m.dismiss_overlay();
@@ -105,9 +123,9 @@ mod tests {
         m.close_profile();
         assert_eq!(m.overlay, None);
         assert!(!m.online_resume);
-        m.open_profile(AccountId(2), Back::Online);
+        m.open_profile(AccountId(2), Back::Friends);
         m.close_profile();
-        assert_eq!(m.overlay, Some(Overlay::Online));
-        assert!(m.online_resume, "the panel comes back on the page it left");
+        assert_eq!(m.overlay, Some(Overlay::Friends));
+        assert!(m.online_resume, "the screen comes back on the page it left");
     }
 }

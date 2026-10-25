@@ -20,7 +20,7 @@
 //! the panel reports `changed`. Work with I/O (reports, uninstall, toolkit) runs on worker threads
 //! and answers through channels polled in [`OverlayHost::frame`].
 
-mod online;
+mod friends;
 mod profile;
 
 use std::collections::HashMap;
@@ -137,10 +137,10 @@ pub struct PanelHost {
     log: LogView,
     recommended: RecommendedPanel,
     saves: SavesPanel,
-    online_panel: crate::screens::online::OnlinePanel,
+    friends: crate::screens::friends::FriendsScreen,
     /// The profile screen (`Overlay::Profile`).
     profile: crate::screens::profile::ProfileScreen,
-    /// The page the online panel opens on when the profile screen sent the player there: the
+    /// The page the Friends screen opens on when the profile screen sent the player there: the
     /// page, and a feed item to put the focus on.
     online_start: Option<(crate::screens::online::Page, Option<u64>)>,
     restore: RestorePanel,
@@ -214,7 +214,7 @@ impl PanelHost {
             log: LogView::default(),
             recommended: RecommendedPanel::default(),
             saves: SavesPanel::default(),
-            online_panel: crate::screens::online::OnlinePanel::default(),
+            friends: crate::screens::friends::FriendsScreen::default(),
             profile: crate::screens::profile::ProfileScreen::default(),
             online_start: None,
             restore: RestorePanel::default(),
@@ -687,7 +687,7 @@ impl PanelHost {
                 InGameAction::Resume | InGameAction::Dismiss => model.return_to_game(),
                 InGameAction::Trophies => model.open(Overlay::Trophies),
                 InGameAction::GameSettings => model.open(Overlay::GameSettings),
-                InGameAction::Friends => model.open(Overlay::Online),
+                InGameAction::Friends => model.open(Overlay::Friends),
                 InGameAction::AskClose => model.switch_overlay(Overlay::ConfirmCloseGame),
                 InGameAction::Close | InGameAction::Keep => {}
             }
@@ -1692,7 +1692,7 @@ impl OverlayHost for PanelHost {
             Overlay::Log => self.log_ui(cx, wanted),
             Overlay::Recommended => self.recommended_ui(cx, wanted),
             Overlay::WhatsNew => self.whats_new_ui(cx, wanted),
-            Overlay::Online => self.online_ui(cx, wanted),
+            Overlay::Friends => self.friends_ui(cx, wanted),
             Overlay::Profile => self.profile_ui(cx, wanted),
         }
     }
@@ -2033,8 +2033,8 @@ mod tests {
         for (intent, overlay) in [
             (HomeIntent::OpenSettings, Overlay::Settings),
             (HomeIntent::OpenLibrary, Overlay::Library),
-            (HomeIntent::OpenOnline, Overlay::Online),
-            (HomeIntent::OpenFriends, Overlay::Online),
+            (HomeIntent::OpenOnline, Overlay::Friends),
+            (HomeIntent::OpenFriends, Overlay::Friends),
             (HomeIntent::OpenGameSettings, Overlay::GameSettings),
             (HomeIntent::OpenTrophies, Overlay::Trophies),
         ] {

@@ -34,6 +34,8 @@ pub mod dialogs;
 pub mod discord_strings;
 pub mod failure_strings;
 pub mod format;
+pub mod friends;
+pub mod friends_strings;
 pub mod gallery;
 pub mod gallery_feed;
 pub mod game_settings;

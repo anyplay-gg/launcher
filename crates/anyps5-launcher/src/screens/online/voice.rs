@@ -482,10 +482,7 @@ impl OnlinePanel {
     /// The page the voice pages lead back to.
     pub(super) fn voice_back(&self) -> Option<Page> {
         match self.page {
-            Page::Voice => Some(match &self.previous {
-                Some(Page::Party) => Page::Party,
-                _ => Page::Home,
-            }),
+            Page::Voice => Some(Page::Party),
             Page::VoiceDevices(_) => Some(Page::Voice),
             _ => None,
         }

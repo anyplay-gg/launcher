@@ -253,9 +253,12 @@ pub struct Model {
     pub online: Online,
     /// The profile the profile screen is on and where Back leads (`app::profile`).
     pub profile: Option<crate::app::profile::Target>,
-    /// The online panel opens on the page it was left on, not on its first one: the player comes
-    /// back from the profile screen.
+    /// The Friends screen opens on the page it was left on, not on its first one: the player
+    /// comes back from the profile screen.
     pub online_resume: bool,
+    /// The profile the player came to the Friends screen from: Back from the screen's first page
+    /// leads there (`app::profile`).
+    pub friends_back: Option<crate::app::profile::Target>,
     /// A session that ended and whose "How did it run?" has not been answered ([`Model::run_question`]).
     pub run_prompt: Option<crate::app::run_question::RunPrompt>,
 
@@ -313,6 +316,7 @@ impl Model {
             online: Online::default(),
             profile: None,
             online_resume: false,
+            friends_back: None,
             run_prompt: None,
             sessions: Sessions::default(),
             saves_busy: None,
@@ -957,6 +961,10 @@ impl Model {
     // --- overlays ----------------------------------------------------------------------------
 
     pub fn open(&mut self, overlay: Overlay) {
+        if overlay == Overlay::Friends {
+            // Not from a profile: Back leads home.
+            self.friends_back = None;
+        }
         self.switch_overlay(overlay);
         self.sound(Cue::Select);
     }
@@ -1041,7 +1049,7 @@ impl Model {
             HomeIntent::OpenLibrary => self.open(Overlay::Library),
             HomeIntent::OpenSettings => self.open(Overlay::Settings),
             // The online panel opens on the friends list once signed in, else on sign-in.
-            HomeIntent::OpenFriends => self.open(Overlay::Online),
+            HomeIntent::OpenFriends => self.open(Overlay::Friends),
             // The profile button: the own profile once signed in, the sign-in page before.
             HomeIntent::OpenOnline => self.open_profile_button(),
             HomeIntent::ChooseFolder => self.request_folder_dialog(),
@@ -1203,7 +1211,7 @@ impl Model {
         self.onboarding_finish();
         if let Some(create) = sign_in {
             self.sign_in_after_onboarding = Some(create);
-            self.open(Overlay::Online);
+            self.open(Overlay::Friends);
         }
     }
 
@@ -1876,7 +1884,7 @@ mod tests {
         m.handle(Command::Select);
         assert!(m.onboarded());
         assert_eq!(m.sign_in_after_onboarding, Some(false));
-        assert_eq!(m.overlay, Some(Overlay::Online));
+        assert_eq!(m.overlay, Some(Overlay::Friends));
 
         // Create Account asks for a new account.
         let mut m = on_online_step();

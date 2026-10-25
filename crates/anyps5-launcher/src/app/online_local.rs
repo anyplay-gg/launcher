@@ -43,6 +43,19 @@ pub fn build(cx: &mut OverlayCx<'_>, cloud: Option<&str>) -> Local {
             hashes.insert(hash.clone());
         }
     }
+    // The people of the Friends screen: the player and the friends and requests it lists.
+    let people = online
+        .account
+        .iter()
+        .map(|a| a.id)
+        .chain(online.friends.friends.iter().map(|f| f.account.id))
+        .chain(online.friends.incoming.iter().map(|r| r.account.id))
+        .chain(online.friends.outgoing.iter().map(|r| r.account.id));
+    for id in people {
+        if let Some(Some(hash)) = online.avatars.get(&id) {
+            hashes.insert(hash.clone());
+        }
+    }
     for page in online.profiles.values().filter_map(|e| e.page.as_ref()) {
         titles.extend(page.profile.favourites.iter().flatten().cloned());
         titles.extend(

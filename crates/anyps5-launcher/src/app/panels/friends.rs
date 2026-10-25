@@ -1,4 +1,4 @@
-//! The online panel in the panel host: what the player asks for becomes a command for the net
+//! The Friends screen in the panel host: what the player asks for becomes a command for the net
 //! service (`Model::online`), and a join first checks the library and the versions.
 
 use anyps5_core::online::api::AccountId;
@@ -8,7 +8,7 @@ use anyps5_core::online::{self as net, Command, Join, Purpose, Status};
 use super::PanelHost;
 use crate::app::model::{Effect, Model};
 use crate::app::online::OnlineService;
-use crate::app::overlay::{Overlay, OverlayCx};
+use crate::app::overlay::OverlayCx;
 use crate::screens::online::{OnlineAction, OnlineData};
 use crate::screens::online_call_strings::CallText as CT;
 use crate::screens::online_social_strings::SocialText as S;
@@ -16,26 +16,25 @@ use crate::screens::online_strings::OnlineText as T;
 use crate::ui::icons::Icon;
 
 impl PanelHost {
-    pub(super) fn online_ui(&mut self, cx: &mut OverlayCx<'_>, wanted: bool) {
+    pub(super) fn friends_ui(&mut self, cx: &mut OverlayCx<'_>, wanted: bool) {
         let events = self.take_events(wanted);
-        let side_next = cx.model.overlay.is_some_and(Overlay::is_side_panel);
         let (language, accent) = (cx.model.language(), cx.shell.accent_color());
         let cloud = net::cloud(cx.model.prefs.online_cloud.as_deref()).map(str::to_owned);
-        // Opening the panel brings the net service up: it is local until the player signs in.
+        // Opening the screen brings the net service up: it is local until the player signs in.
         if wanted
-            && !self.online_panel.is_active()
+            && !self.friends.is_active()
             && cloud.is_some()
             && !matches!(cx.model.online.status, Status::Running | Status::Missing)
         {
             cx.model.effects.push(Effect::StartOnline);
         }
-        if self.online_panel.wants_local() {
+        if self.friends.wants_local() {
             let local = crate::app::online_local::build(cx, cloud.as_deref());
-            self.online_panel.set_local(local);
+            self.friends.set_local(local);
         }
         // Coming back from the profile screen: to the page the player left, or to the page the
         // screen named.
-        let opening = wanted && !self.online_panel.is_open();
+        let opening = wanted && !self.friends.is_open();
         let resume = opening && std::mem::take(&mut cx.model.online_resume);
         let start = if opening {
             self.online_start.take()
@@ -55,29 +54,25 @@ impl PanelHost {
                 utc_offset: None,
                 game_running: cx.model.running.is_some(),
             };
-            if wanted && !self.online_panel.is_open() {
+            if wanted && !self.friends.is_open() {
                 if let Some((page, item)) = start {
-                    // The profile screen sent the player to a page of the panel.
-                    self.online_panel.show_page(page, &data);
+                    // The profile screen sent the player to a page.
+                    self.friends.show_page(page, &data);
                     if let Some(index) =
                         item.and_then(|id| data.online.feed.items.iter().position(|i| i.id == id))
                     {
-                        self.online_panel.set_feed_focus(index, None);
+                        self.friends.set_feed_focus(index, None);
                     }
                 } else if resume {
                     // Back from the profile screen: the page the player left.
-                    self.online_panel.resume(&data);
+                    self.friends.resume(&data);
                 } else {
-                    self.online_panel.open(&data);
+                    self.friends.open(&data);
                 }
-            } else if !wanted && self.online_panel.is_active() && self.online_panel.is_open() {
-                if side_next {
-                    self.online_panel.dismiss();
-                } else {
-                    self.online_panel.close();
-                }
+            } else if !wanted && self.friends.is_active() && self.friends.is_open() {
+                self.friends.close();
             }
-            self.online_panel.show(cx.shell, cx.ctx, &events, &data)
+            self.friends.show(cx.shell, cx.ctx, &events, &data)
         };
         if wanted && cx.model.online.status == Status::Missing {
             let text = T::ServiceMissing.text(language);
@@ -122,7 +117,7 @@ pub(super) fn online_action(model: &mut Model, action: OnlineAction) {
         OnlineAction::React(item, reaction) => online.react(item, reaction),
         OnlineAction::Profile(account) => online.request_profile(account),
         OnlineAction::OpenProfile(account) => {
-            model.open_profile(account, crate::app::profile::Back::Online);
+            model.open_profile(account, crate::app::profile::Back::Friends);
         }
         OnlineAction::Voice(on) => online.set_voice(on),
         OnlineAction::VoiceProvider(provider) => online.set_voice_provider(provider),
@@ -161,6 +156,7 @@ pub(super) fn online_action(model: &mut Model, action: OnlineAction) {
         OnlineAction::CancelSignIn => {
             online.send(Purpose::CancelSignIn, Command::CancelSignIn);
         }
+        OnlineAction::Reconnect => model.effects.push(Effect::StartOnline),
         OnlineAction::ManageAccount => {
             online.send(Purpose::AccountPage, Command::AccountPage);
         }
@@ -316,7 +312,7 @@ pub(super) fn online_action(model: &mut Model, action: OnlineAction) {
         }
         // The panel host copies it: only the host has the window's clipboard.
         OnlineAction::CopyText(_) => {}
-        OnlineAction::Close => model.dismiss_overlay(),
+        OnlineAction::Close => model.close_friends(),
     }
 }
 

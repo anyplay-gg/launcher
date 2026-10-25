@@ -18,7 +18,7 @@ pub fn notice(model: &mut Model, notice: ScreenNotice) {
     match notice {
         // The open panel already shows the new row.
         ScreenNotice::Offered { account, title } => {
-            if model.overlay != Some(Overlay::Online) {
+            if model.overlay != Some(Overlay::Friends) {
                 let name = name_of(&model.online, account, language);
                 let text = X::ToastOffered.format(language, &[Arg::Str(&name), Arg::Str(&title)]);
                 model.toast(text, Icon::APP_WINDOW);
