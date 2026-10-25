@@ -19,11 +19,17 @@ use crate::ui::sound::Cue;
 use crate::ui::text;
 use crate::ui::theme::{self, color, pad, size, ty, white};
 
-/// Tiles per row.
+/// Columns when the width is not known yet; the grid fills the width it gets (`columns_for`).
 pub const COLUMNS: usize = 6;
 const COLUMN_GAP: f32 = 26.0;
 const ROW_GAP: f32 = 30.0;
 const GRID_PADDING: f32 = 14.0;
+
+/// As many tiles as fit the width, at least three.
+pub fn columns_for(width: f32) -> usize {
+    let fit = ((width + COLUMN_GAP) / (size::LIBRARY_TILE + COLUMN_GAP)).floor();
+    (fit.max(0.0) as usize).max(3)
+}
 
 /// The state line under a tile: a glyph and a word in the state's colour.
 #[derive(Clone, Debug)]
@@ -64,16 +70,18 @@ pub struct LibraryGrid {
     open: bool,
     closing: bool,
     index: usize,
+    /// Columns of the last frame, so the arrows move by the rows the player sees.
+    columns: usize,
 }
 
 /// Where an arrow command moves the focus in a grid of `count` tiles.
-pub fn move_index(index: usize, command: Command, count: usize) -> usize {
+pub fn move_index(index: usize, command: Command, count: usize, columns: usize) -> usize {
     let last = count.saturating_sub(1);
     match command {
         Command::Left => index.saturating_sub(1),
         Command::Right => (index + 1).min(last),
-        Command::Up => index.saturating_sub(COLUMNS),
-        Command::Down => (index + COLUMNS).min(last),
+        Command::Up => index.saturating_sub(columns),
+        Command::Down => (index + columns).min(last),
         _ => index,
     }
 }
@@ -118,7 +126,12 @@ impl LibraryGrid {
             for command in commands(events) {
                 match command {
                     Command::Left | Command::Right | Command::Up | Command::Down => {
-                        let next = move_index(self.index, command, count);
+                        let columns = if self.columns == 0 {
+                            COLUMNS
+                        } else {
+                            self.columns
+                        };
+                        let next = move_index(self.index, command, count, columns);
                         if next != self.index {
                             self.index = next;
                             shell.play(Cue::Move);
@@ -141,6 +154,7 @@ impl LibraryGrid {
             }
         }
         let mut clicked = None;
+        let mut columns = self.columns;
         let index = self.index;
         let open = self.open;
         let drawn = fullscreen_panel(
@@ -148,8 +162,9 @@ impl LibraryGrid {
             "library-grid",
             open,
             GlassStyle::fullscreen_panel(),
-            |ui, _| draw(ui, data, index, &mut clicked),
+            |ui, _| draw(ui, data, index, &mut clicked, &mut columns),
         );
+        self.columns = columns;
         if drawn.is_none() {
             self.closing = false;
         }
@@ -163,7 +178,13 @@ impl LibraryGrid {
     }
 }
 
-fn draw(ui: &mut Ui, data: &LibraryData<'_>, focus: usize, clicked: &mut Option<usize>) {
+fn draw(
+    ui: &mut Ui,
+    data: &LibraryData<'_>,
+    focus: usize,
+    clicked: &mut Option<usize>,
+    columns_out: &mut usize,
+) {
     let ctx = ui.ctx().clone();
     let painter = ui.painter().clone();
     let language = data.language;
@@ -198,7 +219,9 @@ fn draw(ui: &mut Ui, data: &LibraryData<'_>, focus: usize, clicked: &mut Option<
     );
     let mut child = ui.new_child(UiBuilder::new().max_rect(list));
     let id = child.make_persistent_id("library-scroll");
-    let focus_row = focus / COLUMNS;
+    let columns = columns_for(area.width());
+    *columns_out = columns;
+    let focus_row = focus / columns;
     let (follow, scroll_to) = Follow::begin(&ctx, id, Some(focus_row));
     let mut area_scroll = egui::ScrollArea::vertical()
         .id_salt(id)
@@ -219,7 +242,7 @@ fn draw(ui: &mut Ui, data: &LibraryData<'_>, focus: usize, clicked: &mut Option<
         )
     };
     let cell_h = tile + 10.0 + 15.0 * 1.2 + 10.0 + ty::STATE_LABEL_SMALL.line_height();
-    let rows = data.entries.len().div_ceil(COLUMNS);
+    let rows = data.entries.len().div_ceil(columns);
     let mut geometry = Vec::with_capacity(rows);
     let output = area_scroll.show(&mut child, |ui| {
         let top = ui.cursor().min.y + GRID_PADDING;
@@ -236,7 +259,7 @@ fn draw(ui: &mut Ui, data: &LibraryData<'_>, focus: usize, clicked: &mut Option<
             geometry.push((y - top, cell_h));
         }
         for (i, entry) in data.entries.iter().enumerate() {
-            let (row, col) = (i / COLUMNS, i % COLUMNS);
+            let (row, col) = (i / columns, i % columns);
             let x = area.min.x + col as f32 * (tile + COLUMN_GAP);
             let y = top + row as f32 * (cell_h + ROW_GAP);
             let cell = Rect::from_min_size(pos2(x, y), vec2(tile, cell_h));
@@ -319,17 +342,26 @@ mod tests {
 
     #[test]
     fn arrows_move_by_one_and_by_a_row() {
-        assert_eq!(move_index(0, Command::Right, 9), 1);
-        assert_eq!(move_index(0, Command::Left, 9), 0, "no wrap");
-        assert_eq!(move_index(1, Command::Down, 9), 7);
-        assert_eq!(move_index(7, Command::Up, 9), 1);
-        assert_eq!(move_index(8, Command::Down, 9), 8, "last tile stays");
+        assert_eq!(move_index(0, Command::Right, 9, 6), 1);
+        assert_eq!(move_index(0, Command::Left, 9, 6), 0, "no wrap");
+        assert_eq!(move_index(1, Command::Down, 9, 6), 7);
+        assert_eq!(move_index(7, Command::Up, 9, 6), 1);
+        assert_eq!(move_index(8, Command::Down, 9, 6), 8, "last tile stays");
+        // A wider grid moves by its own row.
+        assert_eq!(move_index(1, Command::Down, 20, 8), 9);
+    }
+
+    #[test]
+    fn the_grid_fills_its_width() {
+        assert_eq!(columns_for(6.0 * 196.0 + 5.0 * 26.0), 6);
+        assert_eq!(columns_for(1740.0), 7);
+        assert_eq!(columns_for(400.0), 3, "never fewer than three");
         assert_eq!(
-            move_index(4, Command::Down, 9),
+            move_index(4, Command::Down, 9, 6),
             8,
             "clamped to the last tile"
         );
-        assert_eq!(move_index(8, Command::Right, 9), 8);
-        assert_eq!(move_index(0, Command::Right, 0), 0, "empty grid");
+        assert_eq!(move_index(8, Command::Right, 9, 6), 8);
+        assert_eq!(move_index(0, Command::Right, 0, 6), 0, "empty grid");
     }
 }

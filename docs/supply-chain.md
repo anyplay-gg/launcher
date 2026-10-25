@@ -62,3 +62,7 @@ The attestation is made by the `release` job of a tag build. A release workflow 
 - **The Rust toolchain** of CI (not of releases) is `stable`, and the runner images and the apt packages of the Linux build are whatever GitHub provides that day.
 - **The shared rules workflow** is referenced by branch, see above.
 - **Vulnerabilities in a built binary** are not scanned after the build; `cargo deny` looks at the lockfile.
+
+## Fonts and icons
+
+Licence texts are in `crates/anyps5-launcher/assets/fonts/`. Bundled: [Inter](https://rsms.me/inter/) (SIL OFL 1.1), [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (SIL OFL 1.1), [Noto Sans](https://github.com/notofonts) in Latin, Mono, Thai and Arabic, which also stand in for the games' system fonts (SIL OFL 1.1; sources and checksums in `crates/anyps5-launcher/assets/fonts/noto/README.md`), and [Phosphor Icons](https://phosphoricons.com) (MIT). The Japanese, Chinese and Korean Noto Sans CJK fonts are not bundled: the launcher downloads them (pinned release, SHA-256 checked) on request or at the first game start.

@@ -182,6 +182,8 @@ pub enum SettingsAction {
     RemoveToolkit(String),
     /// "Restart Now" on the About page: close, and start the staged launcher.
     RestartNow,
+    /// One of the About page's links (website, Discord, privacy, terms).
+    OpenPage(&'static str),
     /// "Open AnyPlay Links with This Launcher" was switched: write or remove the registration.
     SetLinks(bool),
     /// A row of the Phone as Controller page asks for something.
@@ -657,6 +659,23 @@ pub fn build_categories(
         )),
         LauncherUpdate::None => {}
     }
+    {
+        use crate::screens::about_strings::AboutText as A;
+        about.push(
+            Row::command("aboutWebsite", A::Website.text(language))
+                .detail("anyplaynet.com")
+                .icon(Icon::GLOBE)
+                .group_start(),
+        );
+        about.push(
+            Row::command("aboutDiscord", A::Discord.text(language))
+                .detail(A::DiscordDetail.text(language))
+                .icon(Icon::DISCORD_LOGO),
+        );
+        about.push(Row::command("aboutPrivacy", A::Privacy.text(language)).icon(Icon::FILE_TEXT));
+        about.push(Row::command("aboutTerms", A::Terms.text(language)).icon(Icon::FILE_TEXT));
+        about.push(Row::info("credits", A::Credits.text(language), None));
+    }
     about.push(
         Row::command("quit", t(Key::Quit))
             .icon(Icon::POWER)
@@ -670,6 +689,18 @@ pub fn build_categories(
     .zip(Category::ALL)
     .map(|(rows, category)| CategoryRows { category, rows })
     .collect()
+}
+
+/// The page an About row opens.
+fn about_page(row: &str) -> Option<&'static str> {
+    use crate::screens::about_strings::{DISCORD, PRIVACY, TERMS, WEBSITE};
+    Some(match row {
+        "aboutWebsite" => WEBSITE,
+        "aboutDiscord" => DISCORD,
+        "aboutPrivacy" => PRIVACY,
+        "aboutTerms" => TERMS,
+        _ => return None,
+    })
 }
 
 /// Applies the preferences that the shell shows: theme and accent, language, motion, sounds. The
@@ -1041,6 +1072,11 @@ impl SettingsPanel {
                 }
             }
             Change::Run { row: "restartNow" } => out.actions.push(SettingsAction::RestartNow),
+            Change::Run { row } if about_page(row).is_some() => {
+                if let Some(page) = about_page(row) {
+                    out.actions.push(SettingsAction::OpenPage(page));
+                }
+            }
             Change::Run {
                 row: "toolkitFolder",
             } => {

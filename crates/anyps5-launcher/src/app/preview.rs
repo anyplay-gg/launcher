@@ -6,6 +6,7 @@
 //! ```
 //!
 //! Scenes: `onboarding0`, `onboarding1`, `onboarding2` (folder chosen), `onboarding2-empty`,
+//! `onboarding3` (signing in, with a cloud),
 //! `home`, `home-actions`, `home-trophies`, `home-locked`, `home-unlocking`, `home-relinking`,
 //! `home-failed`, `home-queued`, `home-running`, `home-outdated`, `home-diagnosis`, `home-messages` (the
 //! profile button with unread messages), `home-friends` (signed in, three friends online),
@@ -94,6 +95,7 @@ impl Scene {
             "onboarding0" | "onboarding" => Scene::Onboarding(0),
             "onboarding1" => Scene::Onboarding(1),
             "onboarding2" => Scene::Onboarding(2),
+            "onboarding3" => Scene::Onboarding(3),
             "onboarding2-empty" => Scene::OnboardingEmpty,
             "home" => Scene::Home,
             "home-actions" => Scene::HomeActions,
@@ -129,11 +131,12 @@ impl Scene {
         })
     }
 
-    pub const ALL_NAMES: [&'static str; 34] = [
+    pub const ALL_NAMES: [&'static str; 35] = [
         "onboarding0",
         "onboarding1",
         "onboarding2",
         "onboarding2-empty",
+        "onboarding3",
         "home",
         "home-actions",
         "home-trophies",
@@ -454,6 +457,10 @@ pub fn apply_scene(app: &mut LauncherApp, scene: Scene, games: Vec<Game>) {
             };
         }
         p.game_artwork = scene != Scene::HomeNoArtwork;
+        // The online step needs a cloud to sign in to.
+        if scene == Scene::Onboarding(3) {
+            p.online_cloud = Some("https://anyplaynet.com".to_owned());
+        }
     });
     m.toolkit = Some("0.1.0".to_owned());
 
