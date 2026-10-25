@@ -34,7 +34,7 @@ pub struct CorePipeline {
     /// What the releases games stay on look like on disk, by the pin as the preferences hold it.
     /// Cleared when a toolkit was installed, removed or chosen, so no frame reads the disk.
     pinned: HashMap<String, GameToolkit>,
-    /// The releases games stay on, opened (hashing them takes a moment), by plain tag.
+    /// The releases games stay on, opened, by plain tag.
     opened: HashMap<String, Toolkit>,
     queue: UnlockQueue,
     runs: HashMap<GameId, RunHandle>,
