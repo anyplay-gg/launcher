@@ -234,6 +234,7 @@ pub fn sample_profile(state: &mut Online, look: ProfileLook) {
             state.profiles.insert(
                 AccountId(1),
                 entry(ProfilePage {
+                    level: None,
                     profile: p,
                     trophies: Some(Count {
                         bronze: 30,
@@ -252,6 +253,7 @@ pub fn sample_profile(state: &mut Online, look: ProfileLook) {
             state.profiles.insert(
                 AccountId(1),
                 entry(ProfilePage {
+                    level: None,
                     profile: profile(who(1, "Mira")),
                     trophies: Some(Count::default()),
                     links: Vec::new(),
@@ -275,6 +277,7 @@ pub fn sample_profile(state: &mut Online, look: ProfileLook) {
             state.profiles.insert(
                 AccountId(2),
                 entry(ProfilePage {
+                    level: None,
                     profile: p,
                     trophies: Some(Count {
                         bronze: 30,
@@ -297,6 +300,7 @@ pub fn sample_profile(state: &mut Online, look: ProfileLook) {
             state.profiles.insert(
                 AccountId(3),
                 entry(ProfilePage {
+                    level: None,
                     profile: p,
                     trophies: None,
                     links: Vec::new(),
@@ -310,6 +314,7 @@ pub fn sample_profile(state: &mut Online, look: ProfileLook) {
             state.profiles.insert(
                 AccountId(6),
                 entry(ProfilePage {
+                    level: None,
                     profile: p,
                     trophies: None,
                     links: Vec::new(),
@@ -320,6 +325,7 @@ pub fn sample_profile(state: &mut Online, look: ProfileLook) {
             state.profiles.insert(
                 AccountId(4),
                 entry(ProfilePage {
+                    level: None,
                     profile: profile(who(4, "Kit")),
                     trophies: None,
                     links: Vec::new(),
@@ -330,6 +336,7 @@ pub fn sample_profile(state: &mut Online, look: ProfileLook) {
             state.profiles.insert(
                 AccountId(12),
                 entry(ProfilePage {
+                    level: None,
                     profile: profile(who(12, "Tarn")),
                     trophies: None,
                     links: Vec::new(),

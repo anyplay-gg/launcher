@@ -2569,6 +2569,7 @@ mod tests {
         answer_last(
             &mut online,
             api::ProfilePage {
+                level: None,
                 profile: api::Profile {
                     account: account(2, "Lumen"),
                     about: Some("Hi".into()),

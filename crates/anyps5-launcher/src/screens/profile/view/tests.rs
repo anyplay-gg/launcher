@@ -52,6 +52,7 @@ fn online() -> Online {
 
 fn page(account: Account) -> ProfilePage {
     ProfilePage {
+        level: None,
         profile: Profile {
             account,
             about: None,
