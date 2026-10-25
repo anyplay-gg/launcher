@@ -149,6 +149,10 @@ impl Shell {
             background::init(render_state);
         }
         crate::startup::mark("GPU pipelines built");
+        // `--noring`: a screenshot as it looks after a click (no focus ring).
+        if std::env::args().any(|a| a == "--noring") {
+            input::set_focus_visible(&cc.egui_ctx, false);
+        }
         let sounds = Sounds::silent();
         Self {
             input: Input::new(None),

@@ -848,12 +848,12 @@ a secondary with the destructive ink.
 | Focused | fill 0.20, hairline 0.32, **ring** | fill 1.0, **ring** |
 | Disabled | 40 %, no hover, no cursor | 40 % |
 
-**Focus is a ring.** One treatment everywhere: a white 0.95 ring outside the shape with a 1.2 dp gap, 2 dp wide on controls
-(`size::FOCUS_RING`) and 3 dp on tiles, cards and cells, plus a fill one step lighter. Nothing grows, nothing swaps its ink and no
+**Focus is a ring** (3.11: it shows only for keys and the pad, and is quieter than written here). One treatment everywhere: a ring outside the shape with a 1.2 dp gap, 1.5 dp wide on controls
+(`size::FOCUS_RING`) and 2 dp on tiles, cards and cells, plus a fill one step lighter. Nothing grows, nothing swaps its ink and no
 glow sits behind a translucent fill (a shadow under a translucent fill shows through as a seam). The layout never moves when focus
 moves, so the 12 dp gap holds. The ring is the focus indicator for keyboard and gamepad: it is white on dark artwork and on every
 fill of the family (a primary focused is a white ring around a white capsule, separated by the gap). Containers (rows, cards,
-cells) use `components::paint_surface`: rest fill, +5 % white on hover, +9 % and the ring on focus, +6 % pressed.
+cells) use `components::paint_surface`: rest fill, +5 % white on hover, +11 % and the ring on focus, +6 % pressed.
 
 **Hover** exists on every control the pointer can reach and answers like the tiles do: the tiles draw the focus ring at 45 % under
 the pointer, controls lighten and show a brighter hairline. Only colour and opacity change, in 120 ms (`Motion::Hover`, the same
@@ -967,6 +967,24 @@ Update to Fedora 39, Ubuntu 24.04 or newer." The releases are the two oldest of 
 22.04 2.35, Debian 12 2.36, Fedora 39 2.38, Ubuntu 24.04 2.39, Debian 13 2.41); past the newest it says "Update to a newer release
 of your distribution." Settings adds a row under the note, "Read the Install Guide", that opens `docs/INSTALL.md` on GitHub
 (`about_strings::INSTALL_GUIDE`, the one new address); INSTALL.md lists the releases and their glibc.
+
+### 3.11 Round 5: the ring is for keys and the pad (2026-10-25, changes the ring of 3.9)
+
+The white ring was loud, and it stayed after a click. Now it behaves like `:focus-visible`:
+
+- **It shows only while the keyboard or the pad steer** (`input::focus_visible`). A click or tap anywhere hides it: the control
+  that was pressed answers with its press and its hover, nothing lingers, and a click on empty space leaves nothing lit. The next
+  arrow, stick, d-pad, Tab or Select brings it back. The press that brings it back only shows where the focus is; it does not
+  also move it (a second press moves). It shows at start, where nothing has been clicked yet.
+- **One place.** `AnimExt::focus_t` is the amount every ring, lift and fill reads, and it follows the focus only while the ring
+  shows; `choice_t` is the same spring for a choice that stays marked whatever moved the focus (the selected category, a theme
+  card). `components::paint_focus_stroke` is the one place a ring is drawn. No screen decides on its own.
+- **Quiet.** The ring is `color::focus_ring()` (white 0.50, measured against every panel by `ui::contrast`: 5.3:1 on Aurora, 3:1 is needed), 1.5 dp
+  on controls, rows and cells and 2 dp on tiles and cards (`size::FOCUS_RING`, `FOCUS_RING_LARGE`), 1.2 dp outside the shape. The
+  hairlines of shade beside it are 0.22 and 0.26. The fill carries more of the cue: containers lift 11 % (was 9 %). It fades in
+  and out with the 120 ms ease of the hover (`Motion::Hover`): opacity and colour only, the same under reduced motion.
+- The pointer resting on a tile or a primary button still draws the hover ring at 45 % of this ring (3.9): that is the hover, not a lingering focus.
+- Gallery: `--noring` renders any scene as it looks after a click.
 
 ## 4. Materials and blur on the GPU
 

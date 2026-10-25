@@ -92,20 +92,20 @@ pub fn paint_focus_stroke(painter: &Painter, rect: Rect, radius: f32, width: f32
         painter.add(RectShape::stroke(
             snap_rect(painter, rect.expand(1.0)),
             corner(radius + 1.0),
-            Stroke::new(snap_width(painter, 1.0), black(0.30 * t)),
+            Stroke::new(snap_width(painter, 1.0), black(0.22 * t)),
             StrokeKind::Inside,
         ));
         let outer = width * 1.6 + 1.0;
         painter.add(RectShape::stroke(
             snap_rect(painter, rect.expand(outer)),
             corner(radius + outer),
-            Stroke::new(snap_width(painter, 1.0), black(0.35 * t)),
+            Stroke::new(snap_width(painter, 1.0), black(0.26 * t)),
             StrokeKind::Inside,
         ));
         painter.add(RectShape::stroke(
             snap_rect(painter, rect.expand(width * 1.6)),
             corner(radius + width * 1.6),
-            Stroke::new(width, white(0.95 * t)),
+            Stroke::new(width, fade(color::focus_ring(), t)),
             StrokeKind::Inside,
         ));
     }
@@ -418,7 +418,7 @@ pub fn lighten(rest: Color32, amount: f32) -> Color32 {
 
 /// How much white a container gains: under the pointer, with the focus, and pressed.
 pub const LIFT_HOVER: f32 = 0.05;
-pub const LIFT_FOCUS: f32 = 0.09;
+pub const LIFT_FOCUS: f32 = 0.11;
 pub const LIFT_PRESS: f32 = 0.06;
 
 /// Fill and focus ring of a container that can be focused (a row, a card, a cell): `rest` is its

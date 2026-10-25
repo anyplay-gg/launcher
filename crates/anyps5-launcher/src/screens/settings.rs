@@ -1634,7 +1634,7 @@ fn draw(
             *picked = Some(index);
         }
         let t_focus = ctx.focus_t(("category-focus", index), focused);
-        let t_sel = ctx.focus_t(("category-selected", index), selected);
+        let t_sel = ctx.choice_t(("category-selected", index), selected);
         let hover_t = ctx.animate_to(
             ("category-hover", index),
             f32::from(input::hovered(&ctx, &response) && !selected),

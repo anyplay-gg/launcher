@@ -234,7 +234,7 @@ fn theme_step(
     let column_height = preview_height + 14.0 + name_style.line_height();
     for (index, theme) in Theme::ALL.iter().enumerate() {
         let focused = on_step && choice == index;
-        let t = ctx.focus_t(("onboarding-theme", index), focused);
+        let t = ctx.choice_t(("onboarding-theme", index), focused);
         // Unfocused cards keep their size, so they share the left edge with the title.
         let factor = lerp(1.0, 1.03, t);
         let column = scale_rect(
@@ -256,9 +256,9 @@ fn theme_step(
         let mut layer = Background::new(SLOT_CARDS + theme.index(), *theme, time);
         layer.radius = card_radius;
         layer.alpha = lerp(0.72, 1.0, t) * opacity;
-        paint_focus_glow(&painter, preview, card_radius, 3.0, t);
+        paint_focus_glow(&painter, preview, card_radius, size::FOCUS_RING_LARGE, t);
         layer.paint(&painter, preview);
-        paint_focus_stroke(&painter, preview, card_radius, 3.0, t);
+        paint_focus_stroke(&painter, preview, card_radius, size::FOCUS_RING_LARGE, t);
         if focused {
             ctx.request_repaint();
         }
