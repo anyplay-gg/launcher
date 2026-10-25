@@ -202,6 +202,7 @@ impl InGamePanel {
         let view = SideView {
             title: data.title,
             subtitle: Some(running),
+            question: false,
             list_id: "in-game-rows",
             nav: &self.side.nav,
             accent: data.accent,
@@ -299,6 +300,7 @@ impl CloseGamePanel {
         let view = SideView {
             title: InGameText::CloseGame.text(language),
             subtitle: Some(&ask),
+            question: true,
             list_id: "close-game-rows",
             nav: &self.side.nav,
             accent,

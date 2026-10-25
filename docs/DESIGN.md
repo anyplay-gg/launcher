@@ -87,10 +87,10 @@ in the source but is not used anywhere; it is the documented fallback if the GPU
 
 | Name (EN / TR) | float | hex |
 |---|---|---|
-| Blue / Mavi | (0.31, 0.58, 1.00) | `#4F94FF` |
+| Blue / Mavi | (0.40, 0.64, 1.00) | `#66A3FF` (was `#4F94FF`, 3.0:1 short on Sunset's lit band; 3.10) |
 | Mint / Nane | (0.36, 0.92, 0.74) | `#5CEBBD` |
 | Coral / Mercan | (1.00, 0.50, 0.40) | `#FF8066` |
-| Violet / Mor | (0.66, 0.52, 1.00) | `#A885FF` |
+| Violet / Mor | (0.70, 0.57, 1.00) | `#B391FF` (was `#A885FF`; 3.10) |
 | Gold / Altın | (1.00, 0.80, 0.36) | `#FFCC5C` |
 | White / Beyaz | white 0.94 | `#F0F0F0` |
 
@@ -336,10 +336,12 @@ target changes (SwiftUI springs are interruptible and carry velocity), request r
 | `Motion.focus` | focus/hover feedback, switch, key scroll | 0.32 | 0.82 | 19.63 | 385.5 | 32.2 | 1.1 % | 0.25 s |
 | `Motion.layout` | tile row move, hero swap, onboarding steps, list reflow | 0.45 | 0.86 | 13.96 | 195.0 | 24.0 | 0.5 % | 0.33 s |
 | `Motion.overlay` | opening/closing panels, splash, toast | 0.42 | 0.90 | 14.96 | 223.8 | 26.9 | 0.15 % | 0.30 s |
+| `Motion.exit` (2026-10-25) | what leaves while something else arrives: the old hero | easeOut 0.18 s, the same when reduced | - | - | - | none | gone at 0.18 s |
 | Banner slide | trophy card in | 0.55 | 0.78 | 11.42 | 130.5 | 17.8 | 2.0 % | 0.45 s |
 | Banner pop | trophy icon scale | 0.45 | 0.55 | 13.96 | 195.0 | 15.4 | 12.6 % | 0.52 s, starts after 0.18 s delay |
 
-Overshoot only visibly matters for the banner pop; clamp alpha and colour lerps to [0, 1] but let scale and offset overshoot.
+Measured at 240 Hz (test `settle_times_match_the_design_table`), time to within 2 % of the target: focus 0.200 s, layout 0.308 s,
+overlay 0.317 s; press 0.10 s and exit 0.12 s are eases and take their length. Overshoot only visibly matters for the banner pop; clamp alpha and colour lerps to [0, 1] but let scale and offset overshoot.
 
 ### 2.2 Easing curves
 
@@ -354,7 +356,9 @@ SwiftUI's named curves are the standard cubic Beziers; implement one `cubic_bezi
 ### 2.3 Reduced motion (setting "Animations: Reduced")
 
 `Motion.reduced` swaps: focus -> easeOut 0.12 s; layout -> easeOut 0.15 s; overlay -> easeOut 0.15 s; fade 0.55 s easeInOut ->
-0.15 s easeInOut; banner slide -> easeOut 0.25 s. Also: the theme background is paused (one still frame is drawn), artwork drift
+0.15 s easeInOut; banner slide -> easeOut 0.25 s. Also (2026-10-25): a panel does not slide, a full-screen panel does not grow from 1.03 and the toast does not travel; each fades in
+place (opacity only), because movement is what reduced motion removes and opacity is what it keeps. The edge bump (6.7) leans nothing.
+Also: the theme background is paused (one still frame is drawn), artwork drift
 and splash breathing are off, the user picture does not drift. **Not** affected: the indeterminate progress sweep, the "Press a
 key..." pulse, the banner pop.
 
@@ -365,7 +369,7 @@ key..." pulse, the banner pop.
 | 1 | Tile focus: scale/ring/shadow of the selected tile | `Motion.focus` on `focused` | spring focus; ring alpha 0 -> 0.95, glow 0 -> 0.45, shadow r10 -> 22 |
 | 2 | Tile row move on selection change | `Motion.layout` on `selected` | per tile spring layout on x, y offset, size (see 5.3); previous tiles fade to 0 opacity as they leave left |
 | 3 | Tile size 118 <-> 176 | `Motion.layout` on `size` | spring layout on a `size` scalar (animate size, not scale; text is outside the tile) |
-| 4 | Hero info swap on game change | `.id(game.id)`, insertion opacity + y offset 14, removal opacity, `Motion.layout` | new hero: spring layout 0 -> 1 on opacity and `offset_y = 14 * (1 - v)`; old hero: opacity 1 -> 0 on the same curve; both exist during the transition |
+| 4 | Hero info swap on game change | `.id(game.id)`, insertion opacity + y offset 14, removal opacity, `Motion.layout` | new hero: spring layout 0 -> 1 on opacity (no travel: the hero changes on every arrow press); old hero (2026-10-25): opacity 1 -> 0 on `Motion.exit` (easeOut 0.18 s), quicker than the arriving spring: it is under 0.3 when the new one is half in and the two together never dip below 0.6 of one title (test `the_hero_pair_never_dips_and_the_old_one_leaves_first`) |
 | 5 | Tile-row name label | opacity transition, `Motion.layout` | opacity spring layout |
 | 6 | Backdrop crossfade (theme change, selected-game artwork change) | `easeInOut 0.55` on `theme` and on `selectedGame.id` | keep the previous artwork texture, cross-fade alpha with easeInOut 0.55 |
 | 7 | Artwork decode fade-in | `easeOut 0.35` | alpha 0 -> 1 easeOut 0.35 when the texture becomes ready |
@@ -395,6 +399,7 @@ key..." pulse, the banner pop.
 | 30 | Banner out | after 5 s: easeIn 0.3 s back up and out; next banner starts 0.35 s later | see 5.14 |
 | 31 | Scroll-to-focus in lists | `scrollTo(anchor: .center)` inside `Motion.focus` | spring focus on the scroll offset toward "focused row centred" |
 | 32 | Tile hover | none (only buttons hover: fill white 0.16) | |
+| 34 | Select pulse | a click shows the control pressed while the button is down | a select from a key or the pad holds the focused control pressed for 0.09 s (`ui::press`, `Motion.press`, scale 0.97 on controls, +6 % lift on rows): the same look as a click, in the frame of the cue |
 | 33 | Edge bump (6.7) | none | focus ring leans 3 dp toward the wall and returns: velocity kick 140 dp/s on `Motion::Focus`; off under reduced motion |
 
 Animations 1, 10-15 can share one helper: `focus_t: Spring` per focusable widget id stored in egui memory.
@@ -693,9 +698,8 @@ The launcher keeps the port's structure but trims what read as noise next to the
   to Default Keys; community layouts are options of the Layout choice, not a page. The report to
   AnyPS5 reuses the log view for its review, so no new surface exists: a plain sentence (no
   warning box, it warns of nothing) above the text, the primary button on the right.
-- **Home polish.** Two soft scrims sit under the home UI so white text reads on bright artwork:
-  black 0.30 fading out over the top 150 dp, and black 0.46 in the hero's bottom-left corner
-  (72 % of the width, half the height at most 480 dp), both fading to nothing on every side. The
+- **Home polish.** Soft shades sit under the home UI so white text reads on bright artwork (soft-edged patches since
+  round 3, `ui::shade`, 3.10; first a black 0.30 band over the top 150 dp and black 0.46 in the hero's bottom-left corner). The
   selected tile keeps 10 dp more air before the next one (`TILE_LABEL_COLUMN = 10`). While a game
   unlocks, the step is named once, in the state line above the title; the hero shows only a 260 dp
   bar and its percentage on the buttons' centre line. The scanning icon breathes in opacity only.
@@ -876,13 +880,93 @@ message as a quiet line under it.
   control reached with Tab, keeps it); Tab and the arrows are claimed so egui does not move the focus away from the ring;
   Enter and Space, which egui would also read as a click on the focused widget, are consumed once the model has taken
   them as "select".
-- *A note marked destructive in a panel* (`Row::destructive` on an info row) is a warning: the amber of the glibc line under
-  Play. The top scrim of the home screen is 0.40 so the clock and the caption glyphs hold on a pale picture.
+- *A note marked destructive in a panel* was a warning in this round; it is `Row::warning` since round 3 (3.10). The top scrim
+  of the home screen is 0.40 so the clock and the caption glyphs hold on a pale picture (0.45 since round 3).
 - *Gallery.* The panel scenes draw the real home under the panel (`app::preview::HomeStand`: the same `home::show` and
   artwork layer as the app, with the focus hidden as under a panel). New flags: `--theme=aurora|sunset|cosmic` (components,
   panels, home scenes), `--bright` (a pale picture as the selected game's artwork), `--frames=N` (gallery pages, so the real
   home's pictures have loaded), `--hover=X,Y` with `--pad` rests the pointer without taking the device back from the pad.
   New page `--gallery=states`: destructive buttons, the switch and rows in every state.
+
+### 3.10 Round 3: contrast measured, one case rule, Tab (2026-10-25)
+
+**Contrast is measured, not estimated.** `ui::contrast` (a test: `cargo test -p anyps5-launcher contrast -- --nocapture` prints the
+table) lays every text token and the status, state and accent inks over the backdrops they meet and measures them with the WCAG
+2.x formula. A pair has to reach 4.5:1 as text, 3:1 as large text (24 dp, or 18.66 dp bold), as a glyph or as a part of a control.
+Inactive and disabled ink (`text_inactive`, a locked trophy's picture) is exempt by the standard. The backdrops come from the theme
+tokens: per theme the deep tone, the lightest tone the shader paints behind text (Sunset's lit lower band; a soft glow under the
+top bar), the panel fill over the theme's lit tone with a row in each state (rest, hover, focus, pressed), the toast fill, and a
+pure white picture under the artwork scrims, the worst a game can bring. The home screen's text is measured where it sits, under
+the shades below. A rendered screenshot is measured with `tools/measure-contrast.mjs` (the backdrop under a box is its median colour, the ink
+is composited on it); the model and the render agreed to within 0.1 on the facts, hints and clock of a white picture.
+
+With the tokens of round 2 the test found 71 of 504 pairs short. What changed (the weakest ratio of the old ink, then the new one;
+the new weakest of every ink is in the test's output):
+
+| Ink | Before | After | Where it was short |
+|---|---|---|---|
+| `text_overline` (facts, captions over rows) | white 0.55, 3.2 to 3.8 | 0.70 | facts on Sunset's band, a focused or pressed row |
+| `text_clock` | 0.78, 4.2 | 0.88 | the clock over a white picture |
+| `text_detail`, `text_row_detail`, `text_inert` | 0.60, 0.55, 0.62; 3.5 to 4.2 | 0.70 | a row in focus or pressed |
+| `text_empty`, `text_subtitle`, `text_path` | 0.65, 0.70, 0.45; 4.3 to 4.5 | 0.72, 0.72, 0.50 | a pressed row |
+| `text_hint`, `text_hint_key` | 0.72, 0.92; 4.4 | 0.78, 1.0 | the hint bar on Sunset's band, the key on its cap |
+| `destructive_text`, `error_state` | (1.0, 0.60, 0.55); 3.6 | (1.0, 0.72, 0.67) | a focused or pressed row |
+| `destructive_icon`, `error_text` | (1.0, 0.55, 0.50), (1.0, 0.70, 0.65) | (1.0, 0.62, 0.57), (1.0, 0.73, 0.68) | a pressed row |
+| state label of Starting, Installing, Playing | the accent; 3.2 for blue on Aurora's teal, worse on Sunset | `text_active`, white 0.92 (5.1 or more) | an accent on its own colour |
+| knob of a switch that is on | white; 1.1 on the White accent, 1.5 on mint or gold | `on_primary`, dark (6.5 or more) | every accent |
+| progress line in Blue and Violet | 2.0 and 2.2 on Sunset's band | Blue `#66A3FF`, Violet `#B391FF` (3.2, 3.3) | the unlock line on a bare Sunset |
+
+The initial in the profile button's avatar (and the monogram of a friend without a picture) takes `theme::readable_ink` of its
+colour: white, or the dark `on_primary` when that reads better (white on Mint, Gold or White was 1.2 to 2.2:1; every accent now
+reaches 4.5). The literal inks the audit found in the screens (white 0.55 to 0.66 as text, 17 places) now use these tokens, and the row text of
+the panels uses `text_row_detail`, `text_inert`, `text_note` (0.50, bare on the panel) and `text_caption`. New text ink is a token,
+so the test sees it.
+
+**The active states are ink, a glyph and a word.** "Starting", "Installing" and "Playing" were set in the player's accent, which can
+be the colour of the theme behind it. They are `color::text_active` now: the glyph (hourglass, arrow, play circle, each its own
+shape) and the word carry the state and no colour is needed. The accent stays where it fills something (the progress line, the
+switch, the online dot).
+
+**Shades, not a ramp** (`ui::shade`). The home screen's scrim was a ramp over the whole lower half, 0.58 in the corner, laid on the
+artwork's own two scrims: on a pale picture that is the grey fog. The artwork scrims already leave a pure white picture at 5.0:1
+under the facts and 6.7:1 under the hints, so the home screen lays only what a bare theme needs: a soft-edged patch under the hero
+(black 0.46 on a plateau from the left edge to 880 dp and from 400 dp above the bottom down, easing out over 360 dp across and 260
+dp up), one under the hint bar (0.28; the right 520 dp, the bottom 110 dp, easing out over 300 and 220 dp) and the band under the
+top bar (0.45, 150 dp). The ease follows the distance from the plateau, so the contours are round and no straight edge shows. A
+patch is as dark as the ink on it needs (Sunset's lit band sets it) and nothing more; the tile row and the middle of the picture
+get none. The facts and the glibc line can run to 880 dp, so the model samples them there too.
+
+**One case rule.** Titles of rows, buttons, captions, headings and the names of a choice are in Title Case ("Save Changes", "Game
+Default", "Top Left", "Report as Installed"): every word capital except the short ones inside (a, an, the, and, or, of, to, in, on,
+for, with, at, by, from, as). What reads as a sentence is in sentence case: details, subtitles, notes, statuses ("Ready to play",
+"Not installed", "Up to date"), toasts, errors, questions and the headlines of empty states ("No games yet"). Turkish follows the
+same rule: every word capital except `ve`, `ile`, `de`, `da`, `mi`, `için`, `veya`. The English and Turkish tables were swept once
+for it (about 70 strings changed, mostly Turkish buttons and captions); new text follows it and the review checks it.
+
+**Warning is not danger.** `Row::destructive` is for a row that removes, ends or blocks something (Remove Installation, Close Game,
+Block): the danger ink. `Row::warning` is for an info row that says something may not work (the glibc note): the amber of the line
+under Play. `PanelRow` has both flags, and the danger ink means danger only.
+
+**The question of a confirmation** (Close Game, Remove, Restore, the toolkit pin) is the sentence the player decides on: 17 dp
+regular in `text_label` ink with 1.45 leading under the panel title, not the quiet 15 dp line of a subtitle (`SideView::question`).
+
+**Tab walks the ring.** Tab and Shift+Tab are the model's keys now (`InputEvent::Tab`; egui no longer sees them). On the home screen
+they step through the stops in reading order: the top bar from left to right, the tile row as one stop (the arrows choose the
+tile), the action row, the question line while it asks; they stop at the ends without wrapping. In a panel they are Down and Up (a
+panel is one column of rows), in the onboarding Right and Left (the choices sit side by side). The library, a grid, reads along the row (Tab is Right, Shift+Tab Left). A text field
+keeps Tab for itself, and while a call rings Tab stays with egui, which focuses the card's buttons (they are for the pointer and for
+Tab; the pad reaches a call through the Invitations row). The strip of a call in progress does not hold Tab: Mute, Deafen and Leave
+Call are rows of the Online panel.
+
+**Screen readers follow the ring on more widgets.** `a11y::follow` is called by the switch (when it is a node of its own), by the
+cards of the theme step of the onboarding, by the rows of the profile page and by the lines of What's New. The language cards,
+rows, tiles, cells and buttons did already.
+
+**The glibc sentence has a next step.** It names the problem and what to do: "Games need glibc 2.38 or newer; this system has 2.35.
+Update to Fedora 39, Ubuntu 24.04 or newer." The releases are the two oldest of a short list that ship at least that glibc (Ubuntu
+22.04 2.35, Debian 12 2.36, Fedora 39 2.38, Ubuntu 24.04 2.39, Debian 13 2.41); past the newest it says "Update to a newer release
+of your distribution." Settings adds a row under the note, "Read the Install Guide", that opens `docs/INSTALL.md` on GitHub
+(`about_strings::INSTALL_GUIDE`, the one new address); INSTALL.md lists the releases and their glibc.
 
 ## 4. Materials and blur on the GPU
 
@@ -1466,7 +1550,7 @@ leaves the link on the clipboard.
 
 The relinker and the `.prx` libraries are ELF files that link against glibc. Their `.gnu.version_r` sections list the symbol versions they need (`GLIBC_2.38`); the newest over all of them is the oldest glibc the toolkit runs on (`anyps5-core::glibc`, reads section headers only, every offset bounded, 32- and 64-bit little-endian; `GLIBC_PRIVATE` and other families such as `GLIBCXX` do not count). The launcher compares it with `gnu_get_libc_version()` once when the toolkit is located. The idea of such a check came from the macOS and desktop launchers of the AnyPS5 community; the design and code here are our own.
 
-When the system is older it says one sentence, the same in three places: "Games need glibc 2.38 or newer; this system has 2.35." A note under the version row in Settings > Toolkit (like the "newer than tested" note, gallery scene `toolkit-glibc`), and a warning line under the primary button of the hero, in the states Locked, Queued, Installing, Failed and Installed (scenes `home-glibc`, `home-glibc-locked`; it takes the line the friends playing use, since it says why a start may fail). It is a notice and never a block: Unlock and Play work as before. Nothing is shown when the system is new enough, when a version cannot be read, on Windows and on macOS.
+When the system is older it says one sentence, the same in three places: "Games need glibc 2.38 or newer; this system has 2.35. Update to Fedora 39, Ubuntu 24.04 or newer." (the next step, and the install-guide row in Settings, are from round 3, 3.10) A note under the version row in Settings > Toolkit (like the "newer than tested" note, gallery scene `toolkit-glibc`), and a warning line under the primary button of the hero, in the states Locked, Queued, Installing, Failed and Installed (scenes `home-glibc`, `home-glibc-locked`; it takes the line the friends playing use, since it says why a start may fail). It is a notice and never a block: Unlock and Play work as before. Nothing is shown when the system is new enough, when a version cannot be read, on Windows and on macOS.
 
 ## 6. Input
 
@@ -1752,6 +1836,52 @@ Latency: the first cue, the boot cue, opens the device and renders every cue, an
 **Mixing.** The music fades in over 2 s and out over 0.8 s (gain = position²) and dips under every cue: `move` 1.5 dB for 0.12 s,
 `select`, `back` and `error` 3 dB for 0.25 s, `unlocked` 6 dB for 1.2 s (15 ms down, 400 ms back up). It plays only while the
 `music` preference (Home Screen Music, on by default) is on, no game is starting or running, and the launcher window has focus.
+
+### 7.5 The sound map (2026-10-25)
+
+Sixteen cues, all synthesised, one family: sines with an octave, rounded attacks, a little room, the F-C-G fifths of the
+trophy chord. New cues, on the voice of the navigation tick of 7.3:
+
+| Cue | Notes | Peak | Heard when |
+|---|---|---|---|
+| `on` / `off` | C5 then F5, 55 ms apart / the same down | -18 / -19 dBFS | a switch turned on / off |
+| `open` / `close` | F4 then C5 70 ms later / the fifth falling | -16 / -17 dBFS | a screen or panel opened / closed |
+| `notify` | G5, C6 40 ms later, long soft tail | -16 dBFS | a toast that is not a warning |
+| `message` | A4, D5 90 ms later | -17 dBFS | a message or message request arrived (also while the panel shows it) |
+| `invite` | F4 C5 F5, 70 ms apart | -15 dBFS | a friend or party invitation arrived |
+
+`back` now means one step back inside a screen (a category, a capture, a cancelled start); leaving a screen is `close`. The test
+`the_sound_map_is_balanced` holds the levels: ticks (hover, move, bump) are quieter than every other cue, switches and messages sit
+under select, select under the trophy, and the early loudness of the non-tick cues spans less than 12 dB. Every cue is checked to
+start and end at zero (no clicks). `ANYPS5_CUE_DIR=<dir> cargo test render_the_cues_to_wav -- --ignored --nocapture` writes every cue as a 48 kHz WAV
+and prints peak and early RMS. Interface Sounds and the hover gate decide whether any of it plays; the music dips under each cue (3 dB
+for the longer ones).
+
+### 7.6 Feedback: one function, every action (2026-10-25)
+
+`Shell::play(cue)` is the one place an action is answered: it plays the sound, vibrates the pad (6.8) when the pad is the device in use
+and the launcher has it, and leans the ring for a bump (6.7). A select from key or pad also presses the focused control for 0.09 s
+(`ui::press`). Hover ticks come from `input::hovered`, which every hover surface (controls, rows, tiles, trophy rows, window buttons)
+calls. Screens never choose a sound and a vibration separately.
+
+| Action | Sound | Haptic | Motion |
+|---|---|---|---|
+| Move focus | move | none | ring glides (Motion.focus) |
+| Pointer arrives | hover | none | hover fill 120 ms |
+| Select, run an action | select | select tap | press 0.97 for 0.09 s |
+| Choice or stepper changed | move | none | value eases |
+| Switch on / off | on / off | tap, firmer for on | knob spring |
+| Open a screen or panel | open | open tap | overlay spring (fade only when reduced) |
+| Close a screen or panel | close | close tap | the same, reversed |
+| One step back in a screen | back | back tap | list reflow |
+| End of a row or list | bump (once per hold) | barely-there tap | ring leans 3 dp (off when reduced) |
+| Warning, refused action, a failure toast | error | two taps | toast, 0.42 s spring |
+| Other toast | notify | soft tap | toast |
+| Message arrived | message | light tap | toast when the panel is closed |
+| Invitation arrived | invite | beat and two rising taps | toast |
+| Call rings | ring | beat and tap | call card |
+| Trophy, unlock finished | unlocked | three swelling taps | banner slide and pop |
+| Launcher starts | boot | none | intro |
 
 ### 6.5 Key binding names (controls panel)
 

@@ -128,6 +128,7 @@ impl ControlsPanel {
         let view = SideView {
             title: data.title,
             subtitle: Some(data.language.text(Key::Controls)),
+            question: false,
             list_id: "controls-rows",
             nav: &self.side.nav,
             accent: data.accent,
@@ -142,7 +143,7 @@ impl ControlsPanel {
                     self.apply(shell, data, change, &mut out);
                 }
                 if drawn.scrim_clicked {
-                    shell.play(Cue::Back);
+                    shell.play(Cue::Close);
                     self.close(shell);
                     out.actions.push(ControlsAction::Close);
                 }

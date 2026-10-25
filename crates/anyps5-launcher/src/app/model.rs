@@ -462,11 +462,27 @@ impl Model {
         self.online.upload_playtime(entries);
     }
 
-    /// Shows a toast; a warning also plays the error cue.
+    /// Shows a toast; a warning plays the error cue, every other one the soft chime.
     pub fn toast(&mut self, text: impl Into<String>, icon: Icon) {
-        if icon == Icon::WARNING {
-            self.sound(Cue::Error);
+        // Only a failure sounds by itself: the other toasts answer an action that has its own cue,
+        // or choose one with `toast_with` (an unasked-for event: a request, a missed call).
+        if matches!(
+            icon,
+            Icon::WARNING | Icon::X_CIRCLE | Icon::MICROPHONE_SLASH | Icon::PROHIBIT | Icon::CLOCK
+        ) {
+            self.toast_with(text, icon, Cue::Error);
+        } else {
+            self.toast_silent(text, icon);
         }
+    }
+
+    /// A toast with its own cue: a message, an invitation.
+    pub fn toast_with(&mut self, text: impl Into<String>, icon: Icon, cue: Cue) {
+        self.sound(cue);
+        self.toast_silent(text, icon);
+    }
+
+    fn toast_silent(&mut self, text: impl Into<String>, icon: Icon) {
         self.toast_counter += 1;
         self.toast = Some(Toast {
             id: self.toast_counter,
@@ -997,7 +1013,7 @@ impl Model {
 
     pub fn open(&mut self, overlay: Overlay) {
         self.switch_overlay(overlay);
-        self.sound(Cue::Select);
+        self.sound(Cue::Open);
     }
 
     /// Opens or replaces the overlay without a sound: the panel modules play their own cues.
@@ -1024,7 +1040,7 @@ impl Model {
 
     pub fn close_overlay(&mut self) {
         self.overlay = None;
-        self.sound(Cue::Back);
+        self.sound(Cue::Close);
     }
 
     // --- home input --------------------------------------------------------------------------
@@ -1046,7 +1062,7 @@ impl Model {
         }
         // The launcher is in front because of the Home button: Back goes back to the game.
         if self.summoned && self.running.is_some() && command == Command::Back {
-            self.sound(Cue::Back);
+            self.sound(Cue::Close);
             self.return_to_game();
             return Routed::Done;
         }
@@ -1072,6 +1088,22 @@ impl Model {
             self.apply_intent(intent);
         }
         Routed::Done
+    }
+
+    /// Tab on the home screen: the next (or, with Shift, the previous) stop in reading order.
+    /// Panels turn Tab into Down and Up, the onboarding into Right and Left (see `App::handle_event`).
+    pub fn tab_home(&mut self, backwards: bool) {
+        if self.overlay.is_some() || self.starting.is_some() || !self.onboarded() {
+            return;
+        }
+        if matches!(self.focus, HomeFocus::Ask(_)) && self.run_question().is_none() {
+            self.focus = HomeFocus::Actions(0);
+        }
+        let step = self.focus.tab(backwards, self.home_context());
+        self.focus = step.focus;
+        if let Some(cue) = step.sound {
+            self.sound(cue);
+        }
     }
 
     /// What a select on the home screen leads to (also used by mouse clicks).

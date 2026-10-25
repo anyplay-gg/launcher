@@ -47,6 +47,50 @@ pub fn layout_font(
     painter.layout_job(job)
 }
 
+/// [`layout_font`] for a sentence the reader decides on: a last line of a single short word (an
+/// orphan: "... is\nlost.") is avoided by wrapping a little narrower, as long as the number of
+/// lines stays the same.
+pub fn layout_font_pretty(
+    painter: &Painter,
+    font: FontId,
+    line_height: f32,
+    tracking: f32,
+    text: &str,
+    color: Color32,
+    wrap_width: f32,
+) -> Arc<Galley> {
+    const ENOUGH: usize = 12;
+    let at = |width: f32| {
+        layout_font(
+            painter,
+            font.clone(),
+            line_height,
+            tracking,
+            text,
+            color,
+            width,
+        )
+    };
+    let last = |g: &Galley| g.rows.last().map_or(0, |row| row.glyphs.len());
+    let first = at(wrap_width);
+    let lines = first.rows.len();
+    if lines < 2 || last(&first) >= ENOUGH {
+        return first;
+    }
+    let mut width = wrap_width;
+    while width > wrap_width * 0.7 {
+        width -= wrap_width * 0.03;
+        let narrower = at(width);
+        if narrower.rows.len() != lines {
+            break;
+        }
+        if last(&narrower) >= ENOUGH {
+            return narrower;
+        }
+    }
+    first
+}
+
 /// Uppercase for overlines. Turkish keeps its dotted and dotless i: `i` becomes `İ` and `ı` stays `I`.
 pub fn to_upper(text: &str, language: crate::ui::i18n::Language) -> String {
     if language == crate::ui::i18n::Language::Turkish {

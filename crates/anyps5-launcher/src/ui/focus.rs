@@ -105,6 +105,53 @@ impl HomeFocus {
         }
     }
 
+    /// Every stop of the home screen in reading order: the top bar from left to right, the tile
+    /// row (one stop, the arrows pick the tile), the action row and, while asked, the question.
+    pub fn reading_order(ctx: HomeContext) -> Vec<HomeFocus> {
+        let mut order: Vec<HomeFocus> = (0..=Self::LAST_TOP).map(HomeFocus::Top).collect();
+        order.push(HomeFocus::Tiles);
+        if ctx.games > 0 {
+            order.extend((0..ctx.action_count()).map(HomeFocus::Actions));
+            if ctx.asking {
+                order.extend((0..=ASK_LAST).map(HomeFocus::Ask));
+            }
+        }
+        order
+    }
+
+    /// Tab (or Shift+Tab with `backwards`): the next or previous stop in reading order. There is no
+    /// wrap, so the last stop stays put like the arrows do at an end.
+    pub fn tab(self, backwards: bool, ctx: HomeContext) -> HomeStep {
+        let order = Self::reading_order(ctx);
+        // A stop that has gone (the action row shrank, the question was answered) counts as the
+        // nearest one that is left.
+        let tiles = order
+            .iter()
+            .position(|f| *f == HomeFocus::Tiles)
+            .unwrap_or(0);
+        let here = order
+            .iter()
+            .position(|f| *f == self)
+            .unwrap_or_else(|| match self {
+                HomeFocus::Actions(_) | HomeFocus::Ask(_) => order
+                    .iter()
+                    .rposition(|f| matches!(f, HomeFocus::Actions(_)))
+                    .unwrap_or(tiles),
+                _ => tiles,
+            });
+        let there = if backwards {
+            here.saturating_sub(1)
+        } else {
+            (here + 1).min(order.len() - 1)
+        };
+        HomeStep {
+            focus: order[there],
+            selected: ctx.selected.min(ctx.games.saturating_sub(1)),
+            intent: None,
+            sound: (order[there] != self).then_some(Cue::Move),
+        }
+    }
+
     /// Applies a command.
     pub fn navigate(self, command: Command, ctx: HomeContext) -> HomeStep {
         let last_game = ctx.games.saturating_sub(1);
@@ -329,7 +376,7 @@ impl PanelNav {
                     self.row = Self::first_focusable(rows);
                     step(PanelEffect::None, Some(Cue::Move))
                 }
-                Command::Back | Command::Options => step(PanelEffect::Close, Some(Cue::Back)),
+                Command::Back | Command::Options => step(PanelEffect::Close, Some(Cue::Close)),
                 Command::Left => step(PanelEffect::None, None),
             };
         }
@@ -383,10 +430,10 @@ impl PanelNav {
                     self.in_rows = false;
                     step(PanelEffect::None, Some(Cue::Back))
                 } else {
-                    step(PanelEffect::Close, Some(Cue::Back))
+                    step(PanelEffect::Close, Some(Cue::Close))
                 }
             }
-            Command::Options => step(PanelEffect::Close, Some(Cue::Back)),
+            Command::Options => step(PanelEffect::Close, Some(Cue::Close)),
         }
     }
 }
@@ -421,6 +468,61 @@ mod tests {
         assert_eq!(select.intent, Some(HomeIntent::AnswerRun(2)));
         let up = HomeFocus::Ask(3).navigate(Command::Up, c);
         assert_eq!(up.focus, HomeFocus::Actions(0));
+    }
+
+    #[test]
+    fn tab_walks_the_home_screen_in_reading_order() {
+        let mut c = ctx(3, 1, true);
+        let mut at = HomeFocus::LIBRARY;
+        let mut seen = vec![at];
+        for _ in 0..12 {
+            let step = at.tab(false, c);
+            if step.focus == at {
+                break;
+            }
+            assert_eq!(step.sound, Some(Cue::Move));
+            assert_eq!(step.selected, 1, "Tab never changes the tile");
+            at = step.focus;
+            seen.push(at);
+        }
+        assert_eq!(
+            seen,
+            [
+                HomeFocus::Top(0),
+                HomeFocus::Top(1),
+                HomeFocus::Top(2),
+                HomeFocus::Top(3),
+                HomeFocus::Tiles,
+                HomeFocus::Actions(0),
+                HomeFocus::Actions(1),
+                HomeFocus::Actions(2),
+            ]
+        );
+        let end = at.tab(false, c);
+        assert_eq!((end.focus, end.sound), (at, None), "no wrap at the end");
+        // Shift+Tab goes back the same way, and stops at the first stop.
+        assert_eq!(HomeFocus::Actions(0).tab(true, c).focus, HomeFocus::Tiles);
+        assert_eq!(HomeFocus::Tiles.tab(true, c).focus, HomeFocus::PROFILE);
+        assert_eq!(HomeFocus::LIBRARY.tab(true, c).focus, HomeFocus::LIBRARY);
+        // The question line joins while it is asked.
+        c.asking = true;
+        assert_eq!(HomeFocus::Actions(2).tab(false, c).focus, HomeFocus::Ask(0));
+        assert_eq!(HomeFocus::Ask(4).tab(false, c).focus, HomeFocus::Ask(4));
+        // A stop that has gone is replaced by the nearest one: Tab from a third action when only two
+        // are left goes to nothing further, Shift+Tab to the one before.
+        let two = ctx(3, 0, false);
+        assert_eq!(
+            HomeFocus::Actions(2).tab(true, two).focus,
+            HomeFocus::Actions(0)
+        );
+        assert_eq!(
+            HomeFocus::Ask(1).tab(false, two).focus,
+            HomeFocus::Actions(1)
+        );
+        // No games: the top bar and the one tile stop (choose a folder).
+        let empty = ctx(0, 0, false);
+        assert_eq!(HomeFocus::PROFILE.tab(false, empty).focus, HomeFocus::Tiles);
+        assert_eq!(HomeFocus::Tiles.tab(false, empty).focus, HomeFocus::Tiles);
     }
 
     #[test]
@@ -594,7 +696,7 @@ mod tests {
             nav.command(Command::Back, &ROWS),
             PanelStep {
                 effect: PanelEffect::Close,
-                sound: Some(Cue::Back)
+                sound: Some(Cue::Close)
             }
         );
         assert_eq!(

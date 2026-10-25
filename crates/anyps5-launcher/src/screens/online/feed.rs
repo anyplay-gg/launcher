@@ -947,7 +947,7 @@ fn paint_state(ui: &mut Ui, icon: Icon, title: &str, note: Option<&str>) {
     );
     y += title_height + 6.0;
     if let Some(note) = note_galley {
-        painter.galley(pos2(rect.center().x, y), note, white(0.62));
+        painter.galley(pos2(rect.center().x, y), note, color::text_detail());
     }
     ui.add_space(12.0);
 }
@@ -984,7 +984,7 @@ pub fn paint_avatar(
                     Align2::CENTER_CENTER,
                     initial,
                     ty::BUTTON.font(),
-                    Color32::WHITE,
+                    crate::ui::theme::readable_ink(monogram_colour(account)),
                 );
             }
         }

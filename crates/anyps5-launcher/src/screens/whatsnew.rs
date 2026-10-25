@@ -25,7 +25,7 @@ use crate::ui::icons::Icon;
 use crate::ui::input::{self, Command, InputEvent};
 use crate::ui::sound::Cue;
 use crate::ui::text;
-use crate::ui::theme::{TextStyle, pad, radius, size, ty, white};
+use crate::ui::theme::{TextStyle, color, pad, radius, size, ty};
 
 /// Areas shown on their own under Highlights; the rest are gathered in one more group.
 const AREAS: usize = 7;
@@ -285,7 +285,7 @@ impl WhatsNewPanel {
             for pick in clicked {
                 match pick {
                     Pick::Close => {
-                        shell.play(Cue::Back);
+                        shell.play(Cue::Close);
                         self.close();
                         actions.push(WhatsNewAction::Close);
                     }
@@ -329,7 +329,7 @@ impl WhatsNewPanel {
     ) {
         match command {
             Command::Back => {
-                shell.play(Cue::Back);
+                shell.play(Cue::Close);
                 self.close();
                 actions.push(WhatsNewAction::Close);
             }
@@ -449,7 +449,7 @@ impl WhatsNewPanel {
             Align2::LEFT_TOP,
             ty::DETAIL_LARGE,
             &subtitle,
-            white(0.6),
+            color::text_detail(),
         );
         y += 36.0;
 
@@ -467,7 +467,7 @@ impl WhatsNewPanel {
                     Align2::CENTER_CENTER,
                     ty::ROW_TITLE,
                     message.text(language),
-                    white(0.6),
+                    color::text_detail(),
                 );
             }
             NotesView::Ready(_) => {
@@ -566,7 +566,7 @@ fn draw_line(ui: &mut Ui, rect: Rect, line: &Line<'_>, focused: bool, index: usi
             Align2::LEFT_BOTTOM,
             ty::TROPHIES_OVERLINE,
             &title.to_uppercase(),
-            white(0.55),
+            color::text_caption(),
         );
         return false;
     }
@@ -575,6 +575,7 @@ fn draw_line(ui: &mut Ui, rect: Rect, line: &Line<'_>, focused: bool, index: usi
         ui.make_persistent_id(("notes-line", index)),
         Sense::click(),
     );
+    crate::ui::a11y::follow(ui.ctx(), response.id, focused);
     if input::hovered(ui.ctx(), &response) {
         ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
     }
@@ -596,7 +597,7 @@ fn draw_line(ui: &mut Ui, rect: Rect, line: &Line<'_>, focused: bool, index: usi
         size::FOCUS_RING,
     );
     let ink = Color32::WHITE;
-    let quiet = white(0.55);
+    let quiet = color::text_caption();
     match line {
         Line::Group { key, count, open } => {
             let glyph = if *open {

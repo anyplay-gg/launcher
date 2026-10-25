@@ -1323,7 +1323,7 @@ impl PanelHost {
             .iter()
             .map(|game| {
                 let state = cx.model.state_of(game);
-                let label = state_label(&state, language, accent);
+                let label = state_label(&state, language);
                 let icon = game.icon.as_ref().and_then(|path| {
                     cx.textures.get(path, LIBRARY_ICON).map(|loaded| TileImage {
                         texture: loaded.id,
@@ -1948,6 +1948,7 @@ fn open_known_url(url: &str) {
         crate::screens::about_strings::DISCORD,
         crate::screens::about_strings::PRIVACY,
         crate::screens::about_strings::TERMS,
+        crate::screens::about_strings::INSTALL_GUIDE,
         crate::screens::update_strings::RELEASES,
     ];
     if !known.contains(&url) {
