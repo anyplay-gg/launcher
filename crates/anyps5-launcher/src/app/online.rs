@@ -1684,10 +1684,10 @@ mod tests {
         let mut online = service();
         let mut ready = Vec::new();
         let mut mismatch = Failure::new("version_mismatch", "x");
-        mismatch.expected = Some(anyps5_core::online::api::Expected {
+        mismatch.expected = Some(Box::new(anyps5_core::online::api::Expected {
             version: "01.044.000".into(),
             build: "v1".into(),
-        });
+        }));
         online.answered(
             &mut model,
             Purpose::CheckJoin(mc_join("01.008.000")),

@@ -565,9 +565,11 @@ mod tests {
 
     fn failure(code: &str, expected: Option<(&str, &str)>) -> Failure {
         let mut f = Failure::new(code, "message");
-        f.expected = expected.map(|(version, build)| Expected {
-            version: version.into(),
-            build: build.into(),
+        f.expected = expected.map(|(version, build)| {
+            Box::new(Expected {
+                version: version.into(),
+                build: build.into(),
+            })
         });
         f
     }
