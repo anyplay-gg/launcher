@@ -239,6 +239,18 @@ The top bar's button between the library and the settings. It opens the online a
 The side panel the profile and the friends button open: signing in, the friends and their presence, requests, invitations and the account.
 _Avoid_: Social, community (that is the layout gallery), friends list (one part of it)
 
+**Profile page**:
+What the player sees of an account: its handle, avatar, text, up to three favourite games, trophy counts, most played games and linked accounts, each only if the cloud let the player see it. The player's own profile adds Edit Profile, which opens the account web. The launcher shows games by name and icon from the player's own library; the cloud only knows title IDs.
+_Avoid_: Page (alone), card (that is the gamer card)
+
+**Profile banner**:
+The coloured band at the top of a profile page. The cloud has none; its colour is taken from the avatar's pixels and darkened until white text reads on it.
+_Avoid_: Banner (alone: that is the trophy banner over a game), cover
+
+**Feed page**:
+The Feed of the network as the launcher shows it: a card for each thing the player or a friend did, newest first, each with the four reactions Nice, GG, Wow and Same. A trophy is named only when the player has the game and can read its trophy file.
+_Avoid_: Timeline, wall, activity page
+
 **Unread mark**:
 The count on the profile button, and the same number on the Messages row and page: every message the player has not read, those of message requests included. It is an upper bound, since a block can hide some message numbers. Opening a conversation reads it.
 _Avoid_: Badge (the code's word), notification count

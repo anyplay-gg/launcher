@@ -561,6 +561,19 @@ impl Model {
         self.request_selected_runs();
     }
 
+    /// Reads the trophies of these games once, if nobody did yet: the feed names a trophy from
+    /// the game's own file.
+    pub fn read_trophies_of(&mut self, games: &[GameId]) {
+        for id in games {
+            if self.trophies_read.insert(id.clone()) {
+                self.effects.push(Effect::LoadTrophies {
+                    game: id.clone(),
+                    again: false,
+                });
+            }
+        }
+    }
+
     /// Reloads the trophies of a game (it may have earned some).
     pub fn reload_trophies(&mut self, id: &GameId) {
         self.trophies_read.insert(id.clone());

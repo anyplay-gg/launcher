@@ -2,7 +2,7 @@
 //! confirmation are four panels on one frame. They share the slide-in, so switching from one to
 //! another keeps the panel on screen and only swaps the content, as in the original.
 
-use egui::Context;
+use egui::{Context, Ui};
 
 use crate::screens::rows::{self, ListEvent, ListOptions, Row};
 use crate::ui::chrome;
@@ -116,6 +116,18 @@ pub struct SideDrawn {
 
 /// Draws the panel (or its slide-out). `None` once it is fully closed.
 pub fn draw(ctx: &Context, open: bool, view: &SideView<'_>, rows: &mut [Row]) -> Option<SideDrawn> {
+    draw_with_header(ctx, open, view, rows, |_| {})
+}
+
+/// [`draw`] with something above the first row that scrolls with the rows: the profile page's
+/// banner.
+pub fn draw_with_header(
+    ctx: &Context,
+    open: bool,
+    view: &SideView<'_>,
+    rows: &mut [Row],
+    header: impl FnOnce(&mut Ui),
+) -> Option<SideDrawn> {
     let opts = ListOptions {
         accent: view.accent,
         language: view.language,
@@ -123,12 +135,25 @@ pub fn draw(ctx: &Context, open: bool, view: &SideView<'_>, rows: &mut [Row]) ->
         force: view.force,
     };
     chrome::side_panel(ctx, SIDE_ID, open, view.title, view.subtitle, |ui| {
-        rows::list(ui, view.list_id, rows, &opts)
+        rows::list_with_header(ui, view.list_id, rows, &opts, header)
     })
     .map(|(output, events)| SideDrawn {
         scrim_clicked: output.scrim_clicked,
         events,
     })
+}
+
+/// The panel frame with contents of the page's own: the feed's cards. Returns whether the scrim
+/// was clicked, and what `contents` returned; `None` once the panel is fully closed.
+pub fn frame<R>(
+    ctx: &Context,
+    open: bool,
+    title: &str,
+    subtitle: Option<&str>,
+    contents: impl FnOnce(&mut Ui) -> R,
+) -> Option<(bool, R)> {
+    chrome::side_panel(ctx, SIDE_ID, open, title, subtitle, contents)
+        .map(|(output, r)| (output.scrim_clicked, r))
 }
 
 #[cfg(test)]

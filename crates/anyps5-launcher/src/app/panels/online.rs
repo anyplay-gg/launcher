@@ -28,6 +28,10 @@ impl PanelHost {
         {
             cx.model.effects.push(Effect::StartOnline);
         }
+        if self.online_panel.wants_local() {
+            let local = crate::app::online_local::build(cx, cloud.as_deref());
+            self.online_panel.set_local(local);
+        }
         let actions = {
             let data = OnlineData {
                 online: &cx.model.online,
@@ -90,6 +94,10 @@ fn online_action(model: &mut Model, action: OnlineAction) {
         OnlineAction::TrophyAudience(trophies) => {
             online.set_trophy_audience(trophies);
         }
+        OnlineAction::FeedRefresh => online.request_feed(),
+        OnlineAction::FeedOlder => online.request_older_feed(),
+        OnlineAction::React(item, reaction) => online.react(item, reaction),
+        OnlineAction::Profile(account) => online.request_profile(account),
         OnlineAction::Voice(on) => online.set_voice(on),
         OnlineAction::VoiceMode(mode) => online.set_voice_mode(mode),
         OnlineAction::VoiceKey(key) => online.set_voice_key(Some(key)),
