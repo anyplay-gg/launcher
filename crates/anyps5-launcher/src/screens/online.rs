@@ -1909,7 +1909,8 @@ mod tests {
     fn a_friends_row_offers_the_quick_actions_that_fit() {
         let mut online = signed_in();
         let labels = |online: &Online| {
-            let panel = OnlinePanel::default();
+            let mut panel = OnlinePanel::default();
+            panel.open(&data(online));
             let rows = panel.rows(&data(online)).2;
             match &rows.iter().find(|r| r.id == "friendRow").unwrap().control {
                 Control::Buttons { labels, .. } => labels.clone(),
@@ -2357,9 +2358,8 @@ mod tests {
         let (_, _, rows) = panel.rows(&data(&online));
         let row = rows.iter().find(|r| r.id == "appearOffline").unwrap();
         assert_eq!(row.control, Control::Toggle(true));
-        panel.go(Page::Home, &data(&online));
-        let (_, subtitle, _) = panel.rows(&data(&online));
-        assert_eq!(subtitle.as_deref(), Some("@Alec · Appearing offline"));
+        // The header of the Friends screen says it under the name.
+        assert_eq!(status_line(&data(&online)), "Appearing offline");
     }
 
     #[test]

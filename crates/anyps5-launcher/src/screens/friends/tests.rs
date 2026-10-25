@@ -19,6 +19,7 @@ fn signed_in() -> Online {
         id: AccountId(1),
         handle: "Mira".into(),
         email: "mira@example.org".into(),
+        appear_offline: false,
     });
     online
 }

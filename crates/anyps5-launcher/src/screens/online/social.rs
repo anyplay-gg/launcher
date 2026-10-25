@@ -2085,7 +2085,7 @@ mod tests {
         let mut actions = Vec::new();
         panel.run("sendMessage", &data(&online), &mut actions);
         assert_eq!(panel.opening, Some(AccountId(2)));
-        panel.go(Page::Home, &data(&online));
+        panel.go(Page::Account, &data(&online));
         online.social.upsert(conversation(
             "a",
             ConversationKind::Direct,
@@ -2094,7 +2094,7 @@ mod tests {
             0,
         ));
         panel.follow(&data(&online));
-        assert_eq!(panel.page, Page::Home);
+        assert_eq!(panel.page, Page::Account);
         assert_eq!(panel.opening, None);
     }
 
