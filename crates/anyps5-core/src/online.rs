@@ -78,6 +78,29 @@ pub const BINARY: &str = if cfg!(windows) {
 /// The environment variable that names the net service to run instead of the bundled one.
 pub const BINARY_VARIABLE: &str = "ANYPLAY_NET";
 
+/// The program name of the share worker (share screen).
+pub const WORKER: &str = if cfg!(windows) {
+    "anyplay-share.exe"
+} else {
+    "anyplay-share"
+};
+
+/// The environment variable that names the share worker to use instead of the bundled one.
+pub const WORKER_VARIABLE: &str = "ANYPLAY_SHARE";
+
+/// Set to `1` to switch share screen on without the preference (for a test between two PCs).
+pub const SHARE_SCREEN_VARIABLE: &str = "ANYPLAY_SHARE_SCREEN";
+
+/// Where the share worker is: `ANYPLAY_SHARE`, else next to the launcher's own executable.
+pub fn locate_worker() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os(WORKER_VARIABLE).map(PathBuf::from) {
+        return path.is_file().then_some(path);
+    }
+    let exe = std::env::current_exe().ok()?;
+    let path = exe.parent()?.join(WORKER);
+    path.is_file().then_some(path)
+}
+
 /// AnyPlay's own cloud, the one players sign in to unless they pick another. A release build
 /// names it with `ANYPLAY_DEFAULT_CLOUD`; without it the player has to enter a cloud.
 pub const DEFAULT_CLOUD: Option<&str> = option_env!("ANYPLAY_DEFAULT_CLOUD");
@@ -381,6 +404,8 @@ pub enum Purpose {
     ScreenStop,
     ScreenWatch(AccountId),
     ScreenLeave,
+    /// Telling the net service where the share worker is.
+    ScreenWorker,
 }
 
 /// The game's invitation dialog, waiting for the player to pick friends.
@@ -1255,7 +1280,7 @@ impl Online {
                     self.request_feed();
                 }
             }
-            // The Discord Social SDK seam (network phase 0): nothing of it is used here yet.
+            // The Discord Social SDK is not used by this launcher yet.
             Event::Discord(_) => {}
             Event::Unknown => {}
         }

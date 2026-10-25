@@ -118,6 +118,7 @@ impl OnlineService {
                         cloud,
                     },
                 );
+                tell_worker(model);
             }
             Err(error) => {
                 tracing::warn!("the net service could not start: {error}");
@@ -531,6 +532,7 @@ impl OnlineService {
             }
             (
                 Purpose::Hello
+                | Purpose::ScreenWorker
                 | Purpose::Playing
                 | Purpose::GameEnd
                 | Purpose::UploadTrophies { .. }
@@ -640,21 +642,50 @@ impl OnlineService {
 #[cfg(embedded_net)]
 fn bundled(paths: &anyps5_core::paths::AppPaths) -> Option<std::path::PathBuf> {
     static NET: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/anyplay-net.bin"));
+    extract(paths, NET, "anyplay-net-")
+}
+
+#[cfg(not(embedded_net))]
+fn bundled(_paths: &anyps5_core::paths::AppPaths) -> Option<std::path::PathBuf> {
+    None
+}
+
+/// The share worker this launcher carries (Windows release builds), written like the net
+/// service.
+#[cfg(embedded_share)]
+fn bundled_worker(paths: &anyps5_core::paths::AppPaths) -> Option<std::path::PathBuf> {
+    static WORKER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/anyplay-share.bin"));
+    extract(paths, WORKER, "anyplay-share-")
+}
+
+#[cfg(not(embedded_share))]
+fn bundled_worker(_paths: &anyps5_core::paths::AppPaths) -> Option<std::path::PathBuf> {
+    None
+}
+
+/// Writes `bytes` once per version to `Network\bin\<prefix><version>-<size>` and returns the
+/// path; older files with the same prefix go.
+#[cfg(any(embedded_net, embedded_share))]
+fn extract(
+    paths: &anyps5_core::paths::AppPaths,
+    bytes: &'static [u8],
+    prefix: &str,
+) -> Option<std::path::PathBuf> {
     let folder = paths.network_dir().join("bin");
     let name = format!(
-        "anyplay-net-{}-{}{}",
+        "{prefix}{}-{}{}",
         env!("CARGO_PKG_VERSION"),
-        NET.len(),
+        bytes.len(),
         std::env::consts::EXE_SUFFIX
     );
     let path = folder.join(&name);
-    if std::fs::metadata(&path).is_ok_and(|m| m.len() == NET.len() as u64) {
+    if std::fs::metadata(&path).is_ok_and(|m| m.len() == bytes.len() as u64) {
         return Some(path);
     }
     let write = || -> std::io::Result<()> {
         std::fs::create_dir_all(&folder)?;
         let partial = folder.join(format!("{name}.partial"));
-        std::fs::write(&partial, NET)?;
+        std::fs::write(&partial, bytes)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -664,7 +695,7 @@ fn bundled(paths: &anyps5_core::paths::AppPaths) -> Option<std::path::PathBuf> {
         // Older versions go; one that still runs keeps its file until the next start.
         for entry in std::fs::read_dir(&folder)?.flatten() {
             let file = entry.file_name();
-            if file != name.as_str() && file.to_string_lossy().starts_with("anyplay-net-") {
+            if file != name.as_str() && file.to_string_lossy().starts_with(prefix) {
                 let _ = std::fs::remove_file(entry.path());
             }
         }
@@ -673,15 +704,39 @@ fn bundled(paths: &anyps5_core::paths::AppPaths) -> Option<std::path::PathBuf> {
     match write() {
         Ok(()) => Some(path),
         Err(error) => {
-            tracing::warn!("cannot write the net service: {error}");
+            tracing::warn!("cannot write {prefix}: {error}");
             None
         }
     }
 }
 
-#[cfg(not(embedded_net))]
-fn bundled(_paths: &anyps5_core::paths::AppPaths) -> Option<std::path::PathBuf> {
-    None
+/// Share screen is switched on: by the preference, or by `ANYPLAY_SHARE_SCREEN=1` for one run.
+fn share_screen_enabled(model: &Model) -> bool {
+    model.prefs.online_share_screen
+        || std::env::var_os(net::SHARE_SCREEN_VARIABLE).is_some_and(|v| v == "1")
+}
+
+/// Tells the net service where the share worker is, when share screen is on and there is one.
+/// Without this the net service reports neither `can_share` nor `can_watch` and the launcher
+/// shows nothing of it.
+fn tell_worker(model: &mut Model) {
+    if !share_screen_enabled(model) {
+        return;
+    }
+    let Some(path) = net::locate_worker().or_else(|| bundled_worker(&model.paths)) else {
+        tracing::info!("share screen is on, but there is no share worker");
+        return;
+    };
+    send_worker(model, &path);
+}
+
+fn send_worker(model: &mut Model, path: &std::path::Path) {
+    model.online.send(
+        Purpose::ScreenWorker,
+        Command::ScreenWorker {
+            path: path.to_string_lossy().into_owned(),
+        },
+    );
 }
 
 /// The AnyPS5 build the version guard compares: the toolkit's version.
@@ -977,6 +1032,22 @@ mod tests {
         model.online.status = Status::Off;
         online.relay_only_changed(&mut model);
         assert!(model.online.take_outbox().is_empty());
+    }
+
+    #[test]
+    fn the_share_worker_is_only_handed_over_when_share_screen_is_on() {
+        let mut model = signed_in_model();
+        model.prefs.online_share_screen = false;
+        // Off: nothing goes out, whatever worker there may be.
+        tell_worker(&mut model);
+        assert!(model.online.take_outbox().is_empty());
+        // On, with a worker: the net service is told where it is.
+        model.prefs.online_share_screen = true;
+        send_worker(&mut model, std::path::Path::new("C:/x/anyplay-share.exe"));
+        let sent = model.online.take_outbox();
+        assert_eq!(sent.len(), 1);
+        assert!(sent[0].contains("\"do\":\"screen_worker\""), "{}", sent[0]);
+        assert!(sent[0].contains("anyplay-share.exe"));
     }
 
     fn message(from: u64, handle: &str, text: &str) -> net::api::Message {

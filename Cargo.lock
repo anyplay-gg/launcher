@@ -284,7 +284,7 @@ dependencies = [
 
 [[package]]
 name = "anyplay-update-manifest"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "ed25519-dalek",
  "rand",
@@ -299,7 +299,7 @@ dependencies = [
 
 [[package]]
 name = "anyps5-core"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyplay-control",
  "anyplay-update-manifest",
@@ -335,7 +335,7 @@ dependencies = [
 
 [[package]]
 name = "anyps5-launcher"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyps5-core",
  "base64 0.22.1",
@@ -1525,7 +1525,7 @@ dependencies = [
 
 [[package]]
 name = "fake-relinker"
-version = "0.2.2"
+version = "0.2.3"
 
 [[package]]
 name = "fastrand"

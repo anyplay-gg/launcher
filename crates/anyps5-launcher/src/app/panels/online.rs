@@ -118,6 +118,9 @@ fn online_action(model: &mut Model, action: OnlineAction) {
         OnlineAction::RefreshVoiceDevices => online.request_voice_devices(),
         OnlineAction::PeerVolume(account, percent) => online.set_peer_volume(account, percent),
         OnlineAction::PeerMute(account, muted) => online.set_peer_mute(account, muted),
+        OnlineAction::Screen(net::ScreenCommand::Start) => {
+            model.effects.push(Effect::ScreenStart);
+        }
         OnlineAction::Screen(command) => online.screen_send(command),
         OnlineAction::BrowserSignIn { create } => {
             online.send(

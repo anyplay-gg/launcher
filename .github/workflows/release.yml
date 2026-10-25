@@ -28,7 +28,7 @@ env:
   # The anyplay-gg/network revision whose net service the launcher carries.
   # A full commit SHA, never a branch: a release is built from a revision somebody chose. Bump it by
   # a pull request, or set the repository variable NETWORK_REF; a run by hand can take another one.
-  NETWORK_REF: ${{ inputs.network_ref || vars.NETWORK_REF || '5e24ee6a4746208d55fa34199d8a43a5cffd7436' }}
+  NETWORK_REF: ${{ inputs.network_ref || vars.NETWORK_REF || 'fb7b5511209b4b115a516e0b9c7d7addeed030a7' }}
   # The compiler of every release build, an exact version.
   RUST_TOOLCHAIN: 1.99.0
   # The cloud a release build names by default (the repository variable). Without it, players enter one.
@@ -128,6 +128,18 @@ jobs:
           git rev-parse HEAD
           "ANYPLAY_NET_EMBED=$((Resolve-Path target/x86_64-pc-windows-msvc/release/anyplay-net.exe).Path)" >> $env:GITHUB_ENV
 
+      # The share worker (share screen) is built the same way and carried inside the launcher
+      # too: it encodes and decodes with the system's own H.264 and captures one window, so it
+      # holds no codec of its own. The launcher gives it to the net service only where share
+      # screen is switched on (Preferences::online_share_screen). Linux builds do not carry it:
+      # the worker has no codec or capture there yet.
+      - name: Share worker
+        working-directory: network
+        run: |
+          $env:RUSTFLAGS = '-C target-feature=+crt-static'
+          cargo auditable build --release --locked -p anyplay-share-worker --target x86_64-pc-windows-msvc
+          "ANYPLAY_SHARE_EMBED=$((Resolve-Path target/x86_64-pc-windows-msvc/release/anyplay-share.exe).Path)" >> $env:GITHUB_ENV
+
       # .cargo/config.toml links the C runtime statically (crt-static).
       - name: Build
         run: cargo auditable build --release --locked --target x86_64-pc-windows-msvc
@@ -138,6 +150,7 @@ jobs:
           $binaries = @{
             'target/x86_64-pc-windows-msvc/release/anyplay-launcher.exe' = 'anyps5-launcher'
             '../network/target/x86_64-pc-windows-msvc/release/anyplay-net.exe' = 'anyplay-net'
+            '../network/target/x86_64-pc-windows-msvc/release/anyplay-share.exe' = 'anyplay-share-worker'
           }
           foreach ($path in $binaries.Keys) {
             $json = rust-audit-info $path
@@ -326,6 +339,7 @@ jobs:
           }
           sbom launcher anyps5-launcher anyplay-launcher_bin.cdx.json windows-x86_64 x86_64-pc-windows-msvc .sbom
           sbom network net anyplay-net_bin.cdx.json windows-x86_64 x86_64-pc-windows-msvc .net-service.sbom
+          sbom network share-worker anyplay-share_bin.cdx.json windows-x86_64 x86_64-pc-windows-msvc .share-worker.sbom
           sbom launcher anyps5-launcher anyplay-launcher_bin.cdx.json linux-x86_64 x86_64-unknown-linux-gnu .sbom
           sbom network net anyplay-net_bin.cdx.json linux-x86_64 x86_64-unknown-linux-gnu .net-service.sbom
           for sbom in dist/*.cdx.json; do

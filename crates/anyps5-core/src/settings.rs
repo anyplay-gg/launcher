@@ -536,6 +536,12 @@ pub struct Preferences {
     /// Tunnels to other players go only through a relay, so they never see this PC's address.
     #[serde(default)]
     pub online_relay_only: bool,
+    /// Share screen is on: the launcher gives the net service the share worker, so a player can
+    /// stream the game's window to the party and watch what a member streams. Off until the
+    /// feature has passed a test between two PCs; `ANYPLAY_SHARE_SCREEN=1` switches it on for
+    /// one run.
+    #[serde(default)]
+    pub online_share_screen: bool,
     /// Party voice: on or off, the mode, the push-to-talk key, devices and member volumes.
     #[serde(default)]
     pub voice: crate::online::VoicePrefs,
@@ -591,6 +597,7 @@ impl Default for Preferences {
             online_cloud: None,
             online: false,
             online_relay_only: false,
+            online_share_screen: false,
             voice: crate::online::VoicePrefs::default(),
             record_network: false,
             phone_remote: false,

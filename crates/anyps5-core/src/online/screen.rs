@@ -164,14 +164,7 @@ impl Online {
     /// Sends what the player asked of share screen.
     pub fn screen_send(&mut self, command: ScreenCommand) {
         match command {
-            ScreenCommand::Start => {
-                self.send(
-                    Purpose::ScreenStart,
-                    Command::ScreenStart {
-                        source: ScreenSource::Game,
-                    },
-                );
-            }
+            ScreenCommand::Start => self.screen_start(None, Vec::new()),
             ScreenCommand::Stop => {
                 self.screen.stopping = self.screen.hosting.is_some();
                 self.send(Purpose::ScreenStop, Command::ScreenStop);
@@ -187,6 +180,19 @@ impl Online {
                 self.send(Purpose::ScreenLeave, Command::ScreenLeave);
             }
         }
+    }
+
+    /// Starts sharing the game's window. `window` and `pids` say where the game is, so that the
+    /// share worker captures that window and not one that happens to have a similar title.
+    pub fn screen_start(&mut self, window: Option<i64>, pids: Vec<u32>) {
+        self.send(
+            Purpose::ScreenStart,
+            Command::ScreenStart {
+                source: ScreenSource::Game,
+                window,
+                pids,
+            },
+        );
     }
 
     pub(super) fn screen_event(
@@ -394,6 +400,19 @@ mod tests {
                 .apply(event(true, true, None, vec![], None))
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn a_start_names_the_games_window_and_processes() {
+        let mut online = Online::default();
+        online.screen_start(Some(65872), vec![100, 101]);
+        let lines = online.take_outbox();
+        assert!(lines[0].contains("\"window\":65872"), "{}", lines[0]);
+        assert!(lines[0].contains("\"pids\":[100,101]"), "{}", lines[0]);
+        // Without them the line stays short and the net service falls back to the title.
+        online.screen_start(None, Vec::new());
+        let lines = online.take_outbox();
+        assert!(!lines[0].contains("window") && !lines[0].contains("pids"));
     }
 
     #[test]

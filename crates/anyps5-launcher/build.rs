@@ -4,6 +4,7 @@
 fn main() {
     println!("cargo:rerun-if-changed=assets/icon.ico");
     embed_net_service();
+    embed_share_worker();
     #[cfg(windows)]
     if std::env::var("CARGO_CFG_TARGET_OS").is_ok_and(|os| os == "windows") {
         let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
@@ -39,6 +40,26 @@ fn embed_net_service() {
         std::path::Path::new(&source).display()
     );
     println!("cargo:rustc-cfg=embedded_net");
+}
+
+/// A release build for Windows also carries the share worker (`anyplay-share` from
+/// anyplay-gg/network), which streams and shows a game's window for share screen.
+/// `ANYPLAY_SHARE_EMBED` names the built worker; without it the launcher looks for one beside
+/// itself, and share screen stays off where there is none.
+fn embed_share_worker() {
+    println!("cargo::rustc-check-cfg=cfg(embedded_share)");
+    println!("cargo:rerun-if-env-changed=ANYPLAY_SHARE_EMBED");
+    let Some(source) = std::env::var_os("ANYPLAY_SHARE_EMBED") else {
+        return;
+    };
+    let out = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+    std::fs::copy(&source, out.join("anyplay-share.bin"))
+        .expect("ANYPLAY_SHARE_EMBED must be readable");
+    println!(
+        "cargo:rerun-if-changed={}",
+        std::path::Path::new(&source).display()
+    );
+    println!("cargo:rustc-cfg=embedded_share");
 }
 
 #[cfg(windows)]

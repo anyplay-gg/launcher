@@ -464,6 +464,15 @@ impl LauncherApp {
             Effect::StartOnline => self.online.start(&mut self.model),
             Effect::StopOnline => self.online.stop(&mut self.model),
             Effect::RelayOnlyChanged => self.online.relay_only_changed(&mut self.model),
+            Effect::ScreenStart => {
+                let target = self
+                    .model
+                    .running
+                    .as_ref()
+                    .and_then(|game| self.pipeline.game_target(game))
+                    .unwrap_or_default();
+                self.model.online.screen_start(target.window, target.pids);
+            }
             Effect::Rescan if self.offline => self.model.scanning = false,
             Effect::MeasureSize(_)
             | Effect::LoadTrophies { .. }
