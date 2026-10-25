@@ -6,6 +6,7 @@
 //! anyps5://game/<TITLEID>/unlock     show the game and ask for the unlock
 //! anyps5://settings[/<page>]         open the settings, optionally on a page
 //! anyps5://open?path=<dump folder>   show the dump in the library
+//! anyps5://join/<code>               ask the network for the invitation a join code stands for
 //! ```
 //!
 //! Every address may carry the version as its first segment (`anyps5://v1/game/<TITLEID>`), which
@@ -37,6 +38,9 @@ pub enum Link {
     Settings(Option<SettingsPage>),
     /// Show the dump in this folder.
     Open { path: PathBuf },
+    /// Ask the network for the invitation this join code stands for (lower case). The launcher
+    /// shows the invitation like any other; it never joins by itself.
+    Join { code: String },
 }
 
 /// The pages of the settings a link can name.
@@ -81,6 +85,8 @@ pub enum LinkError {
     BadTitleId,
     BadSettingsPage,
     MissingPath,
+    /// A join code is ten characters of the join alphabet.
+    BadJoinCode,
     /// A broken `%` escape, or bytes that are not UTF-8.
     BadEncoding,
     /// The path is not a plain absolute folder path; the reason is for logs.
@@ -99,6 +105,7 @@ impl fmt::Display for LinkError {
             LinkError::BadTitleId => f.write_str("not a title ID"),
             LinkError::BadSettingsPage => f.write_str("unknown settings page"),
             LinkError::MissingPath => f.write_str("the link has no folder path"),
+            LinkError::BadJoinCode => f.write_str("not a join code"),
             LinkError::BadEncoding => f.write_str("broken percent encoding"),
             LinkError::BadPath(reason) => write!(f, "refused folder path: {reason}"),
         }
@@ -162,7 +169,10 @@ pub fn parse_scheme(text: &str, scheme: &str) -> Result<Link, LinkError> {
             path: open_path(query)?,
         }),
         ("open", [], None) => Err(LinkError::MissingPath),
-        ("game" | "settings" | "open", _, _) => Err(LinkError::Unexpected),
+        ("join", [code], None) => Ok(Link::Join {
+            code: join_code(code)?,
+        }),
+        ("game" | "settings" | "open" | "join", _, _) => Err(LinkError::Unexpected),
         _ => Err(LinkError::UnknownAction),
     }
 }
@@ -208,6 +218,20 @@ fn title_id(text: &str) -> Result<String, LinkError> {
         Ok(text.to_ascii_uppercase())
     } else {
         Err(LinkError::BadTitleId)
+    }
+}
+
+/// A join code: ten characters of the network's alphabet (lower case letters and digits without
+/// `0`, `1`, `l` and `o`), written in either case. Anything else is not a code, and a code is
+/// never shortened, extended or searched for in a longer text.
+fn join_code(text: &str) -> Result<String, LinkError> {
+    use crate::online::api::{JOIN_CODE_ALPHABET, JOIN_CODE_LEN};
+    let code = text.to_ascii_lowercase();
+    let valid = code.len() == JOIN_CODE_LEN && code.chars().all(|c| JOIN_CODE_ALPHABET.contains(c));
+    if valid {
+        Ok(code)
+    } else {
+        Err(LinkError::BadJoinCode)
     }
 }
 
@@ -365,6 +389,69 @@ x",
         ] {
             assert!(parse(link).is_err(), "{link:?}");
         }
+    }
+
+    fn join(code: &str) -> Link {
+        Link::Join {
+            code: code.to_owned(),
+        }
+    }
+
+    #[test]
+    fn join_links() {
+        assert_eq!(parse("anyps5://v1/join/k3x9m2pqra"), Ok(join("k3x9m2pqra")));
+        assert_eq!(parse("anyps5://join/k3x9m2pqra/"), Ok(join("k3x9m2pqra")));
+        assert_eq!(
+            parse("ANYPS5://V1/JOIN/K3X9M2PQRA#x"),
+            Ok(join("k3x9m2pqra")),
+            "the code is compared without case and kept in lower case"
+        );
+        for code in [
+            "k3x9m2pqr",   // nine
+            "k3x9m2pqrab", // eleven
+            "k3x9m2pqr0",  // 0, 1, l and o are not in the alphabet
+            "k3x9m2pqr1",
+            "k3x9m2pqrl",
+            "k3x9m2pqro",
+            "k3x9m2pqr-",
+            "k3x9m2pqré",
+        ] {
+            assert_eq!(
+                parse(&format!("anyps5://v1/join/{code}")),
+                Err(LinkError::BadJoinCode),
+                "{code:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_join_link_takes_one_code_and_nothing_else() {
+        assert_eq!(parse("anyps5://v1/join"), Err(LinkError::Unexpected));
+        assert_eq!(parse("anyps5://v1/join/"), Err(LinkError::Unexpected));
+        for link in [
+            "anyps5://v1/join/k3x9m2pqra/play",
+            "anyps5://v1/join/k3x9m2pqra?game=PPSA16064",
+            "anyps5://v1/join/k3x9m2pqra/k3x9m2pqra",
+            "anyps5://v1/join/k3x9m2pqra%20",
+            "anyps5://v1/join/k3x9m2pqra\"",
+        ] {
+            assert!(parse(link).is_err(), "{link:?}");
+        }
+        assert_eq!(
+            parse("anyps5://v2/join/k3x9m2pqra"),
+            Err(LinkError::UnknownVersion)
+        );
+    }
+
+    #[test]
+    fn the_join_alphabet_is_the_networks() {
+        // The parser reads the alphabet from the network's API crate; a code the cloud can issue
+        // is a code the launcher accepts.
+        for c in crate::online::api::JOIN_CODE_ALPHABET.chars() {
+            let code = c.to_string().repeat(crate::online::api::JOIN_CODE_LEN);
+            assert_eq!(parse(&format!("anyps5://v1/join/{code}")), Ok(join(&code)));
+        }
+        assert_eq!(crate::online::api::JOIN_CODE_LEN, 10);
     }
 
     #[test]
