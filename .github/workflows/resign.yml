@@ -21,8 +21,6 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_TOOLCHAIN: 1.99.0
-  # Only to satisfy the workspace, which names ../network by path; see NETWORK_REF in release.yml.
-  NETWORK_REF: ${{ vars.NETWORK_REF || '81369391ce82c9b1dd46f7914c7e29af84c202dd' }}
 
 jobs:
   # No secret. Finds the latest release, builds the signing tool from that release's source, and
@@ -53,12 +51,25 @@ jobs:
           persist-credentials: false
           ref: ${{ steps.latest.outputs.tag }}
           path: launcher
+      # Only to satisfy the workspace, which names ../network by path. The release tag may predate
+      # network.ref, so the pin comes from the default branch (see release.yml).
+      - id: network-pin
+        name: Network revision
+        if: steps.latest.outputs.go == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NETWORK_OVERRIDE: ${{ vars.NETWORK_REF }}
+        run: |
+          ref=${NETWORK_OVERRIDE:-$(gh api -H 'Accept: application/vnd.github.raw' "repos/$GITHUB_REPOSITORY/contents/network.ref" | tr -d '[:space:]')}
+          [[ $ref =~ ^[0-9a-f]{40}$ ]] || { echo "the network revision must be one full commit SHA, got '$ref'" >&2; exit 1; }
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.latest.outputs.go == 'true'
         with:
           persist-credentials: false
           repository: anyplay-gg/network
-          ref: ${{ env.NETWORK_REF }}
+          ref: ${{ steps.network-pin.outputs.ref }}
           path: network
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         if: steps.latest.outputs.go == 'true'

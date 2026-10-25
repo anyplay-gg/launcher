@@ -135,7 +135,7 @@ The online part is in development. This is what works today and what does not.
 
 ## Building
 
-You need Rust 1.95 or newer ([rustup](https://rustup.rs)), and a clone of [anyplay-gg/network](https://github.com/anyplay-gg/network) next to this repository for the online crates. The egui/eframe 0.37 dependencies require Rust 1.95. The repository does not override your selected toolchain; CI uses stable, and the release workflow selects its own compiler.
+You need Rust 1.95 or newer ([rustup](https://rustup.rs)), and a clone of [anyplay-gg/network](https://github.com/anyplay-gg/network) next to this repository for the online crates, checked out at the commit in [`network.ref`](network.ref). The egui/eframe 0.37 dependencies require Rust 1.95. The repository does not override your selected toolchain; CI uses stable, and the release workflow selects its own compiler.
 
 ```sh
 cargo fmt --all -- --check
@@ -143,6 +143,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo build --release
 ```
+
+**Which network revision.** The launcher builds against one network commit everywhere: the full SHA in [`network.ref`](network.ref). CI, the advisory check, the release and the nightly jobs all read that file, so a merge on the network's `main` cannot turn this repository red by itself. Run `git -C ../network checkout $(cat network.ref)` to build as CI does. A pull request that needs new network code (a changed event or command, a new crate) changes `network.ref` in the same pull request, so CI proves the pair. The workflow `network-drift` (nightly and on demand) builds `main` against the network's `main` and goes red when that no longer works; it reports and blocks nothing.
 
 The executable is `target/release/anyplay-launcher.exe` (Linux: `target/release/anyplay-launcher`). For online play it looks for the net service `anyplay-net` next to itself, or where `ANYPLAY_NET` points; build it in the network repository with `cargo build --release -p anyplay-net`. Setting `ANYPLAY_NET_EMBED` to a built service at build time carries it inside the launcher, as releases do. A build names AnyPlay's own cloud with `ANYPLAY_DEFAULT_CLOUD`; without it the player enters a cloud.
 
@@ -178,7 +180,7 @@ Every pull request runs the first three commands on Windows and on Linux, and bu
 
 ### Releases
 
-A release is made by pushing a tag `v<version>` that matches the version in `Cargo.toml`. The [release workflow](.github/workflows/release.yml) builds the net service from [anyplay-gg/network](https://github.com/anyplay-gg/network) and embeds it, then builds the portable exe and the installer (`tools/installer/anyplay-launcher.iss`, Inno Setup), the Linux AppImage and tarball, and a licence file for every third-party crate. It publishes all of them with their checksums in `SHA256SUMS.txt`. Started by hand it only builds them and keeps them as workflow artifacts.
+A release is made by pushing a tag `v<version>` that matches the version in `Cargo.toml`. The [release workflow](.github/workflows/release.yml) builds the net service from [anyplay-gg/network](https://github.com/anyplay-gg/network) at the commit in `network.ref` and embeds it, then builds the portable exe and the installer (`tools/installer/anyplay-launcher.iss`, Inno Setup), the Linux AppImage and tarball, and a licence file for every third-party crate. It publishes all of them with their checksums in `SHA256SUMS.txt`. Started by hand it only builds them and keeps them as workflow artifacts.
 
 ### Where to read more
 

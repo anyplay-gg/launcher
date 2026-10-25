@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       network_ref:
-        description: The anyplay-gg/network commit to build the net service from (full SHA); empty takes NETWORK_REF
+        description: The anyplay-gg/network commit to build the net service from (full SHA); empty takes the repository variable NETWORK_REF, then network.ref
         required: false
 
 # Nothing writes by default; the one job that publishes asks for what it needs (see `publish`).
@@ -25,10 +25,6 @@ env:
   # The installer compiler. Pinned, and checked against this SHA-256 before it runs.
   INNO_VERSION: 7.1.0
   INNO_SHA256: 0362a383ed217d4c4239b5933866dd96d3eb2102737da92f80f6057a4b40df2f
-  # The anyplay-gg/network revision whose net service the launcher carries.
-  # A full commit SHA, never a branch: a release is built from a revision somebody chose. Bump it by
-  # a pull request, or set the repository variable NETWORK_REF; a run by hand can take another one.
-  NETWORK_REF: ${{ inputs.network_ref || vars.NETWORK_REF || 'fb7b5511209b4b115a516e0b9c7d7addeed030a7' }}
   # The compiler of every release build, an exact version.
   RUST_TOOLCHAIN: 1.99.0
   # The cloud a release build names by default (the repository variable). Without it, players enter one.
@@ -40,7 +36,7 @@ jobs:
   notices:
     runs-on: ubuntu-latest
     outputs:
-      # The exact anyplay-gg/network commit of NETWORK_REF, resolved once. Every job below builds
+      # The exact anyplay-gg/network commit of the pin (network.ref), resolved once. Every job below builds
       # from it, so the files of one release cannot come from two revisions of main.
       network: ${{ steps.network.outputs.commit }}
     defaults:
@@ -51,11 +47,24 @@ jobs:
         with:
           persist-credentials: false
           path: launcher
+      # The anyplay-gg/network revision whose net service the launcher carries: the input of a run
+      # by hand, else the repository variable NETWORK_REF, else the commit in network.ref. A full
+      # commit SHA, never a branch: a release is built from a revision somebody chose. Bump
+      # network.ref by a pull request.
+      - id: network-pin
+        name: Network revision
+        shell: bash
+        env:
+          NETWORK_OVERRIDE: ${{ inputs.network_ref || vars.NETWORK_REF }}
+        run: |
+          ref=${NETWORK_OVERRIDE:-$(tr -d '[:space:]' < "$GITHUB_WORKSPACE/launcher/network.ref")}
+          [[ $ref =~ ^[0-9a-f]{40}$ ]] || { echo "the network revision must be one full commit SHA, got '$ref'" >&2; exit 1; }
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           repository: anyplay-gg/network
-          ref: ${{ env.NETWORK_REF }}
+          ref: ${{ steps.network-pin.outputs.ref }}
           path: network
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:

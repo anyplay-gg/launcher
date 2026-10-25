@@ -10,9 +10,10 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # The anyplay-gg/network revision the online crates come from.
-  NETWORK_REF: main
 
+# The online crates come from anyplay-gg/network, checked out beside the launcher at the commit in
+# network.ref (one full SHA, the file the release reads too). A pull request that needs newer
+# network code changes that file; a merge on the network's main alone cannot turn this red.
 defaults:
   run:
     working-directory: launcher
@@ -26,11 +27,18 @@ jobs:
           persist-credentials: false
           path: launcher
       # The online crates come from anyplay-gg/network, checked out beside the launcher.
+      - id: network-pin
+        name: Read the pinned network revision
+        shell: bash
+        run: |
+          ref=$(tr -d '[:space:]' < "$GITHUB_WORKSPACE/launcher/network.ref")
+          [[ $ref =~ ^[0-9a-f]{40}$ ]] || { echo "network.ref must hold one full commit SHA" >&2; exit 1; }
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           repository: anyplay-gg/network
-          ref: ${{ env.NETWORK_REF }}
+          ref: ${{ steps.network-pin.outputs.ref }}
           path: network
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
@@ -62,11 +70,18 @@ jobs:
           persist-credentials: false
           path: launcher
       # The online crates come from anyplay-gg/network, checked out beside the launcher.
+      - id: network-pin
+        name: Read the pinned network revision
+        shell: bash
+        run: |
+          ref=$(tr -d '[:space:]' < "$GITHUB_WORKSPACE/launcher/network.ref")
+          [[ $ref =~ ^[0-9a-f]{40}$ ]] || { echo "network.ref must hold one full commit SHA" >&2; exit 1; }
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           repository: anyplay-gg/network
-          ref: ${{ env.NETWORK_REF }}
+          ref: ${{ steps.network-pin.outputs.ref }}
           path: network
       # alsa for cpal (sound), udev for gilrs (gamepads), xkbcommon/xcb for winit's X11 and
       # Wayland input. rfd uses the XDG portal over D-Bus and needs no GTK.
@@ -121,11 +136,18 @@ jobs:
         with:
           persist-credentials: false
           path: launcher
+      - id: network-pin
+        name: Read the pinned network revision
+        shell: bash
+        run: |
+          ref=$(tr -d '[:space:]' < "$GITHUB_WORKSPACE/launcher/network.ref")
+          [[ $ref =~ ^[0-9a-f]{40}$ ]] || { echo "network.ref must hold one full commit SHA" >&2; exit 1; }
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           repository: anyplay-gg/network
-          ref: ${{ env.NETWORK_REF }}
+          ref: ${{ steps.network-pin.outputs.ref }}
           path: network
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
