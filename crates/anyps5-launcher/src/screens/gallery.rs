@@ -19,7 +19,9 @@
 //!                           online-screen-cannot|online-screen-watching|online-screen-stalled|
 //!                           online-screen-home|
 //!                           online-muted|online-restriction|online-paused|online-banned|
-//!                           profile-own|profile-other|profile-minimal|profile-minimal-other|
+//!                           profile-own|profile-own-focus|profile-own-end|profile-friend|profile-friend-hidden|
+//!                           profile-request|profile-new|profile-new-friend|profile-private|
+//!                           profile-loading|profile-error|profile-offline|
 //!                           feed|feed-reaction|feed-empty|feed-loading|feed-error
 //!                           incoming-call|incoming-call-discord|in-call|in-call-open|in-call-discord|calling|
 //!                           missed-call|party-discord
@@ -122,6 +124,51 @@ pub enum ScreenPage {
     Online(OnlineLook),
     /// The Phone as Controller page in one of its states.
     Phone(PhoneLook),
+    /// The profile screen over invented players.
+    Profile(ProfileLook),
+}
+
+/// The profile screen's states (docs/DESIGN.md 17, "Profile screen").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProfileLook {
+    /// The player's own profile, everything there.
+    Own,
+    /// The same with the focus on a game row.
+    OwnFocus,
+    /// The focus on the last row: the page has scrolled and the header has faded.
+    OwnEnd,
+    /// A friend with everything shared.
+    Friend,
+    /// A friend who hides trophies and playtime: only what they share is there.
+    FriendHidden,
+    /// Someone who asked to be friends.
+    Request,
+    /// The player's own profile of a new account.
+    New,
+    /// A friend who has done nothing yet.
+    NewFriend,
+    /// A stranger who shares nothing.
+    Private,
+    Loading,
+    Error,
+    Offline,
+}
+
+impl ProfileLook {
+    /// The account the look shows.
+    pub fn account(self) -> u64 {
+        match self {
+            ProfileLook::Own | ProfileLook::OwnFocus | ProfileLook::OwnEnd | ProfileLook::New => 1,
+            ProfileLook::Friend
+            | ProfileLook::Loading
+            | ProfileLook::Error
+            | ProfileLook::Offline => 2,
+            ProfileLook::FriendHidden => 3,
+            ProfileLook::NewFriend => 4,
+            ProfileLook::Request => 6,
+            ProfileLook::Private => 12,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -201,14 +248,6 @@ pub enum OnlineLook {
     Paused,
     /// The Start page after a ban.
     Banned,
-    /// The player's own profile, everything set.
-    ProfileOwn,
-    /// A friend's profile with trophies and playtime hidden.
-    ProfileOther,
-    /// The player's own profile of a new account: nothing set.
-    ProfileMinimal,
-    /// Another player's profile with nothing shown but the handle.
-    ProfileMinimalOther,
     /// The feed with items of every kind, the focus on a card.
     Feed,
     /// The feed with the focus on a reaction.
@@ -377,10 +416,18 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "online-restriction" => ScreenPage::Online(OnlineLook::Restriction),
         "online-paused" => ScreenPage::Online(OnlineLook::Paused),
         "online-banned" => ScreenPage::Online(OnlineLook::Banned),
-        "profile-own" => ScreenPage::Online(OnlineLook::ProfileOwn),
-        "profile-other" => ScreenPage::Online(OnlineLook::ProfileOther),
-        "profile-minimal" => ScreenPage::Online(OnlineLook::ProfileMinimal),
-        "profile-minimal-other" => ScreenPage::Online(OnlineLook::ProfileMinimalOther),
+        "profile-own" => ScreenPage::Profile(ProfileLook::Own),
+        "profile-own-focus" => ScreenPage::Profile(ProfileLook::OwnFocus),
+        "profile-own-end" => ScreenPage::Profile(ProfileLook::OwnEnd),
+        "profile-friend" => ScreenPage::Profile(ProfileLook::Friend),
+        "profile-friend-hidden" => ScreenPage::Profile(ProfileLook::FriendHidden),
+        "profile-request" => ScreenPage::Profile(ProfileLook::Request),
+        "profile-new" => ScreenPage::Profile(ProfileLook::New),
+        "profile-new-friend" => ScreenPage::Profile(ProfileLook::NewFriend),
+        "profile-private" => ScreenPage::Profile(ProfileLook::Private),
+        "profile-loading" => ScreenPage::Profile(ProfileLook::Loading),
+        "profile-error" => ScreenPage::Profile(ProfileLook::Error),
+        "profile-offline" => ScreenPage::Profile(ProfileLook::Offline),
         "feed" => ScreenPage::Online(OnlineLook::Feed),
         "feed-reaction" => ScreenPage::Online(OnlineLook::FeedReaction),
         "feed-empty" => ScreenPage::Online(OnlineLook::FeedEmpty),
@@ -1290,6 +1337,7 @@ pub struct ScreenGallery {
     restore: RestorePanel,
     online_panel: crate::screens::online::OnlinePanel,
     online: anyps5_core::online::Online,
+    profile: crate::screens::profile::ProfileScreen,
     recommended: RecommendedPanel,
     whats_new: WhatsNewPanel,
     notes: Published,
@@ -1375,8 +1423,14 @@ impl ScreenGallery {
             saves: SavesPanel::default(),
             restore: RestorePanel::default(),
             online_panel: crate::screens::online::OnlinePanel::default(),
+            profile: crate::screens::profile::ProfileScreen::default(),
             online: match page {
                 ScreenPage::Online(look) => sample_online(look),
+                ScreenPage::Profile(look) => {
+                    let mut state = sample_online(OnlineLook::Friends);
+                    crate::screens::gallery_feed::sample_profile(&mut state, look);
+                    state
+                }
                 _ => anyps5_core::online::Online::default(),
             },
             controls: ControlsPanel::default(),
@@ -1414,6 +1468,91 @@ impl ScreenGallery {
         {
             calls::call_strip(ctx, &strip, language, 1.0, true);
         }
+    }
+
+    /// The profile screen over the invented state: the library is the gallery's nine games.
+    fn profile_screen(&mut self, shell: &mut Shell, ctx: &Context, look: ProfileLook) {
+        use crate::screens::profile::{Inputs, OwnGame, OwnLibrary, OwnTrophy};
+        use crate::ui::theme::Grade as G;
+        let local = crate::screens::gallery_feed::local(&self.covers, &self.avatars, &NAMES);
+        // Three of the invented games are the ones the invented friends play.
+        let title = |i: usize| match i {
+            1 => "GAME00001".to_owned(),
+            4 => "GAME00002".to_owned(),
+            2 => "GAME00003".to_owned(),
+            _ => format!("GAME{:05}", 10 + i),
+        };
+        let new = look == ProfileLook::New;
+        let hours = [0u64, 42, 7, 0, 20, 3, 0, 1, 0];
+        let ago = [
+            0i64,
+            2 * 3_600,
+            26 * 3_600,
+            0,
+            15 * 86_400,
+            3 * 86_400,
+            0,
+            40 * 86_400,
+            0,
+        ];
+        let trophies = [
+            None,
+            Some((31, 48)),
+            Some((9, 40)),
+            None,
+            Some((12, 41)),
+            Some((1, 22)),
+            None,
+            None,
+            None,
+        ];
+        let trophy = |game: usize, name: &str, grade, ago: i64| OwnTrophy {
+            title_id: title(game),
+            game: NAMES[game].into(),
+            name: name.into(),
+            grade,
+            at: SAMPLE_NOW - ago,
+        };
+        let library = OwnLibrary {
+            games: if new {
+                Vec::new()
+            } else {
+                (0..NAMES.len())
+                    .map(|i| OwnGame {
+                        title_id: title(i),
+                        name: NAMES[i].to_owned(),
+                        art: Some(self.tile(i)),
+                        seconds: hours[i] * 3_600 + if hours[i] > 0 { 600 } else { 0 },
+                        last_played: (ago[i] > 0).then_some(SAMPLE_NOW - ago[i]),
+                        trophies: trophies[i],
+                    })
+                    .collect()
+            },
+            trophies: if new {
+                Vec::new()
+            } else {
+                vec![
+                    trophy(1, "First Light", G::Gold, 40 * 60),
+                    trophy(1, "Harbor Master", G::Silver, 3 * 3_600),
+                    trophy(2, "Quiet Passage", G::Bronze, 30 * 3_600),
+                    trophy(4, "Lantern Keeper", G::Platinum, 4 * 86_400),
+                    trophy(4, "Anchored", G::Bronze, 5 * 86_400),
+                ]
+            },
+            grades: if new { [0; 4] } else { [1, 4, 9, 30] },
+        };
+        let inputs = Inputs {
+            online: &self.online,
+            local: &local,
+            library: Some(&library),
+            account: anyps5_core::online::api::AccountId(look.account()),
+            language: shell.language,
+            now: SAMPLE_NOW,
+            utc_offset: Some(0),
+            unread: 0,
+        };
+        let accent = shell.accent_color();
+        self.profile.show(shell, ctx, &[], &inputs, accent);
     }
 
     fn ensure_art(&mut self, ctx: &Context) {
@@ -1646,6 +1785,9 @@ impl ScreenGallery {
                 show_hidden: self.prefs.show_hidden_trophies,
             },
         );
+        if let ScreenPage::Profile(look) = self.page {
+            self.profile_screen(shell, &ctx, look);
+        }
         self.library.show(
             shell,
             &ctx,
@@ -1768,15 +1910,6 @@ impl ScreenGallery {
                         .online_panel
                         .show_page(Page::Conversation("c-lumen".into()), &data),
                     OnlineLook::Banned => self.online_panel.show_page(Page::Start, &data),
-                    OnlineLook::ProfileOwn | OnlineLook::ProfileMinimal => self
-                        .online_panel
-                        .show_page(Page::Profile(anyps5_core::online::api::AccountId(1)), &data),
-                    OnlineLook::ProfileOther => self
-                        .online_panel
-                        .show_page(Page::Profile(anyps5_core::online::api::AccountId(2)), &data),
-                    OnlineLook::ProfileMinimalOther => self
-                        .online_panel
-                        .show_page(Page::Profile(anyps5_core::online::api::AccountId(5)), &data),
                     OnlineLook::Feed
                     | OnlineLook::FeedReaction
                     | OnlineLook::FeedEmpty
@@ -1792,6 +1925,18 @@ impl ScreenGallery {
                         }
                     }
                     _ => {}
+                }
+            }
+            ScreenPage::Profile(look) => {
+                self.profile
+                    .open(anyps5_core::online::api::AccountId(look.account()));
+                if look == ProfileLook::OwnEnd {
+                    // Past the last row: the focus clamps to it.
+                    self.profile.set_focus(99);
+                }
+                if look == ProfileLook::OwnFocus {
+                    // The third game row, after the two buttons.
+                    self.profile.set_focus(3);
                 }
             }
             ScreenPage::Controls => self.controls.open(),

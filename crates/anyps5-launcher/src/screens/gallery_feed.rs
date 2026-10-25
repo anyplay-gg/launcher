@@ -1,4 +1,4 @@
-//! Invented people for the gallery scenes of the profile page and the feed (`--gallery=profile-own`
+//! Invented people for the gallery scenes of the profile screen and the feed (`--gallery=profile-own`
 //! and so on). Names, pictures, games and trophies are made up; the title IDs are not real ones.
 
 use anyps5_core::online::api::{
@@ -8,7 +8,7 @@ use anyps5_core::online::api::{
 use anyps5_core::online::{self, Failure, Online, ProfileEntry};
 use egui::{Color32, ColorImage, Context, TextureHandle, TextureOptions};
 
-use crate::screens::gallery::OnlineLook;
+use crate::screens::gallery::{OnlineLook, ProfileLook};
 use crate::screens::online::{Avatar, Local, OwnedGame};
 
 /// The moment the invented items are told from (see `gallery::SAMPLE_NOW`).
@@ -56,7 +56,14 @@ fn item(
     }
 }
 
+/// The invented items, newest first.
 fn items() -> Vec<FeedItem> {
+    let mut items = raw_items();
+    items.sort_by_key(|i| std::cmp::Reverse(i.at));
+    items
+}
+
+fn raw_items() -> Vec<FeedItem> {
     let title = |t: &str| t.to_owned();
     vec![
         item(
@@ -126,6 +133,26 @@ fn items() -> Vec<FeedItem> {
             None,
         ),
         item(
+            10,
+            who(1, "Mira"),
+            26 * 3_600,
+            FeedEvent::Friend {
+                with: who(11, "Sol"),
+            },
+            counts(0, 0, 1, 0),
+            Some(Reaction::Nice),
+        ),
+        item(
+            11,
+            who(2, "Lumen"),
+            2 * 86_400,
+            FeedEvent::FirstPlayed {
+                title_id: title("GAME00002"),
+            },
+            counts(1, 0, 0, 0),
+            None,
+        ),
+        item(
             3,
             who(2, "Lumen"),
             5 * 86_400,
@@ -161,88 +188,10 @@ fn played(title_id: &str, minutes: u64) -> TitlePlaytime {
 /// The profiles and the feed the looks show, over the invented friends of the gallery.
 pub fn sample(state: &mut Online, look: OnlineLook) {
     use OnlineLook as L;
-    let entry = |page: ProfilePage| ProfileEntry {
-        page: Some(page),
-        failed: false,
-    };
     state.avatars.insert(AccountId(1), Some(MIRA.into()));
     state.avatars.insert(AccountId(2), Some(LUMEN.into()));
     state.avatars.insert(AccountId(3), Some(JUNO.into()));
     match look {
-        L::ProfileOwn => {
-            let mut p = profile(who(1, "Mira"));
-            p.about = Some(
-                "Co-op on weekends, trophy hunting when it rains. Always up for a party.".into(),
-            );
-            p.favourites = Some(vec![
-                "GAME00001".into(),
-                "GAME00003".into(),
-                "GAME00004".into(),
-            ]);
-            p.avatar = Some(MIRA.into());
-            p.playtime = Some(vec![
-                played("GAME00001", 6_020),
-                played("GAME00003", 1_385),
-                played("GAME00004", 35),
-            ]);
-            state.profiles.insert(
-                AccountId(1),
-                entry(ProfilePage {
-                    profile: p,
-                    trophies: Some(Count {
-                        bronze: 30,
-                        silver: 9,
-                        gold: 4,
-                        platinum: 1,
-                    }),
-                    links: vec![
-                        ProfileLink {
-                            provider: "discord".into(),
-                            name: Some("mira.plays".into()),
-                        },
-                        ProfileLink {
-                            provider: "steam".into(),
-                            name: Some("mira_in_orbit".into()),
-                        },
-                    ],
-                }),
-            );
-        }
-        L::ProfileOther => {
-            let mut p = profile(who(2, "Lumen"));
-            p.about = Some("Speedruns, soft launches and strong opinions about co-op.".into());
-            p.favourites = Some(vec!["GAME00002".into(), "GAME00005".into()]);
-            p.avatar = Some(LUMEN.into());
-            state.profiles.insert(
-                AccountId(2),
-                entry(ProfilePage {
-                    profile: p,
-                    trophies: None,
-                    links: Vec::new(),
-                }),
-            );
-        }
-        L::ProfileMinimal => {
-            state.profiles.insert(
-                AccountId(1),
-                entry(ProfilePage {
-                    profile: profile(who(1, "Mira")),
-                    trophies: Some(Count::default()),
-                    links: Vec::new(),
-                }),
-            );
-            state.avatars.insert(AccountId(1), None);
-        }
-        L::ProfileMinimalOther => {
-            state.profiles.insert(
-                AccountId(5),
-                entry(ProfilePage {
-                    profile: profile(who(5, "Rook")),
-                    trophies: None,
-                    links: Vec::new(),
-                }),
-            );
-        }
         L::Feed | L::FeedReaction => {
             state.feed.merge_newest(Feed {
                 items: items(),
@@ -253,6 +202,153 @@ pub fn sample(state: &mut Online, look: OnlineLook) {
         L::FeedLoading => {}
         L::FeedError => state.feed.error = Some(Failure::new(Failure::OFFLINE, "unreachable")),
         _ => {}
+    }
+}
+
+/// The profile screen's looks over the invented friends: the profile pages that are there, and the
+/// feed.
+pub fn sample_profile(state: &mut Online, look: ProfileLook) {
+    use ProfileLook as L;
+    let entry = |page: ProfilePage| ProfileEntry {
+        page: Some(page),
+        failed: false,
+    };
+    state.feed.merge_newest(Feed {
+        items: items(),
+        next: None,
+    });
+    let page = |account: Account, build: &dyn Fn(&mut Profile)| {
+        let mut p = profile(account);
+        build(&mut p);
+        p
+    };
+    match look {
+        L::Own | L::OwnFocus | L::OwnEnd => {
+            let p = page(who(1, "Mira"), &|p| {
+                p.about = Some(
+                    "Co-op on weekends, trophy hunting when it rains. Always up for a party."
+                        .into(),
+                );
+                p.avatar = Some(MIRA.into());
+            });
+            state.profiles.insert(
+                AccountId(1),
+                entry(ProfilePage {
+                    profile: p,
+                    trophies: Some(Count {
+                        bronze: 30,
+                        silver: 9,
+                        gold: 4,
+                        platinum: 1,
+                    }),
+                    links: vec![ProfileLink {
+                        provider: "discord".into(),
+                        name: Some("mira.plays".into()),
+                    }],
+                }),
+            );
+        }
+        L::New => {
+            state.profiles.insert(
+                AccountId(1),
+                entry(ProfilePage {
+                    profile: profile(who(1, "Mira")),
+                    trophies: Some(Count::default()),
+                    links: Vec::new(),
+                }),
+            );
+            state.avatars.insert(AccountId(1), None);
+            state.feed.merge_newest(Feed::default());
+        }
+        L::Friend => {
+            let p = page(who(2, "Lumen"), &|p| {
+                p.about = Some("Speedruns, soft launches and strong opinions about co-op.".into());
+                p.favourites = Some(vec!["GAME00002".into(), "GAME00005".into()]);
+                p.avatar = Some(LUMEN.into());
+                p.playtime = Some(vec![
+                    played("GAME00001", 3_840),
+                    played("GAME00002", 1_385),
+                    played("GAME00005", 210),
+                    played("GAME00003", 35),
+                ]);
+            });
+            state.profiles.insert(
+                AccountId(2),
+                entry(ProfilePage {
+                    profile: p,
+                    trophies: Some(Count {
+                        bronze: 30,
+                        silver: 9,
+                        gold: 4,
+                        platinum: 1,
+                    }),
+                    links: Vec::new(),
+                }),
+            );
+        }
+        L::FriendHidden => {
+            // Nothing of theirs in the feed either.
+            state.feed.items.retain(|i| i.account.id != AccountId(3));
+            let p = page(who(3, "Juno"), &|p| {
+                p.about = Some("Mostly here for the party chat.".into());
+                p.favourites = Some(vec!["GAME00005".into(), "GAME00006".into()]);
+                p.avatar = Some(JUNO.into());
+            });
+            state.profiles.insert(
+                AccountId(3),
+                entry(ProfilePage {
+                    profile: p,
+                    trophies: None,
+                    links: Vec::new(),
+                }),
+            );
+        }
+        L::Request => {
+            let p = page(who(6, "Vale"), &|p| {
+                p.about = Some("We met in the Tidebreaker lobby.".into());
+            });
+            state.profiles.insert(
+                AccountId(6),
+                entry(ProfilePage {
+                    profile: p,
+                    trophies: None,
+                    links: Vec::new(),
+                }),
+            );
+        }
+        L::NewFriend => {
+            state.profiles.insert(
+                AccountId(4),
+                entry(ProfilePage {
+                    profile: profile(who(4, "Kit")),
+                    trophies: None,
+                    links: Vec::new(),
+                }),
+            );
+        }
+        L::Private => {
+            state.profiles.insert(
+                AccountId(12),
+                entry(ProfilePage {
+                    profile: profile(who(12, "Tarn")),
+                    trophies: None,
+                    links: Vec::new(),
+                }),
+            );
+        }
+        L::Loading => {}
+        L::Error => {
+            state.profiles.insert(
+                AccountId(2),
+                ProfileEntry {
+                    page: None,
+                    failed: true,
+                },
+            );
+        }
+        L::Offline => {
+            state.cloud = Some(online::Cloud::Offline);
+        }
     }
 }
 

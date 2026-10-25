@@ -33,6 +33,15 @@ impl PanelHost {
             let local = crate::app::online_local::build(cx, cloud.as_deref());
             self.online_panel.set_local(local);
         }
+        // Coming back from the profile screen: to the page the player left, or to the page the
+        // screen named.
+        let opening = wanted && !self.online_panel.is_open();
+        let resume = opening && std::mem::take(&mut cx.model.online_resume);
+        let start = if opening {
+            self.online_start.take()
+        } else {
+            None
+        };
         let actions = {
             let data = OnlineData {
                 online: &cx.model.online,
@@ -47,7 +56,20 @@ impl PanelHost {
                 game_running: cx.model.running.is_some(),
             };
             if wanted && !self.online_panel.is_open() {
-                self.online_panel.open(&data);
+                if let Some((page, item)) = start {
+                    // The profile screen sent the player to a page of the panel.
+                    self.online_panel.show_page(page, &data);
+                    if let Some(index) =
+                        item.and_then(|id| data.online.feed.items.iter().position(|i| i.id == id))
+                    {
+                        self.online_panel.set_feed_focus(index, None);
+                    }
+                } else if resume {
+                    // Back from the profile screen: the page the player left.
+                    self.online_panel.resume(&data);
+                } else {
+                    self.online_panel.open(&data);
+                }
             } else if !wanted && self.online_panel.is_active() && self.online_panel.is_open() {
                 if side_next {
                     self.online_panel.dismiss();
@@ -76,7 +98,7 @@ impl PanelHost {
     }
 }
 
-fn online_action(model: &mut Model, action: OnlineAction) {
+pub(super) fn online_action(model: &mut Model, action: OnlineAction) {
     let online = &mut model.online;
     match action {
         OnlineAction::SetCloud(url) => {
@@ -99,6 +121,9 @@ fn online_action(model: &mut Model, action: OnlineAction) {
         OnlineAction::FeedOlder => online.request_older_feed(),
         OnlineAction::React(item, reaction) => online.react(item, reaction),
         OnlineAction::Profile(account) => online.request_profile(account),
+        OnlineAction::OpenProfile(account) => {
+            model.open_profile(account, crate::app::profile::Back::Online);
+        }
         OnlineAction::Voice(on) => online.set_voice(on),
         OnlineAction::VoiceProvider(provider) => online.set_voice_provider(provider),
         OnlineAction::Call(account) => {

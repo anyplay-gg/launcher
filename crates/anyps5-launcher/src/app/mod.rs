@@ -31,6 +31,7 @@ pub mod phone;
 pub mod pipeline;
 pub mod playtime;
 pub mod preview;
+pub mod profile;
 pub mod run_question;
 pub mod selfupdate;
 pub mod services;

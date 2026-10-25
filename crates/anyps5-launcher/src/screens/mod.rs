@@ -52,6 +52,8 @@ pub mod online_strings;
 pub mod online_voice_strings;
 pub mod phone;
 pub mod phone_strings;
+pub mod profile;
+pub mod profile_strings;
 pub mod recommended;
 pub mod rows;
 pub mod run_strings;

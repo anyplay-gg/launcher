@@ -236,15 +236,15 @@ The network's own words (account, handle, friend, presence, session, invitation,
 The top bar's button between the library and the settings. It opens the online area on the friends list and shows how many friends are online (a dot and the number; nothing at none or while signed out).
 
 **Online area**:
-The side panel the profile and the friends button open: signing in, the friends and their presence, requests, invitations and the account.
+The side panel the friends button opens (and the profile screen's Friends & Online; the profile button opens it on sign-in while signed out): signing in, the friends and their presence, requests, invitations and the account.
 _Avoid_: Social, community (that is the layout gallery), friends list (one part of it)
 
-**Profile page**:
-What the player sees of an account: its handle, avatar, text, up to three favourite games, trophy counts, most played games and linked accounts, each only if the cloud let the player see it. The player's own profile adds Edit Profile, which opens the account web. The launcher shows games by name and icon from the player's own library; the cloud only knows title IDs.
-_Avoid_: Page (alone), card (that is the gamer card)
+**Profile screen**:
+The full-screen page of a player's profile, the player's own or another's, opened from the profile button, a friend's page or a card of the feed; Back returns to where it was opened from. A header (avatar, handle, how you know each other, a line about them), a few figures (games, hours, trophies by grade) and up to three quiet lists: games, recent trophies, recent activity. Everything is only what the player may see; a part the cloud leaves out leaves no gap and no placeholder for another player. The player's own profile reads games and trophies from this PC and adds Edit Profile (opens the account web) and Friends & Online (the online panel). The launcher shows games by name and art from the player's own library only; the cloud only knows title IDs.
+_Avoid_: Profile page (the side panel's old page), banner
 
-**Profile banner**:
-The coloured band at the top of a profile page. The cloud has none; its colour is taken from the avatar's pixels and darkened until white text reads on it.
+**Profile wash**:
+The soft colour in the top-left of the profile screen, taken from the avatar's pixels (`banner_colour`) or, without a picture, from its monogram. It is the profile's only colour of its own; the accent stays the UI's.
 _Avoid_: Banner (alone: that is the trophy banner over a game), cover
 
 **Feed page**:

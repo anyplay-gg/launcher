@@ -203,7 +203,7 @@ pub fn names(handles: &[&str], language: Language) -> String {
 }
 
 /// The launcher's colour of a grade the cloud names.
-pub(super) fn theme_grade(grade: Grade) -> theme::Grade {
+pub fn theme_grade(grade: Grade) -> theme::Grade {
     match grade {
         Grade::Platinum => theme::Grade::Platinum,
         Grade::Gold => theme::Grade::Gold,
@@ -456,7 +456,7 @@ impl OnlinePanel {
                     online::toggled(item.mine, *reaction),
                 ));
             }
-            None => self.go(Page::Profile(item.account.id), data),
+            None => self.open_profile(item.account.id),
         }
     }
 
@@ -947,7 +947,7 @@ fn paint_state(ui: &mut Ui, icon: Icon, title: &str, note: Option<&str>) {
 }
 
 /// A round picture, or the first letter of the handle on a calm colour.
-pub(super) fn paint_avatar(
+pub fn paint_avatar(
     painter: &egui::Painter,
     rect: Rect,
     avatar: Option<Avatar>,
