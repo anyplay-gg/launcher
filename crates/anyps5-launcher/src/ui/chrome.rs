@@ -839,10 +839,16 @@ impl<'a> PanelRow<'a> {
 
         // Value control.
         self.reveal_alpha = if self.reveal { hover_t.max(t) } else { 1.0 };
-        let value_rect = Rect::from_min_max(
-            pos2(rect.max.x - pad - value_width, rect.min.y),
-            pos2(rect.max.x - pad, rect.max.y),
-        );
+        // A row of buttons without a title (the keys of the on-screen keyboard) is centred.
+        let centred = self.title.is_empty() && matches!(self.control, RowControl::Buttons { .. });
+        let value_rect = if centred {
+            Rect::from_center_size(rect.center(), vec2(value_width, rect.height()))
+        } else {
+            Rect::from_min_max(
+                pos2(rect.max.x - pad - value_width, rect.min.y),
+                pos2(rect.max.x - pad, rect.max.y),
+            )
+        };
         self.paint_value(ui, &ctx, value_rect, fg, t, &mut out);
         out
     }

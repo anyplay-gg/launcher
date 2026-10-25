@@ -221,6 +221,7 @@ impl OnlineService {
                 version: game.version.clone(),
                 build: build(model),
                 join: join.as_ref().map(|j| j.session.clone()),
+                host: None,
             },
         );
         self.waiting = Some(WaitingStart {
@@ -1091,6 +1092,11 @@ mod tests {
             },
             text: text.into(),
             created: 0,
+            reply: None,
+            edited: None,
+            deleted: false,
+            reactions: Vec::new(),
+            rev: 0,
         }
     }
 
@@ -1179,6 +1185,10 @@ mod tests {
             updated: 0,
             request: true,
             party: None,
+            unread: 1,
+            muted: false,
+            pinned: false,
+            rev: 0,
         };
         service().notice(&mut model, Notice::MessageRequest(request), &mut ready);
         assert_eq!(

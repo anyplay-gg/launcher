@@ -66,7 +66,8 @@ pub enum OnlineAction {
     RemoveFriend(AccountId),
     Block(AccountId),
     Unblock(AccountId),
-    Report(AccountId, ReportReason),
+    /// A report of an account, with the message it is about when there is one.
+    Report(AccountId, ReportReason, Option<(String, u64)>),
     /// Join the session a friend plays in.
     Join(AccountId),
     /// Invite a friend to the player's session.
@@ -108,6 +109,35 @@ pub enum OnlineAction {
     AcceptRequest(String),
     /// Leave a group, or decline a message request.
     LeaveConversation(String),
+    /// The draft answers a message / edits one of the player's / is dropped.
+    StartReply {
+        conversation: String,
+        seq: u64,
+    },
+    StartEdit {
+        conversation: String,
+        seq: u64,
+    },
+    CancelCompose(String),
+    /// Ask again for the list of conversations (`None`) or for a conversation's messages.
+    RetryMessages(Option<String>),
+    /// Take a message of the player's back for everyone.
+    Unsend {
+        conversation: String,
+        seq: u64,
+    },
+    /// The player's reaction to a message; `None` takes it back.
+    ReactMessage {
+        conversation: String,
+        seq: u64,
+        reaction: Option<anyps5_core::online::api::MessageReaction>,
+    },
+    /// Mute or pin a conversation.
+    ConversationSettings {
+        conversation: String,
+        muted: Option<bool>,
+        pinned: Option<bool>,
+    },
     /// Put a message's text on the clipboard.
     CopyText(String),
     /// Appear offline to every other player, or show again.
@@ -176,8 +206,14 @@ pub enum Page {
     Messages,
     Conversation(String),
     MessageRequest(String),
-    /// One message in full: copy it, report it.
+    /// One message in full: answer it, react, edit, unsend, copy, report.
     Message(String, u64),
+    /// Short answers to send without typing.
+    QuickReplies(String),
+    /// Mute, pin, report, block or leave: what the player settles for one conversation.
+    ChatOptions(String),
+    /// A keyboard on the screen for a pad: rows of keys to press.
+    Keyboard(String),
     /// Party voice: the switch, the mode, the talk key and the devices.
     Voice,
     /// The microphones or the speakers to choose from.
@@ -244,6 +280,9 @@ impl Page {
             Page::Messages
             | Page::Conversation(_)
             | Page::MessageRequest(_)
+            | Page::QuickReplies(_)
+            | Page::ChatOptions(_)
+            | Page::Keyboard(_)
             | Page::Message(..) => Some(Section::Messages),
             Page::Feed => Some(Section::Activity),
             Page::Account | Page::Blocked(_) | Page::Restriction(_) => Some(Section::Settings),
@@ -318,6 +357,12 @@ pub struct OnlinePanel {
     previous: Option<Page>,
     /// Where Back from the report page leads, when it did not open from a friend.
     report_from: Option<Page>,
+    /// The message a report is about, when it opened from one.
+    report_message: Option<(String, u64)>,
+    /// The key each row of the on-screen keyboard rests on, and its mode.
+    keys: [usize; 4],
+    shift: bool,
+    symbols: bool,
     /// The friend whose conversation was asked for; the page opens it once it is there.
     opening: Option<AccountId>,
     /// Actions that a page change asks for, handed out with the next frame's.
@@ -593,6 +638,11 @@ impl OnlinePanel {
             return actions;
         }
         self.follow(data);
+        // A typing line goes away on its own: draw once more when the last one runs out.
+        let now = u64::try_from(data.now).unwrap_or(0);
+        if let Some(end) = data.online.social.typing_ends(now) {
+            ctx.request_repaint_after(std::time::Duration::from_secs(end.saturating_sub(now) + 1));
+        }
         if self.anchor.is_some() {
             let rows = self.rows(data).2;
             self.restore_anchor(data, &rows);
@@ -849,6 +899,20 @@ impl OnlinePanel {
                     }
                 }
             }
+            Change::Choice {
+                row: row @ ("keyA" | "keyB" | "keyC" | "keyCtl"),
+                index,
+            } => {
+                let slot = ["keyA", "keyB", "keyC", "keyCtl"]
+                    .iter()
+                    .position(|r| r == row)
+                    .unwrap_or(0);
+                self.keys[slot] = *index;
+            }
+            Change::Press {
+                row: row @ ("keyA" | "keyB" | "keyC" | "keyCtl"),
+                index,
+            } => self.key_press(row, *index, data, actions),
             Change::Run { row } => self.run(row, data, actions),
             _ => {}
         }
@@ -932,10 +996,15 @@ impl OnlinePanel {
             ("report", Page::Friend(id)) => {
                 let id = *id;
                 self.report_from = None;
+                self.report_message = None;
                 self.go(Page::Report(id), data);
             }
             ("sendReport", Page::Report(id)) => {
-                actions.push(OnlineAction::Report(*id, REASONS[self.reason.min(4)]));
+                actions.push(OnlineAction::Report(
+                    *id,
+                    REASONS[self.reason.min(4)],
+                    self.report_message.take(),
+                ));
             }
             ("joinInvitation", Page::Invitation(id)) => {
                 actions.push(OnlineAction::AnswerInvitation {
@@ -1279,6 +1348,9 @@ impl OnlinePanel {
             | Page::Messages
             | Page::Conversation(_)
             | Page::MessageRequest(_)
+            | Page::QuickReplies(_)
+            | Page::ChatOptions(_)
+            | Page::Keyboard(_)
             | Page::Message(..) => self
                 .social_rows(data, &mut rows)
                 .unwrap_or_else(|| (String::new(), None)),
@@ -1786,6 +1858,7 @@ mod tests {
                             joinable: true,
                             members: 1,
                             max_members: 4,
+                            kind: Default::default(),
                         }),
                     }),
                     revision: 0,
@@ -2431,6 +2504,7 @@ mod tests {
             title: "Test Game".into(),
             version: "01.000".into(),
             expires: 0,
+            kind: Default::default(),
         });
         let mut panel = OnlinePanel::default();
         panel.go(Page::Invitation("i1".into()), &data(&online));

@@ -94,6 +94,43 @@ pub fn message_time(unix: i64, now: i64, offset_seconds: i32, language: Language
     }
 }
 
+/// The clock time of a moment: `14:32`. `offset_seconds` is the local UTC offset.
+pub fn clock_text(unix: i64, offset_seconds: i32) -> String {
+    let second_of_day = (unix + i64::from(offset_seconds)).rem_euclid(86_400);
+    format!(
+        "{:02}:{:02}",
+        second_of_day / 3600,
+        second_of_day % 3600 / 60
+    )
+}
+
+/// The local day a moment falls on, as a number that only compares.
+pub fn day_number(unix: i64, offset_seconds: i32) -> i64 {
+    (unix + i64::from(offset_seconds)).div_euclid(86_400)
+}
+
+/// What a day separator in a conversation says: Today, Yesterday, else the day (with its year
+/// when it is not this year).
+pub fn day_label(unix: i64, now: i64, offset_seconds: i32, language: Language) -> String {
+    let days = day_number(unix, offset_seconds);
+    let today = day_number(now, offset_seconds);
+    match (today - days, language) {
+        (0, Language::English) => "Today".to_owned(),
+        (0, Language::Turkish) => "Bugün".to_owned(),
+        (1, Language::English) => "Yesterday".to_owned(),
+        (1, Language::Turkish) => "Dün".to_owned(),
+        _ => {
+            let year =
+                |u: i64| civil_from_days((u + i64::from(offset_seconds)).div_euclid(86_400)).0;
+            if year(unix) == year(now) {
+                short_date(unix, offset_seconds, language)
+            } else {
+                day_text(unix, offset_seconds, language)
+            }
+        }
+    }
+}
+
 /// The day with its year: `Oct 17, 2026` in English and `17 Eki 2026` in Turkish. `unix` is in
 /// seconds, `offset_seconds` is the local UTC offset.
 pub fn day_text(unix: i64, offset_seconds: i32, language: Language) -> String {

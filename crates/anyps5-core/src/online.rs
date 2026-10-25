@@ -54,7 +54,10 @@ pub use profile::{
 pub use restrictions::{Blocked, Restrictions, in_force};
 pub use runs::Runs;
 pub use screen::{Screen, ScreenCommand, ScreenNotice};
-pub use social::{Fetch, Ingested, KEPT, Listed, Social, others, plain, read_by_other, snippet};
+pub use social::{
+    Fetch, Ingested, KEPT, Listed, Social, delivered_to_other, others, plain, read_by_other,
+    seen_by, snippet,
+};
 pub use voice::{
     DEFAULT_KEY, DEFAULT_PERCENT, Devices, Hardware, MAX_PERCENT, Mic, PERCENT_STEP, PeerPrefs,
     Problem, Status as VoiceStatus, Voice, VoicePrefs, VoiceProvider,
@@ -415,6 +418,23 @@ pub enum Purpose {
         conversation: String,
         text: String,
     },
+    /// An edit, an unsend, or a reaction (or taking it back) on a message.
+    EditMessage {
+        conversation: String,
+        seq: u64,
+    },
+    UnsendMessage {
+        conversation: String,
+        seq: u64,
+    },
+    ReactMessage {
+        conversation: String,
+        seq: u64,
+    },
+    /// Mute or pin, answered with the conversation.
+    ConversationSettings(String),
+    /// The typing signal: nothing waits for it, but the net service answers.
+    Typing(String),
     MarkRead {
         conversation: String,
     },
@@ -500,6 +520,8 @@ pub struct Online {
     pub dialog: Option<Dialog>,
     /// The party, the conversations and their messages.
     pub social: Social,
+    /// The conversation the player was last said to type in, and when (Unix seconds).
+    typing_sent: Option<(String, u64)>,
     /// Party voice: what the player chose and what the service reports.
     pub voice: Voice,
     /// Share screen: what the player shares, what is offered to them and what they watch.
@@ -662,6 +684,12 @@ impl Online {
         }
         match purpose {
             Purpose::Feed { .. } => self.feed.error = Some(failure.clone()),
+            Purpose::Conversations => self.social.fetch_failed(None),
+            Purpose::Messages {
+                conversation,
+                fetch: Fetch::Newest,
+                ..
+            } => self.social.fetch_failed(Some(conversation)),
             Purpose::React { item, before } => self.feed.set_reactions(*item, *before),
             Purpose::Profile(account) => {
                 // A page that is shown stays; only a profile without one is a failure.
@@ -875,6 +903,18 @@ impl Online {
                 }
             }
             Purpose::LeaveConversation(id) => self.social.remove(id),
+            Purpose::ConversationSettings(_) => {
+                if let Ok(conversation) = serde_json::from_value::<Conversation>(value.clone()) {
+                    self.social.upsert(conversation);
+                }
+            }
+            Purpose::EditMessage { .. }
+            | Purpose::UnsendMessage { .. }
+            | Purpose::ReactMessage { .. } => {
+                if let Ok(message) = serde_json::from_value::<Message>(value.clone()) {
+                    self.social.replace_message(message);
+                }
+            }
             Purpose::Messages {
                 conversation,
                 fetch,
@@ -966,6 +1006,10 @@ impl Online {
 
     /// The newest message the player has not read and did not write, as a notice.
     fn announce(&self, conversation: &str, new: &[Message], notices: &mut Vec<Notice>) {
+        // A muted conversation makes no toast.
+        if self.social.get(conversation).is_some_and(|c| c.muted) {
+            return;
+        }
         let me = self.account.as_ref().map(|a| a.id);
         let read = self.social.get(conversation).map_or(0, |c| c.read);
         if let Some(message) = new
@@ -1012,14 +1056,30 @@ impl Online {
         }
     }
 
-    /// Sends the draft of a conversation. False when there is nothing to send, the text is not
-    /// one the cloud takes, or the draft is on its way already.
+    /// Sends the draft of a conversation: as an edit when it edits a message, else as a new
+    /// message, with the answer it carries. False when there is nothing to send, the text is
+    /// not one the cloud takes, or the draft is on its way already.
     pub fn send_draft(&mut self, conversation: &str) -> bool {
         let text = self.social.draft(conversation).to_owned();
-        let sending = |p: &Purpose| matches!(p, Purpose::SendMessage { conversation: c, .. } if c == conversation);
+        let sending = |p: &Purpose| matches!(p, Purpose::SendMessage { conversation: c, .. } | Purpose::EditMessage { conversation: c, .. } if c == conversation);
         if !api::is_message_text(&text) || self.is_waiting(sending) {
             return false;
         }
+        if let Some(seq) = self.social.editing(conversation).map(|m| m.seq) {
+            // An edit that changes nothing is done at once.
+            if self
+                .social
+                .editing(conversation)
+                .is_some_and(|m| m.text == text)
+            {
+                self.social.cancel_compose(conversation);
+                return true;
+            }
+            self.edit_message(conversation, seq, text);
+            self.social.cancel_compose(conversation);
+            return true;
+        }
+        let reply = self.social.replying_to(conversation).map(|m| m.seq);
         self.send(
             Purpose::SendMessage {
                 conversation: conversation.to_owned(),
@@ -1028,9 +1088,110 @@ impl Online {
             Command::SendMessage {
                 conversation: conversation.to_owned(),
                 text,
+                reply,
             },
         );
+        // Typing ends with the message.
+        self.typing_sent = None;
         true
+    }
+
+    /// Edits one of the player's messages.
+    pub fn edit_message(&mut self, conversation: &str, seq: u64, text: String) {
+        self.send(
+            Purpose::EditMessage {
+                conversation: conversation.to_owned(),
+                seq,
+            },
+            Command::EditMessage {
+                conversation: conversation.to_owned(),
+                seq,
+                text,
+            },
+        );
+    }
+
+    /// Takes one of the player's messages back for everyone.
+    pub fn unsend_message(&mut self, conversation: &str, seq: u64) {
+        self.send(
+            Purpose::UnsendMessage {
+                conversation: conversation.to_owned(),
+                seq,
+            },
+            Command::UnsendMessage {
+                conversation: conversation.to_owned(),
+                seq,
+            },
+        );
+    }
+
+    /// Sets the player's reaction to a message, or takes it back with `None`.
+    pub fn react_message(
+        &mut self,
+        conversation: &str,
+        seq: u64,
+        reaction: Option<api::MessageReaction>,
+    ) {
+        self.send(
+            Purpose::ReactMessage {
+                conversation: conversation.to_owned(),
+                seq,
+            },
+            Command::ReactMessage {
+                conversation: conversation.to_owned(),
+                seq,
+                reaction,
+            },
+        );
+    }
+
+    /// Mutes or pins a conversation for the player.
+    pub fn conversation_settings(
+        &mut self,
+        conversation: &str,
+        muted: Option<bool>,
+        pinned: Option<bool>,
+    ) {
+        self.send(
+            Purpose::ConversationSettings(conversation.to_owned()),
+            Command::ConversationSettings {
+                conversation: conversation.to_owned(),
+                muted,
+                pinned,
+            },
+        );
+    }
+
+    /// The player types in a conversation (or the field was emptied): tells the others. The
+    /// net service passes on one signal in three seconds, so this may be called on every key; it
+    /// sends once when the typing starts and once when it stops.
+    pub fn typing(&mut self, conversation: &str, typing: bool) {
+        if !self.is_online() {
+            return;
+        }
+        let current = self
+            .typing_sent
+            .as_ref()
+            .filter(|(c, _)| c == conversation)
+            .map(|(_, at)| *at);
+        if typing {
+            if current.is_some_and(|at| unix_now() < at + api::TYPING_RESEND_SECS) {
+                return;
+            }
+            self.typing_sent = Some((conversation.to_owned(), unix_now()));
+        } else {
+            if current.is_none() {
+                return;
+            }
+            self.typing_sent = None;
+        }
+        self.send(
+            Purpose::Typing(conversation.to_owned()),
+            Command::Typing {
+                conversation: conversation.to_owned(),
+                typing,
+            },
+        );
     }
 
     /// Opens the direct conversation with a friend, unless there is one.
@@ -1491,6 +1652,25 @@ impl Online {
                 notices.extend(self.call_ended(account, reason));
             }
             Event::Conversations(lists) => self.listed(lists, &mut notices),
+            Event::Typing {
+                conversation,
+                account,
+                typing,
+            } => self
+                .social
+                .apply_typing(&conversation, account, typing, unix_now()),
+            Event::Delivered {
+                conversation,
+                account,
+                seq,
+            } => self.social.apply_delivered(&conversation, account, seq),
+            Event::MessageUpdate {
+                conversation, rev, ..
+            } => {
+                if let Some(fetch) = self.social.message_update(&conversation, rev) {
+                    self.fetch(&conversation, fetch, false);
+                }
+            }
             Event::Message { conversation, seq } => {
                 if self.social.note_last(&conversation, seq) {
                     if let Some(fetch) = self.social.plan(&conversation) {
@@ -1534,6 +1714,8 @@ impl Online {
             }
             // The Discord Social SDK is not used by this launcher yet.
             Event::Discord(_) => {}
+            // Play Together arrives with its own launcher change.
+            Event::SessionEnded { .. } => {}
             Event::Unknown => {}
         }
         notices
@@ -2196,6 +2378,7 @@ mod tests {
                         joinable: true,
                         members: 1,
                         max_members: 4,
+                        kind: Default::default(),
                     }),
                 }),
                 revision: 0,
@@ -2228,6 +2411,10 @@ mod tests {
             updated: last,
             request,
             party: None,
+            unread: last.saturating_sub(read),
+            muted: false,
+            pinned: false,
+            rev: 0,
         }
     }
 
@@ -2240,9 +2427,15 @@ mod tests {
                     sender: account(sender, "x"),
                     text: format!("m{seq}"),
                     created: seq,
+                    reply: None,
+                    edited: None,
+                    deleted: false,
+                    reactions: Vec::new(),
+                    rev: 0,
                 })
                 .collect(),
             last: to,
+            rev: 0,
         }
     }
 
@@ -2515,6 +2708,11 @@ mod tests {
                 sender: account(1, "Alec"),
                 text: "On my way".into(),
                 created: 3,
+                reply: None,
+                edited: None,
+                deleted: false,
+                reactions: Vec::new(),
+                rev: 0,
             },
         );
         assert!(!notices.iter().any(|n| matches!(n, Notice::Message { .. })));

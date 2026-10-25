@@ -13,6 +13,8 @@
 //!                           online-account|online-account-appearing|online-picker|
 //!                           online-party|online-party-picker|online-messages|online-conversation|
 //!                           online-message|online-request|
+//!                           friends-message-own|friends-quick-replies|friends-keyboard|
+//!                           friends-chat-options|
 //!                           online-party-voice|online-party-member|online-voice|online-voice-key|
 //!                           online-voice-devices|online-voice-denied|
 //!                           online-screen-ready|online-screen-hosting|online-screen-offer|
@@ -260,6 +262,14 @@ pub enum OnlineLook {
     Message,
     /// A conversation with a friend, with news.
     Conversation,
+    /// One of the player's own messages: edit, take back.
+    MessageOwn,
+    /// Short answers for a pad.
+    QuickReplies,
+    /// The keyboard on the screen.
+    Keyboard,
+    /// Mute, pin, report, block.
+    ChatOptions,
     /// A stranger's first messages, waiting for an answer.
     Request,
     /// The party with voice on: Lumen speaks, Kit is muted for the player.
@@ -505,6 +515,10 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "friends-messages" => ScreenPage::Online(OnlineLook::Messages),
         "friends-message" => ScreenPage::Online(OnlineLook::Message),
         "friends-conversation" => ScreenPage::Online(OnlineLook::Conversation),
+        "friends-message-own" => ScreenPage::Online(OnlineLook::MessageOwn),
+        "friends-quick-replies" => ScreenPage::Online(OnlineLook::QuickReplies),
+        "friends-keyboard" => ScreenPage::Online(OnlineLook::Keyboard),
+        "friends-chat-options" => ScreenPage::Online(OnlineLook::ChatOptions),
         "friends-request" => ScreenPage::Online(OnlineLook::Request),
         "friends-party-voice" => ScreenPage::Online(OnlineLook::PartyVoice),
         "friends-party-member" => ScreenPage::Online(OnlineLook::PartyMember),
@@ -614,6 +628,7 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
                 joinable: true,
                 members: 2,
                 max_members: 4,
+                kind: Default::default(),
             }),
         })
     };
@@ -683,6 +698,7 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         title: NAMES[4].into(),
         version: "01.000".into(),
         expires: 0,
+        kind: Default::default(),
     }];
     let count = |platinum, gold, silver, bronze| Count {
         bronze,
@@ -1005,8 +1021,9 @@ fn sample_screen(state: &mut anyps5_core::online::Online, look: OnlineLook) {
 /// An invented party of three, a session, four conversations and a stranger who wrote first.
 fn sample_social(state: &mut anyps5_core::online::Online) {
     use anyps5_core::online::api::{
-        Account, AccountId, Conversation, ConversationKind, Conversations, Message, Messages,
-        Party, PartyInvitation, PartyMember, ReadMark, Visibility,
+        Account, AccountId, Conversation, ConversationKind, Conversations, Message,
+        MessageReaction, Messages, Party, PartyInvitation, PartyMember, Quote, ReactionOn,
+        ReadMark, Visibility,
     };
     use anyps5_core::online::control::Member;
     use anyps5_core::online::{Fetch, Session};
@@ -1056,6 +1073,7 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
             link: None,
         }],
         created: 0,
+        kind: Default::default(),
     });
     let chat = |id: &str, kind, with: &[(u64, &str)], last: u64, read: u64, updated: u64| {
         let mut members = vec![account(1, "Mira")];
@@ -1071,6 +1089,10 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
             updated,
             request: false,
             party: None,
+            unread: last.saturating_sub(read),
+            muted: false,
+            pinned: false,
+            rev: 0,
         }
     };
     let now = SAMPLE_NOW as u64;
@@ -1085,6 +1107,7 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
     lumen.marks = vec![ReadMark {
         account: AccountId(2),
         seq: 4,
+        delivered: 4,
     }];
     let mut group = chat(
         "c-raid",
@@ -1095,6 +1118,7 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
         now - 40_000,
     );
     group.name = Some("Raid night".into());
+    group.pinned = true;
     let mut party_chat = chat(
         "c-party",
         ConversationKind::Party,
@@ -1117,14 +1141,18 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
         conversations: vec![
             lumen,
             party_chat,
-            chat(
-                "c-juno",
-                ConversationKind::Direct,
-                &[(3, "Juno")],
-                12,
-                12,
-                now - 20_000,
-            ),
+            {
+                let mut juno = chat(
+                    "c-juno",
+                    ConversationKind::Direct,
+                    &[(3, "Juno")],
+                    12,
+                    12,
+                    now - 20_000,
+                );
+                juno.muted = true;
+                juno
+            },
             group,
         ],
         requests: vec![stranger],
@@ -1136,51 +1164,82 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
             sender: account(who, handle),
             text: text.into(),
             created: now - ago,
+            reply: None,
+            edited: None,
+            deleted: false,
+            reactions: Vec::new(),
+            rev: 0,
         };
+    let mut lumen_messages = vec![
+        said("c-lumen", 1, 2, "Lumen", "Are you around tonight?", 59_000),
+        said(
+            "c-lumen",
+            2,
+            1,
+            "Mira",
+            "Yes, after dinner. Around 8.",
+            58_900,
+        ),
+        said(
+            "c-lumen",
+            3,
+            2,
+            "Lumen",
+            "Great. I will set up the lobby.",
+            58_800,
+        ),
+        said("c-lumen", 4, 1, "Mira", "Bringing Juno too.", 58_700),
+        said(
+            "c-lumen",
+            5,
+            2,
+            "Lumen",
+            "Found a new route on the second map.",
+            1_140,
+        ),
+        said(
+            "c-lumen",
+            6,
+            2,
+            "Lumen",
+            "It cuts the run in half. Want to try it with the others?",
+            1_080,
+        ),
+        said("c-lumen", 7, 2, "Lumen", "Ready when you are.", 720),
+    ];
+    // The things a thread can show: an edit, an answer, reactions, a message taken back.
+    lumen_messages[2].edited = Some(now - 58_000);
+    lumen_messages[5].reply = Some(Quote {
+        seq: 4,
+        sender: account(1, "Mira"),
+        text: "Bringing Juno too.".into(),
+        deleted: false,
+    });
+    lumen_messages[4].reactions = vec![
+        ReactionOn {
+            reaction: MessageReaction::Nice,
+            accounts: vec![AccountId(1), AccountId(3)],
+        },
+        ReactionOn {
+            reaction: MessageReaction::Wow,
+            accounts: vec![AccountId(2)],
+        },
+    ];
+    lumen_messages[1].deleted = true;
+    lumen_messages[1].text.clear();
     state.social.ingest(
         "c-lumen",
         Fetch::Newest,
         Messages {
-            messages: vec![
-                said("c-lumen", 1, 2, "Lumen", "Are you around tonight?", 59_000),
-                said(
-                    "c-lumen",
-                    2,
-                    1,
-                    "Mira",
-                    "Yes, after dinner. Around 8.",
-                    58_900,
-                ),
-                said(
-                    "c-lumen",
-                    3,
-                    2,
-                    "Lumen",
-                    "Great. I will set up the lobby.",
-                    58_800,
-                ),
-                said("c-lumen", 4, 1, "Mira", "Bringing Juno too.", 58_700),
-                said(
-                    "c-lumen",
-                    5,
-                    2,
-                    "Lumen",
-                    "Found a new route on the second map.",
-                    1_140,
-                ),
-                said(
-                    "c-lumen",
-                    6,
-                    2,
-                    "Lumen",
-                    "It cuts the run in half. Want to try it with the others?",
-                    1_080,
-                ),
-                said("c-lumen", 7, 2, "Lumen", "Ready when you are.", 720),
-            ],
+            messages: lumen_messages,
             last: 7,
+            rev: 0,
         },
     );
+    // Lumen types, Juno's chat is muted and the raid group stays on top.
+    state
+        .social
+        .apply_typing("c-lumen", AccountId(2), true, SAMPLE_NOW as u64);
     state.social.ingest(
         "c-nyx",
         Fetch::Newest,
@@ -1204,6 +1263,7 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
                 ),
             ],
             last: 2,
+            rev: 0,
         },
     );
 }
@@ -2116,6 +2176,18 @@ impl ScreenGallery {
                     OnlineLook::Conversation => self
                         .friends
                         .show_page(Page::Conversation("c-lumen".into()), &data),
+                    OnlineLook::MessageOwn => self
+                        .friends
+                        .show_page(Page::Message("c-lumen".into(), 4), &data),
+                    OnlineLook::QuickReplies => self
+                        .friends
+                        .show_page(Page::QuickReplies("c-lumen".into()), &data),
+                    OnlineLook::Keyboard => self
+                        .friends
+                        .show_page(Page::Keyboard("c-lumen".into()), &data),
+                    OnlineLook::ChatOptions => self
+                        .friends
+                        .show_page(Page::ChatOptions("c-lumen".into()), &data),
                     OnlineLook::Request => self
                         .friends
                         .show_page(Page::MessageRequest("c-nyx".into()), &data),

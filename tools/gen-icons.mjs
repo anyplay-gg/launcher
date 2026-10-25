@@ -15,6 +15,7 @@ x-circle arrow-right check question folder-open folder-simple-dashed arrow-up ar
 github-logo floppy-disk clock-counter-clockwise users user-plus user-minus envelope-simple
 paper-plane-right cloud sign-in sign-out prohibit flag key
 microphone microphone-slash speaker-slash headphones
+arrow-bend-up-left push-pin bell-slash pencil-simple
 device-mobile wifi-high plug steam-logo`.split(/\s+/);
 
 const BS = String.fromCharCode(92);

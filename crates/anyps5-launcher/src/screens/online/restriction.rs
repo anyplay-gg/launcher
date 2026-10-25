@@ -409,6 +409,10 @@ mod tests {
             updated: 0,
             request: false,
             party: None,
+            unread: 0,
+            muted: false,
+            pinned: false,
+            rev: 0,
         }
     }
 
@@ -508,7 +512,7 @@ mod tests {
         let mut panel = OnlinePanel::default();
         panel.go(Page::Conversation("c".into()), &data(&online));
         let rows = panel.rows(&data(&online)).2;
-        assert_eq!(ids(&rows), ["pausedSend"]);
+        assert_eq!(ids(&rows), ["pausedSend", "chatOptions"]);
         assert_eq!(rows[0].title, "Messages Paused");
         panel.run("pausedSend", &data(&online), &mut Vec::new());
         assert_eq!(panel.page, Page::Restriction("muted".into()));
@@ -522,11 +526,17 @@ mod tests {
         new.social.upsert(chat((2, "Lumen")));
         let mut panel = OnlinePanel::default();
         panel.go(Page::Conversation("c".into()), &data(&new));
-        assert_eq!(ids(&panel.rows(&data(&new)).2), ["compose", "send"]);
+        assert_eq!(
+            ids(&panel.rows(&data(&new)).2),
+            ["compose", "send", "quickReplies", "keyboard", "chatOptions"]
+        );
         // With someone who is no friend it is replaced.
         new.social.upsert(chat((9, "Stranger")));
         panel.go(Page::Conversation("c".into()), &data(&new));
-        assert_eq!(ids(&panel.rows(&data(&new)).2), ["pausedSend"]);
+        assert_eq!(
+            ids(&panel.rows(&data(&new)).2),
+            ["pausedSend", "chatOptions"]
+        );
     }
 
     #[test]
