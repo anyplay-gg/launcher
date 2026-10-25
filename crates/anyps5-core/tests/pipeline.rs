@@ -38,12 +38,15 @@ impl World {
     fn dump(&self, name: &str, title_id: &str, eboot: &[u8]) -> UnlockRequest {
         let folder = self.root.join(name);
         make_dump(&folder, title_id, eboot);
-        UnlockRequest::new(
+        let mut request = UnlockRequest::new(
             folder,
             title_id.into(),
             self.root.clone(),
             self.toolkit.clone(),
-        )
+        );
+        // Never depend on the test machine's free disk space.
+        request.free_space_override = Some(Some(u64::MAX));
+        request
     }
 }
 
@@ -287,7 +290,7 @@ fn needed_bytes(error: &UnlockError) -> u64 {
 fn too_little_free_space_stops_before_anything_is_written() {
     let w = world(&[]);
     let mut request = w.dump("Tight", "PPSA00020", &elf_bytes());
-    request.free_space_override = Some(1024 * 1024);
+    request.free_space_override = Some(Some(1024 * 1024));
     let (result, events) = run(&request);
     let error = result.unwrap_err();
     assert!(matches!(error, UnlockError::NotEnoughSpace { free, .. } if free == 1024 * 1024));
@@ -304,11 +307,11 @@ fn too_little_free_space_stops_before_anything_is_written() {
 }
 
 #[test]
-fn the_space_check_is_exact_when_files_are_copied() {
+fn the_space_check_is_an_estimate_that_counts_copied_files() {
     let w = world(&[]);
     let mut request = w.dump("Edge", "PPSA00021", &elf_bytes());
     request.link_mode = LinkMode::ForceCopy;
-    request.free_space_override = Some(0);
+    request.free_space_override = Some(Some(0));
     let (result, events) = run(&request);
     let needed = needed_bytes(&result.unwrap_err());
     assert!(
@@ -317,18 +320,18 @@ fn the_space_check_is_exact_when_files_are_copied() {
             .any(|l| l.starts_with("files copied, not linked")),
         "the reason is logged at once"
     );
-    request.free_space_override = Some(needed - 1);
+    request.free_space_override = Some(Some(needed - 1));
     assert_eq!(needed_bytes(&run(&request).0.unwrap_err()), needed);
     no_leftovers(&w.root);
-    request.free_space_override = Some(needed);
+    request.free_space_override = Some(Some(needed));
     run(&request).0.unwrap();
 }
 
 #[test]
 fn unknown_free_space_never_blocks() {
     let w = world(&[]);
-    let request = w.dump("Open", "PPSA00022", &elf_bytes());
-    assert!(request.free_space_override.is_none());
+    let mut request = w.dump("Open", "PPSA00022", &elf_bytes());
+    request.free_space_override = Some(None);
     run(&request).0.unwrap();
 }
 

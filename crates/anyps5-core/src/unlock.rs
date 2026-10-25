@@ -183,8 +183,9 @@ pub struct UnlockRequest {
     /// ones are passed.
     pub relink_flags: Vec<String>,
     pub link_mode: LinkMode,
-    /// Test hook: pretend the games folder's volume has this many bytes free.
-    pub free_space_override: Option<u64>,
+    /// Test hook: `Some(free)` replaces the games folder's real free space; `Some(None)`
+    /// simulates a volume whose free space cannot be read; `None` asks the volume.
+    pub free_space_override: Option<Option<u64>>,
     /// Where to back up the saves of the copy this unlock replaces, just before it is replaced
     /// (see [`crate::saves`]); `None` makes no backup.
     pub backup_dir: Option<PathBuf>,
@@ -561,8 +562,12 @@ const LINK_ENTRY_BYTES: u64 = 1024;
 /// What an unlock writes to the games folder's volume at its peak.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct SpaceNeed {
-    /// Summed size of eboot.bin and the modules: unwrapped into the work folder, then relinked.
+    /// Summed on-disk size of eboot.bin and the modules: unwrapped into the work folder, then
+    /// relinked. An unwrapped binary can be larger than its container, so this is a floor.
     binaries: u64,
+    /// Size of eboot.bin: the finished executable is copied into the partial copy while the
+    /// work folder still holds it.
+    executable: u64,
     dump_bytes: u64,
     dump_files: u64,
     dump_copied: bool,
@@ -571,9 +576,11 @@ struct SpaceNeed {
     libs_copied: bool,
 }
 
-/// The work folder holds the unwrapped and the relinked binaries (about twice their size); the
-/// copy holds every file that is copied, and only directory data for the ones that are linked.
-/// Both exist at the same time on the games folder's volume.
+/// A lower-bound estimate, not an exact figure: the work folder holds the unwrapped and the
+/// relinked binaries (about twice their on-disk size), the executable is copied once more into
+/// the partial copy, and the copy holds every file that is copied and only directory data for
+/// the ones that are linked. All of it exists at the same time on the games folder's volume.
+/// The headroom covers the rest; a shortfall the estimate misses still ends in the late error.
 fn required_bytes(need: &SpaceNeed) -> u64 {
     let part = |bytes: u64, files: u64, copied: bool| {
         if copied {
@@ -583,6 +590,7 @@ fn required_bytes(need: &SpaceNeed) -> u64 {
         }
     };
     2 * need.binaries
+        + need.executable
         + SPACE_HEADROOM
         + part(need.dump_bytes, need.dump_files, need.dump_copied)
         + part(need.libs_bytes, need.libs_files, need.libs_copied)
@@ -599,23 +607,23 @@ fn preflight(
     let Ok(plan) = fsx::plan_tree(&request.folder, &[STORE_NAME]) else {
         return Ok(None);
     };
-    let free = request
-        .free_space_override
-        .or_else(|| fsx::free_space(root));
+    let free = match request.free_space_override {
+        Some(simulated) => simulated,
+        None => fsx::free_space(root),
+    };
     let Some(free) = free else {
         return Ok(Some(plan));
     };
-    let binaries: u64 = std::iter::once("eboot.bin")
-        .chain(modules.iter().map(String::as_str))
-        .map(|rel| {
-            fs::metadata(
-                request
-                    .folder
-                    .join(rel.replace('/', std::path::MAIN_SEPARATOR_STR)),
-            )
-            .map_or(0, |m| m.len())
-        })
-        .sum();
+    let size_of = |rel: &str| {
+        fs::metadata(
+            request
+                .folder
+                .join(rel.replace('/', std::path::MAIN_SEPARATOR_STR)),
+        )
+        .map_or(0, |m| m.len())
+    };
+    let executable = size_of("eboot.bin");
+    let binaries: u64 = executable + modules.iter().map(|rel| size_of(rel)).sum::<u64>();
     let games = games_dir(root);
     let first_file = |plan: &fsx::TreePlan, base: &Path| {
         plan.entries
@@ -637,6 +645,7 @@ fn preflight(
     let libs_probe = probe(&libs_plan, request.toolkit.libs());
     let need = SpaceNeed {
         binaries,
+        executable,
         dump_bytes: plan.bytes,
         dump_files: plan.files,
         dump_copied: dump_probe.is_err(),
@@ -1403,6 +1412,7 @@ mod tests {
     fn required_bytes_counts_work_twice_and_copies_only_what_is_copied() {
         let linked = SpaceNeed {
             binaries: 100,
+            executable: 40,
             dump_bytes: 10_000_000,
             dump_files: 50,
             libs_bytes: 5_000,
@@ -1411,14 +1421,14 @@ mod tests {
         };
         assert_eq!(
             required_bytes(&linked),
-            200 + SPACE_HEADROOM + 50 * LINK_ENTRY_BYTES + 2 * LINK_ENTRY_BYTES
+            240 + SPACE_HEADROOM + 50 * LINK_ENTRY_BYTES + 2 * LINK_ENTRY_BYTES
         );
         let copied = SpaceNeed {
             dump_copied: true,
             libs_copied: true,
             ..linked
         };
-        assert_eq!(required_bytes(&copied), 200 + SPACE_HEADROOM + 10_005_000);
+        assert_eq!(required_bytes(&copied), 240 + SPACE_HEADROOM + 10_005_000);
     }
 
     #[test]
