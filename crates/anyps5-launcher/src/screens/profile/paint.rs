@@ -696,7 +696,7 @@ fn paint_columns(
             );
         }
         if let Some((pos, galley)) = &caption.note {
-            painter.galley(at(*pos), galley.clone(), white(0.66));
+            painter.galley(at(*pos), galley.clone(), color::text_detail());
         }
     }
 
@@ -856,6 +856,7 @@ fn surface(
             name,
         )
     });
+    crate::ui::a11y::follow(ctx, response.id, focused && pressable);
     let hovered = pressable && crate::ui::input::hovered(ctx, &response);
     if hovered {
         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -1199,7 +1200,7 @@ fn paint_state(
         job.halign = Align::Center;
         job.sections[0].format.line_height = Some(1.45 * ty::NOTE.size);
         let galley = painter.layout_job(job);
-        painter.galley(pos2(top_centre.x, y), galley, white(0.62));
+        painter.galley(pos2(top_centre.x, y), galley, color::text_detail());
     }
     if let Some(slot) = retry_slot {
         let label = crate::screens::online_feed_strings::FeedText::TryAgain.text(language);

@@ -63,8 +63,8 @@ impl Share {
     pub const fn turkish(self) -> &'static str {
         match self {
             Share::LayoutCommunity => "Topluluk: %@",
-            Share::LayoutExport => "Düzeni dışa aktar",
-            Share::LayoutImport => "Düzeni içe aktar",
+            Share::LayoutExport => "Düzeni Dışa Aktar",
+            Share::LayoutImport => "Düzeni İçe Aktar",
             Share::LayoutExported => "Düzen kaydedildi",
             Share::LayoutNotSaved => "Düzen kaydedilemedi.",
             Share::LayoutImported => "Düzen içe aktarıldı",
@@ -73,7 +73,7 @@ impl Share {
             Share::LayoutImportedPartly => {
                 "Düzen içe aktarıldı. Bazı eylemler bu listede gösterilmiyor."
             }
-            Share::Report => "Sorun bildir",
+            Share::Report => "Sorun Bildir",
             Share::ReportDetail => "Raporu gözden geçir, sonra kaydet ya da GitHub'da aç",
             Share::ReportHint => {
                 "Bu rapordur. Dosya olarak kaydet ya da doldurulmuş hâliyle GitHub'da aç. GitHub'da sen gönderene kadar hiçbir şey gönderilmez."
@@ -81,7 +81,7 @@ impl Share {
             Share::ReportPasteHint => {
                 "Günlük bağlantı için çok uzun. GitHub'da aç, raporun tamamını panoya kopyalar; forma yapıştır."
             }
-            Share::ReportOpen => "GitHub'da aç",
+            Share::ReportOpen => "GitHub'da Aç",
             Share::ReportOpenedPaste => "Rapor kopyalandı. GitHub formuna yapıştır.",
             Share::ReportOpened => "Form tarayıcında açıldı",
             Share::ReportOpenFailed => "Tarayıcı açılamadı. Bağlantı panoya kopyalandı.",

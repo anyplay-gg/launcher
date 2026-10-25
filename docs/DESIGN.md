@@ -87,10 +87,10 @@ in the source but is not used anywhere; it is the documented fallback if the GPU
 
 | Name (EN / TR) | float | hex |
 |---|---|---|
-| Blue / Mavi | (0.31, 0.58, 1.00) | `#4F94FF` |
+| Blue / Mavi | (0.40, 0.64, 1.00) | `#66A3FF` (was `#4F94FF`, 3.0:1 short on Sunset's lit band; 3.10) |
 | Mint / Nane | (0.36, 0.92, 0.74) | `#5CEBBD` |
 | Coral / Mercan | (1.00, 0.50, 0.40) | `#FF8066` |
-| Violet / Mor | (0.66, 0.52, 1.00) | `#A885FF` |
+| Violet / Mor | (0.70, 0.57, 1.00) | `#B391FF` (was `#A885FF`; 3.10) |
 | Gold / Altın | (1.00, 0.80, 0.36) | `#FFCC5C` |
 | White / Beyaz | white 0.94 | `#F0F0F0` |
 
@@ -698,9 +698,8 @@ The launcher keeps the port's structure but trims what read as noise next to the
   to Default Keys; community layouts are options of the Layout choice, not a page. The report to
   AnyPS5 reuses the log view for its review, so no new surface exists: a plain sentence (no
   warning box, it warns of nothing) above the text, the primary button on the right.
-- **Home polish.** Two soft scrims sit under the home UI so white text reads on bright artwork:
-  black 0.30 fading out over the top 150 dp, and black 0.46 in the hero's bottom-left corner
-  (72 % of the width, half the height at most 480 dp), both fading to nothing on every side. The
+- **Home polish.** Soft shades sit under the home UI so white text reads on bright artwork (soft-edged patches since
+  round 3, `ui::shade`, 3.10; first a black 0.30 band over the top 150 dp and black 0.46 in the hero's bottom-left corner). The
   selected tile keeps 10 dp more air before the next one (`TILE_LABEL_COLUMN = 10`). While a game
   unlocks, the step is named once, in the state line above the title; the hero shows only a 260 dp
   bar and its percentage on the buttons' centre line. The scanning icon breathes in opacity only.
@@ -881,13 +880,93 @@ message as a quiet line under it.
   control reached with Tab, keeps it); Tab and the arrows are claimed so egui does not move the focus away from the ring;
   Enter and Space, which egui would also read as a click on the focused widget, are consumed once the model has taken
   them as "select".
-- *A note marked destructive in a panel* (`Row::destructive` on an info row) is a warning: the amber of the glibc line under
-  Play. The top scrim of the home screen is 0.40 so the clock and the caption glyphs hold on a pale picture.
+- *A note marked destructive in a panel* was a warning in this round; it is `Row::warning` since round 3 (3.10). The top scrim
+  of the home screen is 0.40 so the clock and the caption glyphs hold on a pale picture (0.45 since round 3).
 - *Gallery.* The panel scenes draw the real home under the panel (`app::preview::HomeStand`: the same `home::show` and
   artwork layer as the app, with the focus hidden as under a panel). New flags: `--theme=aurora|sunset|cosmic` (components,
   panels, home scenes), `--bright` (a pale picture as the selected game's artwork), `--frames=N` (gallery pages, so the real
   home's pictures have loaded), `--hover=X,Y` with `--pad` rests the pointer without taking the device back from the pad.
   New page `--gallery=states`: destructive buttons, the switch and rows in every state.
+
+### 3.10 Round 3: contrast measured, one case rule, Tab (2026-10-25)
+
+**Contrast is measured, not estimated.** `ui::contrast` (a test: `cargo test -p anyps5-launcher contrast -- --nocapture` prints the
+table) lays every text token and the status, state and accent inks over the backdrops they meet and measures them with the WCAG
+2.x formula. A pair has to reach 4.5:1 as text, 3:1 as large text (24 dp, or 18.66 dp bold), as a glyph or as a part of a control.
+Inactive and disabled ink (`text_inactive`, a locked trophy's picture) is exempt by the standard. The backdrops come from the theme
+tokens: per theme the deep tone, the lightest tone the shader paints behind text (Sunset's lit lower band; a soft glow under the
+top bar), the panel fill over the theme's lit tone with a row in each state (rest, hover, focus, pressed), the toast fill, and a
+pure white picture under the artwork scrims, the worst a game can bring. The home screen's text is measured where it sits, under
+the shades below. A rendered screenshot is measured with `tools/measure-contrast.mjs` (the backdrop under a box is its median colour, the ink
+is composited on it); the model and the render agreed to within 0.1 on the facts, hints and clock of a white picture.
+
+With the tokens of round 2 the test found 71 of 504 pairs short. What changed (the weakest ratio of the old ink, then the new one;
+the new weakest of every ink is in the test's output):
+
+| Ink | Before | After | Where it was short |
+|---|---|---|---|
+| `text_overline` (facts, captions over rows) | white 0.55, 3.2 to 3.8 | 0.70 | facts on Sunset's band, a focused or pressed row |
+| `text_clock` | 0.78, 4.2 | 0.88 | the clock over a white picture |
+| `text_detail`, `text_row_detail`, `text_inert` | 0.60, 0.55, 0.62; 3.5 to 4.2 | 0.70 | a row in focus or pressed |
+| `text_empty`, `text_subtitle`, `text_path` | 0.65, 0.70, 0.45; 4.3 to 4.5 | 0.72, 0.72, 0.50 | a pressed row |
+| `text_hint`, `text_hint_key` | 0.72, 0.92; 4.4 | 0.78, 1.0 | the hint bar on Sunset's band, the key on its cap |
+| `destructive_text`, `error_state` | (1.0, 0.60, 0.55); 3.6 | (1.0, 0.72, 0.67) | a focused or pressed row |
+| `destructive_icon`, `error_text` | (1.0, 0.55, 0.50), (1.0, 0.70, 0.65) | (1.0, 0.62, 0.57), (1.0, 0.73, 0.68) | a pressed row |
+| state label of Starting, Installing, Playing | the accent; 3.2 for blue on Aurora's teal, worse on Sunset | `text_active`, white 0.92 (5.1 or more) | an accent on its own colour |
+| knob of a switch that is on | white; 1.1 on the White accent, 1.5 on mint or gold | `on_primary`, dark (6.5 or more) | every accent |
+| progress line in Blue and Violet | 2.0 and 2.2 on Sunset's band | Blue `#66A3FF`, Violet `#B391FF` (3.2, 3.3) | the unlock line on a bare Sunset |
+
+The initial in the profile button's avatar (and the monogram of a friend without a picture) takes `theme::readable_ink` of its
+colour: white, or the dark `on_primary` when that reads better (white on Mint, Gold or White was 1.2 to 2.2:1; every accent now
+reaches 4.5). The literal inks the audit found in the screens (white 0.55 to 0.66 as text, 17 places) now use these tokens, and the row text of
+the panels uses `text_row_detail`, `text_inert`, `text_note` (0.50, bare on the panel) and `text_caption`. New text ink is a token,
+so the test sees it.
+
+**The active states are ink, a glyph and a word.** "Starting", "Installing" and "Playing" were set in the player's accent, which can
+be the colour of the theme behind it. They are `color::text_active` now: the glyph (hourglass, arrow, play circle, each its own
+shape) and the word carry the state and no colour is needed. The accent stays where it fills something (the progress line, the
+switch, the online dot).
+
+**Shades, not a ramp** (`ui::shade`). The home screen's scrim was a ramp over the whole lower half, 0.58 in the corner, laid on the
+artwork's own two scrims: on a pale picture that is the grey fog. The artwork scrims already leave a pure white picture at 5.0:1
+under the facts and 6.7:1 under the hints, so the home screen lays only what a bare theme needs: a soft-edged patch under the hero
+(black 0.46 on a plateau from the left edge to 880 dp and from 400 dp above the bottom down, easing out over 360 dp across and 260
+dp up), one under the hint bar (0.28; the right 520 dp, the bottom 110 dp, easing out over 300 and 220 dp) and the band under the
+top bar (0.45, 150 dp). The ease follows the distance from the plateau, so the contours are round and no straight edge shows. A
+patch is as dark as the ink on it needs (Sunset's lit band sets it) and nothing more; the tile row and the middle of the picture
+get none. The facts and the glibc line can run to 880 dp, so the model samples them there too.
+
+**One case rule.** Titles of rows, buttons, captions, headings and the names of a choice are in Title Case ("Save Changes", "Game
+Default", "Top Left", "Report as Installed"): every word capital except the short ones inside (a, an, the, and, or, of, to, in, on,
+for, with, at, by, from, as). What reads as a sentence is in sentence case: details, subtitles, notes, statuses ("Ready to play",
+"Not installed", "Up to date"), toasts, errors, questions and the headlines of empty states ("No games yet"). Turkish follows the
+same rule: every word capital except `ve`, `ile`, `de`, `da`, `mi`, `için`, `veya`. The English and Turkish tables were swept once
+for it (about 70 strings changed, mostly Turkish buttons and captions); new text follows it and the review checks it.
+
+**Warning is not danger.** `Row::destructive` is for a row that removes, ends or blocks something (Remove Installation, Close Game,
+Block): the danger ink. `Row::warning` is for an info row that says something may not work (the glibc note): the amber of the line
+under Play. `PanelRow` has both flags, and the danger ink means danger only.
+
+**The question of a confirmation** (Close Game, Remove, Restore, the toolkit pin) is the sentence the player decides on: 17 dp
+regular in `text_label` ink with 1.45 leading under the panel title, not the quiet 15 dp line of a subtitle (`SideView::question`).
+
+**Tab walks the ring.** Tab and Shift+Tab are the model's keys now (`InputEvent::Tab`; egui no longer sees them). On the home screen
+they step through the stops in reading order: the top bar from left to right, the tile row as one stop (the arrows choose the
+tile), the action row, the question line while it asks; they stop at the ends without wrapping. In a panel they are Down and Up (a
+panel is one column of rows), in the onboarding Right and Left (the choices sit side by side). The library, a grid, reads along the row (Tab is Right, Shift+Tab Left). A text field
+keeps Tab for itself, and while a call rings Tab stays with egui, which focuses the card's buttons (they are for the pointer and for
+Tab; the pad reaches a call through the Invitations row). The strip of a call in progress does not hold Tab: Mute, Deafen and Leave
+Call are rows of the Online panel.
+
+**Screen readers follow the ring on more widgets.** `a11y::follow` is called by the switch (when it is a node of its own), by the
+cards of the theme step of the onboarding, by the rows of the profile page and by the lines of What's New. The language cards,
+rows, tiles, cells and buttons did already.
+
+**The glibc sentence has a next step.** It names the problem and what to do: "Games need glibc 2.38 or newer; this system has 2.35.
+Update to Fedora 39, Ubuntu 24.04 or newer." The releases are the two oldest of a short list that ship at least that glibc (Ubuntu
+22.04 2.35, Debian 12 2.36, Fedora 39 2.38, Ubuntu 24.04 2.39, Debian 13 2.41); past the newest it says "Update to a newer release
+of your distribution." Settings adds a row under the note, "Read the Install Guide", that opens `docs/INSTALL.md` on GitHub
+(`about_strings::INSTALL_GUIDE`, the one new address); INSTALL.md lists the releases and their glibc.
 
 ## 4. Materials and blur on the GPU
 
@@ -1471,7 +1550,7 @@ leaves the link on the clipboard.
 
 The relinker and the `.prx` libraries are ELF files that link against glibc. Their `.gnu.version_r` sections list the symbol versions they need (`GLIBC_2.38`); the newest over all of them is the oldest glibc the toolkit runs on (`anyps5-core::glibc`, reads section headers only, every offset bounded, 32- and 64-bit little-endian; `GLIBC_PRIVATE` and other families such as `GLIBCXX` do not count). The launcher compares it with `gnu_get_libc_version()` once when the toolkit is located. The idea of such a check came from the macOS and desktop launchers of the AnyPS5 community; the design and code here are our own.
 
-When the system is older it says one sentence, the same in three places: "Games need glibc 2.38 or newer; this system has 2.35." A note under the version row in Settings > Toolkit (like the "newer than tested" note, gallery scene `toolkit-glibc`), and a warning line under the primary button of the hero, in the states Locked, Queued, Installing, Failed and Installed (scenes `home-glibc`, `home-glibc-locked`; it takes the line the friends playing use, since it says why a start may fail). It is a notice and never a block: Unlock and Play work as before. Nothing is shown when the system is new enough, when a version cannot be read, on Windows and on macOS.
+When the system is older it says one sentence, the same in three places: "Games need glibc 2.38 or newer; this system has 2.35. Update to Fedora 39, Ubuntu 24.04 or newer." (the next step, and the install-guide row in Settings, are from round 3, 3.10) A note under the version row in Settings > Toolkit (like the "newer than tested" note, gallery scene `toolkit-glibc`), and a warning line under the primary button of the hero, in the states Locked, Queued, Installing, Failed and Installed (scenes `home-glibc`, `home-glibc-locked`; it takes the line the friends playing use, since it says why a start may fail). It is a notice and never a block: Unlock and Play work as before. Nothing is shown when the system is new enough, when a version cannot be read, on Windows and on macOS.
 
 ## 6. Input
 

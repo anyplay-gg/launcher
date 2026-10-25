@@ -43,6 +43,9 @@ pub enum InputEvent {
     Command(Command),
     /// A wheel step: `Left` = previous, `Right` = next. Only the home screen without an overlay uses it.
     Scroll(Command),
+    /// `Tab` (`backwards` with Shift): the next or previous stop in reading order. Each screen
+    /// decides what that is; text fields and a call on screen keep Tab for egui.
+    Tab { backwards: bool },
     /// `Ctrl+,`
     OpenSettings,
     /// `F11`
@@ -83,6 +86,11 @@ pub fn command_for_key(key: Key, modifiers: Modifiers) -> Option<Command> {
         Key::O => Some(Command::Options),
         _ => None,
     }
+}
+
+/// Tab or Shift+Tab; Ctrl, Alt and Command with Tab belong to the system.
+pub fn is_tab_press(modifiers: Modifiers) -> bool {
+    !(modifiers.ctrl || modifiers.alt || modifiers.command || modifiers.mac_cmd)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -265,6 +273,9 @@ pub struct Input {
     pub blocked: bool,
     /// True while a binding waits for a key: every key press is returned as [`InputEvent::CapturedKey`].
     pub capture_keys: bool,
+    /// True while a call is ringing: the card's buttons are reached with Tab through egui, so
+    /// Tab is not taken for the focus ring.
+    pub tab_for_egui: bool,
 }
 
 impl Input {
@@ -386,7 +397,12 @@ impl Input {
                         }
                         continue;
                     }
-                    if key == Key::F11 {
+                    if key == Key::Tab && is_tab_press(modifiers) && !self.tab_for_egui {
+                        out.push(InputEvent::Tab {
+                            backwards: modifiers.shift,
+                        });
+                        crate::ui::a11y::consume_tab(ctx);
+                    } else if key == Key::F11 {
                         out.push(InputEvent::ToggleFullscreen);
                     } else if key == Key::Comma && modifiers.ctrl && !modifiers.alt {
                         out.push(InputEvent::OpenSettings);

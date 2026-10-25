@@ -124,6 +124,7 @@ impl SavesPanel {
         let view = SideView {
             title: data.title,
             subtitle: Some(Extra::SavesTitle.text(data.language)),
+            question: false,
             list_id: "saves-rows",
             nav: &self.side.nav,
             accent: data.accent,
@@ -297,6 +298,7 @@ impl RestorePanel {
         let view = SideView {
             title: Extra::SavesRestore.text(language),
             subtitle: Some(&ask),
+            question: true,
             list_id: "restore-rows",
             nav: &self.side.nav,
             accent,

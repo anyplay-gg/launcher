@@ -1795,7 +1795,7 @@ impl ScreenGallery {
                     StateText {
                         icon: Icon::PLAY_CIRCLE,
                         text: language.text(Key::Running).into(),
-                        tint: accent,
+                        tint: crate::ui::theme::color::text_active(),
                     }
                 } else {
                     StateText {

@@ -17,7 +17,7 @@ use crate::ui::i18n::{Key, Language};
 use crate::ui::input::{Command, InputEvent};
 use crate::ui::sound::Cue;
 use crate::ui::text;
-use crate::ui::theme::{self, fade, radius, size, ty, white};
+use crate::ui::theme::{self, color, fade, radius, size, ty, white};
 
 /// What the host has to do after a frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -144,7 +144,7 @@ fn draw(ui: &mut Ui, data: &StartData<'_>, since: f64) {
         &painter,
         ty::DETAIL_LARGE,
         language.text(Key::StartingText),
-        white(0.6),
+        color::text_detail(),
         column_w + 80.0,
         usize::MAX,
     );
@@ -208,7 +208,7 @@ fn draw(ui: &mut Ui, data: &StartData<'_>, since: f64) {
         .width(column_w)
         .show(&mut bar);
     y += size::PROGRESS_HEIGHT + 14.0;
-    painter.galley(pos2(cx, y), info, white(0.6));
+    painter.galley(pos2(cx, y), info, color::text_detail());
 
     // The hint, 40 above the bottom edge.
     let hint_rect = Rect::from_center_size(pos2(cx, screen.max.y - 40.0 - 12.0), vec2(400.0, 24.0));

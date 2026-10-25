@@ -751,6 +751,8 @@ impl Switch {
         let (on, label, enabled) = (self.on, self.label.as_str(), self.enabled);
         if self.announce {
             response.widget_info(|| WidgetInfo::selected(Role::Switch, enabled, on, label));
+            // A switch of its own is what the ring sits on; inside a row the row follows.
+            crate::ui::a11y::follow(ui.ctx(), response.id, self.focus >= 1.0 && enabled);
         }
         let hovered = self.enabled && input::hovered(ui.ctx(), &response);
         if hovered {
@@ -779,7 +781,10 @@ impl Switch {
         if self.enabled {
             paint_shadow(painter, knob_rect, knob * 0.5, shadows::switch_knob());
         }
-        painter.circle_filled(centre, knob * 0.5, fade(Color32::WHITE, a));
+        // White on the off track; on the accent the knob turns dark, because white on mint or gold
+        // is 1.5:1 and the knob is what shows the state (DESIGN.md 3.10).
+        let knob_ink = mix(Color32::WHITE, color::on_primary(), t);
+        painter.circle_filled(centre, knob * 0.5, fade(knob_ink, a));
         response
     }
 }

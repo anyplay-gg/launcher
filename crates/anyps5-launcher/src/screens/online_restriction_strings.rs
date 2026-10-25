@@ -81,7 +81,7 @@ impl RestrictionText {
             Self::Restrictions => "Restrictions",
             Self::WhatThisMeans => "What This Means",
             Self::Reason => "Reason",
-            Self::ModeratorNote => "Note From the Moderator",
+            Self::ModeratorNote => "Note from the Moderator",
             Self::Appeal => "Appeal",
             Self::Rule => "Rule",
             Self::MutedExplain => {

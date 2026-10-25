@@ -59,12 +59,6 @@ const ACTION_ROW: f32 = size::BUTTON_MIN_HEIGHT;
 /// Longest a failure or diagnosis text gets.
 const MESSAGE_WIDTH: f32 = 520.0;
 
-/// Darkness of the shade under the top bar, in the hero's corner and under the hint bar. The facts
-/// (white at 0.55) and the hints (0.72) hold 4.5:1 on Sunset's warm lower band with these.
-const SCRIM_TOP: f32 = 0.40;
-const SCRIM_HERO: f32 = 0.58;
-const SCRIM_HINTS: f32 = 0.34;
-
 /// A press the model has to hear about, collected while painting.
 #[derive(Clone, Copy, Debug)]
 enum Press {
@@ -85,7 +79,7 @@ pub fn show(ui: &mut Ui, cx: &mut ScreenCx<'_>) {
     let ctx = cx.ctx.clone();
     let screen = ctx.content_rect();
     let mut presses = Vec::new();
-    paint_scrims(ui.painter(), screen, !cx.model.games.is_empty());
+    crate::ui::shade::paint(ui.painter(), screen, !cx.model.games.is_empty());
     // At launch the parts rise into place one after another (ui::intro).
     staged(ui, &ctx, intro::TOP_BAR, screen, |ui, screen| {
         top_bar(ui, cx, screen, &mut presses);
@@ -132,34 +126,6 @@ fn staged(
     let mut child = ui.new_child(UiBuilder::new().max_rect(screen));
     child.multiply_opacity(t);
     add(&mut child, intro::lift(screen, t));
-}
-
-/// Soft shade behind the hero (bottom, strongest at the left), the hint bar and the top bar, so white text still reads on bright
-/// artwork. Every side fades to nothing, so it never shows an edge.
-fn paint_scrims(painter: &egui::Painter, screen: Rect, with_hero: bool) {
-    let quad = |rect: Rect, corners: [f32; 4]| {
-        let mut mesh = egui::epaint::Mesh::default();
-        for (pos, alpha) in [
-            (rect.left_top(), corners[0]),
-            (rect.right_top(), corners[1]),
-            (rect.left_bottom(), corners[2]),
-            (rect.right_bottom(), corners[3]),
-        ] {
-            mesh.colored_vertex(pos, theme::black(alpha));
-        }
-        mesh.indices.extend_from_slice(&[0, 1, 2, 1, 3, 2]);
-        painter.add(egui::Shape::mesh(mesh));
-    };
-    let top = Rect::from_min_size(screen.min, vec2(screen.width(), 150.0));
-    quad(top, [SCRIM_TOP, SCRIM_TOP, 0.0, 0.0]);
-    if with_hero {
-        let height = (screen.height() * 0.5).min(480.0);
-        let hero = Rect::from_min_max(
-            pos2(screen.min.x, screen.max.y - height),
-            pos2(screen.max.x, screen.max.y),
-        );
-        quad(hero, [0.0, 0.0, SCRIM_HERO, SCRIM_HINTS]);
-    }
 }
 
 /// Focus is only drawn while no overlay covers the home screen.
@@ -610,13 +576,15 @@ fn profile_button(
             .take(1)
             .flat_map(char::to_uppercase)
             .collect();
+        // The initial sits on the middle of the gradient, over the pill: white on a dark accent,
+        // dark on a light one.
         text::paint(
             &painter,
             avatar,
             Align2::CENTER_CENTER,
             theme::TextStyle::new(text::quantize_size(16.0 * s), Weight::Bold),
             &initial,
-            Color32::WHITE,
+            theme::readable_ink(avatar_middle(accent)),
         );
     } else {
         // Nobody yet: the outline of a person in the avatar's footprint, in ink, not accent.
@@ -872,11 +840,7 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
 
         if interactive && opacity > 0.5 {
             let state = cx.model.state_of(&game);
-            let label = format!(
-                "{}, {}",
-                game.name,
-                state_label(&state, language, accent).text
-            );
+            let label = format!("{}, {}", game.name, state_label(&state, language).text);
             let response =
                 ui.interact(rect, Id::unique(("tile", game.id.as_str())), Sense::click());
             response.widget_info(|| WidgetInfo::labeled(Role::Button, true, label.as_str()));
@@ -1052,7 +1016,7 @@ fn paint_hero(
             x,
             title_top - STATE_GAP - ty::STATE_LABEL.line_height() * 0.5,
         ),
-        &state_label(&state, language, cx.accent()),
+        &state_label(&state, language),
         ty::STATE_LABEL,
         width,
         1,
@@ -1502,12 +1466,12 @@ fn empty_library(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut
             &painter,
             theme::TextStyle::new(17.0, Weight::Regular),
             body,
-            white(0.65),
+            color::text_empty(),
             (screen.width() - 2.0 * pad::HOME_X).min(720.0),
             3,
         );
         let body_height = body_galley.size().y;
-        painter.galley(pos2(cx_mid, y), body_galley, white(0.65));
+        painter.galley(pos2(cx_mid, y), body_galley, color::text_empty());
         y += body_height.max(rows[2]);
     }
     y += 18.0;
@@ -1524,7 +1488,7 @@ fn empty_library(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut
             Align2::CENTER_TOP,
             ty::DETAIL,
             &shown,
-            white(0.6),
+            color::text_detail(),
         );
         y += ty::DETAIL.line_height() + 18.0;
     }
@@ -1557,6 +1521,12 @@ fn empty_library(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut
     if response.clicked() {
         presses.push(Press::ChooseFolder);
     }
+}
+
+/// The colour under the avatar's initial: the middle of the accent's gradient (accent at 100 % to
+/// 55 %) over the dark of the pill.
+pub(crate) fn avatar_middle(accent: Color32) -> Color32 {
+    theme::mix(Color32::from_rgb(28, 30, 36), accent, 0.775)
 }
 
 #[cfg(test)]

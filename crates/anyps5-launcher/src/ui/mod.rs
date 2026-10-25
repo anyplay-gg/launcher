@@ -31,6 +31,8 @@ pub mod blur;
 pub mod caption;
 pub mod chrome;
 pub mod components;
+#[cfg(test)]
+mod contrast;
 pub mod focus;
 pub mod gallery;
 pub mod gamepad;
@@ -45,6 +47,7 @@ pub mod intro;
 pub mod latency;
 pub mod nudge;
 pub mod press;
+pub mod shade;
 pub mod sound;
 pub mod text;
 pub mod theme;

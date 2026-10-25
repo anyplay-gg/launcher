@@ -1082,6 +1082,22 @@ impl Model {
         Routed::Done
     }
 
+    /// Tab on the home screen: the next (or, with Shift, the previous) stop in reading order.
+    /// Panels turn Tab into Down and Up, the onboarding into Right and Left (see `App::handle_event`).
+    pub fn tab_home(&mut self, backwards: bool) {
+        if self.overlay.is_some() || self.starting.is_some() || !self.onboarded() {
+            return;
+        }
+        if matches!(self.focus, HomeFocus::Ask(_)) && self.run_question().is_none() {
+            self.focus = HomeFocus::Actions(0);
+        }
+        let step = self.focus.tab(backwards, self.home_context());
+        self.focus = step.focus;
+        if let Some(cue) = step.sound {
+            self.sound(cue);
+        }
+    }
+
     /// What a select on the home screen leads to (also used by mouse clicks).
     pub fn apply_intent(&mut self, intent: HomeIntent) {
         match intent {
