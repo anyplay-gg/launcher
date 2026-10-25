@@ -208,7 +208,7 @@ Every place where behaviour must differ. Keep this table in sync; the code comme
 | D19 | `Rosetta` check and installer | removed. Replaced by CPU feature check and a link to the toolkit settings |
 | D20 | toolkit inside the app bundle (`Contents/Resources/toolkit`), `ANYPS5_TOOLKIT` override | toolkit downloaded from GitHub releases or picked as a folder; `ANYPS5_TOOLKIT` still overrides (6.3) |
 | D21 | `Process.terminate()` (SIGTERM) on cancel | `TerminateProcess` on the relinker's job object |
-| D22 | atomic swap `removeItem(bundle)` + `moveItem(partial, bundle)` | same sequence with retries on sharing violations (Defender / indexer): 8 tries, 150 ms apart |
+| D22 | atomic swap `removeItem(bundle)` + `moveItem(partial, bundle)` | no remove first: the old copy is set aside as `<name>.previous`, `partial` is renamed into place, the saves are carried over, and only then `.previous` is deleted (`swap_in`); every step retries on sharing violations (Defender / indexer): 8 tries, 150 ms apart |
 | D23 | paths are case-sensitive strings | `GameId` is the lower-cased, `/`-separated absolute path (6.4) |
 | D24 | `reveal in Finder` (`activateFileViewerSelecting`) | `explorer.exe /select,<path>` (spawned without a shell) |
 | D25 | per-title crash report matching by bundle id | not needed; the log file is per title ID and has start markers |
@@ -397,7 +397,7 @@ impl UnlockQueue {
 }
 pub fn unlocked_copy(game: &Game, root: &Path) -> PathBuf;
 pub fn read_record(copy: &Path) -> Option<UnlockRecord>;
-pub fn remove_leftovers(root: &Path);              // Work\ and *.partial, only while nothing is unlocking
+pub fn remove_leftovers(root: &Path);              // Work\, *.partial; settles *.previous (renames, merges); only while nothing is unlocking
 pub fn remove_unlocked(game: &Game, root: &Path) -> io::Result<()>;
 
 // launch
@@ -567,7 +567,7 @@ Vectors: macOS formula, `title_id=PPSA02100`, path `/Users/x/Games/Stray` -> `PP
 
 Record file `anyps5-unlock.json`: `{"date": "2026-10-22T09:30:00Z", "source": "<dump folder, OS path>", "titleID": "...", "toolkit": "..."}` keys sorted, pretty printed with 2 spaces. `read_record(copy)` requires `copy\eboot.exe` to exist and the JSON to parse; else `None`. (ARM: `Contents/MacOS/eboot` exists.) Reading also accepts `anyps5-install.json` (name used by ARM) for the same folder.
 
-`remove_leftovers(root)`: delete `store\Work` and every `store\Games\*.partial` directory (ignore errors). The app calls it only when no unlock is queued or running (`installer == nil`), at each rescan.
+`remove_leftovers(root)`: delete `store\Work` and every `store\Games\*.partial` directory (ignore errors), and settle every `store\Games\<name>.previous` with `settle_previous(copy, previous)` (errors ignored; the folder is tried again at the next call). It is not only a delete: a `.previous` becomes the copy again when there is none (rename), otherwise what it holds is merged into the copy first (below). The app calls it only when no unlock is queued or running (`installer == nil`), at each rescan.
 
 ### 6.5 `unlock`: the pipeline (Installer.run)
 
@@ -575,7 +575,7 @@ Record file `anyps5-unlock.json`: `{"date": "2026-10-22T09:30:00Z", "source": "<
 
 Events: on start `Started`, then `Progress(Unwrap, 0)`. Progress coalescing (AppModel.startNext): the worker only sends `Progress` when the step changed, or `|fraction - last| >= 0.005`, or `fraction >= 1`. Log lines are sent as `Log`; the app keeps at most 600 lines per game and drops the oldest 100 on overflow.
 
-Steps (`work = store\Work\<uuid>`; on every exit path `work` and `<copy>.partial` are removed):
+Steps (`work = store\Work\<uuid>`; on every exit path `work` and `<copy>.partial` are removed; `<copy>.previous` is not: it is the old copy, deleted by the swap in step 5 only once everything in it is in the new copy, or kept for the next `remove_leftovers` or unlock):
 
 **1. Unwrap** (`progress(.unwrap, 0)`).
 `source = work\source`. `modules = modules_in(game.folder)`; `inputs = ["eboot.bin"] + modules` (relative paths). For each input (index i): check cancel; `original = folder\rel`; `target = source\rel`; create parent; `unwrap_one(original, target)`; `progress(.unwrap, (i+1)/inputs.len())`.
@@ -624,9 +624,11 @@ Then the relinked guest modules: if `out\app0` exists, `link_tree(out\app0, part
 - record: `anyps5-unlock.json` with `source = game.folder` (OS path), `titleID`, `toolkit = toolkit.version`, `date = now UTC`.
 - no `Info.plist`, no icon file (D14), no launch script (D5).
 
-**5. Finish** (`progress(.finish, 0)`). No quarantine step (D13). If `copy` exists: `carry_over(copy, partial)` then remove `copy` (with retries, D22). Rename `partial` to `copy`. `progress(.finish, 1)`. Return `UnlockRecord`.
+**5. Finish** (`progress(.finish, 0)`). No quarantine step (D13). `swap_in(copy, partial, previous = games\<name>.previous)`: (a) `settle_previous(copy, previous)` first, so a cut-off earlier swap loses nothing; (b) if `copy` does not exist, rename `partial` to `copy`; (c) otherwise rename `copy` to `previous` (set the old copy aside), then rename `partial` to `copy`; if that fails, rename `previous` back to `copy` and return the error; (d) `carry_over(previous, copy)`; if moving `_sd` or `_trophy` fails, `undo_swap` moves what already moved back into `previous`, deletes the new copy and renames `previous` back to `copy`, and the unlock fails with the old copy as it was (when something cannot go back, the new copy stays and the next `remove_leftovers` or unlock finishes the merge); (e) delete `previous` (with retries, D22) only when `must_keep` finds nothing in it: no name `carry_over` could not move, and no `_sd` or `_trophy` left in it because the new copy already had its own. Otherwise `previous` stays, a line is logged, and the unlock still succeeds. `progress(.finish, 1)`. Return `UnlockRecord`.
 
-`carry_over(old, new)`: for each entry `name` of `old` (top level only) such that `new\name` does not exist: move it (`rename`; same volume) into `new`. Skips automatically what the new copy already has (`app0`, `libs`, `eboot.exe`, `anyps5-unlock.json`). A symbolic link is never moved. This keeps `_sd`, `_trophy`, `data`, `download0`, `temp0` and the logs the engine wrote there; "unlocking again keeps its saves and trophies". Failure to move one entry is logged and does not fail the unlock (ARM throws; a half-moved state is worse than a lost screenshot, so the port fails only when moving `_sd` or `_trophy` fails).
+`settle_previous(copy, previous)`: nothing to do when `previous` does not exist; if `copy` does not exist, rename `previous` to `copy`; else `carry_over(previous, copy)`, and delete `previous` only when `must_keep` finds nothing, otherwise return an error and leave `previous` in place (a game that already ran in the new copy has its own `_sd`; the old saves are never deleted unmerged).
+
+`carry_over(old, new)`: for each entry `name` of `old` (top level only) such that `new\name` does not exist: move it (`rename`; same volume) into `new`. Skips automatically what the new copy already has (`app0`, `libs`, `eboot.exe`, `anyps5-unlock.json`). A symbolic link is never moved. This keeps `_sd`, `_trophy`, `data`, `download0`, `temp0` and the logs the engine wrote there; "unlocking again keeps its saves and trophies". Failure to move one entry is logged and does not fail the unlock (ARM throws; a half-moved state is worse than a lost screenshot, so the port fails only when moving `_sd` or `_trophy` fails); the names it could not move are returned (`failed`) next to the ones it moved, so the caller keeps `.previous` instead of deleting them.
 
 `remove_unlocked(game, root)`: delete `copy` recursively (saves and trophies in it go too; the app asks first: `confirmUninstall`). Hard links mean the dump is untouched. Use `remove_dir_all` with read-only attribute clearing on error.
 
@@ -925,7 +927,8 @@ All tests are `cargo test` unit or integration tests in `anyps5-core` unless mar
 - `module_directories`: `.sprx` adds nothing; `Media/Plugins/a.prx` adds `Media/Plugins`; `sce_module/x.prx`, `prx/x.prx`, `fakelib/x.prx` add nothing; duplicates collapse; `.` first.
 - `RelinkProgress.read`: every row of 6.5 with the exact strings the relinker prints (`"Instruction scan       | eboot.bin  |  42%"`, `"PRX conversion         | libc.prx   | 100% (3/7)"`), monotonicity, unknown phase, fewer than three fields, non-numeric percent.
 - `LineSplitter`: `\r` rewriting, `\r\n`, partial chunk across reads, 400-line cap, `flush`.
-- `carry_over`: moves `_sd`, `_trophy`, keeps `app0` of the new copy, ignores existing names, skips a symlink.
+- `carry_over`: moves `_sd`, `_trophy`, keeps `app0` of the new copy, ignores existing names, skips a symlink; returns what moved, and a failing `_sd` names what already moved.
+- Swap: saves survive and nothing is left behind; each failing step (set aside, put in place, keep saves) leaves the old copy whole and no `.previous`; `remove_leftovers` puts a `.previous` back when the copy is missing and merges it otherwise; a `.previous` with `_sd` is kept when the copy already has its own `_sd` (the old saves are not deleted); a name that could not move keeps `.previous` until a later settle merges it.
 - `link_tree`: replaces an existing destination without modifying the source file (write through hard link regression: assert the source content and mtime unchanged after overlaying a different file); fallback to copy when the link call is forced to fail (`fsx` has a test hook `LinkMode::ForceCopy`); the `.AnyPS5` subtree is skipped.
 - Pipeline with `fake-relinker` (integration): a binary built in the workspace that parses the same arguments, writes `\r` progress lines in the real format, creates `eboot.exe` and `app0/sce_module/x.prx.guest.prx`, and can be told by environment to fail (exit 2, message on stderr), to write nothing, or to sleep (for cancel). Tests: success path (record written, `libs` linked, `.partial` and `Work` gone, progress events monotone and coalesced), relinker failure (`Relinker{code: 2, last_line}`), no output (`NoOutput`), cancel while queued, cancel while running (child killed, no leftovers), unlock again (carry-over keeps `_sd/file`), encrypted dump (V3-style) -> error before the relinker starts, two games queued run strictly one after the other (events interleave never).
 - Toolkit missing -> `ToolkitMissing` and no events other than `Finished`.

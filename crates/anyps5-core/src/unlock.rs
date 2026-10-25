@@ -864,13 +864,14 @@ fn run_relinker(
 
 /// What the game wrote beside `app0` in the old copy (saves in `_sd`, trophies in `_trophy`, its
 /// data and download folders) moves into the new one, so unlocking again keeps the progress.
-/// Failing to move anything but `_sd` and `_trophy` is logged, not fatal. Returns the names it
-/// moved, so a caller that must undo the move knows what to put back.
+/// Failing to move anything but `_sd` and `_trophy` is logged, not fatal, and the name is returned
+/// in `failed` so the caller does not delete the old copy over it. `moved` is what it moved, so a
+/// caller that must undo the move knows what to put back.
 fn carry_over(
     old: &Path,
     new: &Path,
     reporter_log: &dyn LogLine,
-) -> Result<Vec<OsString>, CarryFailure> {
+) -> Result<Carried, CarryFailure> {
     carry_over_with(old, new, reporter_log, &fsx::rename_retry)
 }
 
@@ -880,10 +881,11 @@ fn carry_over_with(
     new: &Path,
     reporter_log: &dyn LogLine,
     rename: &dyn Fn(&Path, &Path) -> io::Result<()>,
-) -> Result<Vec<OsString>, CarryFailure> {
+) -> Result<Carried, CarryFailure> {
     let mut moved = Vec::new();
+    let mut failed = Vec::new();
     let Ok(entries) = fs::read_dir(old) else {
-        return Ok(moved);
+        return Ok(Carried { moved, failed });
     };
     for entry in entries.flatten() {
         let name = entry.file_name();
@@ -912,10 +914,39 @@ fn carry_over_with(
                     "could not keep {}: {source}",
                     name.to_string_lossy()
                 ));
+                failed.push(name);
             }
         }
     }
-    Ok(moved)
+    Ok(Carried { moved, failed })
+}
+
+/// What `carry_over` did: the names it moved, and the ones it could not move (not fatal).
+#[derive(Debug)]
+struct Carried {
+    moved: Vec<OsString>,
+    failed: Vec<OsString>,
+}
+
+/// Why the old copy in `previous` must stay after a carry-over, if it must: a name that could not
+/// be moved, or saves or trophies that were skipped because the new copy already has its own
+/// (the game ran there before the swap was settled). Deleting `previous` would destroy them.
+fn must_keep(previous: &Path, carried: &Carried) -> Option<String> {
+    let mut names: Vec<String> = carried
+        .failed
+        .iter()
+        .map(|n| n.to_string_lossy().into_owned())
+        .collect();
+    if let Ok(entries) = fs::read_dir(previous) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let lower = name.to_lowercase();
+            if (lower == "_sd" || lower == "_trophy") && !names.contains(&name) {
+                names.push(name);
+            }
+        }
+    }
+    (!names.is_empty()).then(|| names.join(", "))
 }
 
 /// `carry_over` could not keep the saves or the trophies; `moved` is what it had already moved.
@@ -991,11 +1022,22 @@ fn swap_in(
         });
     }
     let keep = |from: &Path, to: &Path| swap_rename(SwapFault::KeepSaves, from, to);
-    if let Err(CarryFailure { error, moved }) = carry_over_with(previous, copy, log, &keep) {
-        undo_swap(copy, previous, &moved, log);
-        return Err(error);
+    let carried = match carry_over_with(previous, copy, log, &keep) {
+        Ok(carried) => carried,
+        Err(CarryFailure { error, moved }) => {
+            undo_swap(copy, previous, &moved, log);
+            return Err(error);
+        }
+    };
+    // The new copy is in place. `previous` goes only when it holds nothing the new copy lacks;
+    // otherwise it stays and the next `remove_leftovers` or unlock tries again.
+    if let Some(names) = must_keep(previous, &carried) {
+        log.log_line(&format!(
+            "kept the old copy as {}: {names} could not be moved yet",
+            previous.display()
+        ));
+        return Ok(());
     }
-    // The saves are in the new copy now; the old one is only leftovers.
     if let Err(error) = fsx::remove_tree_retry(previous) {
         log.log_line(&format!("could not remove the old copy: {error}"));
     }
@@ -1038,7 +1080,13 @@ fn settle_previous(copy: &Path, previous: &Path) -> Result<(), UnlockError> {
     if !copy.exists() {
         return fsx::rename_retry(previous, copy).map_err(io_context("restore the old copy"));
     }
-    carry_over(previous, copy, &()).map_err(|failure| failure.error)?;
+    let carried = carry_over(previous, copy, &()).map_err(|failure| failure.error)?;
+    if let Some(names) = must_keep(previous, &carried) {
+        return Err(UnlockError::Io {
+            context: "merge the old copy".into(),
+            source: io::Error::other(format!("{names} stays in {}", previous.display())),
+        });
+    }
     fsx::remove_tree_retry(previous).map_err(io_context("remove the old copy"))
 }
 
@@ -1467,7 +1515,7 @@ mod tests {
         }
         fs::create_dir_all(&new).unwrap();
         fs::write(new.join("eboot.exe"), "NEW").unwrap();
-        let mut moved = carry_over(&old, &new, &()).unwrap();
+        let mut moved = carry_over(&old, &new, &()).unwrap().moved;
         moved.sort();
         assert_eq!(moved, ["_sd", "_trophy", "data"].map(OsString::from));
 
@@ -1590,5 +1638,54 @@ mod tests {
             "SAVE"
         );
         assert!(!previous.exists());
+    }
+
+    #[test]
+    fn settling_keeps_the_previous_copy_when_the_new_one_already_has_its_own_saves() {
+        let dir = tempfile::tempdir().unwrap();
+        let (copy, partial, previous) = swap_fixture(dir.path());
+        // A cut-off swap: the new copy is in place, the game ran there and made its own `_sd`.
+        fs::remove_dir_all(&copy).unwrap();
+        fs::rename(&partial, &copy).unwrap();
+        fs::create_dir_all(copy.join("_sd")).unwrap();
+        fs::write(copy.join("_sd/slot9.sav"), "FRESH").unwrap();
+        fs::create_dir_all(previous.join("_sd")).unwrap();
+        fs::write(previous.join("_sd/slot0.sav"), "SAVE").unwrap();
+        fs::create_dir_all(previous.join("data")).unwrap();
+        fs::write(previous.join("data/c"), "C").unwrap();
+
+        assert!(settle_previous(&copy, &previous).is_err());
+        assert_eq!(
+            fs::read_to_string(previous.join("_sd/slot0.sav")).unwrap(),
+            "SAVE",
+            "the old saves are not deleted unmerged"
+        );
+        assert!(copy.join("data/c").is_file(), "what could move did move");
+        assert!(copy.join("_sd/slot9.sav").is_file());
+        // remove_leftovers swallows the error and leaves the saves for the next try.
+        remove_leftovers(dir.path());
+        assert!(previous.join("_sd/slot0.sav").is_file());
+    }
+
+    #[test]
+    fn a_name_that_could_not_move_keeps_the_previous_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let (copy, partial, previous) = swap_fixture(dir.path());
+        fs::rename(&copy, &previous).unwrap();
+        fs::rename(&partial, &copy).unwrap();
+        let keep = |from: &Path, to: &Path| {
+            if from.file_name().is_some_and(|n| n == "data") {
+                Err(io::Error::other("held"))
+            } else {
+                fs::rename(from, to)
+            }
+        };
+        let carried = carry_over_with(&previous, &copy, &(), &keep).unwrap();
+        assert_eq!(carried.failed, [OsString::from("data")]);
+        assert_eq!(must_keep(&previous, &carried).as_deref(), Some("data"));
+        assert!(previous.join("data/c").is_file());
+        // Once nothing is in the way, the next settle merges and deletes.
+        settle_previous(&copy, &previous).unwrap();
+        assert!(copy.join("data/c").is_file() && !previous.exists());
     }
 }
