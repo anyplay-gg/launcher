@@ -18,6 +18,7 @@
 
 pub mod avatars;
 pub mod clock;
+pub mod compare;
 pub mod core_pipeline;
 mod discord;
 pub mod links;

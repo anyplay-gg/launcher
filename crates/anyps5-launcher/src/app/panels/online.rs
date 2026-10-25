@@ -114,6 +114,7 @@ pub(super) fn online_action(model: &mut Model, action: OnlineAction) {
             model.edit_prefs(|p| p.online_relay_only = on);
             model.effects.push(Effect::RelayOnlyChanged);
         }
+        OnlineAction::AppearOffline(on) => online.set_appear_offline(on),
         OnlineAction::TrophyAudience(trophies) => {
             online.set_trophy_audience(trophies);
         }
