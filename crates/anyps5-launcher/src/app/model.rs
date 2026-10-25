@@ -675,7 +675,8 @@ impl Model {
                 Some(set) => {
                     if let Some(title_id) = self.game(&game).map(|g| g.title_id.clone()) {
                         self.online.upload_trophies(&title_id, &set.earned());
-                        self.online.mark_secrets(&title_id, &set.hidden());
+                        self.online
+                            .mark_secrets(&title_id, &set.hidden(), &set.hidden_earned());
                     }
                     self.trophies.insert(game, set);
                 }
