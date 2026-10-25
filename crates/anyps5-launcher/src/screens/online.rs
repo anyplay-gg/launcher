@@ -1835,7 +1835,6 @@ mod tests {
                             joinable: true,
                             members: 1,
                             max_members: 4,
-                            kind: Default::default(),
                         }),
                     }),
                     revision: 0,
@@ -2483,7 +2482,6 @@ mod tests {
             title: "Test Game".into(),
             version: "01.000".into(),
             expires: 0,
-            kind: Default::default(),
         });
         let mut panel = OnlinePanel::default();
         panel.go(Page::Invitation("i1".into()), &data(&online));

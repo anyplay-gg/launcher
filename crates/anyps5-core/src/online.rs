@@ -1532,11 +1532,8 @@ impl Online {
                 }
             }
             // The request is in the list the cloud gives; reading it announces what is new.
-            // Not used by the launcher yet (network #61 and #62): ignored, as before they existed.
-            Event::SessionEnded { .. }
-            | Event::Delivered { .. }
-            | Event::Typing { .. }
-            | Event::MessageUpdate { .. } => {}
+            // Not used by the launcher yet (network #61): ignored, as before they existed.
+            Event::Delivered { .. } | Event::Typing { .. } | Event::MessageUpdate { .. } => {}
             Event::MessageRequest { .. } | Event::Conversation { .. } => {
                 self.refresh_conversations();
             }

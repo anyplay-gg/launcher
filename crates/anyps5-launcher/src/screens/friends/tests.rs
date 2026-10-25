@@ -36,6 +36,7 @@ fn data(online: &Online) -> OnlineData<'_> {
         now: 0,
         utc_offset: Some(0),
         game_running: false,
+        play_together: None,
     }
 }
 

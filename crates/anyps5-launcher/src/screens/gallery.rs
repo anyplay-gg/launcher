@@ -638,7 +638,6 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
                 joinable: true,
                 members: 2,
                 max_members: 4,
-                kind: Default::default(),
             }),
         })
     };
@@ -709,7 +708,6 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         title: NAMES[4].into(),
         version: "01.000".into(),
         expires: 0,
-        kind: Default::default(),
     }];
     let count = |platinum, gold, silver, bronze| Count {
         bronze,
@@ -1086,7 +1084,6 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
         version: "01.000".into(),
         leader: AccountId(1),
         max_members: 4,
-        kind: Default::default(),
         visibility: Visibility::Friends,
         members: vec![Member {
             account: account(1, "Mira"),

@@ -1235,7 +1235,6 @@ mod tests {
                 link: None,
             }],
             created: 0,
-            kind: Default::default(),
         };
         online.session = Some(session.clone());
         let rows = panel.rows(&data(&online)).2;
