@@ -1996,11 +1996,12 @@ impl ScreenGallery {
             ScreenPage::BehaviourClips | ScreenPage::BehaviourClipsKey => {
                 self.prefs.clips_seconds = 30;
                 self.settings.open_at(3, true);
-                self.settings.focus_row(if self.page == ScreenPage::BehaviourClipsKey {
-                    8
-                } else {
-                    7
-                });
+                self.settings
+                    .focus_row(if self.page == ScreenPage::BehaviourClipsKey {
+                        8
+                    } else {
+                        7
+                    });
             }
             ScreenPage::Phone(look) => {
                 self.settings.open_at(4, true);

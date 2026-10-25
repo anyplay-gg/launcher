@@ -878,7 +878,10 @@ pub fn apply_value(prefs: &mut Preferences, change: &Change) -> bool {
         } => prefs.backdrop = Backdrop::Theme,
         Change::Run { row: "fontsReset" } => prefs.fonts_folder = None,
         Change::Toggle { row: "phone", on } => prefs.phone_remote = *on,
-        Change::Choice { row: "clips", index } => {
+        Change::Choice {
+            row: "clips",
+            index,
+        } => {
             if let Some(seconds) = anyps5_core::clips::LENGTHS.get(*index) {
                 prefs.clips_seconds = *seconds;
             }

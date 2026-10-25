@@ -19,7 +19,11 @@ pub const DEFAULT_HOTKEY: &str = "Alt+F12";
 
 /// The length to record for a stored value: one of [`LENGTHS`], else Off.
 pub fn length_or_off(seconds: u32) -> u32 {
-    if LENGTHS.contains(&seconds) { seconds } else { 0 }
+    if LENGTHS.contains(&seconds) {
+        seconds
+    } else {
+        0
+    }
 }
 
 // --- the hotkey -------------------------------------------------------------------------------
@@ -150,7 +154,10 @@ pub struct HotkeyListener {
 
 #[cfg(windows)]
 impl HotkeyListener {
-    pub fn start(hotkey: &Hotkey, wake: impl Fn() + Send + 'static) -> Result<HotkeyListener, String> {
+    pub fn start(
+        hotkey: &Hotkey,
+        wake: impl Fn() + Send + 'static,
+    ) -> Result<HotkeyListener, String> {
         use windows::Win32::System::Threading::GetCurrentThreadId;
         use windows::Win32::UI::Input::KeyboardAndMouse::{
             HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT, RegisterHotKey,
@@ -216,7 +223,10 @@ impl Drop for HotkeyListener {
 
 #[cfg(not(windows))]
 impl HotkeyListener {
-    pub fn start(_hotkey: &Hotkey, _wake: impl Fn() + Send + 'static) -> Result<HotkeyListener, String> {
+    pub fn start(
+        _hotkey: &Hotkey,
+        _wake: impl Fn() + Send + 'static,
+    ) -> Result<HotkeyListener, String> {
         Err("a global hotkey is not built for this system".into())
     }
 }
@@ -270,11 +280,16 @@ pub fn list_clips(folder: &Path) -> Vec<(PathBuf, u64)> {
         })
         .filter_map(|e| {
             let meta = e.metadata().ok()?;
-            meta.is_file()
-                .then(|| (e.path(), meta.len(), meta.modified().unwrap_or(std::time::UNIX_EPOCH)))
+            meta.is_file().then(|| {
+                (
+                    e.path(),
+                    meta.len(),
+                    meta.modified().unwrap_or(std::time::UNIX_EPOCH),
+                )
+            })
         })
         .collect();
-    found.sort_by(|a, b| b.2.cmp(&a.2));
+    found.sort_by_key(|f| std::cmp::Reverse(f.2));
     found.into_iter().map(|(p, n, _)| (p, n)).collect()
 }
 
@@ -415,17 +430,32 @@ mod tests {
         let key = hotkey_or_default(None);
         assert_eq!(key.to_string(), "Alt+F12");
         assert_eq!(key.vk(), Some(0x7B));
-        assert_eq!(Hotkey::parse("Ctrl+Shift+K").unwrap().to_string(), "Ctrl+Shift+K");
+        assert_eq!(
+            Hotkey::parse("Ctrl+Shift+K").unwrap().to_string(),
+            "Ctrl+Shift+K"
+        );
         assert_eq!(Hotkey::parse("Ctrl+Alt+Home").unwrap().vk(), Some(0x24));
     }
 
     #[test]
     fn a_stored_hotkey_that_makes_no_sense_falls_back() {
-        for bad in ["", "K", "Alt+", "Alt+Hyper", "Meta+F1", "F25", "Shift+K", "5"] {
+        for bad in [
+            "",
+            "K",
+            "Alt+",
+            "Alt+Hyper",
+            "Meta+F1",
+            "F25",
+            "Shift+K",
+            "5",
+        ] {
             assert!(Hotkey::parse(bad).is_none(), "{bad}");
             assert_eq!(hotkey_or_default(Some(bad)).to_string(), "Alt+F12", "{bad}");
         }
-        assert!(Hotkey::parse("F9").is_some(), "a function key may stand alone");
+        assert!(
+            Hotkey::parse("F9").is_some(),
+            "a function key may stand alone"
+        );
     }
 
     #[test]
@@ -455,7 +485,10 @@ mod tests {
         let second = clip_path(folder.path(), "Bad: <Name>/ of ?", "2026-10-25 18-04-31");
         assert!(second.to_string_lossy().ends_with("18-04-31 (2).mp4"));
         let nameless = clip_path(folder.path(), "...", "t");
-        assert_eq!(nameless.file_name().unwrap().to_string_lossy(), "Game t.mp4");
+        assert_eq!(
+            nameless.file_name().unwrap().to_string_lossy(),
+            "Game t.mp4"
+        );
     }
 
     #[test]
@@ -502,7 +535,10 @@ mod tests {
         let args = worker_args(30, Some(77), &[10, 11], "My Game");
         assert_eq!(
             args,
-            ["--clips", "30", "--window", "77", "--pid", "10", "--pid", "11", "--title", "My Game"]
+            [
+                "--clips", "30", "--window", "77", "--pid", "10", "--pid", "11", "--title",
+                "My Game"
+            ]
         );
         assert_eq!(worker_args(15, None, &[], ""), ["--clips", "15"]);
     }
@@ -512,7 +548,8 @@ mod tests {
     #[test]
     #[ignore = "needs the share worker program (ANYPLAY_SHARE)"]
     fn the_real_worker_answers_over_the_pipes() {
-        let worker = std::path::PathBuf::from(std::env::var("ANYPLAY_SHARE").expect("ANYPLAY_SHARE"));
+        let worker =
+            std::path::PathBuf::from(std::env::var("ANYPLAY_SHARE").expect("ANYPLAY_SHARE"));
         // Process 4 is the system: it has no window the worker may take.
         let mut recorder = Recorder::start(&worker, 15, None, &[4], "", || {}).expect("starts");
         let event = recorder

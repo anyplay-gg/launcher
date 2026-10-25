@@ -92,7 +92,9 @@ impl ClipsText {
             ClipsText::NoWindow => "Klipler oyunun penceresini bulamadı.",
             ClipsText::Stopped => "Klipler durdu. Kayıt için oyunu yeniden başlat.",
             ClipsText::NoWorker => "Klipler bu sürümde yok.",
-            ClipsText::KeyTaken => "%@ tuşunu başka bir program kullanıyor. Başka bir klip tuşu seç.",
+            ClipsText::KeyTaken => {
+                "%@ tuşunu başka bir program kullanıyor. Başka bir klip tuşu seç."
+            }
         }
     }
 
@@ -156,7 +158,10 @@ mod tests {
         for text in ClipsText::ALL {
             for language in Language::ALL {
                 let shown = text.text(language).to_lowercase();
-                assert!(!shown.contains("psn") && !shown.contains("playstation"), "{text:?}");
+                assert!(
+                    !shown.contains("psn") && !shown.contains("playstation"),
+                    "{text:?}"
+                );
             }
         }
     }

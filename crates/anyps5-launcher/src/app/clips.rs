@@ -62,7 +62,11 @@ impl ClipsService {
             self.gave_up = None;
             return;
         };
-        if self.active.as_ref().is_some_and(|a| a.game != game || a.seconds != seconds) {
+        if self
+            .active
+            .as_ref()
+            .is_some_and(|a| a.game != game || a.seconds != seconds)
+        {
             self.active = None;
         }
         if self.gave_up.as_ref().is_some_and(|g| *g != game) {
@@ -86,13 +90,16 @@ impl ClipsService {
             model.toast(text, Icon::WARNING);
             return;
         };
-        let title = model
-            .game(game)
-            .map(|g| g.name.clone())
-            .unwrap_or_default();
+        let title = model.game(game).map(|g| g.name.clone()).unwrap_or_default();
         let wake = self.wake.clone();
-        match Recorder::start(&worker, seconds, target.window, &target.pids, &title, move || wake())
-        {
+        match Recorder::start(
+            &worker,
+            seconds,
+            target.window,
+            &target.pids,
+            &title,
+            move || wake(),
+        ) {
             Ok(recorder) => {
                 tracing::info!("clips: recording {seconds} s of {title}");
                 self.active = Some(Active {
@@ -115,7 +122,11 @@ impl ClipsService {
     fn sync_hotkey(&mut self, model: &mut Model) {
         let wanted = clips::hotkey_or_default(model.prefs.clips_hotkey.as_deref());
         let wanted_text = wanted.to_string();
-        if self.hotkey.as_ref().is_some_and(|(held, _)| *held == wanted_text) {
+        if self
+            .hotkey
+            .as_ref()
+            .is_some_and(|(held, _)| *held == wanted_text)
+        {
             return;
         }
         self.hotkey = None;
