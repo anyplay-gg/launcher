@@ -84,6 +84,8 @@ pub fn paint_focus_glow(painter: &Painter, rect: Rect, radius: f32, width: f32, 
 pub fn paint_focus_stroke(painter: &Painter, rect: Rect, radius: f32, width: f32, t: f32) {
     let t = t.clamp(0.0, 1.0);
     if t > 0.001 {
+        // An edge bump leans the ring toward the wall (ui::nudge); only a ring in focus follows.
+        let rect = rect.translate(crate::ui::nudge::offset(painter.ctx()) * t);
         let width = snap_width(painter, width);
         // A hairline of shade in the gap keeps the ring apart from a light fill and one outside it keeps
         // it visible on a light picture.
