@@ -706,9 +706,9 @@ The launcher keeps the port's structure but trims what read as noise next to the
   The launch splash's explanation wraps at 460 dp, so it never ends on a lone word. The onboarding
   theme names share one baseline under the resting cards; focus grows the card, not the label.
 - **Toolkit channels, notes and recommendations.** The Toolkit page has one `Channel` choice
-  (Stable, Pinned, Local Build) and shows only the rows of that channel: stable has the update
+  (Stable, AnyPlay Engine, Pinned, Local Build: the choice steps one entry at a time and Local Build opens a folder picker, so it stays last and every other channel is reachable without it) and shows only the rows of that channel: stable has the update
   toggle and "Check Now" (its detail line carries the status or the last check), pinned has a
-  `Version` choice over the last ten releases and no update, local has the folder row. "What's New"
+  `Version` choice over the last ten releases and no update, local has the folder row, and AnyPlay Engine has the update toggle and "Check Now" like stable, with the day the build was made hanging under the version row ("Built on 2026-10-25"; gallery scenes `toolkit-engine`, `toolkit-engine-update`) and no "What's New" (a nightly build has commit messages, not notes). Choosing it downloads the nightly build when none is installed; "Install the Update" fetches a newer one, checked against the release's checksum list, and a refusal is said in a toast. "What's New"
   opens the notes of the release waiting to be installed, else of the installed one, in one
   full-screen panel: header with release, date and count, Highlights (`feat` and `perf` by area,
   the seven busiest areas folded, the rest as "Other areas"), then Everything. Rows are 44 dp, drawn

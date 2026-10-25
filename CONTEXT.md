@@ -110,6 +110,10 @@ _Avoid_: Libs, DLLs, drivers
 The release tag plus a short fingerprint of the toolkit's files. It changes whenever a file does.
 _Avoid_: Build number
 
+**AnyPlay engine**:
+The toolkit channel that follows the nightly build of anyplaynet/AnyPS5, the fork with the network bridge. It installs into its own folder, is checked against the release's checksum list, and is offered a new build when the archive's checksum changes, not the tag. Its version reads `anyplay-<commit>`.
+_Avoid_: Nightly (for the player), fork build, bridge build
+
 **Glibc shortfall** (Linux):
 The system's glibc is older than the newest version the toolkit's libraries ask for. The launcher says so (Settings, the Unlock and Play buttons) and does not stop anything.
 _Avoid_: Incompatible, unsupported

@@ -18,8 +18,15 @@ use crate::error::CancelToken;
 use crate::paths::AppPaths;
 use crate::platform::Os;
 
+mod engine;
 mod macos;
 mod pins;
+
+pub use engine::{
+    Build as EngineBuild, Endpoints as EngineEndpoints, Installed as EngineInstalled,
+    check as check_engine, install as install_engine, installed as engine_installed,
+    open as open_engine, update_available as engine_update_available,
+};
 
 pub use pins::{
     GameToolkit, InstalledRelease, game_toolkit, installed_tags, installed_version,
@@ -61,6 +68,12 @@ pub enum ToolkitError {
     Io(#[from] io::Error),
     #[error("the release has no relinker or libraries for this system")]
     NoRelease,
+    /// The nightly build has no engine for this system (or no clear one).
+    #[error("{0}")]
+    NoEngine(String),
+    /// The engine channel refused to install: a missing or wrong checksum, an archive that is not the build it names.
+    #[error("{0}")]
+    Engine(String),
     #[error("cancelled")]
     Cancelled,
     /// The release a game stays on is not installed (or not usable).
@@ -798,7 +811,17 @@ pub fn download_and_install_keeping(
         let _ = crate::fsx::remove_tree(&partial);
         return Err(error);
     }
-    let previous = base.join(format!("{tag}.previous"));
+    swap_in(&base, &tag, &partial)?;
+    prune_old_releases(paths, &tag, keep);
+    Toolkit::open_for(info.os, &final_dir)
+}
+
+/// Puts the finished `partial` folder in place of `<base>\<name>`. The old folder is kept as
+/// `<name>.previous` until the new one is in place and comes back when the swap fails, so there is
+/// always a usable toolkit under `name`. A `.previous` left by a crash is restored first.
+pub(crate) fn swap_in(base: &Path, name: &str, partial: &Path) -> Result<(), ToolkitError> {
+    let final_dir = base.join(name);
+    let previous = base.join(format!("{name}.previous"));
     if !final_dir.exists() && previous.exists() {
         crate::fsx::rename_retry(&previous, &final_dir)?;
     }
@@ -807,7 +830,7 @@ pub fn download_and_install_keeping(
     if replacing {
         crate::fsx::rename_retry(&final_dir, &previous)?;
     }
-    if let Err(error) = crate::fsx::rename_retry(&partial, &final_dir) {
+    if let Err(error) = crate::fsx::rename_retry(partial, &final_dir) {
         if replacing {
             crate::fsx::rename_retry(&previous, &final_dir)?;
         }
@@ -819,8 +842,7 @@ pub fn download_and_install_keeping(
             previous.display()
         );
     }
-    prune_old_releases(paths, &tag, keep);
-    Toolkit::open_for(info.os, &final_dir)
+    Ok(())
 }
 
 fn install_into(
