@@ -10,7 +10,7 @@
 //!                           saves|saves-empty|restore|
 //!                           online|online-browser|online-friends|online-friends-busy|
 //!                           online-friends-empty|online-requests|online-friend|
-//!                           online-account|online-picker|
+//!                           online-account|online-account-appearing|online-picker|
 //!                           online-party|online-party-picker|online-messages|online-conversation|
 //!                           online-message|online-request|
 //!                           online-party-voice|online-party-member|online-voice|online-voice-key|
@@ -22,6 +22,10 @@
 //!                           profile-own|profile-own-focus|profile-own-end|profile-friend|profile-friend-hidden|
 //!                           profile-request|profile-new|profile-new-friend|profile-private|
 //!                           profile-loading|profile-error|profile-offline|
+//!                           profile-own-appearing|profile-friend-compare|
+//!                           compare|compare-secret|compare-revealed|compare-numbers|
+//!                           compare-loading|compare-offline|compare-error|compare-hidden|
+//!                           compare-empty|
 //!                           feed|feed-reaction|feed-empty|feed-loading|feed-error
 //!                           incoming-call|incoming-call-discord|in-call|in-call-open|in-call-discord|calling|
 //!                           missed-call|party-discord
@@ -123,6 +127,28 @@ pub enum ScreenPage {
     Phone(PhoneLook),
     /// The profile screen over invented players.
     Profile(ProfileLook),
+    /// The trophy comparison with an invented friend, in one of its states.
+    Compare(CompareLook),
+}
+
+/// The trophy comparison's states (docs/DESIGN.md 17, "Trophy compare").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CompareLook {
+    /// Both players' trophies in a game the player has.
+    Ready,
+    /// The focus on a secret trophy, with its Show pill.
+    Secret,
+    /// The same secret after Show.
+    Revealed,
+    /// A game that is not in the player's library: the rows are numbers.
+    Numbers,
+    Loading,
+    Offline,
+    Error,
+    /// The friend keeps their trophies from the player.
+    Hidden,
+    /// Neither has a trophy.
+    Empty,
 }
 
 /// The profile screen's states (docs/DESIGN.md 17, "Profile screen").
@@ -140,6 +166,10 @@ pub enum ProfileLook {
     FriendHidden,
     /// Someone who asked to be friends.
     Request,
+    /// The player's own profile while they appear offline.
+    OwnAppearing,
+    /// A friend, the focus on a game row that opens the comparison.
+    FriendCompare,
     /// The player's own profile of a new account.
     New,
     /// A friend who has done nothing yet.
@@ -155,8 +185,13 @@ impl ProfileLook {
     /// The account the look shows.
     pub fn account(self) -> u64 {
         match self {
-            ProfileLook::Own | ProfileLook::OwnFocus | ProfileLook::OwnEnd | ProfileLook::New => 1,
+            ProfileLook::Own
+            | ProfileLook::OwnFocus
+            | ProfileLook::OwnEnd
+            | ProfileLook::OwnAppearing
+            | ProfileLook::New => 1,
             ProfileLook::Friend
+            | ProfileLook::FriendCompare
             | ProfileLook::Loading
             | ProfileLook::Error
             | ProfileLook::Offline => 2,
@@ -190,6 +225,8 @@ pub enum OnlineLook {
     /// The browser sign-in waits.
     Browser,
     Friends,
+    /// The account page while the player appears offline.
+    AccountAppearing,
     /// Five friend requests wait (three are answered in place), friends play, one is online.
     FriendsBusy,
     /// Signed in with nobody yet.
@@ -434,6 +471,7 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "online" => ScreenPage::Online(OnlineLook::Start),
         "online-browser" => ScreenPage::Online(OnlineLook::Browser),
         "online-friends" => ScreenPage::Online(OnlineLook::Friends),
+        "online-account-appearing" => ScreenPage::Online(OnlineLook::AccountAppearing),
         "online-friends-busy" => ScreenPage::Online(OnlineLook::FriendsBusy),
         "online-friends-empty" => ScreenPage::Online(OnlineLook::FriendsEmpty),
         "online-requests" => ScreenPage::Online(OnlineLook::Requests),
@@ -464,6 +502,17 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "online-paused" => ScreenPage::Online(OnlineLook::Paused),
         "online-banned" => ScreenPage::Online(OnlineLook::Banned),
         "profile-own" => ScreenPage::Profile(ProfileLook::Own),
+        "profile-own-appearing" => ScreenPage::Profile(ProfileLook::OwnAppearing),
+        "profile-friend-compare" => ScreenPage::Profile(ProfileLook::FriendCompare),
+        "compare" => ScreenPage::Compare(CompareLook::Ready),
+        "compare-secret" => ScreenPage::Compare(CompareLook::Secret),
+        "compare-revealed" => ScreenPage::Compare(CompareLook::Revealed),
+        "compare-numbers" => ScreenPage::Compare(CompareLook::Numbers),
+        "compare-loading" => ScreenPage::Compare(CompareLook::Loading),
+        "compare-offline" => ScreenPage::Compare(CompareLook::Offline),
+        "compare-error" => ScreenPage::Compare(CompareLook::Error),
+        "compare-hidden" => ScreenPage::Compare(CompareLook::Hidden),
+        "compare-empty" => ScreenPage::Compare(CompareLook::Empty),
         "profile-own-focus" => ScreenPage::Profile(ProfileLook::OwnFocus),
         "profile-own-end" => ScreenPage::Profile(ProfileLook::OwnEnd),
         "profile-friend" => ScreenPage::Profile(ProfileLook::Friend),
@@ -585,6 +634,7 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         id: AccountId(1),
         handle: "Mira".into(),
         email: "mira@example.org".into(),
+        appear_offline: false,
     });
     state.friends = FriendLists {
         friends: vec![
@@ -624,6 +674,11 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         (AccountId(4), Some(count(0, 0, 0, 0))),
     ]);
     state.privacy = Some(Privacy::default());
+    if look == OnlineLook::AccountAppearing
+        && let Some(account) = state.account.as_mut()
+    {
+        account.appear_offline = true;
+    }
     crate::screens::gallery_feed::sample(&mut state, look);
     if matches!(look, OnlineLook::FriendsBusy | OnlineLook::Requests) {
         state.friends.incoming = [
@@ -1385,6 +1440,7 @@ pub struct ScreenGallery {
     online_panel: crate::screens::online::OnlinePanel,
     online: anyps5_core::online::Online,
     profile: crate::screens::profile::ProfileScreen,
+    compare: crate::screens::compare::CompareScreen,
     recommended: RecommendedPanel,
     whats_new: WhatsNewPanel,
     notes: Published,
@@ -1485,11 +1541,17 @@ impl ScreenGallery {
             restore: RestorePanel::default(),
             online_panel: crate::screens::online::OnlinePanel::default(),
             profile: crate::screens::profile::ProfileScreen::default(),
+            compare: crate::screens::compare::CompareScreen::default(),
             online: match page {
                 ScreenPage::Online(look) => sample_online(look),
                 ScreenPage::Profile(look) => {
                     let mut state = sample_online(OnlineLook::Friends);
                     crate::screens::gallery_feed::sample_profile(&mut state, look);
+                    state
+                }
+                ScreenPage::Compare(look) => {
+                    let mut state = sample_online(OnlineLook::Friends);
+                    crate::screens::gallery_feed::sample_compare(&mut state, look);
                     state
                 }
                 _ => anyps5_core::online::Online::default(),
@@ -1530,6 +1592,34 @@ impl ScreenGallery {
         {
             calls::call_strip(ctx, &strip, language, 1.0, true);
         }
+    }
+
+    /// The comparison with the invented friend Lumen in the first game.
+    fn compare_screen(&mut self, shell: &mut Shell, ctx: &Context, look: CompareLook) {
+        use crate::screens::compare::{Inputs, view};
+        let mut local = crate::screens::gallery_feed::local(&self.covers, &self.avatars, &NAMES);
+        // A game the player does not have: no name, no picture, no trophy file.
+        let owned = !matches!(look, CompareLook::Numbers | CompareLook::Empty);
+        if !owned {
+            local.games.remove("GAME00001");
+        }
+        let revealed = self.compare.revealed().clone();
+        let language = shell.language;
+        let inputs = Inputs {
+            online: &self.online,
+            local: &local,
+            set: owned.then_some(&self.set),
+            account: anyps5_core::online::api::AccountId(2),
+            title_id: "GAME00001",
+            show_hidden: false,
+            revealed: &revealed,
+            language,
+            utc_offset: Some(0),
+        };
+        let model = view(&inputs);
+        let accent = shell.accent_color();
+        let look = crate::screens::compare::Look { language, accent };
+        self.compare.show(shell, ctx, &[], &model, inputs.set, look);
     }
 
     /// The profile screen over the invented state: the library is the gallery's nine games.
@@ -1873,6 +1963,9 @@ impl ScreenGallery {
         if let ScreenPage::Profile(look) = self.page {
             self.profile_screen(shell, &ctx, look);
         }
+        if let ScreenPage::Compare(look) = self.page {
+            self.compare_screen(shell, &ctx, look);
+        }
         self.library.show(
             shell,
             &ctx,
@@ -1949,7 +2042,9 @@ impl ScreenGallery {
                     OnlineLook::Friend => self
                         .online_panel
                         .show_page(Page::Friend(anyps5_core::online::api::AccountId(2)), &data),
-                    OnlineLook::Account => self.online_panel.show_page(Page::Account, &data),
+                    OnlineLook::Account | OnlineLook::AccountAppearing => {
+                        self.online_panel.show_page(Page::Account, &data);
+                    }
                     OnlineLook::Party => self.online_panel.show_page(Page::Party, &data),
                     OnlineLook::PartyPicker => {
                         self.online_panel.show_page(Page::PartyPicker, &data);
@@ -2022,6 +2117,23 @@ impl ScreenGallery {
                 if look == ProfileLook::OwnFocus {
                     // The third game row, after the two buttons.
                     self.profile.set_focus(3);
+                }
+                if look == ProfileLook::FriendCompare {
+                    // The first game row that opens the comparison, after the one button.
+                    self.profile.set_focus(1);
+                }
+            }
+            ScreenPage::Compare(look) => {
+                self.compare.open();
+                match look {
+                    // The hidden trophy of the invented set is the seventh row.
+                    CompareLook::Secret => self.compare.set_focus(SECRET_TROPHY),
+                    CompareLook::Revealed => {
+                        self.compare.set_focus(SECRET_TROPHY);
+                        self.compare.reveal(SECRET_TROPHY as u32);
+                    }
+                    CompareLook::Ready => self.compare.set_focus(2),
+                    _ => {}
                 }
             }
             ScreenPage::Controls => self.controls.open(),

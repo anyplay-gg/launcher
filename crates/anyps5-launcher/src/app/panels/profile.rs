@@ -46,7 +46,12 @@ impl PanelHost {
         }
         let cloud = net::cloud(cx.model.prefs.online_cloud.as_deref()).map(str::to_owned);
         if wanted && !self.profile.is_open() {
-            self.profile.open(account);
+            // Back from a comparison finds the profile as it was left.
+            if std::mem::take(&mut cx.model.profile_returning) {
+                self.profile.reopen(account);
+            } else {
+                self.profile.open(account);
+            }
             ask(&mut cx.model.online, account);
         } else if !wanted && self.profile.is_open() {
             self.profile.close();
@@ -91,6 +96,7 @@ impl PanelHost {
         match press {
             Press::None => {}
             Press::EditProfile => online_action(model, OnlineAction::ManageAccount),
+            Press::AppearOffline(on) => online_action(model, OnlineAction::AppearOffline(on)),
             Press::Retry => ask(&mut model.online, account),
             Press::AddFriend(handle) => online_action(model, OnlineAction::AddFriend(handle)),
             Press::FriendsOnline => {
@@ -106,6 +112,7 @@ impl PanelHost {
                 self.online_start = Some((Page::Request(id), None));
                 model.switch_overlay(Overlay::Online);
             }
+            Press::Compare(other, title_id) => model.open_compare(other, title_id),
             Press::OpenFeed(item) => {
                 self.online_start = Some((Page::Feed, Some(item)));
                 model.switch_overlay(Overlay::Online);
