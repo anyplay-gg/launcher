@@ -97,3 +97,46 @@ fn the_net_service_answers_over_its_standard_streams() {
     }
     panic!("the net service log does not show the hello");
 }
+
+/// The share worker the net service starts looks for Cisco's OpenH264 where the launcher puts it.
+#[cfg(target_os = "linux")]
+#[test]
+fn the_net_service_is_told_where_the_launcher_puts_openh264() {
+    use std::os::unix::fs::PermissionsExt;
+
+    if std::env::var_os(anyps5_core::openh264::LIBRARY_ENV).is_some() {
+        eprintln!("skipped: the variable is set for this run");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    // A stand-in for the net service: `--data <dir>`, writes the variable there and ends.
+    let fake = dir.path().join("fake-net");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\nprintf '%s' \"$ANYPLAY_OPENH264\" > \"$2/codec\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let network = dir.path().join("Network");
+    let process = NetProcess::spawn(
+        &fake,
+        &network,
+        false,
+        &dir.path().join("network.log"),
+        Arc::new(|| {}),
+    )
+    .expect("the stand-in starts");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let written = loop {
+        if let Ok(text) = std::fs::read_to_string(network.join("codec")) {
+            break text;
+        }
+        assert!(Instant::now() < deadline, "the stand-in wrote nothing");
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(
+        std::path::PathBuf::from(written),
+        anyps5_core::openh264::library_in(&network)
+    );
+    drop(process);
+}

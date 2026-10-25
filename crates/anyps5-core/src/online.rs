@@ -187,6 +187,14 @@ impl NetProcess {
         if relay_only {
             command.arg("--relay-only");
         }
+        // The share worker the net service starts finds Cisco's OpenH264 where the launcher
+        // downloads it, unless the variable is set for a test.
+        if cfg!(target_os = "linux") && std::env::var_os(crate::openh264::LIBRARY_ENV).is_none() {
+            command.env(
+                crate::openh264::LIBRARY_ENV,
+                crate::openh264::library_in(data),
+            );
+        }
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;

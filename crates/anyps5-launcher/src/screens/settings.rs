@@ -12,6 +12,7 @@ use anyps5_core::compat::{self, Feature, Fit, Since};
 use anyps5_core::fonts::CjkState;
 use anyps5_core::linkreg::Handler;
 use anyps5_core::links::SettingsPage;
+use anyps5_core::openh264::CodecState;
 use anyps5_core::settings::{Backdrop, CpuConversion, Preferences, ToolkitChannel};
 use anyps5_core::toolkit::InstalledRelease;
 use egui::{Align2, Color32, Context, Rect, Sense, Ui, UiBuilder, pos2, vec2};
@@ -206,6 +207,18 @@ pub struct SettingsEnv<'a> {
     /// What the phone server is doing.
     pub phone: &'a PhoneState,
     pub clips: ClipsEnv,
+    /// Linux with share screen on: Cisco's OpenH264 and what the share worker made of it. `None`
+    /// shows no codec row.
+    pub openh264: Option<Openh264Env>,
+}
+
+/// The codec row's facts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Openh264Env {
+    /// The download.
+    pub state: CodecState,
+    /// The share worker's `state` and `detail` for the library, from its last answer.
+    pub worker: Option<(String, Option<String>)>,
 }
 
 /// What the host has to do after a frame.
@@ -230,6 +243,9 @@ pub enum SettingsAction {
     PinToolkit(String),
     /// Download the Japanese, Chinese and Korean fonts of the built-in set.
     DownloadCjkFonts,
+    /// The OpenH264 row was turned on (download it) or off (remove it); the preference is
+    /// already stored.
+    Openh264(bool),
     /// Open the notes of this release (`0.1.3`).
     OpenWhatsNew(String),
     /// Delete this installed release (`0.1.2`); nothing uses it.
@@ -305,6 +321,28 @@ fn whats_new_tag(env: &SettingsEnv<'_>) -> Option<String> {
 
 /// What the fonts row says a game gets: the player's folder, else the built-in set and whether
 /// Japanese, Chinese and Korean are part of it.
+/// What the OpenH264 row says under its title: off, the download, or what the share worker made of
+/// the file.
+fn openh264_detail(on: bool, codec: &Openh264Env, language: Language) -> String {
+    use crate::screens::online_strings::OnlineText;
+    if !on {
+        return OnlineText::Openh264Off.text(language).to_owned();
+    }
+    match &codec.state {
+        CodecState::Downloading => OnlineText::Openh264Downloading.text(language).to_owned(),
+        CodecState::Missing => OnlineText::Openh264Missing.text(language).to_owned(),
+        CodecState::Failed(why) => OnlineText::Openh264Failed.format(language, &[Arg::Str(why)]),
+        CodecState::Ready => match &codec.worker {
+            Some((state, _)) if state == "refused" => {
+                OnlineText::Openh264Refused.text(language).to_owned()
+            }
+            Some((state, detail)) if state == "failed" => OnlineText::Openh264NotLoaded
+                .format(language, &[Arg::Str(detail.as_deref().unwrap_or_default())]),
+            _ => OnlineText::Openh264Ready.text(language).to_owned(),
+        },
+    }
+}
+
 fn fonts_detail(picked: Option<String>, cjk: CjkState, language: Language) -> String {
     if let Some(folder) = picked {
         return folder;
@@ -751,6 +789,27 @@ pub fn build_categories(
             .icon(Icon::FILE_TEXT)
             .group_start(),
         );
+        if let Some(codec) = &env.openh264 {
+            advanced.push(
+                Row::toggle(
+                    "openh264",
+                    OnlineText::Openh264.text(language),
+                    prefs.online_openh264,
+                )
+                .detail(openh264_detail(prefs.online_openh264, codec, language))
+                .icon(Icon::APP_WINDOW)
+                .group_start(),
+            );
+            // Cisco's licence: this text where the player turns the codec on and off.
+            advanced.push(
+                Row::info(
+                    "openh264Notice",
+                    OnlineText::Openh264Notice.text(language),
+                    None,
+                )
+                .attached(),
+            );
+        }
     }
 
     // About
@@ -1057,6 +1116,10 @@ pub fn apply_value(prefs: &mut Preferences, change: &Change) -> bool {
             row: "recordNetwork",
             on,
         } => prefs.record_network = *on,
+        Change::Toggle {
+            row: "openh264",
+            on,
+        } => prefs.online_openh264 = *on,
         Change::Toggle {
             row: "updateCheck",
             on,
@@ -1365,6 +1428,10 @@ impl SettingsPanel {
                 }
             }
             Change::Run { row: "fontsCjk" } => out.actions.push(SettingsAction::DownloadCjkFonts),
+            Change::Toggle {
+                row: "openh264",
+                on,
+            } => out.actions.push(SettingsAction::Openh264(*on)),
             Change::Run { row: "checkNow" } => out.actions.push(SettingsAction::CheckForUpdates),
             Change::Toggle {
                 row: "updateCheck",
@@ -1642,6 +1709,7 @@ mod tests {
             cjk_fonts: CjkState::Missing,
             phone: Box::leak(Box::new(PhoneState::default())),
             clips: ClipsEnv::default(),
+            openh264: None,
         }
     }
 
@@ -1859,6 +1927,115 @@ mod tests {
         let row = about.rows.iter().find(|r| r.id == "launcherNotes").unwrap();
         assert_eq!(row.title, "What's New in 0.2.0");
     }
+    /// The Advanced rows with the codec row's facts, and the codec row's detail.
+    fn codec_rows(on: bool, codec: Option<Openh264Env>) -> (Vec<&'static str>, Option<String>) {
+        let mut prefs = Preferences::first_run();
+        prefs.online_openh264 = on;
+        let mut e = env(None, UpdateState::Unknown);
+        e.openh264 = codec;
+        let cats = build_categories(&prefs, &e, Language::English);
+        let advanced = cats
+            .iter()
+            .find(|c| c.category == Category::Advanced)
+            .unwrap();
+        let detail = advanced
+            .rows
+            .iter()
+            .find(|r| r.id == "openh264")
+            .and_then(|r| r.detail.clone());
+        (ids(&cats, Category::Advanced), detail)
+    }
+
+    fn codec(state: CodecState, worker: Option<(&str, Option<&str>)>) -> Option<Openh264Env> {
+        Some(Openh264Env {
+            state,
+            worker: worker.map(|(s, d)| (s.to_owned(), d.map(str::to_owned))),
+        })
+    }
+
+    #[test]
+    fn the_codec_row_shows_cisco_s_notice_under_it_and_only_with_share_screen_on_linux() {
+        let (rows, _) = codec_rows(false, None);
+        assert!(!rows.contains(&"openh264") && !rows.contains(&"openh264Notice"));
+
+        let (rows, detail) = codec_rows(false, codec(CodecState::Missing, None));
+        let at = rows.iter().position(|r| *r == "openh264").unwrap();
+        assert_eq!(rows[at + 1], "openh264Notice");
+        assert_eq!(
+            detail.as_deref(),
+            Some("Share Screen cannot send or show video while it is off")
+        );
+        let mut prefs = Preferences::first_run();
+        let mut e = env(None, UpdateState::Unknown);
+        e.openh264 = codec(CodecState::Missing, None);
+        for language in [Language::English, Language::Turkish] {
+            prefs.language = convert::language_to_core(language);
+            let cats = build_categories(&prefs, &e, language);
+            let advanced = cats
+                .iter()
+                .find(|c| c.category == Category::Advanced)
+                .unwrap();
+            let notice = advanced
+                .rows
+                .iter()
+                .find(|r| r.id == "openh264Notice")
+                .unwrap();
+            // Cisco's words, unchanged in every language.
+            assert_eq!(
+                notice.title,
+                "OpenH264 Video Codec provided by Cisco Systems, Inc."
+            );
+        }
+    }
+
+    #[test]
+    fn the_codec_row_says_what_the_download_and_the_worker_made_of_it() {
+        let detail = |state, worker| codec_rows(true, codec(state, worker)).1.unwrap();
+        assert_eq!(
+            detail(CodecState::Downloading, None),
+            "Downloading from Cisco"
+        );
+        assert_eq!(detail(CodecState::Missing, None), "Not downloaded yet");
+        assert_eq!(
+            detail(CodecState::Failed("timed out".into()), None),
+            "The download failed: timed out"
+        );
+        assert_eq!(
+            detail(CodecState::Ready, Some(("ready", None))),
+            "Downloaded from Cisco"
+        );
+        assert_eq!(
+            detail(CodecState::Ready, Some(("refused", Some("x")))),
+            "The file is not Cisco's build. Turn it off and on to download it again."
+        );
+        assert_eq!(
+            detail(CodecState::Ready, Some(("failed", Some("no such symbol")))),
+            "It did not load: no such symbol"
+        );
+    }
+
+    #[test]
+    fn turning_the_codec_row_on_and_off_stores_it() {
+        let mut prefs = Preferences::first_run();
+        assert!(!prefs.online_openh264, "off until the player turns it on");
+        apply_value(
+            &mut prefs,
+            &Change::Toggle {
+                row: "openh264",
+                on: true,
+            },
+        );
+        assert!(prefs.online_openh264);
+        apply_value(
+            &mut prefs,
+            &Change::Toggle {
+                row: "openh264",
+                on: false,
+            },
+        );
+        assert!(!prefs.online_openh264);
+    }
+
     fn fonts_row(prefs: &Preferences, cjk: CjkState) -> (String, Vec<&'static str>) {
         let mut e = env(None, UpdateState::Unknown);
         e.cjk_fonts = cjk;

@@ -571,6 +571,11 @@ pub struct Preferences {
     /// one run.
     #[serde(default)]
     pub online_share_screen: bool,
+    /// Linux: the player turned on Cisco's OpenH264, the codec share screen encodes and decodes
+    /// with there; the launcher downloads it and keeps it while this is on, and removes it when
+    /// it goes off (Cisco's licence terms, `openh264`).
+    #[serde(default)]
+    pub online_openh264: bool,
     /// Party voice: on or off, the mode, the push-to-talk key, devices and member volumes.
     #[serde(default)]
     pub voice: crate::online::VoicePrefs,
@@ -639,6 +644,7 @@ impl Default for Preferences {
             online: false,
             online_relay_only: false,
             online_share_screen: false,
+            online_openh264: false,
             voice: crate::online::VoicePrefs::default(),
             record_network: false,
             phone_remote: false,

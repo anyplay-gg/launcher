@@ -287,6 +287,9 @@ pub struct Model {
     pub phone_trophies: Vec<Trophy>,
     /// What the phone server is doing (`app::phone`).
     pub phone: crate::app::phone::PhoneState,
+    /// What the share worker said of Cisco's OpenH264 in its last answer (Linux): its `state` and
+    /// `detail`.
+    pub share_codec: Option<(String, Option<String>)>,
     /// Work for the host; drained after every input pass.
     pub effects: Vec<Effect>,
     /// What the launcher knows of the network. Commands queue here; the host hands them to the
@@ -362,6 +365,7 @@ impl Model {
             trophy_banners: Vec::new(),
             phone_trophies: Vec::new(),
             phone: Default::default(),
+            share_codec: None,
             effects: Vec::new(),
             online: Online::default(),
             profile: None,

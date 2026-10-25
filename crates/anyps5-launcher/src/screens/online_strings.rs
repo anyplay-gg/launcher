@@ -138,6 +138,20 @@ pub enum OnlineText {
     RecordNetworkDetail,
     RelayOnly,
     RelayOnlyNote,
+    /// Linux: the OpenH264 row and its states.
+    Openh264,
+    Openh264Off,
+    Openh264Downloading,
+    Openh264Ready,
+    Openh264Missing,
+    /// `%@`: why the download failed.
+    Openh264Failed,
+    /// The share worker found a file that is not Cisco's build.
+    Openh264Refused,
+    /// `%@`: why the share worker could not load it.
+    Openh264NotLoaded,
+    /// Cisco's licence asks for this text, unchanged, where the player turns the codec on and off.
+    Openh264Notice,
     // Appearing offline
     AppearOffline,
     AppearOfflineDetail,
@@ -283,6 +297,17 @@ impl OnlineText {
             OnlineText::RelayOnlyNote => {
                 "Other players reach you only through a relay and never see your IP address. Games can respond a little slower."
             }
+            OnlineText::Openh264 => "Share Screen Video Codec",
+            OnlineText::Openh264Off => "Share Screen cannot send or show video while it is off",
+            OnlineText::Openh264Downloading => "Downloading from Cisco",
+            OnlineText::Openh264Ready => "Downloaded from Cisco",
+            OnlineText::Openh264Missing => "Not downloaded yet",
+            OnlineText::Openh264Failed => "The download failed: %@",
+            OnlineText::Openh264Refused => {
+                "The file is not Cisco's build. Turn it off and on to download it again."
+            }
+            OnlineText::Openh264NotLoaded => "It did not load: %@",
+            OnlineText::Openh264Notice => "OpenH264 Video Codec provided by Cisco Systems, Inc.",
             OnlineText::TrophiesHidden => "Hidden",
             OnlineText::TrophiesNone => "None yet",
             OnlineText::TrophyAudience => "Who Sees Your Trophies",
@@ -417,6 +442,18 @@ impl OnlineText {
             OnlineText::RelayOnlyNote => {
                 "Diğer oyuncular sana yalnızca bir aktarıcı üzerinden ulaşır ve IP adresini hiç görmez. Oyunlar biraz daha geç tepki verebilir."
             }
+            OnlineText::Openh264 => "Ekran Paylaşımı Video Kodeği",
+            OnlineText::Openh264Off => "Kapalıyken ekran paylaşımı video gönderemez ve gösteremez",
+            OnlineText::Openh264Downloading => "Cisco'dan indiriliyor",
+            OnlineText::Openh264Ready => "Cisco'dan indirildi",
+            OnlineText::Openh264Missing => "Henüz indirilmedi",
+            OnlineText::Openh264Failed => "İndirme başarısız oldu: %@",
+            OnlineText::Openh264Refused => {
+                "Dosya Cisco'nun derlemesi değil. Yeniden indirmek için kapatıp aç."
+            }
+            OnlineText::Openh264NotLoaded => "Yüklenemedi: %@",
+            // Cisco's text stays in English in every language.
+            OnlineText::Openh264Notice => "OpenH264 Video Codec provided by Cisco Systems, Inc.",
             OnlineText::TrophiesHidden => "Gizli",
             OnlineText::TrophiesNone => "Henüz yok",
             OnlineText::TrophyAudience => "Kupalarını Kimler Görür",
@@ -466,6 +503,8 @@ mod tests {
         OnlineText::NotOwned,
         OnlineText::NotUnlocked,
         OnlineText::VersionMismatch,
+        OnlineText::Openh264Failed,
+        OnlineText::Openh264NotLoaded,
     ];
 
     #[test]

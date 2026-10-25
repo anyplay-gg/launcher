@@ -11,6 +11,9 @@
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use sha2::{Digest, Sha256};
 
@@ -53,9 +56,116 @@ impl Default for Source {
     }
 }
 
+/// The variable that tells the share worker where the library is (and `off` turns it off).
+pub const LIBRARY_ENV: &str = "ANYPLAY_OPENH264";
+
 /// Where the library goes: beside the share worker.
 pub fn library_path(paths: &AppPaths) -> PathBuf {
-    paths.network_dir().join("bin").join(LIBRARY_NAME)
+    library_in(&paths.network_dir())
+}
+
+/// The library's place in the net service's folder (`Network`), which the net service's share
+/// worker is told through [`LIBRARY_ENV`].
+pub fn library_in(network_dir: &Path) -> PathBuf {
+    network_dir.join("bin").join(LIBRARY_NAME)
+}
+
+/// What the codec is on this PC, as the player's row shows it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CodecState {
+    /// Not downloaded.
+    Missing,
+    Downloading,
+    /// Downloaded and checked.
+    Ready,
+    /// The last download failed: why.
+    Failed(String),
+}
+
+static RUNNING: AtomicBool = AtomicBool::new(false);
+static LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
+/// Set when the library came or went; the launcher then tells the net service again.
+static CHANGED: AtomicBool = AtomicBool::new(false);
+/// A file as last checked: where, its size and time, the hash wanted, and whether it matched.
+type Checked = (PathBuf, u64, SystemTime, String, bool);
+/// The settings page asks every frame; the file is hashed again only when it changed.
+static CHECKED: Mutex<Option<Checked>> = Mutex::new(None);
+
+/// Whether the library is there and is the build `source` names, hashing the file only when its
+/// size or time changed since the last call.
+pub fn installed(paths: &AppPaths, source: &Source) -> bool {
+    let path = library_path(paths);
+    let Ok(meta) = fs::metadata(&path) else {
+        return false;
+    };
+    let time = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+    let mut checked = CHECKED.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((p, len, t, sha, good)) = &*checked
+        && (p, *len, *t, sha) == (&path, meta.len(), time, &source.library_sha256)
+    {
+        return *good;
+    }
+    let good = present(paths, source);
+    *checked = Some((path, meta.len(), time, source.library_sha256.clone(), good));
+    good
+}
+
+/// The codec's state for the player's row.
+pub fn state(paths: &AppPaths, source: &Source) -> CodecState {
+    if RUNNING.load(Ordering::SeqCst) {
+        return CodecState::Downloading;
+    }
+    if installed(paths, source) {
+        return CodecState::Ready;
+    }
+    match LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        Some(why) => CodecState::Failed(why),
+        None => CodecState::Missing,
+    }
+}
+
+/// True once after the library came or went.
+pub fn take_changed() -> bool {
+    CHANGED.swap(false, Ordering::SeqCst)
+}
+
+/// Starts the download on a worker thread unless the library is there or a download runs.
+/// `done` is called when the thread ends. Returns whether a download was started.
+pub fn install_in_background(
+    paths: &AppPaths,
+    source: Source,
+    done: Option<Arc<dyn Fn() + Send + Sync>>,
+) -> bool {
+    if installed(paths, &source)
+        || RUNNING
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+    {
+        return false;
+    }
+    *LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    let paths = paths.clone();
+    let spawned = std::thread::Builder::new()
+        .name("openh264".into())
+        .spawn(move || {
+            let outcome = install(&paths, &source, &CancelToken::new());
+            match &outcome {
+                Ok(()) => tracing::info!("Cisco's OpenH264 is installed"),
+                Err(error) => tracing::warn!("Cisco's OpenH264 was not installed: {error}"),
+            }
+            *LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()) =
+                outcome.err().map(|e| e.to_string());
+            RUNNING.store(false, Ordering::SeqCst);
+            CHANGED.store(true, Ordering::SeqCst);
+            if let Some(done) = done {
+                done();
+            }
+        });
+    if spawned.is_err() {
+        RUNNING.store(false, Ordering::SeqCst);
+        return false;
+    }
+    true
 }
 
 /// Whether the library is there and is the build `source` names.
@@ -128,6 +238,8 @@ fn install_from(
 
 /// Removes the library: the player turned the codec off.
 pub fn remove(paths: &AppPaths) -> io::Result<()> {
+    *LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    CHANGED.store(true, Ordering::SeqCst);
     match fs::remove_file(library_path(paths)) {
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
         other => other,
@@ -220,6 +332,65 @@ mod tests {
             "{result:?}"
         );
         assert!(bin_listing(&paths).is_empty(), "{:?}", bin_listing(&paths));
+    }
+
+    /// One test for everything that goes through the process-wide download state.
+    #[test]
+    fn the_row_s_state_follows_a_download_in_the_background_and_its_removal() {
+        let root = tempfile::tempdir().unwrap();
+        let paths = AppPaths::under(root.path());
+        let archive = bz2(LIBRARY);
+        let (base, handle, stop) = serve(vec![
+            ("/lib.so.bz2", archive.clone(), 200),
+            ("/broken.bz2", b"not the archive".to_vec(), 200),
+        ]);
+        let source = Source {
+            url: format!("{base}/lib.so.bz2"),
+            archive_size: archive.len() as u64,
+            archive_sha256: sha_hex(&archive),
+            library_sha256: sha_hex(LIBRARY),
+        };
+        let wait = |source: Source| {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let done: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+                let _ = tx.send(());
+            });
+            assert!(install_in_background(&paths, source, Some(done)));
+            rx.recv_timeout(std::time::Duration::from_secs(10))
+                .expect("the download ends");
+        };
+        assert_eq!(state(&paths, &source), CodecState::Missing);
+
+        // A download that fails says why, and leaves nothing.
+        wait(Source {
+            url: format!("{base}/broken.bz2"),
+            ..source.clone()
+        });
+        assert!(matches!(state(&paths, &source), CodecState::Failed(_)));
+        assert!(!library_path(&paths).exists());
+
+        wait(source.clone());
+        assert_eq!(state(&paths, &source), CodecState::Ready);
+        assert!(take_changed(), "the net service is told again");
+        // Nothing to download while it is there.
+        assert!(!install_in_background(&paths, source.clone(), None));
+
+        // A file changed in place is checked again.
+        fs::write(library_path(&paths), b"\x7fELF another library").unwrap();
+        let later = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
+        fs::File::options()
+            .write(true)
+            .open(library_path(&paths))
+            .unwrap()
+            .set_modified(later)
+            .unwrap();
+        assert_eq!(state(&paths, &source), CodecState::Missing);
+
+        remove(&paths).unwrap();
+        assert!(take_changed());
+        assert_eq!(state(&paths, &source), CodecState::Missing);
+        stop.store(true, AtomicOrdering::SeqCst);
+        handle.join().unwrap();
     }
 
     #[test]

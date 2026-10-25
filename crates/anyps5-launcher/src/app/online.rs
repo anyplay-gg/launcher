@@ -165,6 +165,10 @@ impl OnlineService {
             {
                 tracing::warn!("cannot write to the net service: {error}");
             }
+            // Cisco's OpenH264 came or went: the worker is asked again what it can do.
+            if anyps5_core::openh264::take_changed() {
+                tell_worker(model);
+            }
             for line in process.drain() {
                 let ended = line == net::Line::Ended;
                 for notice in model.online.apply(line) {
@@ -599,6 +603,18 @@ impl OnlineService {
                 let text = failure_text(&failure, language);
                 model.toast(text, Icon::WARNING);
             }
+            (Purpose::ScreenWorker, Ok(value)) => {
+                model.share_codec =
+                    serde_json::from_value::<net::control::ScreenWorkerReady>(value)
+                        .ok()
+                        .and_then(|ready| {
+                            ready
+                                .libraries
+                                .into_iter()
+                                .find(|library| library.name == "openh264")
+                        })
+                        .map(|library| (library.state, library.detail));
+            }
             (_, Ok(_)) => {}
             (purpose, Err(failure)) => {
                 let what = model.online.blocked_by(&purpose);
@@ -655,8 +671,7 @@ fn bundled(_paths: &anyps5_core::paths::AppPaths) -> Option<std::path::PathBuf> 
     None
 }
 
-/// The share worker this launcher carries (Windows release builds), written like the net
-/// service.
+/// The share worker this launcher carries (release builds), written like the net service.
 #[cfg(embedded_share)]
 fn bundled_worker(paths: &anyps5_core::paths::AppPaths) -> Option<std::path::PathBuf> {
     static WORKER: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/anyplay-share.bin"));
@@ -716,7 +731,7 @@ fn extract(
 }
 
 /// Share screen is switched on: by the preference, or by `ANYPLAY_SHARE_SCREEN=1` for one run.
-fn share_screen_enabled(model: &Model) -> bool {
+pub(crate) fn share_screen_enabled(model: &Model) -> bool {
     model.prefs.online_share_screen
         || std::env::var_os(net::SHARE_SCREEN_VARIABLE).is_some_and(|v| v == "1")
 }
@@ -733,6 +748,16 @@ pub fn share_worker_path(model: &Model) -> Option<std::path::PathBuf> {
 fn tell_worker(model: &mut Model) {
     if !share_screen_enabled(model) {
         return;
+    }
+    // On Linux the codec is Cisco's download: while the player keeps it on, a missing one is
+    // fetched again, and the worker is told once it is there.
+    if cfg!(target_os = "linux") && model.prefs.online_openh264 {
+        let source = anyps5_core::openh264::Source::default();
+        if anyps5_core::openh264::state(&model.paths, &source)
+            == anyps5_core::openh264::CodecState::Missing
+        {
+            anyps5_core::openh264::install_in_background(&model.paths, source, None);
+        }
     }
     let Some(path) = net::locate_worker().or_else(|| bundled_worker(&model.paths)) else {
         tracing::info!("share screen is on, but there is no share worker");
@@ -1264,6 +1289,32 @@ mod tests {
             model.toast.as_ref().map(|t| t.text.as_str()),
             Some("This account is banned. Open Online to read why and how to appeal.")
         );
+    }
+
+    #[test]
+    fn the_worker_s_word_on_openh264_reaches_the_codec_row() {
+        let mut model = signed_in_model();
+        let mut ready = Vec::new();
+        let answer = |value| Notice::Answered(Purpose::ScreenWorker, Ok(value));
+        service().notice(
+            &mut model,
+            answer(serde_json::json!({
+                "encoders": [], "decoders": [], "capture": true,
+                "libraries": [{"name": "openh264", "state": "refused", "detail": "/x: SHA-256 ab"}]
+            })),
+            &mut ready,
+        );
+        assert_eq!(
+            model.share_codec,
+            Some(("refused".into(), Some("/x: SHA-256 ab".into())))
+        );
+        // A worker that loads no library (Windows, or an older one) says nothing of it.
+        service().notice(
+            &mut model,
+            answer(serde_json::json!({"encoders": [], "decoders": [], "capture": true})),
+            &mut ready,
+        );
+        assert_eq!(model.share_codec, None);
     }
 
     #[test]

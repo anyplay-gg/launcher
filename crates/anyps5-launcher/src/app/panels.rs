@@ -353,6 +353,14 @@ impl PanelHost {
             links: self.links.clone(),
             cjk_fonts: anyps5_core::fonts::cjk_state(&cx.model.paths, &crate::fonts::BUNDLE),
             phone: &cx.model.phone,
+            openh264: (cfg!(target_os = "linux") && super::online::share_screen_enabled(cx.model))
+                .then(|| crate::screens::settings::Openh264Env {
+                    state: anyps5_core::openh264::state(
+                        &cx.model.paths,
+                        &anyps5_core::openh264::Source::default(),
+                    ),
+                    worker: cx.model.share_codec.clone(),
+                }),
             clips: crate::screens::settings::ClipsEnv {
                 count: clips_count,
                 capturing: self.settings.clips_capturing(),
@@ -411,6 +419,20 @@ impl PanelHost {
                 ) {
                     let text = Extra::ToolkitDownloading.text(model.language());
                     model.toast(text, Icon::DOWNLOAD_SIMPLE);
+                }
+            }
+            SettingsAction::Openh264(true) => {
+                let repaint = cx.ctx.clone();
+                anyps5_core::openh264::install_in_background(
+                    &model.paths,
+                    anyps5_core::openh264::Source::default(),
+                    Some(std::sync::Arc::new(move || repaint.request_repaint())),
+                );
+                cx.ctx.request_repaint();
+            }
+            SettingsAction::Openh264(false) => {
+                if let Err(error) = anyps5_core::openh264::remove(&model.paths) {
+                    tracing::warn!("cannot remove Cisco's OpenH264: {error}");
                 }
             }
             SettingsAction::DownloadCjkFonts => {

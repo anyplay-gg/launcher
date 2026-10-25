@@ -4,7 +4,7 @@
 //! ```text
 //! anyplay-launcher --gallery=settings|settings1..6|game-settings|confirm|controls|controls-capture|
 //!                           controls-end|advanced|trophies|trophies-hidden|trophies-revealed|banner|start|unlocking|log|report|library|
-//!                           about-update|behavior-links|behavior-clips-off|behavior-clips|behavior-clips-key|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|
+//!                           about-update|behavior-links|settings-codec|settings-codec-off|behavior-clips-off|behavior-clips|behavior-clips-key|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|
 //!                           toolkit-unused|game-toolkit|
 //!                           recommended|recommended-warning|whats-new|whats-new-loading|
 //!                           saves|saves-empty|restore|
@@ -112,6 +112,8 @@ pub enum ScreenPage {
     WhatsNewLauncher,
     /// Behavior with the AnyPlay links registered to this launcher.
     BehaviourLinks,
+    /// Advanced on Linux with share screen on: the OpenH264 row turned on (and downloaded), or off.
+    SettingsCodec(bool),
     /// Behavior with Clips off, on at 30 seconds, and waiting for the clip key.
     BehaviourClipsOff,
     BehaviourClips,
@@ -461,6 +463,8 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "about-update-refused" => ScreenPage::AboutUpdate(UpdateLook::Refused),
         "whats-new-launcher" => ScreenPage::WhatsNewLauncher,
         "behavior-links" => ScreenPage::BehaviourLinks,
+        "settings-codec" => ScreenPage::SettingsCodec(true),
+        "settings-codec-off" => ScreenPage::SettingsCodec(false),
         "behavior-clips-off" => ScreenPage::BehaviourClipsOff,
         "behavior-clips" => ScreenPage::BehaviourClips,
         "behavior-clips-key" => ScreenPage::BehaviourClipsKey,
@@ -1878,6 +1882,12 @@ impl ScreenGallery {
             },
             cjk_fonts: anyps5_core::fonts::CjkState::Missing,
             phone: &self.phone,
+            openh264: matches!(self.page, ScreenPage::SettingsCodec(_)).then(|| {
+                crate::screens::settings::Openh264Env {
+                    state: anyps5_core::openh264::CodecState::Ready,
+                    worker: Some(("ready".into(), None)),
+                }
+            }),
             clips: crate::screens::settings::ClipsEnv {
                 count: if self.prefs.clips_seconds > 0 { 3 } else { 0 },
                 capturing: matches!(self.page, ScreenPage::BehaviourClipsKey),
@@ -2228,6 +2238,10 @@ impl ScreenGallery {
                     .open_launcher(&self.launcher_notes.notes, shell.language);
             }
             ScreenPage::BehaviourLinks => self.settings.open_at(3, true),
+            ScreenPage::SettingsCodec(on) => {
+                self.prefs.online_openh264 = on;
+                self.settings.open_at(6, true);
+            }
             ScreenPage::BehaviourClipsOff => {
                 self.prefs.clips_seconds = 0;
                 self.settings.open_at(3, true);

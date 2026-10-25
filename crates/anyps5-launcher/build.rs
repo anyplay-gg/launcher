@@ -42,8 +42,8 @@ fn embed_net_service() {
     println!("cargo:rustc-cfg=embedded_net");
 }
 
-/// A release build for Windows also carries the share worker (`anyplay-share` from
-/// anyplaynet/network), which streams and shows a game's window for share screen.
+/// A release build also carries the share worker (`anyplay-share` from anyplaynet/network),
+/// which streams and shows a game's window for share screen.
 /// `ANYPLAY_SHARE_EMBED` names the built worker; without it the launcher looks for one beside
 /// itself, and share screen stays off where there is none.
 fn embed_share_worker() {
