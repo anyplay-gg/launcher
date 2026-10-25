@@ -367,6 +367,7 @@ impl PanelHost {
         match action {
             SettingsAction::Close => model.dismiss_overlay(),
             SettingsAction::GamesFolderChosen(_) => {
+                model.forget_known_games();
                 model.selected = 0;
                 model.rescan();
             }

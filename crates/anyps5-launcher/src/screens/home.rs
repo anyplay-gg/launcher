@@ -1311,12 +1311,23 @@ fn action_row_status(
             );
             // The time left, from the measured speed; nothing until there is enough to tell.
             let note = if paused {
-                Some(crate::screens::prepare_strings::state_label(true, language).to_owned())
+                Some(crate::screens::prepare_strings::paused_note(language).to_owned())
             } else {
                 cx.model
                     .time_left(&game.id)
                     .map(|s| crate::screens::prepare_strings::time_left(s, language))
             };
+            let spoken = format!(
+                "{} {percent}{}",
+                language.text(step.title_key()),
+                note.as_deref()
+                    .map(|n| format!(", {n}"))
+                    .unwrap_or_default()
+            );
+            let status =
+                Rect::from_min_size(pos2(left, mid - 12.0), vec2(block + 14.0 + 48.0, 24.0));
+            ui.allocate_rect(status, Sense::hover())
+                .widget_info(|| WidgetInfo::labeled(Role::Label, true, spoken.as_str()));
             if let Some(note) = note {
                 let w = text::tabular_width(&painter, ty::PROGRESS_PERCENT, &percent);
                 text::paint(
@@ -1339,7 +1350,7 @@ fn action_row_status(
                 if *step == crate::app::pipeline::UnlockStep::Relink && *fraction == 0.0 {
                     IndeterminateLine::new(accent).width(block).show(ui);
                 } else {
-                    ProgressLine::new(overall, accent)
+                    ProgressLine::new(overall, if paused { white(0.55) } else { accent })
                         .width(block)
                         .label(language.text(step.title_key()))
                         .show(ui);

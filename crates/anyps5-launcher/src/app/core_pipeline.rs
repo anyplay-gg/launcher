@@ -107,7 +107,8 @@ fn watch_machine(queue: &Arc<UnlockQueue>, game_active: &Arc<AtomicBool>, stop: 
                     game_active.load(Ordering::Relaxed),
                     queue.background_active(),
                 );
-                queue.hold_background(hold.is_some());
+                // Read again: a game may have started since the reading above.
+                queue.hold_background(hold.is_some() || game_active.load(Ordering::Relaxed));
                 drop(queue);
                 // Short sleeps, so the launcher ends without waiting for the period.
                 for _ in 0..20 {
@@ -317,11 +318,18 @@ impl CorePipeline {
         root: &Path,
         prefs: &Preferences,
         background: bool,
+        fresh: bool,
     ) {
         let pin = prefs.game_settings(&game.id).toolkit;
         let toolkit = match self.toolkit_for(pin.as_deref()) {
             Ok(Some(toolkit)) => toolkit,
-            Ok(None) => return,
+            Ok(None) => {
+                // Nothing to unlock with: the model must not wait for it.
+                self.push(PipelineEvent::UnlockCancelled {
+                    game: game.id.clone(),
+                });
+                return;
+            }
             Err(error) => {
                 self.push(PipelineEvent::UnlockFinished {
                     game: game.id.clone(),
@@ -347,6 +355,7 @@ impl CorePipeline {
         // Unlocking again replaces the copy; its saves are backed up first.
         request.backup_dir = Some(self.paths.game_backups_dir(&game.title_id));
         request.background = background;
+        request.fresh = fresh;
         if background {
             // The gate looks only every few seconds; a game that runs now must not wait for it.
             self.queue
@@ -494,6 +503,7 @@ impl Pipeline for CorePipeline {
 
     fn submit(&mut self, command: PipelineCommand, cx: &PipelineContext<'_>) {
         *self.language.lock().expect("language lock") = ui_language(cx.prefs.language);
+        let fresh = matches!(command, PipelineCommand::UnlockAgain(_));
         match command {
             PipelineCommand::Unlock(_)
             | PipelineCommand::Retry(_)
@@ -502,15 +512,18 @@ impl Pipeline for CorePipeline {
                     self.locate_toolkit(cx.prefs);
                 }
                 if let (Some(game), Some(root)) = (cx.game, cx.root) {
-                    self.unlock(game, root, cx.prefs, false);
+                    // Unlock again repairs a copy: it relinks and keeps nothing of the old one.
+                    self.unlock(game, root, cx.prefs, false, fresh);
                 }
             }
-            PipelineCommand::Prepare(_) => {
+            PipelineCommand::Prepare(prepared) => {
                 if self.toolkit.is_none() {
                     self.locate_toolkit(cx.prefs);
                 }
                 if let (Some(game), Some(root)) = (cx.game, cx.root) {
-                    self.unlock(game, root, cx.prefs, true);
+                    self.unlock(game, root, cx.prefs, true, false);
+                } else {
+                    self.push(PipelineEvent::UnlockCancelled { game: prepared });
                 }
             }
             PipelineCommand::Promote(game) => {

@@ -49,6 +49,14 @@ pub fn hero_note(paused: bool, language: Language) -> &'static str {
     }
 }
 
+/// Beside the bar of a prepared game that stands still.
+pub fn paused_note(language: Language) -> &'static str {
+    match language {
+        Language::English => "Paused. Goes on when the PC is free.",
+        Language::Turkish => "Duraklat{131}ld{131}. PC bo{15f} olunca devam eder.",
+    }
+}
+
 /// The time left, from the seconds a calm estimate gives: "Under a minute left", "About 3 min left".
 pub fn time_left(seconds: f32, language: Language) -> String {
     let minutes = (seconds / 60.0).round() as i64;

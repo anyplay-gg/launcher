@@ -209,6 +209,12 @@ mod system {
             .flatten()
             .filter_map(|entry| {
                 let path = entry.path();
+                // A wireless mouse or pad is a battery of its own, not the PC's.
+                if std::fs::read_to_string(path.join("scope"))
+                    .is_ok_and(|s| s.trim().eq_ignore_ascii_case("Device"))
+                {
+                    return None;
+                }
                 let kind = std::fs::read_to_string(path.join("type")).ok()?;
                 let kind = kind.trim().to_string();
                 let value = if kind.eq_ignore_ascii_case("Mains") {

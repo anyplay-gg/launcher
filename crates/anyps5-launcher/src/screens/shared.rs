@@ -87,7 +87,7 @@ pub fn state_label(state: &GameState, language: Language) -> StateLabel {
             if *paused {
                 color::state_neutral()
             } else {
-                accent
+                color::text_active()
             },
             crate::screens::prepare_strings::state_label(*paused, language).to_owned(),
         ),

@@ -441,8 +441,8 @@ pub fn link_tree(
             *slot = Some(error);
         }
     };
-    let work = || {
-        if opts.background {
+    let work = |own_thread: bool| {
+        if opts.background && own_thread {
             crate::process::enter_background_mode();
         }
         loop {
@@ -477,7 +477,7 @@ pub fn link_tree(
         }
     };
     if threads == 1 {
-        work();
+        work(false);
         live.store(0, Ordering::Relaxed);
         progress(share(done.load(Ordering::Relaxed)));
     } else {
@@ -486,9 +486,16 @@ pub fn link_tree(
             for _ in 0..threads {
                 let (work, live, caller) = (&work, &live, &caller);
                 scope.spawn(move || {
-                    work();
-                    live.fetch_sub(1, Ordering::AcqRel);
-                    caller.unpark();
+                    // Counted down even when the work panics, so the caller never waits for it.
+                    struct Done<'a>(&'a AtomicUsize, &'a thread::Thread);
+                    impl Drop for Done<'_> {
+                        fn drop(&mut self) {
+                            self.0.fetch_sub(1, Ordering::AcqRel);
+                            self.1.unpark();
+                        }
+                    }
+                    let _done = Done(live, caller);
+                    work(true);
                 });
             }
             while live.load(Ordering::Acquire) > 0 {

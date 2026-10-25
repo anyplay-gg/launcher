@@ -981,3 +981,56 @@ fn cancelling_a_paused_unlock_ends_it() {
     });
     no_leftovers(&w.root);
 }
+
+#[test]
+fn promoting_a_paused_prepared_game_lets_it_go_on() {
+    let w = world(&["FAKE_DELAY_MS=40"]);
+    let mut prepared = w.dump("PromoPaused", "PPSA20008", &elf_bytes());
+    prepared.background = true;
+    let (queue, events) = queue();
+    assert!(queue.enqueue(prepared.clone()));
+    events.wait_until("relinking", Duration::from_secs(30), |e| {
+        e.iter().any(|ev| {
+            matches!(
+                ev,
+                UnlockEvent::Progress {
+                    step: Step::Relink,
+                    ..
+                }
+            )
+        })
+    });
+    // The PC got busy: it stands still. The player then presses Play on it.
+    queue.hold_background(true);
+    events.wait_until("paused", Duration::from_secs(10), |e| {
+        e.iter()
+            .any(|ev| matches!(ev, UnlockEvent::Paused { paused: true, .. }))
+    });
+    assert!(queue.promote(&prepared.game));
+    events.wait_until("it goes on and finishes", Duration::from_secs(60), |e| {
+        finished(e, &prepared.game).is_some()
+    });
+    assert_eq!(
+        finished(&events.0.lock().unwrap(), &prepared.game),
+        Some(true)
+    );
+}
+
+#[test]
+fn a_kept_relinker_output_does_not_report_timings() {
+    let w = world(&[]);
+    let request = w.dump("NoTimings", "PPSA20009", &elf_bytes());
+    run(&request).0.unwrap();
+    let (again, events) = run(&request);
+    again.unwrap();
+    assert!(
+        logs(&events)
+            .iter()
+            .any(|l| l.starts_with("relinker output kept"))
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, UnlockEvent::Timings { .. }))
+    );
+}

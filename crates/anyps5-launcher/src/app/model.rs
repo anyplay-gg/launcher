@@ -952,6 +952,9 @@ impl Model {
 
     pub fn cancel_unlock(&mut self, id: &GameId) {
         if self.prep.background.remove(id) {
+            // Held back or not yet started in the core: it still has to be told.
+            self.effects
+                .push(Effect::Pipeline(PipelineCommand::Cancel(id.clone())));
             // The player does not want it prepared: it is not tried again.
             self.prep.paused.remove(id);
             let key = id.as_str().to_owned();

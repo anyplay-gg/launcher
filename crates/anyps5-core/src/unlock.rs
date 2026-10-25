@@ -828,10 +828,11 @@ fn reusable_output(request: &UnlockRequest, copy: &Path, key: Option<&str>) -> O
     if record.relink_key.as_deref() != Some(key) {
         return None;
     }
-    let intact = record
-        .generated
-        .iter()
-        .all(|relative| copy.join("app0").join(relative).is_file());
+    let intact = copy.join(EXECUTABLE).is_file()
+        && record
+            .generated
+            .iter()
+            .all(|relative| copy.join("app0").join(relative).is_file());
     intact.then(|| Reusable {
         copy: copy.to_path_buf(),
         generated: record.generated,
@@ -855,9 +856,6 @@ pub fn run_unlock(
             .map_err(io_context("macOS relinker"))?;
         crate::macos::require_rosetta_for(request.toolkit.relinker())
             .map_err(io_context("Rosetta 2"))?;
-    }
-    if request.background {
-        control.set_background(true);
     }
     let root = std::path::absolute(&request.root).unwrap_or_else(|_| request.root.clone());
     let name = crate::paths::unlocked_copy_name(&request.title_id, &request.game);
@@ -956,9 +954,9 @@ pub fn run_unlock(
             return Err(UnlockError::NoOutput);
         }
         let guest_modules = out.join("app0");
-        if guest_modules.is_dir()
-            && let Ok(made) = fsx::walk(&guest_modules, true, &[])
-        {
+        if guest_modules.is_dir() {
+            let made = fsx::walk(&guest_modules, true, &[])
+                .map_err(io_context("read the converted modules"))?;
             generated = made
                 .iter()
                 .filter(|e| !e.is_dir)
@@ -1099,10 +1097,13 @@ pub fn run_unlock(
     reporter.progress(Step::Finish, 1.0);
     clock.stop();
     reporter.log(clock.line());
-    (sink)(UnlockEvent::Timings {
-        game: request.game.clone(),
-        seconds: clock.seconds,
-    });
+    // A kept relinker output says nothing about what a relink costs here.
+    if reuse.is_none() {
+        (sink)(UnlockEvent::Timings {
+            game: request.game.clone(),
+            seconds: clock.seconds,
+        });
+    }
     Ok(record)
 }
 
@@ -1695,14 +1696,22 @@ fn pump(shared: &Arc<Shared>, state: &mut QueueState) {
     let asked_waiting = state.queue.iter().any(|r| !r.background);
     let make_way = asked_running || asked_waiting;
     let stand_still = make_way || state.hold_background;
-    for running in state.running.iter().filter(|r| r.background) {
-        if stand_still && !running.control.is_paused() {
+    // A prepared game stands still for the PC or for an asked-for one; an asked-for game waits
+    // only for another asked-for game that started before it (a promoted game, for instance).
+    let mut asked_before = false;
+    for running in &state.running {
+        let still = if running.background {
+            stand_still
+        } else {
+            std::mem::replace(&mut asked_before, true)
+        };
+        if still && !running.control.is_paused() {
             running.control.pause();
             (shared.sink)(UnlockEvent::Paused {
                 game: running.game.clone(),
                 paused: true,
             });
-        } else if !stand_still && running.control.is_paused() {
+        } else if !still && running.control.is_paused() {
             running.control.resume();
             (shared.sink)(UnlockEvent::Paused {
                 game: running.game.clone(),
