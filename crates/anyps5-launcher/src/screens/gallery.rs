@@ -614,6 +614,7 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
                 joinable: true,
                 members: 2,
                 max_members: 4,
+                kind: Default::default(),
             }),
         })
     };
@@ -683,6 +684,7 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         title: NAMES[4].into(),
         version: "01.000".into(),
         expires: 0,
+        kind: Default::default(),
     }];
     let count = |platinum, gold, silver, bronze| Count {
         bronze,
@@ -1048,6 +1050,7 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
         version: "01.000".into(),
         leader: AccountId(1),
         max_members: 4,
+        kind: Default::default(),
         visibility: Visibility::Friends,
         members: vec![Member {
             account: account(1, "Mira"),
@@ -1071,6 +1074,10 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
             updated,
             request: false,
             party: None,
+            unread: 0,
+            muted: false,
+            pinned: false,
+            rev: 0,
         }
     };
     let now = SAMPLE_NOW as u64;
@@ -1085,6 +1092,7 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
     lumen.marks = vec![ReadMark {
         account: AccountId(2),
         seq: 4,
+        delivered: 4,
     }];
     let mut group = chat(
         "c-raid",
@@ -1136,6 +1144,11 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
             sender: account(who, handle),
             text: text.into(),
             created: now - ago,
+            reply: None,
+            edited: None,
+            deleted: false,
+            reactions: Vec::new(),
+            rev: 0,
         };
     state.social.ingest(
         "c-lumen",
@@ -1179,6 +1192,7 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
                 said("c-lumen", 7, 2, "Lumen", "Ready when you are.", 720),
             ],
             last: 7,
+            rev: 0,
         },
     );
     state.social.ingest(
@@ -1204,6 +1218,7 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
                 ),
             ],
             last: 2,
+            rev: 0,
         },
     );
 }

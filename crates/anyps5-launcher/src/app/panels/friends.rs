@@ -195,6 +195,8 @@ pub(super) fn online_action(model: &mut Model, action: OnlineAction) {
                     account,
                     reason,
                     details: String::new(),
+                    conversation: None,
+                    seq: None,
                 },
             );
         }

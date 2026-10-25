@@ -85,6 +85,7 @@ fn the_rail_counts_what_waits_in_each_section() {
         title: "Test Game".into(),
         version: "01.000".into(),
         expires: 0,
+        kind: Default::default(),
     }];
     online.social.add_party_invitation(PartyInvitation {
         id: "pi".into(),

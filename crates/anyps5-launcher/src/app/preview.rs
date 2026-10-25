@@ -726,6 +726,10 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
                 updated: last,
                 request,
                 party: None,
+                unread: 0,
+                muted: false,
+                pinned: false,
+                rev: 0,
             };
             m.online.social.set_conversations(Conversations {
                 conversations: vec![chat("a", (2, "Lumen"), 7, 5, false)],

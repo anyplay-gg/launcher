@@ -409,6 +409,10 @@ mod tests {
             updated: 0,
             request: false,
             party: None,
+            unread: 0,
+            muted: false,
+            pinned: false,
+            rev: 0,
         }
     }
 

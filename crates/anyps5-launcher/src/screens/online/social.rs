@@ -1006,6 +1006,10 @@ mod tests {
             updated: last,
             request: false,
             party: None,
+            unread: 0,
+            muted: false,
+            pinned: false,
+            rev: 0,
         }
     }
 
@@ -1022,9 +1026,15 @@ mod tests {
                     },
                     text: format!("Message {seq}"),
                     created: 1_792_670_400 - 600 + seq * 60,
+                    reply: None,
+                    edited: None,
+                    deleted: false,
+                    reactions: Vec::new(),
+                    rev: 0,
                 })
                 .collect(),
             last: to,
+            rev: 0,
         }
     }
 
@@ -1214,6 +1224,7 @@ mod tests {
                 link: None,
             }],
             created: 0,
+            kind: Default::default(),
         };
         online.session = Some(session.clone());
         let rows = panel.rows(&data(&online)).2;
@@ -1465,6 +1476,7 @@ mod tests {
         c.marks = vec![ReadMark {
             account: AccountId(2),
             seq: 4,
+            delivered: 4,
         }];
         list(&mut online, vec![c], vec![]);
         online.social.ingest("a", Fetch::Newest, texts("a", 1, 4));

@@ -56,6 +56,7 @@ impl Fetch {
             after,
             before,
             limit: Some(self.limit()),
+            changed_after: None,
         }
     }
 }
@@ -306,7 +307,12 @@ impl Social {
         if let Some(c) = self.get_mut(id) {
             match c.marks.iter_mut().find(|m| m.account == account) {
                 Some(mark) => mark.seq = mark.seq.max(seq),
-                None => c.marks.push(super::api::ReadMark { account, seq }),
+                None => c.marks.push(super::api::ReadMark {
+                    account,
+                    seq,
+                    // Read implies received.
+                    delivered: seq,
+                }),
             }
         }
     }
@@ -549,6 +555,10 @@ mod tests {
             updated: last,
             request: false,
             party: None,
+            unread: 0,
+            muted: false,
+            pinned: false,
+            rev: 0,
         }
     }
 
@@ -559,6 +569,11 @@ mod tests {
             sender: account(sender, "x"),
             text: format!("m{seq}"),
             created: 1_000 + seq,
+            reply: None,
+            edited: None,
+            deleted: false,
+            reactions: Vec::new(),
+            rev: 0,
         }
     }
 
@@ -566,6 +581,7 @@ mod tests {
         Messages {
             messages: (from..=to).map(|n| message(id, n, 2)).collect(),
             last,
+            rev: 0,
         }
     }
 
@@ -731,6 +747,7 @@ mod tests {
             Messages {
                 messages: Vec::new(),
                 last: 5,
+                rev: 0,
             },
         );
         assert_eq!(got.follow, None);
@@ -854,7 +871,8 @@ mod tests {
             social.get("a").unwrap().marks,
             [ReadMark {
                 account: AccountId(2),
-                seq: 4
+                seq: 4,
+                delivered: 4,
             }]
         );
         assert_eq!(
@@ -924,7 +942,7 @@ mod tests {
         let line = |f: Fetch| anyplay_control::command_line(1, &f.command("c1"));
         assert_eq!(
             line(Fetch::After(7)),
-            "{\"id\":1,\"do\":\"messages\",\"conversation\":\"c1\",\"after\":7,\"before\":null,\"limit\":100}\n"
+            "{\"id\":1,\"do\":\"messages\",\"conversation\":\"c1\",\"after\":7,\"before\":null,\"limit\":100,\"changed_after\":null}\n"
         );
         assert!(line(Fetch::Before(7)).contains("\"before\":7"));
         assert!(line(Fetch::Newest).contains("\"after\":null"));
