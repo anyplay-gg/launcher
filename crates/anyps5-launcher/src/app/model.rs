@@ -86,6 +86,9 @@ pub enum Effect {
     Pipeline(PipelineCommand),
     /// Scan the games folder (and watch it).
     Rescan,
+    /// Share the running game's window with the party (needs the game's window and processes,
+    /// which only the pipeline knows).
+    ScreenStart,
     /// Open the native folder dialog; the answer comes back through [`Model::choose_folder`].
     PickGamesFolder,
     MeasureSize(GameId),
