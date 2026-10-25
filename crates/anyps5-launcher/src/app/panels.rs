@@ -57,6 +57,7 @@ use crate::screens::game_settings::{
     UninstallPanel,
 };
 use crate::screens::home::tile_overlay;
+use crate::screens::ingame::{CloseGamePanel, InGameAction, InGameData, InGamePanel};
 use crate::screens::library::{LibraryAction, LibraryData, LibraryEntry, LibraryGrid, StateText};
 use crate::screens::log::{LogAction, LogData, LogView, ReviewData};
 use crate::screens::recommended::{RecommendedAction, RecommendedData, RecommendedPanel};
@@ -124,6 +125,9 @@ pub struct PanelHost {
     uninstall: UninstallPanel,
     /// The question when the release a game stays on is gone.
     toolkit_missing: MissingPanel,
+    /// The quick panel of the running game and the question before it is closed.
+    in_game: InGamePanel,
+    close_game: CloseGamePanel,
     /// The tags of the releases on this PC, read when the game sheet opens and after a change.
     pin_installed: Option<Vec<String>>,
     controls: ControlsPanel,
@@ -202,6 +206,8 @@ impl PanelHost {
             game_settings: GameSettingsPanel::default(),
             uninstall: UninstallPanel::default(),
             toolkit_missing: MissingPanel::default(),
+            in_game: InGamePanel::default(),
+            close_game: CloseGamePanel::default(),
             pin_installed: None,
             controls: ControlsPanel::default(),
             advanced: AdvancedPanel::default(),
@@ -663,6 +669,90 @@ impl PanelHost {
                         self.start_uninstall(&game, root, backups, model.language());
                     }
                 }
+            }
+        }
+    }
+
+    /// The quick panel of the running game (docs/DESIGN.md 6.6). It ends when the game does.
+    fn in_game_ui(&mut self, cx: &mut OverlayCx<'_>, wanted: bool) {
+        let events = self.take_events(wanted);
+        let Some(game) = cx
+            .model
+            .running
+            .clone()
+            .and_then(|id| cx.model.game(&id).cloned())
+        else {
+            self.in_game.close();
+            if wanted {
+                cx.model.leave_in_game();
+            }
+            return;
+        };
+        if wanted && !self.in_game.is_active() {
+            self.in_game.open();
+        } else if !wanted && self.in_game.is_active() {
+            if cx.model.overlay.is_some_and(Overlay::is_side_panel) {
+                self.in_game.dismiss();
+            } else {
+                self.in_game.close();
+            }
+        }
+        let data = InGameData {
+            title: &game.name,
+            language: cx.model.language(),
+            accent: cx.shell.accent_color(),
+            online: cx.model.online.is_signed_in(),
+        };
+        for action in self.in_game.show(cx.shell, cx.ctx, &events, &data) {
+            let model = &mut *cx.model;
+            match action {
+                InGameAction::Resume | InGameAction::Dismiss => model.return_to_game(),
+                InGameAction::Trophies => model.open(Overlay::Trophies),
+                InGameAction::GameSettings => model.open(Overlay::GameSettings),
+                InGameAction::Friends => model.open(Overlay::Online),
+                InGameAction::AskClose => model.switch_overlay(Overlay::ConfirmCloseGame),
+                InGameAction::Close | InGameAction::Keep => {}
+            }
+        }
+    }
+
+    /// "Close Game" / "Keep Playing". Closing stops the game; the launcher stays in front.
+    fn close_game_ui(&mut self, cx: &mut OverlayCx<'_>, wanted: bool) {
+        let events = self.take_events(wanted);
+        let Some(game) = cx
+            .model
+            .running
+            .clone()
+            .and_then(|id| cx.model.game(&id).cloned())
+        else {
+            self.close_game.close();
+            if wanted {
+                cx.model.leave_in_game();
+            }
+            return;
+        };
+        if wanted && !self.close_game.is_active() {
+            self.close_game.open();
+        } else if !wanted && self.close_game.is_active() {
+            if cx.model.overlay.is_some_and(Overlay::is_side_panel) {
+                self.close_game.dismiss();
+            } else {
+                self.close_game.close();
+            }
+        }
+        let (language, accent) = (cx.model.language(), cx.shell.accent_color());
+        for action in self
+            .close_game
+            .show(cx.shell, cx.ctx, &events, &game.name, language, accent)
+        {
+            let model = &mut *cx.model;
+            match action {
+                InGameAction::Close => {
+                    model.stop(&game.id);
+                    model.leave_in_game();
+                }
+                InGameAction::Keep => model.switch_overlay(Overlay::InGame),
+                _ => {}
             }
         }
     }
@@ -1613,6 +1703,8 @@ impl OverlayHost for PanelHost {
             Overlay::GameSettings => self.game_settings_ui(cx, wanted),
             Overlay::ConfirmUninstall => self.uninstall_ui(cx, wanted),
             Overlay::ToolkitMissing => self.toolkit_missing_ui(cx, wanted),
+            Overlay::InGame => self.in_game_ui(cx, wanted),
+            Overlay::ConfirmCloseGame => self.close_game_ui(cx, wanted),
             Overlay::Saves => self.saves_ui(cx, wanted),
             Overlay::ConfirmRestore => self.restore_ui(cx, wanted),
             Overlay::Controls => self.controls_ui(cx, wanted),
@@ -1888,6 +1980,29 @@ mod tests {
         }
     }
 
+    #[test]
+    fn the_quick_panel_of_the_home_button_stays_open_and_acts() {
+        let mut rig = Rig::new("in-game");
+        let games = make_games(&rig.dir.join("art"));
+        apply_scene(&mut rig.app, Scene::HomeInGame, games);
+        rig.frames(5);
+        assert_eq!(rig.app.model.overlay, Some(Overlay::InGame));
+        // Close Game asks first.
+        let ctx = rig.ctx.clone();
+        rig.app.model.switch_overlay(Overlay::ConfirmCloseGame);
+        rig.frames(5);
+        assert_eq!(rig.app.model.overlay, Some(Overlay::ConfirmCloseGame));
+        // The question opens on Keep Playing: Enter does not stop the game.
+        rig.app
+            .handle_event(&ctx, InputEvent::Command(Command::Select));
+        rig.frames(3);
+        assert_eq!(rig.app.model.overlay, Some(Overlay::InGame));
+        assert!(rig.app.model.running.is_some());
+        // Back on the panel returns to the game.
+        rig.press(Command::Back);
+        assert_eq!(rig.app.model.overlay, None);
+        assert!(!rig.app.model.summoned);
+    }
     #[test]
     fn every_overlay_opens_and_closes_with_back() {
         let mut rig = Rig::new("overlays");

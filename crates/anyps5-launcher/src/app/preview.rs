@@ -57,6 +57,10 @@ pub enum Scene {
     HomeFailed,
     HomeQueued,
     HomeRunning,
+    /// The running game with the Home button's quick panel in front.
+    HomeInGame,
+    /// The question before the running game is closed.
+    HomeInGameClose,
     HomeOutdated,
     HomeDiagnosis,
     /// Signed in with unread messages: the count on the profile button.
@@ -111,6 +115,8 @@ impl Scene {
             "home-failed" => Scene::HomeFailed,
             "home-queued" => Scene::HomeQueued,
             "home-running" => Scene::HomeRunning,
+            "home-ingame" => Scene::HomeInGame,
+            "home-ingame-close" => Scene::HomeInGameClose,
             "home-outdated" => Scene::HomeOutdated,
             "home-diagnosis" => Scene::HomeDiagnosis,
             "home-messages" => Scene::HomeMessages,
@@ -138,7 +144,7 @@ impl Scene {
         })
     }
 
-    pub const ALL_NAMES: [&'static str; 37] = [
+    pub const ALL_NAMES: [&'static str; 39] = [
         "onboarding0",
         "onboarding1",
         "onboarding2",
@@ -153,6 +159,8 @@ impl Scene {
         "home-failed",
         "home-queued",
         "home-running",
+        "home-ingame",
+        "home-ingame-close",
         "home-outdated",
         "home-diagnosis",
         "home-messages",
@@ -558,6 +566,14 @@ pub fn apply_scene(app: &mut LauncherApp, scene: Scene, games: Vec<Game>) {
                 .insert(ids[at(2)].clone(), (UnlockStep::Relink, 0.3));
         }
         Scene::HomeRunning => m.running = Some(ids[at(1)].clone()),
+        Scene::HomeInGame | Scene::HomeInGameClose => {
+            m.running = Some(ids[at(1)].clone());
+            m.summoned = true;
+            m.switch_overlay(crate::app::overlay::Overlay::InGame);
+            if scene == Scene::HomeInGameClose {
+                m.switch_overlay(crate::app::overlay::Overlay::ConfirmCloseGame);
+            }
+        }
         Scene::HomeOutdated => m.toolkit = Some("0.2.0".to_owned()),
         Scene::HomeToolkit | Scene::HomeToolkitMissing => {
             let id = ids[at(1)].clone();
@@ -882,8 +898,16 @@ impl PreviewApp {
         let mut inner = LauncherApp::from_shell(shell, &cc.egui_ctx, config);
         inner.intro = options.intro;
         inner.offline = true;
+        // The quick panel of the Home button only exists while the launcher is in front.
+        inner.assume_focus = (demo && std::env::var_os("ANYPS5_DEMO_FOCUS").is_some())
+            || matches!(
+                options.scene,
+                Some(Scene::HomeInGame | Scene::HomeInGameClose)
+            );
         inner.freeze_backdrop = !demo;
-        inner.assume_focus = demo && std::env::var_os("ANYPS5_DEMO_FOCUS").is_some();
+        if demo {
+            crate::ui::home_button::test_game_from_env(&inner.shell.home);
+        }
         let mut games = games;
         if let Some(real) = &options.real_art {
             use_real_art(&mut games[1], real);

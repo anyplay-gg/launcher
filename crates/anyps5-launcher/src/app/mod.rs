@@ -187,7 +187,7 @@ impl LauncherApp {
         let wake: std::sync::Arc<dyn Fn() + Send + Sync> =
             std::sync::Arc::new(move || repaint.request_repaint());
         Self {
-            phone: phone::PhoneService::new(wake.clone(), simulated),
+            phone: phone::PhoneService::new(wake.clone(), simulated, shell.home.clone()),
             clips: clips::ClipsService::new(wake.clone(), simulated),
             online: online::OnlineService::new(wake, simulated),
             shell,
@@ -288,9 +288,15 @@ impl LauncherApp {
         if focused && !self.focused {
             self.model.window_focused();
         }
+        if self.focused && !focused {
+            // Someone else took the front (the player switched to the game by hand): Back no
+            // longer means "back to the game".
+            self.model.leave_in_game();
+        }
         self.focused = focused;
 
         self.apply_preferences(ctx);
+        self.sync_home_button();
         if std::mem::take(&mut self.intro) {
             crate::ui::intro::start(ctx);
             self.shell.play(crate::ui::sound::Cue::Boot);
@@ -377,6 +383,33 @@ impl LauncherApp {
             .set_music(self.model.prefs.music && !playing && self.focused);
         self.shell.backdrop.paused =
             self.model.running.is_some() || !self.focused || self.freeze_backdrop;
+    }
+
+    /// Tells the input threads about the game and the window (the Home button acts there, not
+    /// here: a hidden launcher draws no frames), and takes what the button did since the last
+    /// frame: the quick panel opens when it brought the launcher, closes when it sent the player
+    /// back to the game.
+    fn sync_home_button(&mut self) {
+        let model = &self.model;
+        let game = model
+            .running
+            .clone()
+            .filter(|_| model.starting.is_none() && model.onboarded());
+        let window = game
+            .as_ref()
+            .and_then(|id| self.pipeline.game_target(id))
+            .and_then(|target| target.window)
+            .map(|window| window as isize);
+        let home = &self.shell.home;
+        home.set_game(game.is_some(), window);
+        home.set_enabled(model.prefs.ps_button);
+        home.set_focused(self.focused);
+        if home.take_returned() {
+            self.model.leave_in_game();
+        }
+        if home.take_summoned() {
+            self.model.show_in_game();
+        }
     }
 
     /// Takes the game off Discord if it is shown there.

@@ -39,6 +39,10 @@ pub enum Overlay {
     /// The release a game stays on is gone: download it again or follow the global toolkit
     /// (a side panel).
     ToolkitMissing,
+    /// The quick panel of the running game, opened by the Home button (a side panel).
+    InGame,
+    /// The question before the running game is closed (a side panel).
+    ConfirmCloseGame,
 }
 
 impl Overlay {
@@ -55,6 +59,8 @@ impl Overlay {
                 | Overlay::Recommended
                 | Overlay::Online
                 | Overlay::ToolkitMissing
+                | Overlay::InGame
+                | Overlay::ConfirmCloseGame
         )
     }
 
