@@ -188,6 +188,11 @@ impl AppPaths {
         self.data.join("Cache")
     }
 
+    /// The `Cache` folder's `unlock-timings.json`: how long the steps of the last full unlock took here.
+    pub fn unlock_timings_file(&self) -> PathBuf {
+        self.cache_dir().join("unlock-timings.json")
+    }
+
     /// `Network`: the net service's own folder (its endpoint key, observation logs).
     pub fn network_dir(&self) -> PathBuf {
         self.data.join("Network")

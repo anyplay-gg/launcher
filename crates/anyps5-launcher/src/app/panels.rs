@@ -1310,7 +1310,7 @@ impl PanelHost {
                 LibraryEntry {
                     name: game.name.clone(),
                     icon,
-                    overlay: tile_overlay(&state),
+                    overlay: tile_overlay(&state, &cx.model.prep.weights),
                     state: StateText {
                         icon: label.icon,
                         text: label.text,

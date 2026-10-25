@@ -31,6 +31,7 @@ pub mod panels;
 pub mod phone;
 pub mod pipeline;
 pub mod playtime;
+pub mod prepare;
 pub mod preview;
 pub mod profile;
 pub mod run_question;
@@ -258,6 +259,7 @@ impl LauncherApp {
             self.model.on_core(event);
         }
         self.model.toolkit = self.pipeline.toolkit_version();
+        self.model.set_step_seconds(self.pipeline.step_seconds());
         self.model.glibc = self.pipeline.glibc_shortfall();
         self.model.game_toolkits = self.pinned_toolkits();
         self.model.patches_dir = self.pipeline.patches_dir();

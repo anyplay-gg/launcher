@@ -392,6 +392,15 @@ pub fn build_categories(
         );
     }
     behaviour.push(
+        Row::toggle(
+            "prepare",
+            crate::screens::prepare_strings::setting(language),
+            prefs.prepare_games,
+        )
+        .detail(crate::screens::prepare_strings::setting_detail(language))
+        .icon(Icon::ARROW_CIRCLE_DOWN),
+    );
+    behaviour.push(
         Row::toggle("hide", t(Key::HideWhilePlaying), prefs.hide_while_playing)
             .icon(Icon::EYE_SLASH),
     );
@@ -781,6 +790,7 @@ pub fn apply_value(prefs: &mut Preferences, change: &Change) -> bool {
             on,
         } => prefs.discord_join_button = *on,
         Change::Toggle { row: "hide", on } => prefs.hide_while_playing = *on,
+        Change::Toggle { row: "prepare", on } => prefs.prepare_games = *on,
         Change::Toggle {
             row: "homeButton",
             on,

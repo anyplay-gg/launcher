@@ -484,6 +484,17 @@ pub struct Preferences {
     pub discord_join_button: bool,
     #[serde(default)]
     pub hide_while_playing: bool,
+    /// The launcher unlocks a game that appears in the games folder by itself, while the PC is idle,
+    /// so it is ready when the player wants it (like a console installing in the background).
+    #[serde(default = "yes")]
+    pub prepare_games: bool,
+    /// The games the launcher has met in the games folder; `None` until the first scan. What is
+    /// there at that moment is not prepared, only what comes later.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub known_games: Option<BTreeSet<String>>,
+    /// Games that appeared and still wait for their preparation.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub prepare_pending: BTreeSet<String>,
     /// The Home button (PS button) of a controller or the phone switches between a running game
     /// and the launcher.
     #[serde(default = "yes")]
@@ -582,6 +593,9 @@ impl Default for Preferences {
             discord_presence: true,
             discord_join_button: true,
             hide_while_playing: false,
+            prepare_games: true,
+            known_games: None,
+            prepare_pending: BTreeSet::new(),
             ps_button: true,
             show_hidden_trophies: false,
             fullscreen: true,

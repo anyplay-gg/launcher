@@ -7,6 +7,8 @@
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -22,12 +24,13 @@ pub enum LinkMode {
 
 /// Links files where the volume allows it and copies them where it does not. Remembers why it
 /// first fell back, so the caller can log one note (PR3786's "files copied, not linked").
+/// Shared by the threads of [`link_tree`]: every method takes `&self`.
 #[derive(Debug, Default)]
 pub struct Linker {
     mode: LinkMode,
-    first_fallback: Option<String>,
-    linked: u64,
-    copied: u64,
+    first_fallback: Mutex<Option<String>>,
+    linked: AtomicU64,
+    copied: AtomicU64,
 }
 
 impl Linker {
@@ -40,41 +43,52 @@ impl Linker {
 
     /// Number of files linked and copied so far.
     pub fn counts(&self) -> (u64, u64) {
-        (self.linked, self.copied)
+        (
+            self.linked.load(Ordering::Relaxed),
+            self.copied.load(Ordering::Relaxed),
+        )
     }
 
     /// The reason of the first fallback to copying, once; later calls return `None`.
-    pub fn take_note(&mut self) -> Option<String> {
+    pub fn take_note(&self) -> Option<String> {
         self.first_fallback
+            .lock()
+            .expect("note lock")
             .take()
             .map(|reason| format!("files copied, not linked: {reason}"))
     }
 
+    fn note_fallback(&self, reason: impl FnOnce() -> String) {
+        let mut note = self.first_fallback.lock().expect("note lock");
+        if note.is_none() {
+            *note = Some(reason());
+        }
+    }
+
     /// Puts `src` at `dst`. The destination must not exist (see [`replace_file`]).
-    pub fn link_or_copy(&mut self, src: &Path, dst: &Path, cancel: &CancelToken) -> io::Result<()> {
+    pub fn link_or_copy(&self, src: &Path, dst: &Path, cancel: &CancelToken) -> io::Result<()> {
         if cancel.is_cancelled() {
             return Err(io::Error::from(io::ErrorKind::Interrupted));
         }
         if self.mode == LinkMode::Auto {
             match share_file(src, dst) {
                 Ok(()) => {
-                    self.linked += 1;
+                    self.linked.fetch_add(1, Ordering::Relaxed);
                     return Ok(());
                 }
                 Err(error) => {
-                    if !src.exists() {
+                    // A name that is taken is no reason to copy: the caller replaces it and tries again.
+                    if error.kind() == io::ErrorKind::AlreadyExists || !src.exists() {
                         return Err(error);
                     }
-                    if self.first_fallback.is_none() {
-                        self.first_fallback = Some(error.to_string());
-                    }
+                    self.note_fallback(|| error.to_string());
                 }
             }
-        } else if self.first_fallback.is_none() {
-            self.first_fallback = Some("copy mode forced".to_string());
+        } else {
+            self.note_fallback(|| "copy mode forced".to_string());
         }
         copy_cancellable(src, dst, cancel)?;
-        self.copied += 1;
+        self.copied.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 }
@@ -326,54 +340,167 @@ pub enum TreeError {
     Io { relative: String, source: io::Error },
 }
 
+/// How [`link_tree`] is controlled from outside.
+#[derive(Clone, Copy)]
+pub struct TreeOpts<'a> {
+    pub cancel: &'a CancelToken,
+    /// Called before every file; blocks while the unlock is paused (and returns when it is
+    /// cancelled).
+    pub hold: &'a (dyn Fn() + Sync),
+    /// The threads run in the system's background mode (low CPU and I/O priority).
+    pub background: bool,
+}
+
+impl<'a> TreeOpts<'a> {
+    pub fn new(cancel: &'a CancelToken) -> Self {
+        Self {
+            cancel,
+            hold: &|| {},
+            background: false,
+        }
+    }
+}
+
+/// How many threads lay out a tree. Linking is latency bound (the file system, and the virus
+/// scanner on every new file), not throughput bound, so a few more than the cores help.
+pub fn link_threads() -> usize {
+    thread::available_parallelism()
+        .map_or(4, |n| n.get())
+        .clamp(2, 16)
+}
+
+/// Below this many files one thread does it: starting threads costs more than the files.
+const PARALLEL_FROM: usize = 64;
+
 /// Mirrors `source` into `target`: folders are created, every file is removed at the
-/// destination and then linked or copied. `progress` receives the share of bytes done (0..=1).
-/// Hidden files are included. `skip_top` names are left out at the top level.
+/// destination and then linked or copied, by several threads. `progress` receives the share of
+/// bytes done (0..=1) on the calling thread. Hidden files are included. `skip_top` names are
+/// left out at the top level.
 pub fn link_tree(
     source: &Path,
     target: &Path,
-    linker: &mut Linker,
+    linker: &Linker,
     skip_top: &[&str],
-    cancel: &CancelToken,
+    opts: &TreeOpts<'_>,
     progress: &mut dyn FnMut(f64),
 ) -> Result<(), TreeError> {
     let io_error = |relative: &Path, source: io::Error| TreeError::Io {
         relative: relative.to_string_lossy().replace('\\', "/"),
         source,
     };
+    let cancel = opts.cancel;
     let entries = walk(source, true, skip_top).map_err(|e| io_error(Path::new(""), e))?;
     let total: u64 = entries.iter().map(|e| e.size).sum();
+    // Folders come before their content, so a plain `create_dir` finds its parent.
     for entry in entries.iter().filter(|e| e.is_dir) {
-        fs::create_dir_all(target.join(&entry.relative))
-            .map_err(|e| io_error(&entry.relative, e))?;
-    }
-    let mut done = 0u64;
-    for entry in entries.iter().filter(|e| !e.is_dir) {
-        if cancel.is_cancelled() {
-            return Err(TreeError::Cancelled);
-        }
-        let destination = target.join(&entry.relative);
-        if let Some(parent) = destination.parent() {
-            fs::create_dir_all(parent).map_err(|e| io_error(&entry.relative, e))?;
-        }
-        replace_file(&destination).map_err(|e| io_error(&entry.relative, e))?;
-        match linker.link_or_copy(&source.join(&entry.relative), &destination, cancel) {
+        let folder = target.join(&entry.relative);
+        match fs::create_dir(&folder) {
             Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::Interrupted && cancel.is_cancelled() => {
-                return Err(TreeError::Cancelled);
-            }
-            Err(error) => return Err(io_error(&entry.relative, error)),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(_) => fs::create_dir_all(&folder).map_err(|e| io_error(&entry.relative, e))?,
         }
-        done += entry.size;
-        progress(if total == 0 {
+    }
+    let files: Vec<&TreeEntry> = entries.iter().filter(|e| !e.is_dir).collect();
+
+    let place = |entry: &TreeEntry| -> Result<(), TreeError> {
+        let from = source.join(&entry.relative);
+        let to = target.join(&entry.relative);
+        let mut attempt = linker.link_or_copy(&from, &to, cancel);
+        if attempt
+            .as_ref()
+            .is_err_and(|e| e.kind() == io::ErrorKind::AlreadyExists)
+        {
+            // Never write through an existing link: it goes, then the new file takes its place.
+            replace_file(&to).map_err(|e| io_error(&entry.relative, e))?;
+            attempt = linker.link_or_copy(&from, &to, cancel);
+        }
+        match attempt {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted && cancel.is_cancelled() => {
+                Err(TreeError::Cancelled)
+            }
+            Err(error) => Err(io_error(&entry.relative, error)),
+        }
+    };
+
+    let threads = if files.len() < PARALLEL_FROM {
+        1
+    } else {
+        link_threads().min(files.len())
+    };
+    let next = AtomicUsize::new(0);
+    let done = AtomicU64::new(0);
+    let stop = AtomicBool::new(false);
+    let live = AtomicUsize::new(threads);
+    let failure: Mutex<Option<TreeError>> = Mutex::new(None);
+    let fail = |error: TreeError| {
+        stop.store(true, Ordering::Relaxed);
+        let mut slot = failure.lock().expect("failure lock");
+        // A real error outranks the cancellation it may have caused in a sibling.
+        if slot.is_none() || matches!(slot.as_ref(), Some(TreeError::Cancelled)) {
+            *slot = Some(error);
+        }
+    };
+    let work = || {
+        if opts.background {
+            crate::process::enter_background_mode();
+        }
+        loop {
+            if stop.load(Ordering::Relaxed) {
+                break;
+            }
+            (opts.hold)();
+            if cancel.is_cancelled() {
+                fail(TreeError::Cancelled);
+                break;
+            }
+            let index = next.fetch_add(1, Ordering::Relaxed);
+            let Some(entry) = files.get(index) else {
+                break;
+            };
+            match place(entry) {
+                Ok(()) => {
+                    done.fetch_add(entry.size, Ordering::Relaxed);
+                }
+                Err(error) => {
+                    fail(error);
+                    break;
+                }
+            }
+        }
+    };
+    let share = |bytes: u64| {
+        if total == 0 {
             1.0
         } else {
-            done as f64 / total as f64
+            (bytes as f64 / total as f64).min(1.0)
+        }
+    };
+    if threads == 1 {
+        work();
+        live.store(0, Ordering::Relaxed);
+        progress(share(done.load(Ordering::Relaxed)));
+    } else {
+        let caller = thread::current();
+        thread::scope(|scope| {
+            for _ in 0..threads {
+                let (work, live, caller) = (&work, &live, &caller);
+                scope.spawn(move || {
+                    work();
+                    live.fetch_sub(1, Ordering::AcqRel);
+                    caller.unpark();
+                });
+            }
+            while live.load(Ordering::Acquire) > 0 {
+                thread::park_timeout(Duration::from_millis(25));
+                progress(share(done.load(Ordering::Relaxed)));
+            }
         });
     }
-    if total == 0 {
-        progress(1.0);
+    if let Some(error) = failure.into_inner().expect("failure lock") {
+        return Err(error);
     }
+    progress(1.0);
     Ok(())
 }
 
@@ -398,13 +525,13 @@ mod tests {
         let dst = dir.path().join("dst");
         fs::create_dir_all(&dst).unwrap();
         let mut seen = Vec::new();
-        let mut linker = Linker::default();
+        let linker = Linker::default();
         link_tree(
             &src,
             &dst,
-            &mut linker,
+            &linker,
             &[".AnyPS5"],
-            &CancelToken::new(),
+            &TreeOpts::new(&CancelToken::new()),
             &mut |f| seen.push(f),
         )
         .unwrap();
@@ -424,9 +551,17 @@ mod tests {
         write(&dump.join("m.prx"), "ORIGINAL");
         let app0 = dir.path().join("app0");
         fs::create_dir_all(&app0).unwrap();
-        let mut linker = Linker::default();
+        let linker = Linker::default();
         let cancel = CancelToken::new();
-        link_tree(&dump, &app0, &mut linker, &[], &cancel, &mut |_| {}).unwrap();
+        link_tree(
+            &dump,
+            &app0,
+            &linker,
+            &[],
+            &TreeOpts::new(&cancel),
+            &mut |_| {},
+        )
+        .unwrap();
         let before = fs::metadata(dump.join("m.prx"))
             .unwrap()
             .modified()
@@ -435,7 +570,15 @@ mod tests {
         // The converted module is laid over the linked file.
         let out = dir.path().join("out");
         write(&out.join("m.prx"), "CONVERTED");
-        link_tree(&out, &app0, &mut linker, &[], &cancel, &mut |_| {}).unwrap();
+        link_tree(
+            &out,
+            &app0,
+            &linker,
+            &[],
+            &TreeOpts::new(&cancel),
+            &mut |_| {},
+        )
+        .unwrap();
 
         assert_eq!(fs::read_to_string(app0.join("m.prx")).unwrap(), "CONVERTED");
         assert_eq!(fs::read_to_string(dump.join("m.prx")).unwrap(), "ORIGINAL");
@@ -455,13 +598,13 @@ mod tests {
         write(&src.join("a.txt"), "aaa");
         let dst = dir.path().join("dst");
         fs::create_dir_all(&dst).unwrap();
-        let mut linker = Linker::new(LinkMode::ForceCopy);
+        let linker = Linker::new(LinkMode::ForceCopy);
         link_tree(
             &src,
             &dst,
-            &mut linker,
+            &linker,
             &[],
-            &CancelToken::new(),
+            &TreeOpts::new(&CancelToken::new()),
             &mut |_| {},
         )
         .unwrap();
@@ -489,9 +632,9 @@ mod tests {
         let result = link_tree(
             &src,
             &dst,
-            &mut Linker::default(),
+            &Linker::default(),
             &[],
-            &cancel,
+            &TreeOpts::new(&cancel),
             &mut |_| {},
         );
         assert!(matches!(result, Err(TreeError::Cancelled)));

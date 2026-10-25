@@ -554,6 +554,9 @@ fn a_failed_unlock_again_leaves_the_old_copy_untouched() {
     let broken = make_toolkit(&w._dir.path().join("broken"), &["FAKE_RELINKER=fail"]);
     let mut again = request.clone();
     again.toolkit = broken;
+    // The fake relinker behaves differently through a sidecar file only, so the kept output
+    // would be taken for a match; a real different relinker changes the key.
+    again.fresh = true;
     assert!(run(&again).0.is_err());
     assert!(unlock::read_record(&copy).is_some());
     assert_eq!(fs::read(copy.join("_sd/slot0.sav")).unwrap(), b"SAVE-1");
@@ -592,6 +595,8 @@ fn tag(e: &UnlockEvent) -> (&'static str, GameId) {
         UnlockEvent::Started { game } => ("started", game.clone()),
         UnlockEvent::Progress { game, .. } => ("progress", game.clone()),
         UnlockEvent::Log { game, .. } => ("log", game.clone()),
+        UnlockEvent::Paused { game, .. } => ("paused", game.clone()),
+        UnlockEvent::Timings { game, .. } => ("timings", game.clone()),
         UnlockEvent::Finished { game, .. } => ("finished", game.clone()),
     }
 }
@@ -716,5 +721,203 @@ fn dropping_the_queue_stops_a_running_unlock() {
     let started = std::time::Instant::now();
     drop(queue);
     assert!(started.elapsed() < Duration::from_secs(20));
+    no_leftovers(&w.root);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Unlock speed: parallel layout, kept relinker output, background queue
+
+fn counting(events: &[UnlockEvent]) -> usize {
+    events
+        .iter()
+        .filter(|e| matches!(e, UnlockEvent::Started { .. }))
+        .count()
+}
+
+#[test]
+fn a_big_tree_is_laid_out_in_parallel_and_matches_the_dump() {
+    let w = world(&[]);
+    let request = w.dump("Many", "PPSA20001", &elf_bytes());
+    for i in 0..400 {
+        let file = request.folder.join(format!("data/pack{}/f{i}.bin", i % 7));
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, format!("file {i}")).unwrap();
+    }
+    let (result, events) = run(&request);
+    result.unwrap();
+    let copy = unlock::unlocked_copy("PPSA20001", &request.game, &w.root);
+    for i in 0..400 {
+        let name = format!("data/pack{}/f{i}.bin", i % 7);
+        assert_eq!(
+            fs::read_to_string(copy.join("app0").join(&name)).unwrap(),
+            format!("file {i}")
+        );
+    }
+    assert!(logs(&events).iter().any(|l| l.starts_with("layout: ")));
+    assert!(logs(&events).iter().any(|l| l.starts_with("timing: ")));
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, UnlockEvent::Timings { .. }))
+    );
+    no_leftovers(&w.root);
+}
+
+#[test]
+fn unlocking_again_keeps_the_relinker_output_until_something_it_reads_changes() {
+    let w = world(&[]);
+    let request = w.dump("Again", "PPSA20002", &elf_bytes());
+    let (first, _) = run(&request);
+    let first = first.unwrap();
+    assert!(first.relink_key.is_some());
+
+    let (second, events) = run(&request);
+    let second = second.unwrap();
+    assert!(
+        logs(&events)
+            .iter()
+            .any(|l| l.starts_with("relinker output kept")),
+        "{:?}",
+        logs(&events)
+    );
+    assert_eq!(second.relink_key, first.relink_key);
+    let copy = unlock::unlocked_copy("PPSA20002", &request.game, &w.root);
+    assert!(copy.join(EXECUTABLE).is_file());
+    assert!(unlock::read_record(&copy).is_some());
+
+    // A changed input (the executable grows) relinks again.
+    let mut bigger = elf_bytes();
+    bigger.extend_from_slice(b"more");
+    fs::write(request.folder.join("eboot.bin"), bigger).unwrap();
+    let (third, events) = run(&request);
+    third.unwrap();
+    assert!(
+        !logs(&events)
+            .iter()
+            .any(|l| l.starts_with("relinker output kept"))
+    );
+
+    // `fresh` always relinks.
+    let mut fresh = request.clone();
+    fresh.fresh = true;
+    let (fourth, events) = run(&fresh);
+    fourth.unwrap();
+    assert!(
+        !logs(&events)
+            .iter()
+            .any(|l| l.starts_with("relinker output kept"))
+    );
+}
+
+#[test]
+fn an_asked_for_game_runs_before_prepared_ones_and_prepared_ones_wait() {
+    let w = world(&["FAKE_DELAY_MS=10"]);
+    let mut prepared = w.dump("Prep", "PPSA20003", &elf_bytes());
+    prepared.background = true;
+    let asked = w.dump("Asked", "PPSA20004", &elf_bytes());
+    let (queue, events) = queue();
+    queue.hold_background(true);
+    assert!(queue.enqueue(prepared.clone()));
+    // Held: the prepared game does not start by itself.
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(counting(&events.0.lock().unwrap()), 0);
+    assert!(queue.enqueue(asked.clone()));
+    events.wait_until("asked finished", Duration::from_secs(60), |e| {
+        finished(e, &asked.game).is_some()
+    });
+    assert!(finished(&events.0.lock().unwrap(), &prepared.game).is_none());
+    // Free again: it goes on.
+    queue.hold_background(false);
+    events.wait_until("prepared finished", Duration::from_secs(60), |e| {
+        finished(e, &prepared.game).is_some()
+    });
+    assert_eq!(
+        finished(&events.0.lock().unwrap(), &prepared.game),
+        Some(true)
+    );
+}
+
+#[test]
+fn promote_turns_a_prepared_game_into_an_asked_for_one() {
+    let w = world(&["FAKE_DELAY_MS=10"]);
+    let mut prepared = w.dump("Promo", "PPSA20005", &elf_bytes());
+    prepared.background = true;
+    let (queue, events) = queue();
+    queue.hold_background(true);
+    assert!(queue.enqueue(prepared.clone()));
+    assert!(queue.promote(&prepared.game));
+    assert!(!queue.promote(&prepared.game), "already asked for");
+    events.wait_until("promoted game finished", Duration::from_secs(60), |e| {
+        finished(e, &prepared.game).is_some()
+    });
+    assert_eq!(
+        finished(&events.0.lock().unwrap(), &prepared.game),
+        Some(true)
+    );
+}
+
+#[test]
+fn a_paused_unlock_stands_still_and_goes_on_without_losing_work() {
+    let w = world(&["FAKE_DELAY_MS=40"]);
+    let mut prepared = w.dump("Pause", "PPSA20006", &elf_bytes());
+    prepared.background = true;
+    let (queue, events) = queue();
+    assert!(queue.enqueue(prepared.clone()));
+    events.wait_until("relinking", Duration::from_secs(30), |e| {
+        e.iter().any(|ev| {
+            matches!(
+                ev,
+                UnlockEvent::Progress {
+                    step: Step::Relink,
+                    ..
+                }
+            )
+        })
+    });
+    queue.hold_background(true);
+    events.wait_until("paused event", Duration::from_secs(10), |e| {
+        e.iter()
+            .any(|ev| matches!(ev, UnlockEvent::Paused { paused: true, .. }))
+    });
+    assert!(queue.is_paused(&prepared.game));
+    std::thread::sleep(Duration::from_millis(400));
+    assert!(finished(&events.0.lock().unwrap(), &prepared.game).is_none());
+    queue.hold_background(false);
+    events.wait_until("finished", Duration::from_secs(60), |e| {
+        finished(e, &prepared.game).is_some()
+    });
+    assert_eq!(
+        finished(&events.0.lock().unwrap(), &prepared.game),
+        Some(true)
+    );
+}
+
+#[test]
+fn cancelling_a_paused_unlock_ends_it() {
+    let w = world(&["FAKE_DELAY_MS=40"]);
+    let mut prepared = w.dump("PauseCancel", "PPSA20007", &elf_bytes());
+    prepared.background = true;
+    let (queue, events) = queue();
+    assert!(queue.enqueue(prepared.clone()));
+    events.wait_until("relinking", Duration::from_secs(30), |e| {
+        e.iter().any(|ev| {
+            matches!(
+                ev,
+                UnlockEvent::Progress {
+                    step: Step::Relink,
+                    ..
+                }
+            )
+        })
+    });
+    queue.hold_background(true);
+    events.wait_until("paused", Duration::from_secs(10), |e| {
+        e.iter()
+            .any(|ev| matches!(ev, UnlockEvent::Paused { paused: true, .. }))
+    });
+    queue.cancel(&prepared.game);
+    events.wait_until("cancelled", Duration::from_secs(20), |e| {
+        finished(e, &prepared.game).is_some()
+    });
     no_leftovers(&w.root);
 }

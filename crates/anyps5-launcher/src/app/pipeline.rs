@@ -75,6 +75,53 @@ impl UnlockStep {
     }
 }
 
+/// What the steps of an unlock cost, as shares of the one bar. A PC that has unlocked before
+/// weighs them by what they took there (the relink dominates on one, the file layout on another);
+/// until then the shares are what a 300 MB executable with thousands of data files measured.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepWeights([f32; 5]);
+
+impl StepWeights {
+    /// No step weighs less than this: a step that took no time still shows.
+    const FLOOR: f32 = 0.02;
+
+    /// The shares before this PC has measured anything.
+    pub const DEFAULT: StepWeights = StepWeights([0.04, 0.78, 0.12, 0.04, 0.02]);
+
+    /// Shares from the seconds each step took; `None` when nothing was measured.
+    pub fn from_seconds(seconds: [f32; 5]) -> Option<StepWeights> {
+        let seconds = seconds.map(|s| if s.is_finite() { s.max(0.0) } else { 0.0 });
+        let total: f32 = seconds.iter().sum();
+        if total < 1.0 {
+            return None;
+        }
+        let mut shares = seconds.map(|s| (s / total).max(Self::FLOOR));
+        let sum: f32 = shares.iter().sum();
+        shares.iter_mut().for_each(|s| *s /= sum);
+        Some(StepWeights(shares))
+    }
+
+    pub fn share(&self, step: UnlockStep) -> f32 {
+        self.0[step as usize]
+    }
+
+    /// Where the step starts on the overall bar.
+    pub fn start(&self, step: UnlockStep) -> f32 {
+        self.0[..step as usize].iter().sum()
+    }
+
+    /// `start + share * fraction`, 0..=1.
+    pub fn overall(&self, step: UnlockStep, fraction: f32) -> f32 {
+        (self.start(step) + self.share(step) * fraction.clamp(0.0, 1.0)).clamp(0.0, 1.0)
+    }
+}
+
+impl Default for StepWeights {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
 /// What the UI asks the pipeline to do.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PipelineCommand {
@@ -92,11 +139,17 @@ pub enum PipelineCommand {
     UnlockAgain(GameId),
     /// Bring the running game's window to the front.
     Activate(GameId),
+    /// Unlock a game on the launcher's own account, while the PC is idle: lowest priority, and
+    /// it stands still whenever the player does something else.
+    Prepare(GameId),
+    /// The player now waits for a game that is being prepared: it goes first.
+    Promote(GameId),
 }
 
 impl PipelineCommand {
     pub fn game(&self) -> &GameId {
         match self {
+            PipelineCommand::Prepare(g) | PipelineCommand::Promote(g) => g,
             PipelineCommand::Unlock(g)
             | PipelineCommand::Retry(g)
             | PipelineCommand::Cancel(g)
@@ -124,6 +177,10 @@ pub enum PipelineEvent {
     },
     /// An unlock was cancelled (queued or running).
     UnlockCancelled { game: GameId },
+    /// An unlock stands still (the player started a game, the PC went on battery) or goes on.
+    UnlockPaused { game: GameId, paused: bool },
+    /// How long each step of an unlock took here, for weighing the bar next time.
+    StepSeconds([f32; 5]),
     /// The game process exists.
     Spawned { game: GameId },
     /// The game's first window showed.
@@ -160,6 +217,10 @@ pub struct GameTarget {
 pub trait Pipeline {
     /// The toolkit version unlocked copies are compared against; `None` when this PC has no toolkit.
     fn toolkit_version(&self) -> Option<String>;
+    /// How long the steps of the last full unlock took on this PC.
+    fn step_seconds(&self) -> Option<[f32; 5]> {
+        None
+    }
     /// The glibc the toolkit needs against the system's, when the system's is older (Linux).
     fn glibc_shortfall(&self) -> Option<anyps5_core::glibc::Shortfall> {
         None
@@ -277,7 +338,8 @@ impl Pipeline for SimPipeline {
         match command {
             PipelineCommand::Unlock(g)
             | PipelineCommand::Retry(g)
-            | PipelineCommand::UnlockAgain(g) => {
+            | PipelineCommand::UnlockAgain(g)
+            | PipelineCommand::Prepare(g) => {
                 self.queue.push(g);
             }
             PipelineCommand::Cancel(g) => {
@@ -298,7 +360,7 @@ impl Pipeline for SimPipeline {
                     diagnosis: None,
                 });
             }
-            PipelineCommand::Activate(_) => {}
+            PipelineCommand::Activate(_) | PipelineCommand::Promote(_) => {}
         }
     }
 

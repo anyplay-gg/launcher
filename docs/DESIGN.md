@@ -1065,6 +1065,21 @@ moved by >= 0.005, or fraction >= 1. The tile shows the small bar, the hero show
 Cancel (button or Esc/B while selected): sound `back`. The installer keeps an in-memory log (max 600 lines, trimmed by 100) shown in
 the log view. (Screenshot S-unlocking shows step "Converting for Mac", 39 %.)
 
+#### Launcher additions to the unlock (Windows and Linux)
+
+*Weights.* The table above is the default for a PC that has not unlocked before. After every unlock the pipeline reports how many seconds each step took (kept in `Cache\unlock-timings.json`); the next bar gives each step its measured share (a step never gets less than 2 %). On the owner's PC with a 322 MB executable the relink takes about 75 % of the time, so the default is 4 / 78 / 12 / 4 / 2 instead of the table's 12 / 50 / 26 / 8 / 4.
+
+*Time left.* The hero shows the remaining time beside the percentage once 4 % of the bar and 8 s of work lie behind it: half the speed of the last 40 s, half the speed of the whole run, smoothed with a time constant of 8 s, rounded to "Under a minute left", "About 3 min left", "About 2 h left". Time spent standing still does not count; nothing is shown before there is enough to tell.
+
+*Faster.* The dump's files are laid out by up to eight threads (hard links, copy only where the volume cannot link). The relinker starts below normal priority; the executable it made is linked, not copied, into the copy. An unlock again whose relink key (release, flags, patches, size and time of every input) matches the copy it replaces keeps that copy's converted files and skips the relinker. The relinker's own output is not changed.
+
+*Preparing.* A game that appears in the games folder after the launcher first looked at it, and a game left outdated by a toolkit update, is unlocked in the background (setting `prepareGames` "Prepare New Games Automatically", on), one at a time, at idle priority, only when the idle gate is open and no game is starting or running. The first scan only notes what is there; it prepares nothing. A preparation that fails is not tried again with the same toolkit and raises the toast "Could not prepare: <game>"; one that finishes raises "<game> · Ready to play".
+
+- Tile: a band at its foot with "Preparing… 40%" (12 medium) and the progress line; paused "Paused · 40%". The selected game's state line says Preparing or Paused; the hero shows the bar, the percentage and the time left, or one sentence while the work has not started.
+- Play or Unlock on a game being prepared moves it to the front (its relinker leaves the idle class, the others stand still) and from then on it shows as an ordinary unlock. Cancel on it stops the preparation for good.
+- Starting a game freezes a preparation at once (the relinker is suspended, not killed); it goes on after the game ends.
+- Failure sentences say what to do: toolkit missing, drive full, file held by another program, unusable dump, converter stopped; the technical message goes to the log.
+
 ### 5.5 Launch splash ("start screen with timer")
 
 Shown from the press of Play until the game's first window appears (poll every 400 ms for a visible top-level window of the game
@@ -1097,14 +1112,14 @@ category's rows (5.8).
 | Appearance (`appearance`) | brush | `theme` choice (Cosmic/Aurora/Sunset), `accent` choice (six), `backdrop` choice (`backgroundTheme` / `backgroundImage` / `backgroundVideo`; picking image/video opens a file dialog when no file is set or the kind changed), `file` action `chooseFile` (only when backdrop is not theme; detail = file name), `artwork` toggle `gameArtwork`, `motion` choice (`motionFull` / `motionReduced`) |
 | Library (`storage`) | 2x2 grid | `folder` action `folder` (detail = path or an em dash; opens the folder dialog), `rescan` action `rescan` (detail `gamesFound` with count; sound `select`), info `installedSize` |
 | Language (`language`) | globe | `language` choice (Türkçe, English; shown in their own language) |
-| Behaviour (`behaviour`) | sliders | `name` text field `profileName` (live edit), `sounds` toggle, `music` toggle (Home Screen Music, 7.3), `hide` toggle `hideWhilePlaying`, `hiddenTrophies` toggle `showHiddenTrophies` (trophy glyph; detail `showHiddenTrophiesDetail`; the trophy list's only option, 5.11) (+ platform row, see 9) |
+| Behaviour (`behaviour`) | sliders | `name` text field `profileName` (live edit), `sounds` toggle, `music` toggle (Home Screen Music, 7.3), `hide` toggle `hideWhilePlaying`, `prepare` toggle `prepareGames` (Prepare New Games Automatically), `hiddenTrophies` toggle `showHiddenTrophies` (trophy glyph; detail `showHiddenTrophiesDetail`; the trophy list's only option, 5.11) (+ platform row, see 9) |
 | Phone as Controller (`phone`) | phone | Windows and Linux addition, section 18. Sits between Behaviour and Toolkit. |
 | Advanced (`advanced`) | wrench+screwdriver | `screenshots` action `screenshotsFolder` (detail = path, `~` abbreviated), `showScreenshots` action, `fonts` action `fontsFolder` (detail = the picked path, else the built-in Noto set and whether Japanese, Chinese and Korean are included, not downloaded or downloading), `fontsReset` action (only when a fonts folder is set), `fontsCjk` command (download the Japanese, Chinese and Korean fonts; only without a picked folder and while they are missing), info `fontsHint` |
 | About (`about`) | info circle | info `aboutText`, info `version` (app version), info `toolkitVersion`, (platform row), `quit` action `quit` (destructive) |
 
 Settings are persisted per user (`Preferences`): `onboarded`, `language` (system default: Turkish if the OS UI language starts with
 `tr`, else English), `theme` (Cosmic), `accent` (nil = theme default), `backdrop` (theme), `backdropFile`, `gameArtwork` (true),
-`reducedMotion` (false), `showHiddenTrophies` (false), `sounds` (true), `music` (true), `discordPresence` (true), `hideWhilePlaying` (false), `profileName` (first word of the user's full name, fallback
+`reducedMotion` (false), `showHiddenTrophies` (false), `sounds` (true), `music` (true), `discordPresence` (true), `hideWhilePlaying` (false), `prepareGames` (true), `profileName` (first word of the user's full name, fallback
 "Player"), `gamesFolder`, `screenshotsFolder` (nil = `Pictures/AnyPS5`), `fontsFolder`, per-game settings, `lastPlayed`.
 Every change saves immediately and re-applies language, motion and sound flags.
 
