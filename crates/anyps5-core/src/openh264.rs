@@ -90,6 +90,11 @@ static CHANGED: AtomicBool = AtomicBool::new(false);
 type Checked = (PathBuf, u64, SystemTime, String, bool);
 /// The settings page asks every frame; the file is hashed again only when it changed.
 static CHECKED: Mutex<Option<Checked>> = Mutex::new(None);
+/// The background download's token: turning the codec off cancels it.
+static ACTIVE: Mutex<Option<CancelToken>> = Mutex::new(None);
+/// Held while the library is put in place and while it is removed, so a download the player
+/// turned off never lands after the removal.
+static PLACING: Mutex<()> = Mutex::new(());
 
 /// Whether the library is there and is the build `source` names, hashing the file only when its
 /// size or time changed since the last call.
@@ -144,17 +149,23 @@ pub fn install_in_background(
         return false;
     }
     *LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    let cancel = CancelToken::new();
+    *ACTIVE.lock().unwrap_or_else(|e| e.into_inner()) = Some(cancel.clone());
     let paths = paths.clone();
     let spawned = std::thread::Builder::new()
         .name("openh264".into())
         .spawn(move || {
-            let outcome = install(&paths, &source, &CancelToken::new());
+            let outcome = install(&paths, &source, &cancel);
             match &outcome {
                 Ok(()) => tracing::info!("Cisco's OpenH264 is installed"),
                 Err(error) => tracing::warn!("Cisco's OpenH264 was not installed: {error}"),
             }
-            *LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()) =
-                outcome.err().map(|e| e.to_string());
+            *ACTIVE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            // Turned off while it ran: not a failure the row should show.
+            *LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()) = match outcome {
+                Err(ToolkitError::Cancelled) => None,
+                other => other.err().map(|e| e.to_string()),
+            };
             RUNNING.store(false, Ordering::SeqCst);
             CHANGED.store(true, Ordering::SeqCst);
             if let Some(done) = done {
@@ -162,6 +173,7 @@ pub fn install_in_background(
             }
         });
     if spawned.is_err() {
+        *ACTIVE.lock().unwrap_or_else(|e| e.into_inner()) = None;
         RUNNING.store(false, Ordering::SeqCst);
         return false;
     }
@@ -232,12 +244,21 @@ fn install_from(
     }
     let partial = partial(target);
     fs::write(&partial, &library)?;
+    let _placing = PLACING.lock().unwrap_or_else(|e| e.into_inner());
+    if cancel.is_cancelled() {
+        return Err(ToolkitError::Cancelled);
+    }
     crate::fsx::rename_retry(&partial, target)?;
     Ok(())
 }
 
-/// Removes the library: the player turned the codec off.
+/// Removes the library and stops a download that is still running: the player turned the codec
+/// off.
 pub fn remove(paths: &AppPaths) -> io::Result<()> {
+    let _placing = PLACING.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(cancel) = &*ACTIVE.lock().unwrap_or_else(|e| e.into_inner()) {
+        cancel.cancel();
+    }
     *LAST_ERROR.lock().unwrap_or_else(|e| e.into_inner()) = None;
     CHANGED.store(true, Ordering::SeqCst);
     match fs::remove_file(library_path(paths)) {
@@ -255,6 +276,9 @@ mod tests {
     use crate::toolkit::tests::{serve, sha_hex};
 
     const LIBRARY: &[u8] = b"\x7fELF a library of Cisco's";
+
+    /// The download state is process-wide; tests that start downloads or remove run one at a time.
+    static GLOBALS: Mutex<()> = Mutex::new(());
 
     fn bz2(data: &[u8]) -> Vec<u8> {
         let mut encoder = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::default());
@@ -337,6 +361,7 @@ mod tests {
     /// One test for everything that goes through the process-wide download state.
     #[test]
     fn the_row_s_state_follows_a_download_in_the_background_and_its_removal() {
+        let _globals = GLOBALS.lock().unwrap_or_else(|e| e.into_inner());
         let root = tempfile::tempdir().unwrap();
         let paths = AppPaths::under(root.path());
         let archive = bz2(LIBRARY);
@@ -395,11 +420,39 @@ mod tests {
 
     #[test]
     fn turning_it_off_removes_the_library_and_twice_is_fine() {
+        let _globals = GLOBALS.lock().unwrap_or_else(|e| e.into_inner());
         let (_root, paths, result) = install_served(bz2(LIBRARY), |_| {});
         result.unwrap();
         remove(&paths).unwrap();
         assert!(!library_path(&paths).exists());
         remove(&paths).unwrap();
+    }
+
+    #[test]
+    fn turning_it_off_while_it_downloads_leaves_no_library() {
+        let _globals = GLOBALS.lock().unwrap_or_else(|e| e.into_inner());
+        let root = tempfile::tempdir().unwrap();
+        let paths = AppPaths::under(root.path());
+        let archive = bz2(LIBRARY);
+        let (base, handle, stop) = serve(vec![("/lib.so.bz2", archive.clone(), 200)]);
+        let source = Source {
+            url: format!("{base}/lib.so.bz2"),
+            archive_size: archive.len() as u64,
+            archive_sha256: sha_hex(&archive),
+            library_sha256: sha_hex(LIBRARY),
+        };
+        let (tx, rx) = std::sync::mpsc::channel();
+        let done: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
+            let _ = tx.send(());
+        });
+        assert!(install_in_background(&paths, source.clone(), Some(done)));
+        remove(&paths).unwrap();
+        rx.recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the download ends");
+        stop.store(true, AtomicOrdering::SeqCst);
+        handle.join().unwrap();
+        assert!(!library_path(&paths).exists(), "off means no library");
+        assert_eq!(state(&paths, &source), CodecState::Missing);
     }
 
     #[test]
