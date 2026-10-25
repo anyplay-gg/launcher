@@ -229,7 +229,10 @@ pub fn interact(
         && (input::hovered(ui.ctx(), &response)
             || force == Some(Force::Hover)
             || force == Some(Force::Press));
-    let pressed = enabled && (response.is_pointer_button_down_on() || force == Some(Force::Press));
+    // A select from a key or the pad holds the focused control pressed for a moment, like a click.
+    let selected = focused && crate::ui::press::active(ui.ctx());
+    let pressed = enabled
+        && (response.is_pointer_button_down_on() || force == Some(Force::Press) || selected);
     let ctx = ui.ctx();
     let hover = ctx.animate_to(
         (response.id, "hover"),

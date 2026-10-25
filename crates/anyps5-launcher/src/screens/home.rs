@@ -786,7 +786,7 @@ fn hero(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<Pres
     // The ones on their way out are drawn first, so the incoming hero sits on top.
     let mut still_leaving = Vec::new();
     for id in track.leaving.clone() {
-        let alpha = ctx.animate_to(("hero", id.as_str().to_owned()), 0.0, Motion::Layout);
+        let alpha = ctx.animate_to(("hero", id.as_str().to_owned()), 0.0, Motion::Exit);
         if alpha > 0.01
             && let Some(game) = cx.model.game(&id).cloned()
         {
