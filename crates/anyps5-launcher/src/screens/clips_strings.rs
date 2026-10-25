@@ -15,6 +15,8 @@ pub enum ClipsText {
     Minutes2,
     /// Settings row: the key that saves a clip.
     Key,
+    /// Under the key row while it does not wait: what the key does.
+    KeyDetail,
     /// Shown on the key row while it waits for a key.
     KeyPrompt,
     /// Settings row: opens the folder. Detail: how many clips are in it.
@@ -52,7 +54,8 @@ impl ClipsText {
             ClipsText::Minute1 => "1 minute",
             ClipsText::Minutes2 => "2 minutes",
             ClipsText::Key => "Clip Key",
-            ClipsText::KeyPrompt => "Press the keys to use. Esc keeps the current ones.",
+            ClipsText::KeyDetail => "Saves the kept seconds as a clip. The Create button does too",
+            ClipsText::KeyPrompt => "Press the keys you want to use. Esc keeps the current ones.",
             ClipsText::Show => "Show Clips",
             ClipsText::CountNone => "No clips yet",
             ClipsText::CountOne => "1 clip",
@@ -79,7 +82,10 @@ impl ClipsText {
             ClipsText::Minute1 => "1 dakika",
             ClipsText::Minutes2 => "2 dakika",
             ClipsText::Key => "Klip tuşu",
-            ClipsText::KeyPrompt => "Kullanılacak tuşlara bas. Esc mevcut tuşları korur.",
+            ClipsText::KeyDetail => {
+                "Tutulan saniyeleri klip olarak kaydeder. Create düğmesi de kaydeder"
+            }
+            ClipsText::KeyPrompt => "Kullanmak istediğin tuşlara bas. Esc mevcut tuşları korur.",
             ClipsText::Show => "Klipleri göster",
             ClipsText::CountNone => "Henüz klip yok",
             ClipsText::CountOne => "1 klip",
@@ -109,7 +115,7 @@ impl ClipsText {
         substitute(self.text(language), args)
     }
 
-    pub const ALL: [ClipsText; 22] = [
+    pub const ALL: [ClipsText; 23] = [
         ClipsText::Title,
         ClipsText::Detail,
         ClipsText::Off,
@@ -118,6 +124,7 @@ impl ClipsText {
         ClipsText::Minute1,
         ClipsText::Minutes2,
         ClipsText::Key,
+        ClipsText::KeyDetail,
         ClipsText::KeyPrompt,
         ClipsText::Show,
         ClipsText::CountNone,

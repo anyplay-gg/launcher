@@ -1991,16 +1991,16 @@ impl ScreenGallery {
             ScreenPage::BehaviourClipsOff => {
                 self.prefs.clips_seconds = 0;
                 self.settings.open_at(3, true);
-                self.settings.focus_row(7);
+                self.settings.focus_row(8);
             }
             ScreenPage::BehaviourClips | ScreenPage::BehaviourClipsKey => {
                 self.prefs.clips_seconds = 30;
                 self.settings.open_at(3, true);
                 self.settings
                     .focus_row(if self.page == ScreenPage::BehaviourClipsKey {
-                        8
+                        9
                     } else {
-                        7
+                        8
                     });
             }
             ScreenPage::Phone(look) => {

@@ -771,16 +771,20 @@ fn push_clips_rows(
     if seconds > 0 {
         let hotkey = anyps5_core::clips::hotkey_or_default(prefs.clips_hotkey.as_deref());
         let sources = hotkey.parts().iter().map(|p| format!("KEY:{p}")).collect();
-        let mut key = Row::keys(
+        // A detail line both ways, so that the rows below do not move when the row starts waiting.
+        let detail = if env.clips.capturing {
+            ClipsText::KeyPrompt
+        } else {
+            ClipsText::KeyDetail
+        };
+        let key = Row::keys(
             "clipsKey",
             ClipsText::Key.text(language),
             sources,
             env.clips.capturing,
         )
-        .icon(Icon::KEYBOARD);
-        if env.clips.capturing {
-            key = key.detail(ClipsText::KeyPrompt.text(language));
-        }
+        .icon(Icon::KEYBOARD)
+        .detail(detail.text(language));
         rows.push(key);
     }
     if seconds > 0 || env.clips.count > 0 {
