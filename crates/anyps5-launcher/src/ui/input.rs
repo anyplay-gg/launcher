@@ -219,9 +219,24 @@ pub fn pointer_in_use(ctx: &Context) -> bool {
     device(ctx) != Device::Gamepad
 }
 
-/// `response.hovered()`, but only while the pointer is the device in use.
+/// `response.hovered()`, but only while the pointer is the device in use. The element it says
+/// yes for is what the hover tick follows (see [`take_hovered`]).
 pub fn hovered(ctx: &Context, response: &egui::Response) -> bool {
-    response.hovered() && pointer_in_use(ctx)
+    let hovered = response.hovered() && pointer_in_use(ctx);
+    if hovered {
+        ctx.data_mut(|d| d.insert_temp(hovered_id(), response.id.value()));
+    }
+    hovered
+}
+
+fn hovered_id() -> egui::Id {
+    egui::Id::unique("input-hovered-element")
+}
+
+/// The element [`hovered`] last reported in this frame (the one drawn last wins), cleared by
+/// the call. Call once at the end of a frame.
+pub fn take_hovered(ctx: &Context) -> Option<u64> {
+    ctx.data_mut(|d| d.remove_temp::<u64>(hovered_id()))
 }
 
 /// Sets the device the hint bars follow (the input pipeline does this; previews force it).
