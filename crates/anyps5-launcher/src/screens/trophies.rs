@@ -558,15 +558,14 @@ impl TrophyListPanel {
             block += 6.0 + 14.4;
         }
         let height = icon_size.max(block) + 28.0;
-        let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+        let (rect, row_response) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
         if !ui.is_rect_visible(rect) {
             return (rect, None);
         }
         let t = ctx.focus_t(("trophy-row-focus", index), focused);
         let r = radius::TROPHY_ROW;
         // The focused row is a row of every other panel: lifted, with the ring.
-        let under_pointer = input::pointer_in_use(&ctx)
-            && ctx.pointer_hover_pos().is_some_and(|p| rect.contains(p));
+        let under_pointer = input::hovered(&ctx, &row_response);
         let hover_t = ctx.animate_to(
             ("trophy-row-hover", index),
             f32::from(under_pointer),
