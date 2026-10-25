@@ -662,6 +662,8 @@ ANYPS5_LANGUAGE     = (language ?? launcher_language).to_string()
 ANYPS5_OVERLAY = "1", ANYPS5_OVERLAY_POS = tl|tr|bl|br        only when overlay != off
 ANYPS5_INPUT_CONFIG = <input file>                             only when Some
 ANYPS5_SCREENSHOTS, ANYPS5_SYSTEM_FONTS = <dir>                only when Some
+                                                               (fonts: the picked folder, else the built-in
+                                                               Noto folder from `fonts::resolve`)
 ANYPS5_SHADER_CACHE_DIR = <dir>                                always (the launcher passes it; ARM's launch script did)
 ANYPS5_NO_SHADER_CACHE = "1"                                   only when shader_cache == Some(false)
 ANYPS5_GPU = <text>                                            only when gpu is Some and non-empty
