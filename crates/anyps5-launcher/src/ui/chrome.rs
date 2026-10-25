@@ -1351,7 +1351,6 @@ pub fn language_card(
         focused,
         true,
         force,
-        0.0,
     );
     let name = language.display_name();
     it.response
@@ -1360,23 +1359,21 @@ pub fn language_card(
         return it.response;
     }
     let painter = ui.painter();
-    let s = it.scale(1.04);
-    let rect = components::snap_rect(painter, scale_rect(it.rect, s));
-    let rest = if it.hovered {
-        white(0.14)
-    } else {
-        color::surface()
-    };
-    let r = (radius::LANGUAGE_CARD * s).round();
-    painter.add(shadows::language_card(it.focus).as_shape(rect, corner(r)));
-    painter.rect_filled(rect, corner(r), mix(rest, Color32::WHITE, it.focus));
-    paint_hairline(
+    let s = 1.0;
+    let rect = it.painted(painter);
+    let r = radius::LANGUAGE_CARD;
+    components::paint_surface(
         painter,
         rect,
         r,
-        fade(color::hairline_card(), 1.0 - it.focus),
+        color::surface(),
+        it.hover,
+        it.focus,
+        it.press,
+        3.0,
     );
-    let ink = mix(Color32::WHITE, Color32::BLACK, it.focus);
+    paint_hairline(painter, rect, r, color::hairline_card());
+    let ink = Color32::WHITE;
     let pad = 26.0 * s;
     let tag_style = theme::TextStyle::new(15.0, theme::Weight::Bold);
     let name_style = text::scaled(ty::LANGUAGE_NAME, s);

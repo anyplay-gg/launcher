@@ -30,10 +30,6 @@ pub enum Force {
 /// The press scale of buttons (a mouse affordance added on Windows, DESIGN.md 9.2).
 pub const PRESS_SCALE: f32 = 0.97;
 
-/// How far a focused button grows past its resting edge on every side, in dp. A fixed amount, not a
-/// scale: wide and narrow buttons then lift the same.
-pub const FOCUS_GROW: f32 = 3.0;
-
 /// Rectangle scaled about its centre.
 pub fn scale_rect(rect: Rect, factor: f32) -> Rect {
     Rect::from_center_size(rect.center(), rect.size() * factor)
@@ -169,37 +165,42 @@ pub struct Interaction {
     pub rect: Rect,
     /// Focus amount 0..=1 (spring).
     pub focus: f32,
+    /// Hover amount 0..=1 (ease, 120 ms): mouse only.
+    pub hover: f32,
     /// Press amount 0..=1.
     pub press: f32,
     pub hovered: bool,
     pub enabled: bool,
 }
 
-/// Allocates `size`, reads the pointer state and runs the focus and press springs. `room` is how far
-/// the widget grows on each side when focused: the layout reserves that much extra width, so a
-/// neighbour keeps its gap while the widget is focused (`Interaction::rect` has the grown width).
+/// Allocates `size`, reads the pointer state and runs the focus, hover and press animations. The
+/// allocation never changes with focus: a focused widget does not push its neighbours (DESIGN.md
+/// 3.9); focus is a ring drawn outside the widget.
 pub fn interact(
     ui: &mut Ui,
     size: Vec2,
     focused: bool,
     enabled: bool,
     force: Option<Force>,
-    room: f32,
 ) -> Interaction {
     let sense = if enabled {
         Sense::click()
     } else {
         Sense::hover()
     };
-    // The focus spring runs before the allocation, whose width follows it.
     let id = ui.next_auto_id();
     let focus = ui.ctx().focus_t((id, "focus"), focused && enabled);
-    let (rect, response) = ui.allocate_exact_size(vec2(size.x + 2.0 * room * focus, size.y), sense);
+    let (rect, response) = ui.allocate_exact_size(size, sense);
     debug_assert_eq!(response.id, id);
     let hovered = enabled
         && (response.hovered() || force == Some(Force::Hover) || force == Some(Force::Press));
     let pressed = enabled && (response.is_pointer_button_down_on() || force == Some(Force::Press));
     let ctx = ui.ctx();
+    let hover = ctx.animate_to(
+        (response.id, "hover"),
+        if hovered { 1.0 } else { 0.0 },
+        Motion::Hover,
+    );
     let press = ctx.animate_to(
         (response.id, "press"),
         if pressed { 1.0 } else { 0.0 },
@@ -212,6 +213,7 @@ pub fn interact(
         response,
         rect,
         focus,
+        hover,
         press,
         hovered,
         enabled,
@@ -219,19 +221,14 @@ pub fn interact(
 }
 
 impl Interaction {
-    /// Scale from focus (`focus_scale` at full focus) and press.
-    pub fn scale(&self, focus_scale: f32) -> f32 {
-        lerp(1.0, focus_scale, self.focus) * lerp(1.0, PRESS_SCALE, self.press)
-    }
-
-    /// The press scale alone, for widgets whose focus grow is made of room.
+    /// The press scale, for widgets that shrink under the pointer.
     pub fn press_scale(&self) -> f32 {
         lerp(1.0, PRESS_SCALE, self.press)
     }
 
-    /// The allocation, also `room` taller on each side at full focus.
-    pub fn grown(&self, room: f32) -> Rect {
-        self.rect.expand2(vec2(0.0, room * self.focus))
+    /// The widget's rectangle as it is painted: pressed in, on whole pixels.
+    pub fn painted(&self, painter: &Painter) -> Rect {
+        snap_rect(painter, scale_rect(self.rect, self.press_scale()))
     }
 
     /// Multiplier for the whole widget when disabled.
@@ -241,17 +238,178 @@ impl Interaction {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Console button
+// The control family (DESIGN.md 3.9)
 // ---------------------------------------------------------------------------------------------
 
-/// A translucent rounded button that turns solid white when focused.
+/// Which button of the family: one primary per view, everything else secondary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Variant {
+    /// Solid ink on a dark label: the one action the view is about (Play, Accept).
+    Primary,
+    /// Translucent with a hairline: everything else.
+    Secondary,
+}
+
+/// The three heights of the family. All are capsules; a glyph alone makes a circle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ControlSize {
+    /// 54: the action row of the game page and dialogs.
+    #[default]
+    Large,
+    /// 44: the top bar.
+    Medium,
+    /// 32: an answer that sits in a line of text.
+    Small,
+}
+
+impl ControlSize {
+    pub const fn height(self) -> f32 {
+        match self {
+            ControlSize::Large => size::CONTROL_L,
+            ControlSize::Medium => size::CONTROL_M,
+            ControlSize::Small => size::CONTROL_S,
+        }
+    }
+    /// Space between the edge and the content of a button with text.
+    pub const fn text_pad(self) -> f32 {
+        match self {
+            ControlSize::Large => 30.0,
+            ControlSize::Medium => 20.0,
+            ControlSize::Small => 14.0,
+        }
+    }
+    /// The glyph: next to text, and on its own.
+    pub const fn glyph(self, with_text: bool) -> f32 {
+        match (self, with_text) {
+            (ControlSize::Large, true) => size::BUTTON_ICON,
+            (ControlSize::Large, false) => size::BUTTON_ICON_ONLY,
+            (ControlSize::Medium, true) => 18.0,
+            (ControlSize::Medium, false) => size::ICON_BUTTON_GLYPH,
+            (ControlSize::Small, _) => size::CHIP_ICON,
+        }
+    }
+    /// Between the glyph and the text.
+    pub const fn gap(self) -> f32 {
+        match self {
+            ControlSize::Large => size::BUTTON_GAP,
+            ControlSize::Medium => 8.0,
+            ControlSize::Small => size::CHIP_GAP,
+        }
+    }
+    pub const fn style(self) -> TextStyle {
+        match self {
+            ControlSize::Large => ty::BUTTON,
+            ControlSize::Medium => ty::BUTTON_MEDIUM,
+            ControlSize::Small => ty::CHIP,
+        }
+    }
+}
+
+/// Paints the body of a control (capsule fill, hairline, focus ring) for the animation state in
+/// `it` into `rect` (already pressed in and on whole pixels) and returns the ink to draw on it.
+///
+/// - rest, hover (fill and hairline ease in over 120 ms), pressed (darker, 0.97 scale in `rect`),
+///   focused (ring outside, fill one step lighter), disabled (40 %);
+/// - no shadow and no glow: a translucent fill over a shadow shows a seam.
+pub fn paint_control(
+    painter: &Painter,
+    rect: Rect,
+    variant: Variant,
+    it: &Interaction,
+    destructive: bool,
+) -> Color32 {
+    let a = it.alpha();
+    let radius = (rect.height() * 0.5).round();
+    let lift = it.hover.max(it.focus);
+    let (fill, ink) = match variant {
+        Variant::Primary => (
+            mix(
+                mix(color::primary(), color::primary_hover(), lift),
+                color::primary_pressed(),
+                it.press,
+            ),
+            color::on_primary(),
+        ),
+        Variant::Secondary => {
+            let rest = mix(color::surface(), color::surface_hover(), it.hover);
+            let rest = mix(rest, color::surface_focus(), it.focus);
+            (
+                mix(rest, color::surface_pressed(), it.press),
+                if destructive {
+                    color::destructive_icon()
+                } else {
+                    Color32::WHITE
+                },
+            )
+        }
+    };
+    painter.rect_filled(rect, corner(radius), fade(fill, a));
+    if variant == Variant::Secondary {
+        paint_hairline(
+            painter,
+            rect,
+            radius,
+            fade(
+                mix(color::hairline_control(), color::hairline_hover(), lift),
+                a,
+            ),
+        );
+    }
+    paint_focus_ring(painter, rect, radius, it.focus * a);
+    ink
+}
+
+/// The focus ring of a control: white, 2 dp, outside the shape with a 1.2 dp gap. `t` is the focus
+/// amount; paint after the element.
+pub fn paint_focus_ring(painter: &Painter, rect: Rect, radius: f32, t: f32) {
+    paint_focus_stroke(painter, rect, radius, size::FOCUS_RING, t);
+}
+
+/// White laid over a white-based `rest` colour by `amount`: the composite of the two layers as one
+/// colour, so a hover or focus step never paints two translucent shapes with a seam between them.
+pub fn lighten(rest: Color32, amount: f32) -> Color32 {
+    let a = rest.a() as f32 / 255.0;
+    white(1.0 - (1.0 - a) * (1.0 - amount.clamp(0.0, 1.0)))
+}
+
+/// How much white a container gains: under the pointer, with the focus, and pressed.
+pub const LIFT_HOVER: f32 = 0.05;
+pub const LIFT_FOCUS: f32 = 0.09;
+pub const LIFT_PRESS: f32 = 0.06;
+
+/// Fill and focus ring of a container that can be focused (a row, a card, a cell): `rest` is its
+/// white-based fill at rest. Hover lifts it by 5 %, focus by 9 % and draws the ring (`ring` dp wide,
+/// 0 for none); the press adds 6 %. The ring is outside the shape, so nothing grows or reflows.
+#[allow(clippy::too_many_arguments)]
+pub fn paint_surface(
+    painter: &Painter,
+    rect: Rect,
+    radius: f32,
+    rest: Color32,
+    hover: f32,
+    focus: f32,
+    press: f32,
+    ring: f32,
+) {
+    let amount = (LIFT_HOVER * hover).max(LIFT_FOCUS * focus) + LIFT_PRESS * press;
+    if rest.a() > 0 || amount > 0.0 {
+        painter.rect_filled(rect, corner(radius), lighten(rest, amount));
+    }
+    if ring > 0.0 {
+        paint_focus_stroke(painter, rect, radius, ring, focus);
+    }
+}
+
+/// One button of the family. Replaces the console button, the chip and the top-bar icon button.
 pub struct ConsoleButton<'a> {
     title: &'a str,
     icon: Option<Icon>,
     icon_fill: bool,
     focused: bool,
-    prominent: bool,
+    variant: Variant,
+    size: ControlSize,
     destructive: bool,
+    tabular: bool,
     min_width: f32,
     enabled: bool,
     force: Option<Force>,
@@ -267,15 +425,17 @@ impl<'a> ConsoleButton<'a> {
             icon: None,
             icon_fill: false,
             focused: false,
-            prominent: false,
+            variant: Variant::Secondary,
+            size: ControlSize::Large,
             destructive: false,
+            tabular: false,
             min_width: 0.0,
             enabled: true,
             force: None,
         }
     }
 
-    /// A button with only a glyph (18 dp side padding). `label` is its accessible name.
+    /// A button with only a glyph: a circle. `label` is its accessible name.
     pub fn icon_only(icon: Icon, label: impl Into<String>) -> ConsoleButton<'static> {
         let mut button = ConsoleButton::new("").icon(icon);
         button.label = Some(label.into());
@@ -301,13 +461,30 @@ impl<'a> ConsoleButton<'a> {
         self.focused = focused;
         self
     }
-    /// The primary action of a row: fill white 0.20.
+    /// The primary action of the view: ink fill, dark label. One per view.
     pub fn prominent(mut self, prominent: bool) -> Self {
-        self.prominent = prominent;
+        self.variant = if prominent {
+            Variant::Primary
+        } else {
+            Variant::Secondary
+        };
+        self
+    }
+    pub fn variant(mut self, variant: Variant) -> Self {
+        self.variant = variant;
+        self
+    }
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = size;
         self
     }
     pub fn destructive(mut self, destructive: bool) -> Self {
         self.destructive = destructive;
+        self
+    }
+    /// Digits of equal width, for a count that changes.
+    pub fn tabular(mut self, tabular: bool) -> Self {
+        self.tabular = tabular;
         self
     }
     pub fn min_width(mut self, width: f32) -> Self {
@@ -325,273 +502,87 @@ impl<'a> ConsoleButton<'a> {
 
     pub fn show(self, ui: &mut Ui) -> Response {
         let painter = ui.painter().clone();
-        let label = text::layout(
-            &painter,
-            ty::BUTTON,
-            self.title,
-            Color32::WHITE,
-            f32::INFINITY,
-        );
+        let style = self.size.style();
         let has_text = !self.title.is_empty();
-        let pad = if has_text {
-            size::BUTTON_PADDING
-        } else {
-            size::BUTTON_PADDING_ICON_ONLY
-        };
-        let icon_width = match (self.icon.is_some(), has_text) {
-            (false, _) => 0.0,
-            (true, true) => size::BUTTON_ICON,
-            (true, false) => size::BUTTON_ICON_ONLY,
+        let height = self.size.height();
+        let icon_width = match self.icon {
+            Some(_) => self.size.glyph(has_text),
+            None => 0.0,
         };
         let gap = if self.icon.is_some() && has_text {
-            size::BUTTON_GAP
+            self.size.gap()
         } else {
             0.0
         };
-        let text_width = if has_text { label.size().x } else { 0.0 };
+        let text_width = match (has_text, self.tabular) {
+            (false, _) => 0.0,
+            (true, true) => text::tabular_width(&painter, style, self.title),
+            (true, false) => text::width(&painter, style, self.title),
+        };
         let content = icon_width + gap + text_width;
-        let width = (pad * 2.0 + content).max(self.min_width);
-        let height = size::BUTTON_MIN_HEIGHT.max(ty::BUTTON.line_height());
+        let width = if has_text {
+            (self.size.text_pad() * 2.0 + content).max(self.min_width)
+        } else {
+            height.max(self.min_width)
+        };
 
         let it = interact(
             ui,
-            vec2(width, height),
+            vec2(width, height.max(style.line_height())),
             self.focused,
             self.enabled,
             self.force,
-            FOCUS_GROW,
         );
         let enabled = self.enabled;
-        let name = match (&self.label, self.title.is_empty()) {
-            (Some(label), _) => label.as_str(),
-            (None, true) => "",
-            (None, false) => self.title,
-        };
-        it.response
-            .widget_info(|| WidgetInfo::labeled(Role::Button, enabled, name));
-        if !ui.is_rect_visible(it.rect) {
-            return it.response;
-        }
-        let rect = snap_rect(&painter, scale_rect(it.grown(FOCUS_GROW), it.press_scale()));
-        // The content grows with the button; `width` is the size at rest.
-        let s = rect.width() / width;
-        let a = it.alpha();
-        let rest = if self.prominent {
-            color::surface_prominent()
-        } else if it.hovered {
-            color::surface_hover()
-        } else {
-            color::surface()
-        };
-        let fill = mix(rest, color::surface_focused(), it.focus);
-        let foreground = mix(
-            if self.destructive {
-                color::destructive_icon()
-            } else {
-                Color32::WHITE
-            },
-            color::text_on_focus(),
-            it.focus,
-        );
-        // One whole-dp radius for shadow, fill and stroke keeps them concentric.
-        let r = (radius::CONSOLE_BUTTON * s).round();
-        paint_shadow(&painter, rect, r, shadows::console_button(it.focus));
-        painter.rect_filled(rect, corner(r), fade(fill, a));
-        paint_hairline(
-            &painter,
-            rect,
-            r,
-            fade(color::hairline(), (1.0 - it.focus) * a),
-        );
-
-        // Content, centred, scaled with the button.
-        let text_style = text::scaled(ty::BUTTON, s);
-        let mut x = rect.center().x - content * s * 0.5;
-        if let Some(icon) = self.icon {
-            let glyph = icon_width * s;
-            let centre = pos2(x + glyph * 0.5, rect.center().y);
-            if icon == Icon::DOTS_THREE && !has_text {
-                // The font's dots are hairline-thin at button size: three round dots instead.
-                for k in [-1.0, 0.0, 1.0] {
-                    painter.circle_filled(
-                        centre + vec2(k * 7.0 * s, 0.0),
-                        2.2 * s,
-                        fade(foreground, a),
-                    );
-                }
-            } else if icon == Icon::CARET_LEFT || icon == Icon::CARET_RIGHT {
-                paint_caret(
-                    &painter,
-                    centre,
-                    icon == Icon::CARET_RIGHT,
-                    icon_width * s,
-                    fade(foreground, a),
-                );
-            } else {
-                painter.text(
-                    centre,
-                    Align2::CENTER_CENTER,
-                    icon.glyph(),
-                    icon.font(text::quantize_size(icon_width * s), self.icon_fill),
-                    fade(foreground, a),
-                );
-            }
-            x += glyph + gap * s;
-        }
-        if has_text {
-            text::paint(
-                &painter,
-                pos2(x, rect.center().y),
-                Align2::LEFT_CENTER,
-                text_style,
-                self.title,
-                fade(foreground, a),
-            );
-        }
-        it.response
-    }
-}
-
-// ---------------------------------------------------------------------------------------------
-// Chip
-// ---------------------------------------------------------------------------------------------
-
-/// A small capsule for a quiet choice next to bigger buttons: the trophy count beside Play, an
-/// answer of the question line. Same language as the console button (translucent, solid white
-/// when focused) at 32 dp, and it does not grow when focused.
-pub struct Chip<'a> {
-    title: &'a str,
-    icon: Option<Icon>,
-    icon_fill: bool,
-    tabular: bool,
-    focused: bool,
-    label: Option<String>,
-}
-
-impl<'a> Chip<'a> {
-    pub fn new(title: &'a str) -> Self {
-        Self {
-            title,
-            icon: None,
-            icon_fill: false,
-            tabular: false,
-            focused: false,
-            label: None,
-        }
-    }
-
-    /// A chip with only a glyph. `label` is its accessible name.
-    pub fn icon_only(icon: Icon, label: impl Into<String>) -> Chip<'static> {
-        let mut chip = Chip::new("").icon(icon);
-        chip.label = Some(label.into());
-        chip
-    }
-
-    pub fn icon(mut self, icon: Icon) -> Self {
-        self.icon = Some(icon);
-        self
-    }
-    pub fn icon_fill(mut self, fill: bool) -> Self {
-        self.icon_fill = fill;
-        self
-    }
-    /// Digits of equal width, for a count that changes.
-    pub fn tabular(mut self, tabular: bool) -> Self {
-        self.tabular = tabular;
-        self
-    }
-    pub fn focused(mut self, focused: bool) -> Self {
-        self.focused = focused;
-        self
-    }
-    /// The name assistive technology reads when it differs from the visible text.
-    pub fn accessible_name(mut self, name: impl Into<String>) -> Self {
-        self.label = Some(name.into());
-        self
-    }
-
-    pub fn show(self, ui: &mut Ui) -> Response {
-        let painter = ui.painter().clone();
-        let style = ty::CHIP;
-        let has_text = !self.title.is_empty();
-        let text_width = if !has_text {
-            0.0
-        } else if self.tabular {
-            text::tabular_width(&painter, style, self.title)
-        } else {
-            text::width(&painter, style, self.title)
-        };
-        let icon_width = if self.icon.is_some() {
-            size::CHIP_ICON
-        } else {
-            0.0
-        };
-        let gap = if self.icon.is_some() && has_text {
-            size::CHIP_GAP
-        } else {
-            0.0
-        };
-        let content = icon_width + gap + text_width;
-        // A glyph alone makes a circle; text gets the full side padding.
-        let pad = if has_text {
-            size::CHIP_PADDING
-        } else {
-            (size::CHIP_HEIGHT - icon_width) * 0.5
-        };
-        let it = interact(
-            ui,
-            vec2(pad * 2.0 + content, size::CHIP_HEIGHT),
-            self.focused,
-            true,
-            None,
-            0.0,
-        );
         let name = match (&self.label, has_text) {
             (Some(label), _) => label.as_str(),
             (None, true) => self.title,
             (None, false) => "",
         };
         it.response
-            .widget_info(|| WidgetInfo::labeled(Role::Button, true, name));
+            .widget_info(|| WidgetInfo::labeled(Role::Button, enabled, name));
         if !ui.is_rect_visible(it.rect) {
             return it.response;
         }
-        let rect = snap_rect(&painter, scale_rect(it.rect, it.press_scale()));
-        let rest = if it.hovered {
-            color::surface_hover()
-        } else {
-            color::surface()
-        };
-        paint_capsule(
-            &painter,
-            rect,
-            mix(rest, color::surface_focused(), it.focus),
-        );
-        let foreground = mix(Color32::WHITE, color::text_on_focus(), it.focus);
+        let rect = it.painted(&painter);
+        let ink = paint_control(&painter, rect, self.variant, &it, self.destructive);
+        let ink = fade(ink, it.alpha());
+
+        // Content, centred.
         let mut x = rect.center().x - content * 0.5;
         if let Some(icon) = self.icon {
-            painter.text(
-                pos2(x + icon_width * 0.5, rect.center().y),
-                Align2::CENTER_CENTER,
-                icon.glyph(),
-                icon.font(text::quantize_size(icon_width), self.icon_fill),
-                foreground,
-            );
+            let centre = pos2(x + icon_width * 0.5, rect.center().y);
+            if icon == Icon::DOTS_THREE && !has_text {
+                // The font's dots are hairline-thin at button size: three round dots instead.
+                let k = height / size::CONTROL_L;
+                for d in [-1.0, 0.0, 1.0] {
+                    painter.circle_filled(centre + vec2(d * 7.0 * k, 0.0), 2.2 * k, ink);
+                }
+            } else if icon == Icon::CARET_LEFT || icon == Icon::CARET_RIGHT {
+                paint_caret(&painter, centre, icon == Icon::CARET_RIGHT, icon_width, ink);
+            } else {
+                painter.text(
+                    centre,
+                    Align2::CENTER_CENTER,
+                    icon.glyph(),
+                    icon.font(text::quantize_size(icon_width), self.icon_fill),
+                    ink,
+                );
+            }
             x += icon_width + gap;
         }
         if has_text {
-            let at = pos2(x, rect.center().y);
             if self.tabular {
-                let top = pos2(at.x, at.y - style.line_height() * 0.5);
-                text::paint_tabular(&painter, top, style, self.title, foreground);
+                let top = pos2(x, rect.center().y - style.line_height() * 0.5);
+                text::paint_tabular(&painter, top, style, self.title, ink);
             } else {
                 text::paint(
                     &painter,
-                    at,
+                    pos2(x, rect.center().y),
                     Align2::LEFT_CENTER,
                     style,
                     self.title,
-                    foreground,
+                    ink,
                 );
             }
         }
@@ -599,11 +590,7 @@ impl<'a> Chip<'a> {
     }
 }
 
-// ---------------------------------------------------------------------------------------------
-// Icon button (top bar)
-// ---------------------------------------------------------------------------------------------
-
-/// A 44 dp circle with a glyph (library, settings). Focused: white fill, black glyph, 3 dp larger.
+/// A button with only a glyph in the top bar: a 44 dp circle (library, settings).
 pub struct IconButton {
     icon: Icon,
     label: String,
@@ -643,42 +630,13 @@ impl IconButton {
     }
 
     pub fn show(self, ui: &mut Ui) -> Response {
-        let it = interact(
-            ui,
-            Vec2::splat(size::ICON_BUTTON),
-            self.focused,
-            self.enabled,
-            self.force,
-            FOCUS_GROW,
-        );
-        let (label, enabled) = (self.label.as_str(), self.enabled);
-        it.response
-            .widget_info(|| WidgetInfo::labeled(Role::Button, enabled, label));
-        if !ui.is_rect_visible(it.rect) {
-            return it.response;
-        }
-        let painter = ui.painter();
-        let rect = snap_rect(painter, scale_rect(it.grown(FOCUS_GROW), it.press_scale()));
-        let s = rect.width() / size::ICON_BUTTON;
-        let a = it.alpha();
-        let rest = if it.hovered {
-            color::surface_hover()
-        } else {
-            color::surface()
-        };
-        let fill = mix(rest, color::surface_focused(), it.focus);
-        let r = (radius::ICON_BUTTON * s).round();
-        paint_shadow(painter, rect, r, shadows::icon_button(it.focus));
-        painter.rect_filled(rect, corner(r), fade(fill, a));
-        painter.text(
-            rect.center(),
-            Align2::CENTER_CENTER,
-            self.icon.glyph(),
-            self.icon
-                .font(text::quantize_size(size::ICON_BUTTON_GLYPH * s), self.fill),
-            fade(mix(Color32::WHITE, Color32::BLACK, it.focus), a),
-        );
-        it.response
+        ConsoleButton::icon_only(self.icon, self.label)
+            .size(ControlSize::Medium)
+            .icon_fill(self.fill)
+            .focused(self.focused)
+            .enabled(self.enabled)
+            .force(self.force)
+            .show(ui)
     }
 }
 

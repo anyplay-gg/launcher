@@ -46,6 +46,8 @@ pub enum Page {
     Background(Theme),
     /// A panel of the launcher (`screens::gallery`).
     Screen(crate::screens::gallery::ScreenPage),
+    /// The real home screen (`screens::gallery_home`).
+    Home(crate::screens::gallery_home::HomeLook),
 }
 
 /// Parsed command line of the gallery.
@@ -57,6 +59,8 @@ pub struct Options {
     pub time: Option<f32>,
     pub language: Language,
     pub live: bool,
+    /// Where the pointer rests, in dp (`--hover=x,y`).
+    pub hover: Option<(f32, f32)>,
 }
 
 /// Returns the gallery options when `--gallery` is on the command line.
@@ -68,6 +72,7 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Option<Options> {
         time: None,
         language: Language::English,
         live: false,
+        hover: None,
     };
     let mut seen = false;
     for arg in args {
@@ -82,9 +87,10 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Option<Options> {
                 "bg0" | "cosmic" => Page::Background(Theme::Cosmic),
                 "bg1" | "aurora" => Page::Background(Theme::Aurora),
                 "bg2" | "sunset" => Page::Background(Theme::Sunset),
-                other => {
-                    crate::screens::gallery::parse(other).map_or(Page::Components, Page::Screen)
-                }
+                other => crate::screens::gallery_home::parse(other).map_or_else(
+                    || crate::screens::gallery::parse(other).map_or(Page::Components, Page::Screen),
+                    Page::Home,
+                ),
             };
         } else if let Some(path) = arg.strip_prefix("--screenshot=") {
             options.screenshot = Some(PathBuf::from(path));
@@ -99,6 +105,10 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Option<Options> {
             options.language = Language::Turkish;
         } else if arg == "--live" {
             options.live = true;
+        } else if let Some(at) = arg.strip_prefix("--hover=") {
+            options.hover = at
+                .split_once(',')
+                .and_then(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)));
         }
     }
     seen.then_some(options)
@@ -128,6 +138,7 @@ struct Gallery {
     shot_requested: bool,
     sample_art: Option<TextureHandle>,
     screens: Option<crate::screens::gallery::ScreenGallery>,
+    home: Option<crate::screens::gallery_home::HomeGallery>,
 }
 
 impl Gallery {
@@ -150,6 +161,10 @@ impl Gallery {
             frames: 0,
             shot_requested: false,
             sample_art: None,
+            home: match page {
+                Page::Home(look) => Some(crate::screens::gallery_home::HomeGallery::new(look)),
+                _ => None,
+            },
             screens: match page {
                 Page::Screen(page) => {
                     Some(crate::screens::gallery::ScreenGallery::new(page, language))
@@ -190,6 +205,14 @@ impl Gallery {
 }
 
 impl eframe::App for Gallery {
+    fn raw_input_hook(&mut self, _ctx: &Context, raw_input: &mut egui::RawInput) {
+        if let Some((x, y)) = self.options.hover {
+            raw_input
+                .events
+                .push(egui::Event::PointerMoved(pos2(x, y)));
+        }
+    }
+
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let _ = self.shell.begin_frame(&ctx);
@@ -211,6 +234,11 @@ impl eframe::App for Gallery {
             Page::Screen(_) => {
                 if let Some(screens) = self.screens.as_mut() {
                     screens.ui(&mut self.shell, ui);
+                }
+            }
+            Page::Home(_) => {
+                if let Some(home) = self.home.as_mut() {
+                    home.ui(&self.shell, ui);
                 }
             }
             Page::Themes => themes_page(&ctx, ui, &self.shell, self.options.time),

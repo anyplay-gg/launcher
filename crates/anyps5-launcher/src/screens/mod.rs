@@ -34,6 +34,7 @@ pub mod discord_strings;
 pub mod format;
 pub mod gallery;
 pub mod gallery_feed;
+pub mod gallery_home;
 pub mod game_settings;
 pub mod home;
 pub mod library;

@@ -427,7 +427,7 @@ fn online_data(
 
 /// Invented friends: one plays a game you can join, one plays, one is online, one is not; a
 /// request waits, one was sent, and a friend invited you.
-fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
+pub(crate) fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
     use anyps5_core::online::api::{
         Account, AccountId, Activity, Count, Friend, FriendLists, Invitation, Presence, Privacy,
         Request, SessionRef,
@@ -1083,7 +1083,7 @@ fn sample_plan(warning: bool) -> Plan {
 }
 
 /// Names of the invented games.
-const NAMES: [&str; 9] = [
+pub(crate) const NAMES: [&str; 9] = [
     "Starlight Harbor",
     "Ember Drift",
     "Paper Moon",
@@ -1096,7 +1096,7 @@ const NAMES: [&str; 9] = [
 ];
 
 /// A generated cover: diagonal bands and a big disc in a hue of its own.
-fn cover_image(seed: usize, w: usize, h: usize) -> ColorImage {
+pub(crate) fn cover_image(seed: usize, w: usize, h: usize) -> ColorImage {
     let hue = (seed as f32 * 0.137 + 0.05).fract();
     let tint = |t: f32, k: f32| {
         let (r, g, b) = hsv(hue + 0.08 * t, 0.55 + 0.25 * k, 0.25 + 0.65 * k);
@@ -1153,7 +1153,7 @@ fn trophy_png(seed: usize) -> Vec<u8> {
     bytes
 }
 
-fn fake_game(index: usize) -> Game {
+pub(crate) fn fake_game(index: usize) -> Game {
     let title_id = format!("PPSA{:05}", 90000 + index);
     Game {
         id: GameId::from_key(format!("c:/games/{}", NAMES[index].to_lowercase())),
@@ -1175,7 +1175,7 @@ fn fake_game(index: usize) -> Game {
 /// The invented set's secret trophy ("The Glass Wing").
 const SECRET_TROPHY: usize = 6;
 
-fn fake_trophies() -> TrophySet {
+pub(crate) fn fake_trophies() -> TrophySet {
     type Spec = (
         &'static str,
         &'static str,

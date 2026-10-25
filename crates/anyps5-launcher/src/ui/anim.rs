@@ -203,6 +203,8 @@ pub enum Curve {
 pub enum Motion {
     /// Focus/hover feedback, switch, key scroll: response 0.32, damping 0.82.
     Focus,
+    /// Pointer hover: easeOut 0.12 s, the same with reduced motion (a colour change only).
+    Hover,
     /// Tile row, hero swap, onboarding steps, list reflow: 0.45 / 0.86.
     Layout,
     /// Panels, splash, toast: 0.42 / 0.90.
@@ -233,6 +235,7 @@ impl Motion {
         match (self, reduced) {
             (Motion::Focus, false) => Curve::Spring(Self::FOCUS),
             (Motion::Focus, true) => ease_out(0.12),
+            (Motion::Hover, _) => ease_out(0.12),
             (Motion::Layout, false) => Curve::Spring(Self::LAYOUT),
             (Motion::Layout, true) => ease_out(0.15),
             (Motion::Overlay, false) => Curve::Spring(Self::OVERLAY),

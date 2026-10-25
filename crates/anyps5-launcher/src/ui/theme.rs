@@ -344,6 +344,10 @@ pub mod color {
     pub fn text_overline() -> Color32 {
         white(0.55)
     }
+    /// The clock in the top bar: a status, quieter than the controls beside it.
+    pub fn text_clock() -> Color32 {
+        white(0.78)
+    }
     pub fn text_count() -> Color32 {
         white(0.5)
     }
@@ -381,6 +385,35 @@ pub mod color {
     }
     pub fn surface_focused() -> Color32 {
         Color32::WHITE
+    }
+    /// A control that has the focus: one step above hover (the ring is the indicator, DESIGN.md 3.9).
+    pub fn surface_focus() -> Color32 {
+        white(0.20)
+    }
+    /// A control under the pointer button.
+    pub fn surface_pressed() -> Color32 {
+        white(0.26)
+    }
+    /// The edge of a secondary control at rest and under the pointer or focus.
+    pub fn hairline_control() -> Color32 {
+        white(0.12)
+    }
+    pub fn hairline_hover() -> Color32 {
+        white(0.32)
+    }
+    /// The primary button: ink, not accent (one per view).
+    pub fn primary() -> Color32 {
+        white(0.92)
+    }
+    pub fn primary_hover() -> Color32 {
+        Color32::WHITE
+    }
+    pub fn primary_pressed() -> Color32 {
+        white(0.78)
+    }
+    /// The label on the primary button: 16:1 on its fill.
+    pub fn on_primary() -> Color32 {
+        rgb(0.04, 0.05, 0.09)
     }
     pub fn selected_category() -> Color32 {
         white(0.12)
@@ -510,7 +543,16 @@ pub mod size {
     pub const LIBRARY_TILE: f32 = 196.0;
     pub const SPLASH_TILE: f32 = 200.0;
     pub const ONBOARDING_TILE: f32 = 84.0;
-    pub const BUTTON_MIN_HEIGHT: f32 = 54.0;
+    /// The control family's three heights (DESIGN.md 3.9): the action row and dialogs, the top bar
+    /// and an answer inside a line of text. Every control is a capsule.
+    pub const CONTROL_L: f32 = 54.0;
+    pub const CONTROL_M: f32 = 44.0;
+    pub const CONTROL_S: f32 = 32.0;
+    /// Between neighbouring controls, everywhere.
+    pub const CONTROL_GAP: f32 = 12.0;
+    /// The focus ring of a control: white, 2 dp wide, outside the shape. Tiles and cards use 3.
+    pub const FOCUS_RING: f32 = 2.0;
+    pub const BUTTON_MIN_HEIGHT: f32 = CONTROL_L;
     pub const BUTTON_PADDING: f32 = 30.0;
     pub const BUTTON_PADDING_ICON_ONLY: f32 = 16.0;
     pub const BUTTON_ICON: f32 = 17.0;
@@ -789,8 +831,10 @@ pub mod ty {
     pub const THEME_CARD_NAME_FOCUSED: TextStyle = TextStyle::new(22.0, Weight::SemiBold);
     pub const PERCENT: TextStyle = TextStyle::new(22.0, Weight::SemiBold);
     pub const LANGUAGE_NAME: TextStyle = TextStyle::new(28.0, Weight::Medium);
-    pub const CLOCK: TextStyle = TextStyle::new(20.0, Weight::Medium);
+    pub const CLOCK: TextStyle = TextStyle::new(17.0, Weight::Medium);
     pub const BUTTON: TextStyle = TextStyle::new(19.0, Weight::SemiBold);
+    /// A button of the top bar's size.
+    pub const BUTTON_MEDIUM: TextStyle = TextStyle::new(16.0, Weight::SemiBold);
     pub const CATEGORY: TextStyle = TextStyle::new(19.0, Weight::Regular);
     pub const CATEGORY_SELECTED: TextStyle = TextStyle::new(19.0, Weight::SemiBold);
     pub const ONBOARDING_SUBTITLE: TextStyle = TextStyle::new(19.0, Weight::Regular);
