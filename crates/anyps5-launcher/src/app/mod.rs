@@ -354,6 +354,13 @@ impl LauncherApp {
         }
     }
 
+    /// After painting: the pointer's tick. Silent while a game starts or runs in front and
+    /// while the launcher window is not the focused one.
+    pub fn finish_frame(&mut self, ctx: &Context) {
+        let playing = self.model.running.is_some() || self.model.starting.is_some();
+        self.shell.finish_frame(ctx, !playing && self.focused);
+    }
+
     /// Shows the preferences to the shell: language, theme, accent, motion, sounds, music.
     fn apply_preferences(&mut self, ctx: &Context) {
         self.shell.language = self.model.language();
@@ -970,6 +977,7 @@ impl eframe::App for App {
         }
         self.app.step(&ctx);
         self.app.paint(ui);
+        self.app.finish_frame(&ctx);
     }
 
     fn on_exit(&mut self) {
