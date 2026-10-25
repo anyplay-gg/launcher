@@ -11,8 +11,8 @@ use anyps5_core::fsx::LinkMode;
 use anyps5_core::paths::GameId;
 use anyps5_core::toolkit::Toolkit;
 use anyps5_core::unlock::{
-    self, EXECUTABLE, Step, UnlockControl, UnlockError, UnlockEvent, UnlockQueue, UnlockRequest,
-    run_unlock,
+    self, EXECUTABLE, Step, SwapFault, UnlockControl, UnlockError, UnlockEvent, UnlockQueue,
+    UnlockRequest, inject_swap_fault, run_unlock,
 };
 use support::*;
 
@@ -87,6 +87,10 @@ fn no_leftovers(root: &Path) {
             assert!(
                 !e.file_name().to_string_lossy().ends_with(".partial"),
                 "partial copy left behind"
+            );
+            assert!(
+                !e.file_name().to_string_lossy().ends_with(".previous"),
+                "set-aside copy left behind"
             );
         }
     }
@@ -558,6 +562,62 @@ fn a_failed_unlock_again_leaves_the_old_copy_untouched() {
     assert!(unlock::read_record(&copy).is_some());
     assert_eq!(fs::read(copy.join("_sd/slot0.sav")).unwrap(), b"SAVE-1");
     no_leftovers(&w.root);
+}
+
+/// Unlocks again with the swap failing at `fault`: the call fails, and the old copy is still the
+/// one the player had, saves and trophies byte for byte, with the old executable.
+fn assert_failed_swap_loses_nothing(fault: SwapFault, title_id: &str) {
+    let w = world(&[]);
+    let request = w.dump("Swap", title_id, &elf_bytes());
+    run(&request).0.unwrap();
+    let copy = unlock::unlocked_copy(title_id, &request.game, &w.root);
+    write(&copy.join("_sd/slot0.sav"), b"SAVE-1");
+    write(
+        &copy.join("_trophy/1_0.txt"),
+        b"1 63000000000000000
+",
+    );
+    write(&copy.join("data/cache.bin"), b"C");
+    let old_executable = fs::read(copy.join(EXECUTABLE)).unwrap();
+    let old_record = unlock::read_record(&copy).unwrap();
+
+    write(
+        &w.toolkit.root().join("version.txt"),
+        b"0.1.4-bbbbbbbbbbbb
+",
+    );
+    let mut again = request.clone();
+    again.toolkit = Toolkit::open(w.toolkit.root()).unwrap();
+    inject_swap_fault(Some(fault));
+    let (result, _) = run(&again);
+    inject_swap_fault(None);
+    assert!(result.is_err(), "{fault:?}");
+
+    assert_eq!(fs::read(copy.join("_sd/slot0.sav")).unwrap(), b"SAVE-1");
+    assert_eq!(
+        fs::read(copy.join("_trophy/1_0.txt")).unwrap(),
+        b"1 63000000000000000
+"
+    );
+    assert!(copy.join("data/cache.bin").is_file());
+    assert_eq!(fs::read(copy.join(EXECUTABLE)).unwrap(), old_executable);
+    assert_eq!(unlock::read_record(&copy), Some(old_record), "{fault:?}");
+    no_leftovers(&w.root);
+}
+
+#[test]
+fn a_swap_that_cannot_set_the_old_copy_aside_changes_nothing() {
+    assert_failed_swap_loses_nothing(SwapFault::SetAside, "PPSA00020");
+}
+
+#[test]
+fn a_swap_that_cannot_place_the_new_copy_brings_the_old_one_back() {
+    assert_failed_swap_loses_nothing(SwapFault::PutInPlace, "PPSA00021");
+}
+
+#[test]
+fn a_swap_that_cannot_keep_the_saves_brings_the_old_copy_back() {
+    assert_failed_swap_loses_nothing(SwapFault::KeepSaves, "PPSA00022");
 }
 
 #[test]
