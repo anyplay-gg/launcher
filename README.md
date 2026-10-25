@@ -10,7 +10,7 @@ It is part of **[AnyPlay](https://github.com/anyplay-gg)**, which builds everyth
 | **[Network](https://github.com/anyplay-gg/network)** | Online play with friends over the internet, in development: the net service this launcher starts, the bridge protocol and the specifications |
 | **[Cloud](https://github.com/anyplay-gg/cloud)** | The services behind the network, run by AnyPlay at [anyplaynet.com](https://anyplaynet.com) or by you |
 
-News, help and other players: the [AnyPlay Discord](https://discord.gg/nSHbHBRdS).
+News, help and other players: the [AnyPlay Discord](https://discord.gg/9zYqf8fEsh).
 
 <p align="center">
   <img src="docs/media/preview.webp" width="800" alt="The launcher fades in, then moves between Minecraft Dungeons II, Sword of the Sea and Hollow Knight: Silksong">
