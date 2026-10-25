@@ -727,6 +727,10 @@ fn tell_worker(model: &mut Model) {
         tracing::info!("share screen is on, but there is no share worker");
         return;
     };
+    send_worker(model, &path);
+}
+
+fn send_worker(model: &mut Model, path: &std::path::Path) {
     model.online.send(
         Purpose::ScreenWorker,
         Command::ScreenWorker {
@@ -1028,6 +1032,22 @@ mod tests {
         model.online.status = Status::Off;
         online.relay_only_changed(&mut model);
         assert!(model.online.take_outbox().is_empty());
+    }
+
+    #[test]
+    fn the_share_worker_is_only_handed_over_when_share_screen_is_on() {
+        let mut model = signed_in_model();
+        model.prefs.online_share_screen = false;
+        // Off: nothing goes out, whatever worker there may be.
+        tell_worker(&mut model);
+        assert!(model.online.take_outbox().is_empty());
+        // On, with a worker: the net service is told where it is.
+        model.prefs.online_share_screen = true;
+        send_worker(&mut model, std::path::Path::new("C:/x/anyplay-share.exe"));
+        let sent = model.online.take_outbox();
+        assert_eq!(sent.len(), 1);
+        assert!(sent[0].contains("\"do\":\"screen_worker\""), "{}", sent[0]);
+        assert!(sent[0].contains("anyplay-share.exe"));
     }
 
     fn message(from: u64, handle: &str, text: &str) -> net::api::Message {

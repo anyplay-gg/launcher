@@ -27,11 +27,11 @@ The launcher and the net service are built from `Cargo.toml` files that name `..
 Next to the binaries, installer, `THIRD-PARTY-LICENSES.txt` and the signed manifest, every release has:
 
 - `SHA256SUMS.txt`, which now also covers the files below;
-- four SBOMs in CycloneDX 1.5: `AnyPlay-Launcher-<v>-windows-x86_64.sbom.cdx.json` and `...-linux-x86_64.sbom.cdx.json` for the launcher, and `...net-service.sbom.cdx.json` for the same platforms for the net service inside it. They list the crates that go into the binary, not the build tools, and are made from the `Cargo.lock` files the build used;
+- five SBOMs in CycloneDX 1.5: `AnyPlay-Launcher-<v>-windows-x86_64.sbom.cdx.json` and `...-linux-x86_64.sbom.cdx.json` for the launcher, and `...net-service.sbom.cdx.json` for the same platforms for the net service inside it, and `...windows-x86_64.share-worker.sbom.cdx.json` for the share worker inside the Windows launcher. They list the crates that go into the binary, not the build tools, and are made from the `Cargo.lock` files the build used;
 - `AnyPlay-Launcher-<v>-BUILD-INFO.txt`: the launcher commit, the network commit and the workflow run;
 - an attestation for every one of these files (see below).
 
-The binaries themselves are built with `cargo auditable`: the list of every crate is inside the exe, the AppImage's executable and the net service. The release fails if a build lost it.
+The binaries themselves are built with `cargo auditable`: the list of every crate is inside the exe, the AppImage's executable, the net service and the share worker. The release fails if a build lost it.
 
 ## Verify a release
 

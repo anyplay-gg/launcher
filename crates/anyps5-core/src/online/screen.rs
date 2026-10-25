@@ -403,6 +403,19 @@ mod tests {
     }
 
     #[test]
+    fn a_start_names_the_games_window_and_processes() {
+        let mut online = Online::default();
+        online.screen_start(Some(65872), vec![100, 101]);
+        let lines = online.take_outbox();
+        assert!(lines[0].contains("\"window\":65872"), "{}", lines[0]);
+        assert!(lines[0].contains("\"pids\":[100,101]"), "{}", lines[0]);
+        // Without them the line stays short and the net service falls back to the title.
+        online.screen_start(None, Vec::new());
+        let lines = online.take_outbox();
+        assert!(!lines[0].contains("window") && !lines[0].contains("pids"));
+    }
+
+    #[test]
     fn a_refused_stop_does_not_hide_the_next_end() {
         let mut online = Online::default();
         online.apply(event(true, true, Some(hosting(vec![])), vec![], None));
