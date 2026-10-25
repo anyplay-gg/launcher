@@ -1248,7 +1248,8 @@ fn a_store_in_another_folder_gets_the_copy_and_the_dumps_stay_untouched() {
     no_leftovers(&fast);
 }
 
-#[cfg(unix)]
+// (macOS shares files by cloning, which keeps a link count of 1.)
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn files_are_linked_on_one_volume_and_copied_when_forced() {
     use std::os::unix::fs::MetadataExt;
