@@ -626,7 +626,10 @@ impl OnlineService {
         };
         let base = format!("{}/", cloud.trim_end_matches('/'));
         if !url.starts_with(&base) || url.chars().any(|c| c.is_whitespace() || c.is_control()) {
-            tracing::warn!("not opening a page outside the cloud: {}", loggable_url(url));
+            tracing::warn!(
+                "not opening a page outside the cloud: {}",
+                loggable_url(url)
+            );
             return;
         }
         if let Err(error) = anyps5_core::platform::open_url(url) {
@@ -873,10 +876,9 @@ mod tests {
 
     #[test]
     fn a_logged_address_cannot_start_a_line() {
-        let line = loggable_url("https://cloud.example/a
-PANIC thread=main at x:1: fake[2J");
-        assert!(!line.contains(['
-', '', '']));
+        let line =
+            loggable_url("https://cloud.example/a\nPANIC thread=main at x:1: fake\r\u{1b}[2J");
+        assert!(!line.contains(['\n', '\r', '\u{1b}']));
         assert!(line.starts_with('"') && line.ends_with('"'));
     }
 

@@ -683,9 +683,18 @@ mod log_tests {
 
     #[test]
     fn a_logged_link_names_the_host_only() {
-        assert_eq!(loggable_host("https://evil.example/invite/CODE?x=1"), "\"evil.example\"");
-        assert_eq!(loggable_host("https://evil.example?code=CODE"), "\"evil.example\"");
-        assert_eq!(loggable_host("https://evil.example#CODE"), "\"evil.example\"");
+        assert_eq!(
+            loggable_host("https://evil.example/invite/CODE?x=1"),
+            "\"evil.example\""
+        );
+        assert_eq!(
+            loggable_host("https://evil.example?code=CODE"),
+            "\"evil.example\""
+        );
+        assert_eq!(
+            loggable_host("https://evil.example#CODE"),
+            "\"evil.example\""
+        );
     }
 
     #[test]
@@ -697,10 +706,11 @@ mod log_tests {
 
     #[test]
     fn a_logged_link_drops_userinfo_and_control_characters() {
-        assert_eq!(loggable_host("https://user:CODE@evil.example/x"), "\"evil.example\"");
-        let line = loggable_host("https://evil.example
-PANIC fake/x");
-        assert!(!line.contains(['
-', '']));
+        assert_eq!(
+            loggable_host("https://user:CODE@evil.example/x"),
+            "\"evil.example\""
+        );
+        let line = loggable_host("https://evil.example\nPANIC fake/x");
+        assert!(!line.contains(['\n', '\r']));
     }
 }
