@@ -341,6 +341,7 @@ mod tests {
             id: AccountId(1),
             handle: "Mira".into(),
             email: "mira@example.org".into(),
+            appear_offline: false,
         });
         online.friends.friends = vec![Friend {
             account: account(2, "Lumen"),

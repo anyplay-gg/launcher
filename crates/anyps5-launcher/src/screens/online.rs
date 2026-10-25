@@ -106,6 +106,8 @@ pub enum OnlineAction {
     LeaveConversation(String),
     /// Put a message's text on the clipboard.
     CopyText(String),
+    /// Appear offline to every other player, or show again.
+    AppearOffline(bool),
     /// Who sees the player's trophies.
     TrophyAudience(Audience),
     /// The Feed page opened or asks again: read its newest items.
@@ -594,6 +596,10 @@ impl OnlinePanel {
                 on,
             } => actions.push(OnlineAction::RelayOnly(*on)),
             Change::Toggle {
+                row: "appearOffline",
+                on,
+            } => actions.push(OnlineAction::AppearOffline(*on)),
+            Change::Toggle {
                 row: "pickParty",
                 on,
             } => {
@@ -993,6 +999,7 @@ impl OnlinePanel {
                     t(T::Cloud),
                     data.cloud.map(str::to_owned),
                 ));
+                rows.push(appear_offline_row(data).group_start());
                 rows.push(
                     Row::toggle("relayOnly", t(T::RelayOnly), data.relay_only)
                         .icon(Icon::EYE_SLASH)
@@ -1245,6 +1252,19 @@ impl OnlinePanel {
     }
 }
 
+/// The switch for appearing offline: it says what is true while it is on (friends see the player
+/// as offline), the way every toggle here does.
+pub(super) fn appear_offline_row(data: &OnlineData<'_>) -> Row {
+    let language = data.language;
+    Row::toggle(
+        "appearOffline",
+        T::AppearOffline.text(language),
+        data.online.appears_offline(),
+    )
+    .icon(Icon::CIRCLE_DASHED)
+    .detail(T::AppearOfflineDetail.text(language))
+}
+
 /// How many friend requests the friends list answers in place; the rest wait behind a row.
 const MAX_INLINE_REQUESTS: usize = 3;
 
@@ -1254,6 +1274,9 @@ fn home_subtitle(data: &OnlineData<'_>) -> String {
     let (online, language) = (data.online, data.language);
     let handle = online.account.as_ref().map_or("", |a| a.handle.as_str());
     let tail = match online.cloud {
+        Some(Cloud::Online) if online.appears_offline() => {
+            Some(T::AppearingOffline.text(language).to_owned())
+        }
         Some(Cloud::Online) => match online.friends_online() {
             0 => None,
             n => Some(T::FriendsOnlineCount.format(language, &[Arg::Int(n as i64)])),
@@ -1412,6 +1435,7 @@ mod tests {
             id: AccountId(1),
             handle: "Alec".into(),
             email: "a@example.org".into(),
+            appear_offline: false,
         });
         online.friends = FriendLists {
             friends: vec![Friend {
@@ -1782,6 +1806,40 @@ mod tests {
         };
         panel.handle(&Context::default(), &change, &data(&online), &mut actions);
         assert_eq!(actions, [OnlineAction::TrophyAudience(Audience::Everyone)]);
+    }
+
+    #[test]
+    fn appearing_offline_is_a_switch_on_the_account_page() {
+        use crate::screens::rows::Control;
+        let mut online = signed_in();
+        let mut panel = OnlinePanel::default();
+        panel.open(&data(&online));
+        panel.go(Page::Account, &data(&online));
+        let rows = panel.rows(&data(&online)).2;
+        let row = rows.iter().find(|r| r.id == "appearOffline").unwrap();
+        assert_eq!(row.title, "Appear Offline");
+        assert_eq!(row.detail.as_deref(), Some("Friends see you as offline"));
+        assert_eq!(row.control, Control::Toggle(false));
+        // Pressing the switch asks the host.
+        let mut actions = Vec::new();
+        panel.handle(
+            &Context::default(),
+            &Change::Toggle {
+                row: "appearOffline",
+                on: true,
+            },
+            &data(&online),
+            &mut actions,
+        );
+        assert_eq!(actions, [OnlineAction::AppearOffline(true)]);
+        // It shows what the player chose, and the friends page says it under the name.
+        online.set_appear_offline(true);
+        let (_, _, rows) = panel.rows(&data(&online));
+        let row = rows.iter().find(|r| r.id == "appearOffline").unwrap();
+        assert_eq!(row.control, Control::Toggle(true));
+        panel.go(Page::Home, &data(&online));
+        let (_, subtitle, _) = panel.rows(&data(&online));
+        assert_eq!(subtitle.as_deref(), Some("@Alec · Appearing offline"));
     }
 
     #[test]

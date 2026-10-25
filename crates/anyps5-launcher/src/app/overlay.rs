@@ -36,6 +36,8 @@ pub enum Overlay {
     Online,
     /// A player's profile, the player's own or another's (a full-screen panel).
     Profile,
+    /// The player's trophies in a game next to another player's (a full-screen panel).
+    Compare,
     /// The release a game stays on is gone: download it again or follow the global toolkit
     /// (a side panel).
     ToolkitMissing,

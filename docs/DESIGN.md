@@ -395,6 +395,7 @@ key..." pulse, the banner pop.
 | 30 | Banner out | after 5 s: easeIn 0.3 s back up and out; next banner starts 0.35 s later | see 5.14 |
 | 31 | Scroll-to-focus in lists | `scrollTo(anchor: .center)` inside `Motion.focus` | spring focus on the scroll offset toward "focused row centred" |
 | 32 | Tile hover | none (only buttons hover: fill white 0.16) | |
+| 33 | Edge bump (6.7) | none | focus ring leans 3 dp toward the wall and returns: velocity kick 140 dp/s on `Motion::Focus`; off under reduced motion |
 
 Animations 1, 10-15 can share one helper: `focus_t: Spring` per focusable widget id stored in egui memory.
 
@@ -772,7 +773,7 @@ The launcher keeps the port's structure but trims what read as noise next to the
   used 16.5 % of a core and 30 % GPU (58 threads) before, 11 % and 15 % (26 threads) after; the
   backdrop is untouched and still draws at 60 Hz while focused. A window without focus, and a game
   running, stop all drawing (0.2 to 2 % of a core). The gamepad thread polls every 100 ms while no
-  pad is connected (8 ms with one). `ANYPS5_GPU=dx12|vulkan|both` and `ANYPS5_POWER=high` undo the
+  pad is connected (4 ms with one). `ANYPS5_GPU=dx12|vulkan|both` and `ANYPS5_POWER=high` undo the
   choice for diagnosis; the log carries `startup t=...ms <step>` lines and the demo an `idle ...
   frames/s` line every 5 s. The demo no longer forces a repaint every frame (it idled at 40 % of a
   core, unlike the launcher).
@@ -1484,8 +1485,9 @@ Original: `Input.swift`, `AppModel.handle`, `panelCommand`, `onboardingCommand`.
 Rules: any key with the **Command** modifier is ignored (Windows: ignore when Ctrl, Alt or the Windows key is held, except the
 shortcut below). While a native dialog is open the launcher does not handle keys. While a text field has focus (profile name) keys go
 to the text field (the original never handles them; the port additionally lets Enter and Esc blur the field, see section 9). While a
-binding waits for a key (controls panel) every key is captured by the panel. Key repeat is the OS's: a held arrow produces repeated
-commands at the OS repeat rate. **Shortcut**: `Cmd+,` opens Settings when onboarded -> `Ctrl+,`. F11 toggles fullscreen (Windows addition).
+binding waits for a key (controls panel) every key is captured by the panel. Key repeat is ours, not the OS's (2026-10-25): the OS repeat events of an arrow
+key are dropped and a held arrow runs the same repeat as a held direction on the pad (6.3), so a list moves the same under a finger
+and under a thumb. It ends when the key is up, when a dialog opens or when a binding starts to wait for a key. **Shortcut**: `Cmd+,` opens Settings when onboarded -> `Ctrl+,`. F11 toggles fullscreen (Windows addition).
 
 ### 6.2 Mouse and wheel
 
@@ -1499,16 +1501,25 @@ uses AppKit's inverted deltas; the intent above is what the user experiences.)
 
 | Control | Command |
 |---|---|
-| D-pad, left stick (axis > 0.55 on an axis, else that axis counts as 0) | direction commands; the dominant axis wins, stick up = up |
+| D-pad, left stick (axis > 0.55 on an axis, else that axis counts as 0, see hysteresis below) | direction commands; the dominant axis wins, stick up = up |
 | A / Cross (South) | select |
 | B / Circle (East) | back |
 | Y / Triangle (North) | options |
 | Menu / Start | options |
 
-**Repeat timing:** when a direction is pressed it fires immediately; if held, after **0.38 s** it repeats every **0.085 s** until released or
-the direction changes (a change cancels the timers and fires the new direction at once). Identical consecutive directions are not
-re-fired. Controller input is not blocked by text fields or panels. The hint bar text is always `✕ / ○ / △` (PlayStation
+**Repeat timing (2026-10-25, replaces 0.38 s / 0.085 s):** when a direction is pressed it fires immediately; if held, after **0.36 s** it
+repeats every **0.10 s**, and after six repeats every **0.06 s**, until released or the direction changes (a change cancels the timers
+and fires the new direction at once). That is 17 rows in a 1.6 s hold, and a long list or the library grid no longer takes ten seconds
+to cross. A slow frame never fires a burst. Identical consecutive directions are not re-fired. Controller input is not blocked by text fields or panels. The hint bar text is always `✕ / ○ / △` (PlayStation
 naming) regardless of the controller.
+
+**Stick hysteresis:** the stick engages at 0.55 and lets go only below **0.38**, so a thumb resting near the threshold does not
+flutter between "right" and "nothing". A held direction gives way to the other axis only when that axis is at least 0.55 and **1.25
+times** the held one, so a thumb near the diagonal does not jump between "right" and "up"; a flick through the middle (right to left)
+changes direction at once. The D-pad beats the stick. The gamepad thread polls every **4 ms** (was 8) while a pad is connected.
+
+**Latency.** `ui::latency` stamps an event when the gamepad thread reads it, when the frame takes it off the channel and when that frame
+is built; with `RUST_LOG=anyplay_launcher::ui::latency=debug` it logs the average and the maximum of both intervals every 40 events.
 
 ### 6.4 Focus model
 
@@ -1592,6 +1603,17 @@ foreground switch against a real game window. The test hook is `--demo` with `AN
 `ANYPS5_PS_TEST_WINDOW=<hwnd>`: that window becomes the running game, each line `ps` on stdin is a press, and the log prints
 the foreground window before and after (`ps-test: ...`).
 
+### 6.7 The edge bump (2026-10-25)
+
+A direction that has nowhere to go (left on the first tile, up in the top bar, down on the last row, the end of the library grid or the
+trophy list, the top or bottom category) is answered like every other press, within the same frame: the `bump` cue (7.3) and a leaning
+focus ring. The ring, and only the ring, moves toward the wall by about **3 dp** and springs back (`ui::nudge`): a velocity kick of
+140 dp/s into a spring pair on `Motion::Focus`, which peaks after 55 ms, undershoots by less than a quarter of a dp and is still
+inside a quarter of a second. Nothing but a transform changes, the layout stays put and the element does not move. Under "Animations:
+Reduced" the ring stays and only the sound is left. A held direction bumps **once per hold**: the repeats at the edge
+are silent and still (`Input::repeating`). The sites that bump are the home screen, the panel rows and categories, the library grid and the trophy list; each calls `Shell::play(Cue::Bump)`, and the shell leans the
+ring toward `Input::last_direction`.
+
 ## 7. Sounds and media
 
 ### 7.1 Sounds (`Sounds.swift`): synthesized, nothing bundled
@@ -1651,7 +1673,7 @@ upload; keep at most the current and previous artwork textures.
 
 ### 7.3 Soft cues and home music (deviation from 7.1)
 
-The launcher replaces the four sine cues of 7.1 with five softer ones and adds home screen music. Both are still synthesised at
+The launcher replaces the four sine cues of 7.1 with softer ones (plus `hover`, `error`, `boot` and `ring`) and adds home screen music. Both are still synthesised at
 run time: nothing is bundled and nothing is sampled. Their character follows the PS5 system sounds as measured from recordings
 (register, partials, attack, decay, level, harmony); no recording is used or shipped.
 
@@ -1665,11 +1687,13 @@ decay with time constant τ), followed by a one-pole lowpass and a Freeverb send
 
 | Cue | Notes (relative level) | Partials (ratio, level) | Attack / τ | Peak | Send / RT60 |
 |---|---|---|---|---|---|
-| `move` | F4 | 1; 2 at 0.8; 1.5 at 0.09 | 12 / 38 ms | -22 dBFS | 0.10 / 0.7 s |
+| `move` | F4 | 1; 2 at 0.55; 1.5 at 0.06 | 7 / 26 ms | -22 dBFS | 0.04 / 0.3 s, lowpass 5 kHz |
+| `hover` | the `move` tick | as `move` | as `move` | -25 dBFS | as `move` |
 | `select` | C5, G5 (0.7) 12 ms later | 1; 2 at 0.45; 3 at 0.08 | 10 / 120 ms | -13 dBFS | 0.15 / 0.9 s |
 | `back` | A3, E4 (0.7) | as `select` | 10 / 90 ms | -15 dBFS | 0.12 / 0.8 s |
 | `error` | A3, B♭3 (0.9) | 1; 2 at 0.25 | 12 / 90 ms | -15 dBFS | 0.06 / 0.8 s |
 | `unlocked` | F4 C5 G5 C6 (1, 0.85, 0.7, 0.55), 15 ms apart, each as two voices 5 cents apart | 1; 2 at 0.25 | 25 / 250 ms | -9 dBFS | 0.20 / 1.2 s |
+| `bump` | F3, faint octave, lowpass 1.6 kHz | 1; 2 at 0.25 | 10 / 28 ms | -23 dBFS | 0.04 / 0.4 s |
 | `boot` | F3 C4 G4 C5 F5 (0.9 to 0.45), 70 ms apart, two voices 5 cents apart, glitter at 0.3 s | 1; 2 at 0.25 | 350 / 650 ms | -12 dBFS | 0.35 / 2.2 s |
 
 `unlocked` adds a faint glitter: six sines between 3.15 and 7.88 kHz at 0.12, gone within about 0.1 s. `error` is new and plays
@@ -1682,6 +1706,17 @@ F sus4 (higher), F add 9, D♭ maj9, G♭ add 9 (voicings in `CHORDS`). Each pad
 runs under two rounds of the chords; the third round goes without it and 3 dB quieter. Every 1.4 to 3.6 s a soft note (sine plus
 0.2 octave, 10 ms attack, τ 0.9 s) from the current chord, between F4 and C6, floats above, panned up to ±0.45. Freeverb RT60 5 s,
 damping 0.6. The level sits around -28 dBFS RMS, well under the cues.
+
+**Hover** (`ui::sound::hover`, `Shell::finish_frame`). When the pointer arrives on a new interactive element (control, tile, library cell, row or card: whatever asks `ui::input::hovered`), the `hover` cue plays: the `move` tick of the focus path, 3 dB lower, so mouse, keys and pad sound like one system. `move` was re-cut for this (shorter: 132 ms to -60 dBFS instead of 210 ms; softer octave; a dry tail; rms frequency 455 Hz instead of 517 Hz), and both paths use it. The decision is a pure function of one frame (`HoverGate::update`), and every rule is a unit test:
+
+- once per arrival: nothing while the pointer stays inside, nothing over empty areas or non-interactive surfaces; leaving and coming back ticks again;
+- only a pointer that moves: the arrival must follow a pointer movement by at most 150 ms, so a panel sliding under a resting mouse stays silent; while a pad is in use `hovered` is false, so nothing plays, and the mouse moving again re-arms it;
+- nothing while a button is held (press, drag), while the wheel or a scroll animation moves content (and for 250 ms after), and nothing late for an element that arrived during those;
+- throttle: at least 60 ms between ticks (a sweep over tiles 40 ms apart sounds every second tile, 16 a second at most); an arrival inside the gap is dropped, not delayed; the engine lets at most 2 hover ticks sound at once and cuts the oldest over 5 ms; hover ticks never dip the music;
+- no doubling: another cue in the same frame, one in the 90 ms before, or a click completing in the frame silences the arrival;
+- off with Interface Sounds off, while a game starts or runs, and while the launcher window is not focused. The tick is only ever an extra cue: every hover also has its glow, cursor and focus ring, and nothing depends on hearing it.
+
+Latency: the first cue, the boot cue, opens the device and renders every cue, and `Sounds::warm` repeats that before any hover when sounds are on. The output asks for 512 frames per callback (about 11 ms at 48 kHz) instead of rodio's 50 ms default, falling back to the default when a device refuses; the engine reads commands every 64 frames, and the UI thread only sends a message.
 
 **Mixing.** The music fades in over 2 s and out over 0.8 s (gain = position²) and dips under every cue: `move` 1.5 dB for 0.12 s,
 `select`, `back` and `error` 3 dB for 0.25 s, `unlocked` 6 dB for 1.2 s (15 ms down, 400 ms back up). It plays only while the
@@ -2198,7 +2233,7 @@ The shared UI layer of this specification. Screens use these modules and nothing
 | `components` | `ConsoleButton`, `IconButton`, `Switch`, `ProgressLine`, `IndeterminateLine`, hint bar, key caps, `PadGlyph`, focus glow and ring |
 | `chrome` | `paint_tile` (5.1), `info_card` / `facts_line` (5.3), `PanelRow` with all kinds (5.8), `side_panel` (5.9), `fullscreen_panel`, `toast` (5.6), `language_card`, `onboarding_dots` |
 | `text`, `icons` | line height, tracking, middle truncation, tabular figures; Phosphor constants (5.16) |
-| `sound` | section 7.3 (replaces 7.1): five cues rendered once, home music generated live, one mixer on its own thread, lazy device |
+| `sound` | section 7.3 (replaces 7.1): eight cues rendered once, home music generated live, one mixer on its own thread, lazy device |
 | `i18n` | section 8: 212 keys, `Language::text/format`, `byte_text`, Windows replacements of 9.3 applied |
 | `input`, `focus`, `gamepad` | section 6: `Command`, `Input::poll`, `HomeFocus::navigate`, `PanelNav::command` |
 | `gallery` | hidden `--gallery[=components|panels|themes|bg0|bg1|bg2] [--screenshot=out.png] [--size=WxH] [--time=T]` |
@@ -2214,7 +2249,7 @@ Decisions made while implementing:
   blurred backdrop with saturation 1.25 and a 6 % white tint (both estimates, tune against the original).
 - **Keyboard repeat** of select/back/options is suppressed (a held Enter must not re-fire); held arrows repeat at the OS rate.
 - **Row padding**: panel rows keep 10 dp above and below their text even when the title wraps (the original has none).
-- The gamepad thread only translates events; the 0.38 s / 0.085 s repeat runs on the UI clock (`input::Repeater`).
+- The gamepad thread only translates events; the 0.36 s / 0.10 s / 0.06 s repeat runs on the UI clock (`input::Repeater`).
 
 ---
 
@@ -2332,10 +2367,11 @@ Rows keep their identity by their `RowId` and their place among rows of the same
 Hints that explain a text field or a toggle stand under it with the normal 8 dp row gap, not attached: the focused row grows 3 dp and would touch an attached note. A command waiting for the net service says "Sending…" in its detail line.
 
 **Profile screen** (`screens::profile`, its host `app::panels::profile`, the return path `app::profile`; network `spec/cloud-api.md` Profiles, ADR 0024). A full-screen overlay (`Overlay::Profile`) for a player's profile, the player's own or another's, on the frame of the trophy list: glass, 90 dp of side padding, the hint bar at the top right. It replaced the profile page of the side panel, whose banner is gone. `profile` answers a `ProfilePage`: the parts the player may see (`about`, `favourites`, `avatar`, `playtime`), the trophy counts (null when hidden) and the linked accounts. What is shown is decided in `screens::profile::view`, a function from what the launcher knows to plain data (`ProfileView`), and tested without a window; the painter decides nothing.
-  - *Entry and Back.* The profile button of the top bar (own, once signed in), Your Profile on the online Home, View Profile on a friend's page, and a card of the feed (the account of the card). Back leaves for where the player came from (`app::profile::Back`): Home for the button; for the others the online panel opens again on the page it was left on, with the focus on the row it was on. Signed out, the button keeps its old meaning and opens sign-in. On the player's own profile the buttons under the name are Edit Profile (opens the account web, as before; the one prominent button) and Friends & Online (the online panel on its first page: friends, requests, messages, parties, the account and its settings). On a friend's: Friend Options (their page in the panel: Join Game, Message, Invite, Remove, Block, Report). On someone who asked: Answer Request. On a stranger: Add Friend. Entering through a profile never closes the way back to anything the old page offered.
-  - *Header.* One column, no banner: the avatar (120 dp; the first letter of the handle on one of six calm colours without a picture), the handle as the title (40 light), under it a line with a chip for how you know each other ("Friend", "Request sent", "Wants to be friends"; nothing for a stranger or for yourself) and the status (their presence: Online, Playing a game, Offline, with a dot in the accent while they are online; for the own profile "This is what other players see"), then the text about them (17, white 86 %, at most three lines, 640 dp wide; the status line above it is the small one: 15 medium, 70 %), then the buttons. On a friend's profile a quiet line under the text says what only a friend's page can: "You have 3 of their games" (their titles that are in the player's library; left out at none). "Playing Neon Orchard" says what they play and nothing about joining: the profile has no Join button (that is on their page in the panel, one press away through Friend Options). The only colour that is the player's own is a soft wash behind the top-left of the page: the avatar's colour (`banner_colour`, or the monogram's colour) at 22 % in the corner, to nothing 520 dp down and 70 % across; text keeps its contrast with the glass because the wash is never stronger than that. Behind the 120 dp avatar and the handle it is the one thing on the page that could only be this player's.
-  - *Figures.* On the right of the header, plain, no boxes: games, hours (minutes below one hour), trophies, each a 34 light tabular figure over a small tracked label, the trophies with their grades as four coloured trophy glyphs and counts under the label (platinum first, a grade without trophies left out). Points are not shown: the launcher has no points of its own and does not invent them. A figure whose part is hidden is left out and the others close ranks; with only one figure left there is no strip at all (one number alone only repeats the caption of its section).
+  - *Entry and Back.* The profile button of the top bar (own, once signed in), Your Profile on the online Home, View Profile on a friend's page, and a card of the feed (the account of the card). Back leaves for where the player came from (`app::profile::Back`): Home for the button; for the others the online panel opens again on the page it was left on, with the focus on the row it was on. Signed out, the button keeps its old meaning and opens sign-in. On the player's own profile the buttons under the name are Edit Profile (opens the account web, as before; the one prominent button), Friends & Online and, while the cloud answers, **Appear Offline** (Appear Online while it is on; the same button both ways, `Press::AppearOffline`) (the online panel on its first page: friends, requests, messages, parties, the account and its settings). On a friend's: Friend Options (their page in the panel: Join Game, Message, Invite, Remove, Block, Report). On someone who asked: Answer Request. On a stranger: Add Friend. Entering through a profile never closes the way back to anything the old page offered.
+  - *Header.* One column, no banner: the avatar (120 dp; the first letter of the handle on one of six calm colours without a picture), the handle as the title (40 light), under it a line with a chip for how you know each other ("Friend", "Request sent", "Wants to be friends"; nothing for a stranger or for yourself) and the status (their presence: Online, Playing a game, Offline, with a dot in the accent while they are online; for the own profile "This is what other players see", and "Appearing offline · This is what other players see" while appearing offline, without a dot), then the text about them (17, white 86 %, at most three lines, 640 dp wide; the status line above it is the small one: 15 medium, 70 %), then the buttons. On a friend's profile a quiet line under the text says what only a friend's page can: "You have 3 of their games" (their titles that are in the player's library; left out at none). "Playing Neon Orchard" says what they play and nothing about joining: the profile has no Join button (that is on their page in the panel, one press away through Friend Options). The only colour that is the player's own is a soft wash behind the top-left of the page: the avatar's colour (`banner_colour`, or the monogram's colour) at 22 % in the corner, to nothing 520 dp down and 70 % across; text keeps its contrast with the glass because the wash is never stronger than that. Behind the 120 dp avatar and the handle it is the one thing on the page that could only be this player's.
+  - *Figures.* On the right of the header, plain, no boxes: games, hours (minutes below one hour), trophies, each a 34 light tabular figure over a small tracked label, the trophies with their grades as four coloured trophy glyphs and counts under the label (platinum first, a grade without trophies left out). After the trophies comes **Level**: the level (34 light) over its label, under it the points ("1,240 points", 14 medium tabular) and a 96 dp or text-wide track with the way to the next level in the accent. Level, points and the track are the cloud's (`ProfilePage.level`, network ADR 0029); the launcher only draws the fraction, and without the cloud's answer (hidden trophies, loading, offline) there is no Level. A figure whose part is hidden is left out and the others close ranks; with only one figure left there is no strip at all (one number alone only repeats the caption of its section).
   - *Sections.* Games, Recent Trophies and Recent Activity, in at most two columns, and a section with nothing to show for another player is not there at all, so no one sees that a part was hidden: three sections put the games on the left (45 % of the width) and the other two stacked on the right; two sections one column each; one stands on the left. The own profile keeps all three and says in one sentence what fills an empty one ("Earn a trophy in a game and it shows up here."). A section has a 20 semibold caption (with the count of games in 14 beside it), rows 8 dp apart and 40 dp between sections. Nothing sits in a box at rest: a row is text on the page; the pointer makes it a faint surface (white 7 %), the focus makes it the white card of every list (3 dp grow, dark ink, shadow).
+  - *Compare.* A game row of another player's profile whose trophies the player may see and that is in the player's library says "Compare trophies" in its detail and opens the trophy compare screen (it replaces "open on Home" for these rows; the player's own games and rows without trophies keep it).
   - *Games.* The own profile lists the library from this PC, the last played first, then the most played: the art (52 dp), the name, "42 h · Last played 2 h ago" (or "Not played yet"), and at the end the trophy progress as "9/40" with a 4 dp bar in the accent under it (counted from the trophy file once read). Another player's: their titles from `playtime` and `favourites`, favourites first in their order, then by time (at most eight; the figure counts them all): the name and a detail ("Favourite", "Not in your library") and at the end their time. **A game's name and art come only from the player's own copy**: a title the player does not have is a neutral tile with its title ID as the name and no press; one they have opens on Home with that game selected.
   - *Trophies.* The own profile: the five newest earned trophies from the trophy files (first set only, as the network records), by name, the game and when. Another player's: the trophy items of their feed, a trophy named from the player's own copy of the game ("First Light") or, without one, "Gold trophy", the game's name or "In a game", when, and at the end the rarity ("Rare, 2.3%") when the cloud has one. A grade is a 44 dp tile in the grade's colour (glyph and a 14 % wash) and never colour alone: the words carry it too ("Gold trophy" for an unnamed one; "Gold · Ember Drift · 40 min ago" under a named one). The rarity is the last part of that line ("… · Rare, 2.3%"), not a fact hanging at the far end of the row. Select on another player's trophy opens the feed on that item, where the reactions are; on the player's own trophy it opens the game on Home.
   - *Activity.* Their feed items without the trophies (those have their own section): avatar (36 dp), the sentence with the handle ("Lumen earned a gold trophy in …", "You and Sol are friends now"), the time and the reactions that were given ("GG 3 · Same 1"; read only). Select opens the feed on that item.
@@ -2345,7 +2381,13 @@ Hints that explain a text field or a toggle stand under it with the normal 8 dp 
   - *Trophy names.* Never from the cloud. A sentence names a trophy only when the player has the game, its trophy file is read (`Effect::LoadTrophies`, off the UI thread, once per game) and the trophy is not hidden, or hidden and earned by the player.
   - *Words.* Sentence-style notes, title-case buttons and captions, no exclamation marks. English and Turkish in `profile_strings.rs` and `online_feed_strings.rs`.
 
-Gallery scenes (1600 x 900 and 1920 x 1200): `profile-own`, `profile-own-focus`, `profile-own-end` (scrolled to the last row, the header faded), `profile-friend`, `profile-friend-hidden` (trophies and playtime hidden), `profile-request`, `profile-new` (a new account's own profile), `profile-new-friend`, `profile-private`, `profile-loading`, `profile-error`, `profile-offline`.
+**Trophy compare** (`screens::compare`, view `screens::compare::view`, host `app::panels::compare`, state `app::compare`; network `spec/cloud-api.md` Comparing, ADR 0029; control command `compare`). A full-screen overlay (`Overlay::Compare`) on the frame of the trophy list: the game's art and name (36 light) with "Compare Trophies" over it and "With Lumen" under it; on the right two heads over two 236 dp columns, each with avatar and name ("You" or the handle), "Level 9 · 915 points" with the track to the next level, the game's trophies by grade, and "130 points in this game"; then one row per trophy (picture 52 dp, name, "Gold · what it asks for") with, in each column, a check and the day it was earned or "Not yet". Everything numeric is the cloud's. **Names, texts and pictures come only from the player's own trophy file**; for a game that is not in the library the rows read "Trophy 4", the grade, and one quiet line says why. A hidden trophy the player has not earned is a secret in both columns ("Hidden Trophy", a lock, the Show pill on the focused row; select or Show reveals it and sends `reveal_trophies`, as on the trophy list); "Always Show Hidden Trophies" shows it. The other column is what that player's profile shows the player, so their secrets are not in it. States, one block of words under the header: loading, offline ("You are offline"), failed (Try Again, the one focus stop), hidden ("Their trophies are hidden"), empty ("Nothing to compare yet"). Up and down walk the rows, Back and Options return to the profile on the row it was left from. English and Turkish in `compare_strings.rs`.
+
+**Appear Offline** (network ADR 0028, control command `set_appear_offline`, `account.appear_offline` of the `state` event). `Online::set_appear_offline` shows the choice at once, a refusal takes it back with a toast, and the `state` event settles it (also when another device changes it). Where it shows: the switch "Appear Offline" (detail "Friends see you as offline") on the Account page of the online panel; the button on the own profile; "Appearing offline" in the panel's subtitle, the profile's status line and, in quiet ink (white 72 %), after the name in the top bar's profile pill, whose accent dot becomes a ring while it is on (its accessible name says "Appearing offline" instead of "Online"). Offline from the cloud the player is simply offline: nothing is shown.
+
+**Secret trophies.** The launcher tells the cloud which trophies of a game it hides (`secret_trophies`, once per title and sign-in, whenever the trophy file is read) and reveals one when the player shows it on the trophy list or the compare screen (`reveal_trophies`).
+
+Gallery scenes (1600 x 900 and 1920 x 1200): `profile-own-appearing`, `profile-friend-compare`, `online-account-appearing`, `home-appearing` (the real home with the pill), `compare`, `compare-secret`, `compare-revealed`, `compare-numbers`, `compare-loading`, `compare-offline`, `compare-error`, `compare-hidden`, `compare-empty`, and `profile-own`, `profile-own-focus`, `profile-own-end` (scrolled to the last row, the header faded), `profile-friend`, `profile-friend-hidden` (trophies and playtime hidden), `profile-request`, `profile-new` (a new account's own profile), `profile-new-friend`, `profile-private`, `profile-loading`, `profile-error`, `profile-offline`.
 
 **Feed page.** `feed` answers a page of items; `react` sets or takes back the player's one reaction. The page asks when it opens (and for the player's own profile, for the avatar), again for each `feed` event, and for older items near the end of the list.
   - *Card.* A card is a row's surface: 40 dp avatar, the handle ("You" for the player's own items; 17 medium) with the time at the trailing edge (13), one sentence (14, at most three lines) and, for a trophy with a rarity, a line with the grade's trophy icon in its colour and "Rare, 2.3%"; under them the four reactions Nice, GG, Wow and Same as 36 dp pills 12 dp apart, all of one width so the columns line up from card to card, each with its count when it is above zero (99+ above ninety-nine). The player's own reaction is stronger (22 % of the ink instead of 9 %) and carries a check, so it never rests on colour alone. The sentences: "earned the gold trophy “First Light” in Ember Drift", "earned a gold trophy in Ember Drift" (trophy not readable here), "earned a gold trophy in a game" (game not owned), "became friends with Nox", "played Paper Moon for the first time" or "played a game for the first time", "started a party with Nox and Kit". Rarity steps: under 1 % Extremely rare, under 5 % Rare, under 20 % Uncommon, else Common; none below ten players. Times: Just now, 5 min ago, 3 h ago, Yesterday, 3 d ago, then the day (Oct 12).
