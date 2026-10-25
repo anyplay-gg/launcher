@@ -1,6 +1,6 @@
 //! The launcher's side of the AnyPlay network.
 //!
-//! The net service (`anyplay-net`, from anyplay-gg/network) is a program of its own that holds the
+//! The net service (`anyplay-net`, from anyplaynet/network) is a program of its own that holds the
 //! account, talks to the cloud and carries game traffic. The launcher starts it, speaks the
 //! control protocol with it over its standard streams (`spec/control-protocol.md` there) and shows
 //! what it reports. Two parts:

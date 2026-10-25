@@ -148,10 +148,23 @@ pub fn paint_spinner_arc(
     painter.circle_filled(first, width * 0.5, color);
     painter.circle_filled(last, width * 0.5, color);
 }
-/// Fills a capsule.
+/// Fills a capsule, or a circle when the rectangle is (nearly) square. Every fully round fill goes
+/// through here, never through `rect_filled` with a half-size radius on a square.
+///
+/// Why a circle is drawn as a circle: egui builds a rounded rectangle from four arcs and drops the
+/// duplicated vertex where two arcs meet only when the side is within `f32::EPSILON * size` of
+/// `2 * radius`. A snapped button at x = 1400 dp is not that exact (width and height differ by a few
+/// 1e-5 from rounding at that magnitude), so the 3 and 9 o'clock vertices stay doubled, their feather
+/// normals degenerate, and a translucent fill shows a lighter seam from the edge to the centre.
+/// `circle_filled` builds its path from the centre and has no such case.
 pub fn paint_capsule(painter: &Painter, rect: Rect, color: Color32) {
-    // egui clamps the radius to half the shorter side: a true capsule at any height.
-    painter.rect_filled(rect, CornerRadius::same(255), color);
+    let (w, h) = (rect.width(), rect.height());
+    if (w - h).abs() < 0.5 {
+        painter.circle_filled(rect.center(), 0.5 * w.min(h), color);
+    } else {
+        // egui clamps the radius to half the shorter side: a true capsule at any height.
+        painter.rect_filled(rect, CornerRadius::same(255), color);
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -343,7 +356,7 @@ pub fn paint_control(
             )
         }
     };
-    painter.rect_filled(rect, corner(radius), fade(fill, a));
+    paint_capsule(painter, rect, fade(fill, a));
     if variant == Variant::Secondary {
         paint_hairline(
             painter,

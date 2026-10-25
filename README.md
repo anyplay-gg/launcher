@@ -2,21 +2,21 @@
 
 The home of your games on PC. The launcher finds the games you dumped from your own console, unlocks them for [AnyPS5](https://github.com/boykopovar/AnyPS5) and starts them from a console-style home screen, on Windows and Linux. It is written in Rust with egui and keeps all its logic apart from the interface.
 
-It is part of **[AnyPlay](https://github.com/anyplay-gg)**, which builds everything around AnyPS5 that players need:
+It is part of **[AnyPlay](https://github.com/anyplaynet)**, which builds everything around AnyPS5 that players need:
 
 | | |
 |---|---|
 | **Launcher** (this repository) | Your library: unlock, play, controls, trophies and saves |
-| **[Network](https://github.com/anyplay-gg/network)** | Online play with friends over the internet, in development: the net service this launcher starts, the bridge protocol and the specifications |
-| **[Cloud](https://github.com/anyplay-gg/cloud)** | The services behind the network, run by AnyPlay at [anyplaynet.com](https://anyplaynet.com) or by you |
+| **[Network](https://github.com/anyplaynet/network)** | Online play with friends over the internet, in development: the net service this launcher starts, the bridge protocol and the specifications |
+| **[Cloud](https://github.com/anyplaynet/cloud)** | The services behind the network, run by AnyPlay at [anyplaynet.com](https://anyplaynet.com) or by you |
 
-News, help and other players: the [AnyPlay Discord](https://discord.gg/nSHbHBRdS).
+News, help and other players: the [AnyPlay Discord](https://discord.gg/9zYqf8fEsh).
 
 <p align="center">
   <img src="docs/media/preview.webp" width="800" alt="The launcher fades in, then moves between Minecraft Dungeons II, Sword of the Sea and Hollow Knight: Silksong">
 </p>
 
-<p align="center"><a href="https://github.com/anyplay-gg/launcher/releases/download/v0.1.0/AnyPS5-Launcher-Update.mp4"><b>Watch the update video with sound</b></a></p>
+<p align="center"><a href="https://github.com/anyplaynet/launcher/releases/download/v0.1.0/AnyPS5-Launcher-Update.mp4"><b>Watch the update video with sound</b></a></p>
 
 | | |
 |---|---|
@@ -62,7 +62,7 @@ The toolkit is a release of [boykopovar/AnyPS5](https://github.com/boykopovar/An
 
 ### The net service
 
-Online play runs in a program of its own, `anyplay-net` from [anyplay-gg/network](https://github.com/anyplay-gg/network). The launcher starts it as a child process and talks to it in JSON lines over its standard streams (the control protocol). The launcher shows; the net service acts.
+Online play runs in a program of its own, `anyplay-net` from [anyplaynet/network](https://github.com/anyplaynet/network). The launcher starts it as a child process and talks to it in JSON lines over its standard streams (the control protocol). The launcher shows; the net service acts.
 
 - Nothing goes online until you sign in. The service starts when you open the Online area, where it stays local until you ask for a code, or together with the launcher once you have signed in on this PC.
 - A release build carries the service inside the launcher and writes it to `Network\bin` once per version, so every download and every self-update brings the service that matches it. A build without it looks for `anyplay-net` next to the launcher, or where `ANYPLAY_NET` points.
@@ -76,7 +76,7 @@ The checksum list comes from the same release as the exe. That guards against a 
 
 ## Download
 
-Get the latest version from the [releases page](https://github.com/anyplay-gg/launcher/releases/latest). The files below carry the launcher's current name. Releases up to v0.1.3 were made before the rename and call them `AnyPS5-Launcher-<version>-…`. Each release also carries `AnyPS5-Launcher-<version>-x64.exe`, the same portable exe under the old name, so copies of v0.1.2 and v0.1.3 can update themselves; you do not need it.
+Get the latest version from the [releases page](https://github.com/anyplaynet/launcher/releases/latest). The files below carry the launcher's current name. Releases up to v0.1.3 were made before the rename and call them `AnyPS5-Launcher-<version>-…`. Each release also carries `AnyPS5-Launcher-<version>-x64.exe`, the same portable exe under the old name, so copies of v0.1.2 and v0.1.3 can update themselves; you do not need it.
 
 **Windows** (64-bit Windows 10 or 11, nothing else to install first):
 
@@ -117,15 +117,15 @@ Settings live in `%APPDATA%\AnyPS5` and the toolkit, logs and caches in `%LOCALA
 
 The online part is in development. This is what works today and what does not.
 
-**What works.** Select your profile at the top of the home screen to open **Online**. Sign in or create an account: both open the cloud's page in your browser, where you can use a passkey or an e-mail code, and the launcher takes you in when you are done. Then add friends by their name, see what they play, accept requests and invitations, and join a friend's game when it is open to friends. Start a party, invite friends to it, send messages and talk with party voice. When the cloud restricts an account, the launcher shows what, until when and how to appeal. Your trophies go to the cloud as records: number, grade and time of each, while names and pictures stay on your PC. A friend's page shows their trophy count by grade, and *Who Sees Your Trophies* on the Account page decides who sees yours (friends by default). *Hide Your IP Address* keeps every tunnel on a relay, so other players never learn your address. The launcher, the net service and the cloud are tested together, including two net services with fake games that exchange packets through a tunnel, directly and through a relay (the end-to-end tests in [anyplay-gg/cloud](https://github.com/anyplay-gg/cloud)).
+**What works.** Select your profile at the top of the home screen to open **Online**. Sign in or create an account: both open the cloud's page in your browser, where you can use a passkey or an e-mail code, and the launcher takes you in when you are done. Then add friends by their name, see what they play, accept requests and invitations, and join a friend's game when it is open to friends. Start a party, invite friends to it, send messages and talk with party voice. When the cloud restricts an account, the launcher shows what, until when and how to appeal. Your trophies go to the cloud as records: number, grade and time of each, while names and pictures stay on your PC. A friend's page shows their trophy count by grade, and *Who Sees Your Trophies* on the Account page decides who sees yours (friends by default). *Hide Your IP Address* keeps every tunnel on a relay, so other players never learn your address. The launcher, the net service and the cloud are tested together, including two net services with fake games that exchange packets through a tunnel, directly and through a relay (the end-to-end tests in [anyplaynet/cloud](https://github.com/anyplaynet/cloud)).
 
 **What does not work yet.**
 
-- The cloud that release builds use by default is AnyPlay's own, `https://anyplaynet.com`. Under **Online → Cloud** you can use one of your own or of friends instead; [anyplay-gg/cloud](https://github.com/anyplay-gg/cloud) explains how to host it with `docker compose up`.
-- No real game plays online yet. The bridge that connects a game to the network lives in an AnyPS5 build, and it is still under review. Until a toolkit carries it, games start as before, offline. The [known gaps](https://github.com/anyplay-gg/network/blob/main/docs/gaps.md) list what is missing.
+- The cloud that release builds use by default is AnyPlay's own, `https://anyplaynet.com`. Under **Online → Cloud** you can use one of your own or of friends instead; [anyplaynet/cloud](https://github.com/anyplaynet/cloud) explains how to host it with `docker compose up`.
+- No real game plays online yet. The bridge that connects a game to the network lives in an AnyPS5 build, and it is still under review. Until a toolkit carries it, games start as before, offline. The [known gaps](https://github.com/anyplaynet/network/blob/main/docs/gaps.md) list what is missing.
 - On Linux, starting a game with the bridge is untested.
 
-**What to expect later.** A game plays online only with a build that carries the bridge, and only when its online part uses the platform's own services. Games whose online play runs on a publisher's live servers stay offline on the PlayStation side: the network never stands in for a service that still runs. The [network's design](https://github.com/anyplay-gg/network/blob/main/docs/DESIGN.md) has the details and the roadmap.
+**What to expect later.** A game plays online only with a build that carries the bridge, and only when its online part uses the platform's own services. Games whose online play runs on a publisher's live servers stay offline on the PlayStation side: the network never stands in for a service that still runs. The [network's design](https://github.com/anyplaynet/network/blob/main/docs/DESIGN.md) has the details and the roadmap.
 
 **Privacy.**
 
@@ -135,7 +135,7 @@ The online part is in development. This is what works today and what does not.
 
 ## Building
 
-You need Rust 1.95 or newer ([rustup](https://rustup.rs)), and a clone of [anyplay-gg/network](https://github.com/anyplay-gg/network) next to this repository for the online crates, checked out at the commit in [`network.ref`](network.ref). The egui/eframe 0.37 dependencies require Rust 1.95. The repository does not override your selected toolchain; CI uses stable, and the release workflow selects its own compiler.
+You need Rust 1.95 or newer ([rustup](https://rustup.rs)), and a clone of [anyplaynet/network](https://github.com/anyplaynet/network) next to this repository for the online crates, checked out at the commit in [`network.ref`](network.ref). The egui/eframe 0.37 dependencies require Rust 1.95. The repository does not override your selected toolchain; CI uses stable, and the release workflow selects its own compiler.
 
 ```sh
 cargo fmt --all -- --check
@@ -180,7 +180,7 @@ Every pull request runs the first three commands on Windows and on Linux, and bu
 
 ### Releases
 
-A release is made by pushing a tag `v<version>` that matches the version in `Cargo.toml`. The [release workflow](.github/workflows/release.yml) builds the net service from [anyplay-gg/network](https://github.com/anyplay-gg/network) at the commit in `network.ref` and embeds it, then builds the portable exe and the installer (`tools/installer/anyplay-launcher.iss`, Inno Setup), the Linux AppImage and tarball, and a licence file for every third-party crate. It publishes all of them with their checksums in `SHA256SUMS.txt`. Started by hand it only builds them and keeps them as workflow artifacts.
+A release is made by pushing a tag `v<version>` that matches the version in `Cargo.toml`. The [release workflow](.github/workflows/release.yml) builds the net service from [anyplaynet/network](https://github.com/anyplaynet/network) at the commit in `network.ref` and embeds it, then builds the portable exe and the installer (`tools/installer/anyplay-launcher.iss`, Inno Setup), the Linux AppImage and tarball, and a licence file for every third-party crate. It publishes all of them with their checksums in `SHA256SUMS.txt`. Started by hand it only builds them and keeps them as workflow artifacts.
 
 ### Where to read more
 

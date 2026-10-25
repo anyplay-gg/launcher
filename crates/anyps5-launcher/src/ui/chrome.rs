@@ -975,7 +975,7 @@ impl<'a> PanelRow<'a> {
                         t,
                     );
                     let fill = mix(chip, Color32::BLACK, if picked { t } else { 0.0 });
-                    painter.rect_filled(shown, corner(BUTTON_HEIGHT * 0.5), fill);
+                    components::paint_capsule(&painter, shown, fill);
                     let ink = mix(fg, Color32::WHITE, if picked { t } else { 0.0 });
                     text::paint(
                         &painter,

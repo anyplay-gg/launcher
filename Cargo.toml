@@ -6,7 +6,7 @@ members = ["crates/anyps5-core", "crates/anyps5-launcher", "crates/fake-relinker
 version = "0.2.3"
 edition = "2024"
 license = "GPL-2.0-only"
-repository = "https://github.com/anyplay-gg/launcher"
+repository = "https://github.com/anyplaynet/launcher"
 rust-version = "1.95"
 
 [workspace.dependencies]

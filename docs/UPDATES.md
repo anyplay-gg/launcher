@@ -25,7 +25,7 @@ Every release carries two extra assets next to the binaries: `latest.json` and `
   "platforms": {
     "windows-x86_64": {
       "name": "AnyPlay-Launcher-0.2.0-x64.exe",
-      "url": "https://github.com/anyplay-gg/launcher/releases/download/v0.2.0/AnyPlay-Launcher-0.2.0-x64.exe",
+      "url": "https://github.com/anyplaynet/launcher/releases/download/v0.2.0/AnyPlay-Launcher-0.2.0-x64.exe",
       "sha256": "<64 lower-case hex digits>",
       "size": 12345678
     }
@@ -72,8 +72,8 @@ Offline, the check fails with a network error and the launcher runs as it is. A 
 The signed manifest answers "may this launcher take this update?". A second, independent check answers "was this file built by our release workflow, from which commit?": every file of a release has a GitHub artifact attestation, made by the `release` job of [release.yml](../.github/workflows/release.yml) when a tag is pushed. A player or an operator checks it with the GitHub CLI:
 
 ```
-gh attestation verify AnyPlay-Launcher-0.2.0-x64.exe --repo anyplay-gg/launcher \
-  --signer-workflow anyplay-gg/launcher/.github/workflows/release.yml \
+gh attestation verify AnyPlay-Launcher-0.2.0-x64.exe --repo anyplaynet/launcher \
+  --signer-workflow anyplaynet/launcher/.github/workflows/release.yml \
   --source-ref refs/tags/v0.2.0
 ```
 
@@ -115,14 +115,14 @@ update-sign keygen --secret-out update-signing.key --public-out update-keys.line
 ### 2. Store the secret
 
 - Keep a backup of `update-signing.key` with its label and date: in a password manager, or in a folder on the operator's machine that only the operator's account can read. Losing it means a rotation ([below](#rotate-the-key)), not a disaster.
-- Add the same text as the secret **`UPDATE_SIGNING_KEY`** of **two Environments**, not as a repository secret (anyplay-gg/launcher, Settings, Environments; [Protecting the key](#protecting-the-key) says how to set them up). A repository secret would be readable by any workflow run on any branch.
+- Add the same text as the secret **`UPDATE_SIGNING_KEY`** of **two Environments**, not as a repository secret (anyplaynet/launcher, Settings, Environments; [Protecting the key](#protecting-the-key) says how to set them up). A repository secret would be readable by any workflow run on any branch.
 - Delete every other copy of the file.
 
 With the `gh` CLI, as an admin of the repository, the secret goes into both environments without being shown:
 
 ```
-gh secret set UPDATE_SIGNING_KEY --env release-signing --repo anyplay-gg/launcher < update-signing.key
-gh secret set UPDATE_SIGNING_KEY --env release-resigning --repo anyplay-gg/launcher < update-signing.key
+gh secret set UPDATE_SIGNING_KEY --env release-signing --repo anyplaynet/launcher < update-signing.key
+gh secret set UPDATE_SIGNING_KEY --env release-resigning --repo anyplaynet/launcher < update-signing.key
 ```
 
 ### 3. Publish the public key
@@ -158,7 +158,7 @@ If the secret is **lost** (not leaked), nothing can be signed with the old key a
 
 ## Protecting the key
 
-The release workflow signs in one job, `sign`, which runs only for a pushed tag `v*` and uses the Environment **`release-signing`**. The signing tool is built in an earlier job that has no secret; only the one step that runs `update-sign sign` has the secret in its environment. All of this is worthless if anyone with write access can still reach the secret, so the operator sets up, once, in Settings of anyplay-gg/launcher:
+The release workflow signs in one job, `sign`, which runs only for a pushed tag `v*` and uses the Environment **`release-signing`**. The signing tool is built in an earlier job that has no secret; only the one step that runs `update-sign sign` has the secret in its environment. All of this is worthless if anyone with write access can still reach the secret, so the operator sets up, once, in Settings of anyplaynet/launcher:
 
 1. **Environment `release-signing`.** Deployment branches and tags: *Selected branches and tags*, add the tag rule `v*` and nothing else. Required reviewers: the admins (today AlxcBTW and TideOPL). *Prevent self-review* is off, because only admins can push a `v*` tag (step 3): the review is the last look before signing, not a second key holder. Turn it on once the project has enough maintainers that the person who tags is never the only one around. The secret `UPDATE_SIGNING_KEY` goes here.
 2. **Environment `release-resigning`** for the weekly renewal below: deployment branches *Selected branches*, only `main`; no reviewers (a weekly run must not wait for a person). The same secret goes here. Because it is bound to `main`, protect `main` too: a ruleset that requires a pull request with one approval and blocks force pushes, so nothing reaches `main` that was not reviewed.

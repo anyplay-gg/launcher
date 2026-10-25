@@ -1343,7 +1343,7 @@ community/layouts/<TITLEID>/<name>.ini
 ```
 
 The launcher fetches `index.json` from
-`https://raw.githubusercontent.com/anyplay-gg/launcher/main/community/layouts` once per run and
+`https://raw.githubusercontent.com/anyplaynet/launcher/main/community/layouts` once per run and
 title, when the controls open, and then the files of that title (8 at most, 16 KiB each, 8 s for
 all). An entry is valid when the title ID is four capitals and five digits, the name has 1 to 40
 characters, and the file is `<folder>/<name>.ini` of letters, digits, `.`, `_` and `-`. A file that fails
@@ -1623,9 +1623,9 @@ through the AnyPlay network also gets "on AnyPlay", the size of the party and a 
   when the session, the party or the join link changes (`app/discord.rs`, once per frame, only when
   the activity differs from the one shown).
 - **The Join button.** With presence on, the join button on, signed in and a session or party, the
-  launcher asks the net service for a [join code](https://github.com/anyplay-gg/network/blob/main/spec/cloud-api.md#join-codes)
+  launcher asks the net service for a [join code](https://github.com/anyplaynet/network/blob/main/spec/cloud-api.md#join-codes)
   (`join_code`) and adds two buttons: `Join on AnyPlay` (the code's link, `<web>/join/<code>`) and
-  `Get AnyPlay` (`https://github.com/anyplay-gg/launcher/releases/latest`). Discord allows two buttons,
+  `Get AnyPlay` (`https://github.com/anyplaynet/launcher/releases/latest`). Discord allows two buttons,
   a label up to 32 characters and an address up to 512 over https; an address that fails these gets
   no buttons. A cloud that answers `not_found` has nothing joinable: no code, no buttons, and no new
   question until the session or party is another one. A code is asked for again 10 minutes before it
@@ -1953,7 +1953,7 @@ list still updates.
 
 No counterpart in the macOS launcher (Sparkle there). Core module `anyps5_core::selfupdate`, host `app::selfupdate`.
 
-- **Check.** Once per start, in the background, when the *Check for Updates* preference is on: the latest release of `anyplay-gg/launcher` (the same request and HTTP client as the toolkit check). A newer semver (pre-release tags sort below their release) is downloaded and verified at once; garbage tags are never newer. Previews, the demo, the gallery and the tests never check.
+- **Check.** Once per start, in the background, when the *Check for Updates* preference is on: the latest release of `anyplaynet/launcher` (the same request and HTTP client as the toolkit check). A newer semver (pre-release tags sort below their release) is downloaded and verified at once; garbage tags are never newer. Previews, the demo, the gallery and the tests never check.
 - **Verify.** The portable `AnyPlay-Launcher-<v>-x64.exe` (or, in a release without it, `AnyPS5-Launcher-<v>-x64.exe`; every release carries both, 9.7) goes to `%LOCALAPPDATA%\AnyPS5\Updates`. Its SHA-256 must match the line in the release's `SHA256SUMS.txt`; a missing line, a wrong hash or a file that does not start with `MZ` refuses the update and leaves nothing behind. The file gets its final name only after that, so a file of that name is always a verified one.
 - **Swap.** Windows cannot overwrite a running exe but can rename it. The staged file is copied beside the running exe (`<name>.new`, it may be on another drive), the running exe is renamed to `<name>.old`, the copy takes its place. A failure in the second step moves the old one back. The next start deletes `.old` files and stale downloads (one still in use stays until a later start). It works for the installed exe (`%LOCALAPPDATA%\Programs\AnyPlay Launcher`, or `...\AnyPS5 Launcher` for an install from v0.1.x) and for the portable exe in any writable folder. The swap keeps the exe's file name; nothing depends on it. A folder that refuses new files is reported before anything is downloaded: About shows "<v> available, but this folder is read-only" and nothing else happens.
 - **When.** A calm toast when the update is ready: "Launcher <v> is ready. It installs when you close the launcher." The swap runs on exit, after the preferences are saved. An update staged by a run that closed too early is offered again at the next start without a second download.
@@ -1990,7 +1990,7 @@ Registration (`anyps5_core::linkreg`): `HKCU\Software\Classes\anyps5` with `URL 
 
 ### 9.7 The launcher's name
 
-Up to v0.1.3 the launcher was called AnyPS5 Launcher. It is AnyPlay Launcher now: a platform trademark has no place in our names ([the line is drawn at the law](https://github.com/anyplay-gg/network/blob/main/docs/adr/0021-the-line-is-drawn-at-the-law.md)). AnyPS5 still names the engine the games run on, and the About text says so.
+Up to v0.1.3 the launcher was called AnyPS5 Launcher. It is AnyPlay Launcher now: a platform trademark has no place in our names ([the line is drawn at the law](https://github.com/anyplaynet/network/blob/main/docs/adr/0021-the-line-is-drawn-at-the-law.md)). AnyPS5 still names the engine the games run on, and the About text says so.
 
 - **Renamed:** every visible name of the product (window titles, texts in both languages, Discord, reports, the controls file header), the exe and the release files (`AnyPlay-Launcher-<v>-*`), the installer's name, folder and shortcuts, the Linux binary, desktop entry and icon, and the app id.
 - **Kept, because installs and links already use them:** the data folders (`%APPDATA%\AnyPS5`, `%LOCALAPPDATA%\AnyPS5`, `~/.config/anyps5`, `~/.local/share/anyps5`, `Pictures\AnyPS5`), the `.AnyPS5` store in games folders, `org.anyps5.<titleid>`, the `anyps5://` scheme and the registry key names, the `ANYPS5_*` variables, the single-instance mutex and pipe names, the log-start marker, the settings format tag, the installer's AppId, the crate names. (The Discord application was kept until it got AnyPlay's own, 7.4.)
@@ -2162,7 +2162,7 @@ Deviations: the diagnosis sentence in the log view is derived from the log text 
 
 ## 17. Online area (crate `anyps5-launcher`, modules `screens::online`, `app::online`, `app::panels::online`)
 
-The launcher's side of the AnyPlay network ([anyplay-gg/network](https://github.com/anyplay-gg/network)): signing in, friends and their presence, requests, invitations, joining a friend's game, parties and messages. The launcher shows; the net service (`anyplay-net`) acts. They talk over the net service's standard streams with the control protocol (`spec/control-protocol.md` there); `anyps5_core::online` holds the process and the state, and `Model::online` is that state.
+The launcher's side of the AnyPlay network ([anyplaynet/network](https://github.com/anyplaynet/network)): signing in, friends and their presence, requests, invitations, joining a friend's game, parties and messages. The launcher shows; the net service (`anyplay-net`) acts. They talk over the net service's standard streams with the control protocol (`spec/control-protocol.md` there); `anyps5_core::online` holds the process and the state, and `Model::online` is that state.
 
 **Entry.** Two buttons of the top bar open the online area: the profile (the last stop of `HomeFocus::Top`: library, friends, settings, profile) and the friends button beside the library. Both are pills as tall as the icon buttons, on the icon buttons' surface (white 0.10, 0.16 on hover, white with dark ink when focused), with the same focus grow and glow as their neighbours. Signed out the profile reads "Sign In" and never shows the PC's name; signed in it shows the account's handle. While messages wait it ends in a count (a 20 dp capsule, light ink on the dark pill and dark on the light one it becomes when focused, `9+` above nine; the accent stays the online dot's alone), and the button's name says it: "Mira, Online, 3 unread". Its radius is the avatar's plus the 4 dp inset, so pill and avatar stay concentric. While the cloud answers a 4 dp accent dot sits at the avatar's lower right in a 6 dp ring of the pill's own colour. The friends button shows how many friends are online (section 5.3). Select on either opens `Overlay::Online`, a side panel on the game sheet's frame; the panel opens on the friends list once signed in and on sign-in otherwise.
 
