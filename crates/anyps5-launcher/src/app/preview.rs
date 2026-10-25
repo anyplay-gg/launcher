@@ -54,6 +54,12 @@ pub enum Scene {
     HomeTrophies,
     HomeLocked,
     HomeUnlocking,
+    /// The launcher prepares the selected game on its own: progress, time left, the quiet tile band.
+    HomePreparing,
+    /// ... and it stands still because the PC is busy.
+    HomePreparingPaused,
+    /// ... before the work has started.
+    HomePreparingWaiting,
     HomeRelinking,
     HomeFailed,
     HomeQueued,
@@ -122,6 +128,9 @@ impl Scene {
             "home-trophies" => Scene::HomeTrophies,
             "home-locked" => Scene::HomeLocked,
             "home-unlocking" => Scene::HomeUnlocking,
+            "home-preparing" => Scene::HomePreparing,
+            "home-preparing-paused" => Scene::HomePreparingPaused,
+            "home-preparing-waiting" => Scene::HomePreparingWaiting,
             "home-relinking" => Scene::HomeRelinking,
             "home-failed" => Scene::HomeFailed,
             "home-queued" => Scene::HomeQueued,
@@ -160,7 +169,7 @@ impl Scene {
         })
     }
 
-    pub const ALL_NAMES: [&'static str; 40] = [
+    pub const ALL_NAMES: [&'static str; 43] = [
         "onboarding0",
         "onboarding1",
         "onboarding2",
@@ -171,6 +180,9 @@ impl Scene {
         "home-trophies",
         "home-locked",
         "home-unlocking",
+        "home-preparing",
+        "home-preparing-paused",
+        "home-preparing-waiting",
         "home-relinking",
         "home-failed",
         "home-queued",
@@ -598,6 +610,20 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
                 .insert(ids[at(2)].clone(), (UnlockStep::Copy, 0.4));
             m.focus = HomeFocus::Actions(0);
         }
+        Scene::HomePreparing | Scene::HomePreparingPaused | Scene::HomePreparingWaiting => {
+            m.selected = at(2);
+            let id = ids[at(2)].clone();
+            m.prep.background.insert(id.clone());
+            m.prep.background.insert(ids[at(4)].clone());
+            if scene != Scene::HomePreparingWaiting {
+                m.progress.insert(id.clone(), (UnlockStep::Relink, 0.45));
+                m.preview_eta(&id, 130.0);
+            }
+            if scene == Scene::HomePreparingPaused {
+                m.prep.paused.insert(id);
+            }
+            m.focus = HomeFocus::Actions(0);
+        }
         Scene::HomeRelinking => {
             m.selected = at(2);
             m.progress
@@ -607,7 +633,11 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
             m.selected = at(4);
             m.failures.insert(
                 ids[at(4)].clone(),
-                "The relinker stopped with exit code 3 while it converted eboot.bin.".to_owned(),
+                crate::screens::prepare_strings::failure(
+                    anyps5_core::unlock::FailureKind::DiskFull,
+                    m.language(),
+                )
+                .to_owned(),
             );
         }
         Scene::HomeQueued => {

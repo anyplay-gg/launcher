@@ -1,5 +1,6 @@
 //! UI-free logic of the AnyPlay Launcher. The launcher binary depends on this crate; it never depends on the UI.
 
+pub mod clips;
 pub mod community;
 pub mod compat;
 pub mod controls;
@@ -13,6 +14,7 @@ pub mod fsx;
 pub mod gamefiles;
 pub mod glibc;
 pub mod hostcpu;
+pub mod idle;
 pub mod issue;
 pub mod launch;
 pub mod library;

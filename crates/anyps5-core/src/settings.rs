@@ -495,6 +495,17 @@ pub struct Preferences {
     pub discord_join_button: bool,
     #[serde(default)]
     pub hide_while_playing: bool,
+    /// The launcher unlocks a game that appears in the games folder by itself, while the PC is idle,
+    /// so it is ready when the player wants it (like a console installing in the background).
+    #[serde(default = "yes")]
+    pub prepare_games: bool,
+    /// The games the launcher has met in the games folder; `None` until the first scan. What is
+    /// there at that moment is not prepared, only what comes later.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub known_games: Option<BTreeSet<String>>,
+    /// Games that appeared and still wait for their preparation.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub prepare_pending: BTreeSet<String>,
     /// The Home button (PS button) of a controller or the phone switches between a running game
     /// and the launcher.
     #[serde(default = "yes")]
@@ -570,6 +581,13 @@ pub struct Preferences {
     /// (docs/DESIGN.md 18). Off until the player turns it on.
     #[serde(default)]
     pub phone_remote: bool,
+    /// Clips: how many seconds of the running game the launcher keeps for a clip (one of
+    /// [`crate::clips::LENGTHS`]); 0 is Off, and nothing is recorded.
+    #[serde(default)]
+    pub clips_seconds: u32,
+    /// The hotkey that saves a clip, like `Alt+F12`; `None` is [`crate::clips::DEFAULT_HOTKEY`].
+    #[serde(default)]
+    pub clips_hotkey: Option<String>,
     /// The run-report questions already answered or dismissed, by [`run_question_key`]: each is
     /// asked once.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
@@ -596,6 +614,9 @@ impl Default for Preferences {
             discord_presence: true,
             discord_join_button: true,
             hide_while_playing: false,
+            prepare_games: true,
+            known_games: None,
+            prepare_pending: BTreeSet::new(),
             ps_button: true,
             vibration: Vibration::Medium,
             show_hidden_trophies: false,
@@ -621,6 +642,8 @@ impl Default for Preferences {
             voice: crate::online::VoicePrefs::default(),
             record_network: false,
             phone_remote: false,
+            clips_seconds: 0,
+            clips_hotkey: None,
             run_asked: BTreeSet::new(),
             extra: Map::new(),
         }

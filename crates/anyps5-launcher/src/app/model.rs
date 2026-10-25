@@ -47,9 +47,20 @@ pub enum GameState {
     Unreadable,
     Locked,
     Queued,
-    Installing { step: UnlockStep, fraction: f32 },
+    Installing {
+        step: UnlockStep,
+        fraction: f32,
+    },
+    /// The launcher unlocks the game on its own while the PC is idle. `progress` is `None` until
+    /// the work starts.
+    Preparing {
+        progress: Option<(UnlockStep, f32)>,
+        paused: bool,
+    },
     Failed(String),
-    Installed { outdated: bool },
+    Installed {
+        outdated: bool,
+    },
     Starting,
     Running,
 }
@@ -128,6 +139,8 @@ pub enum Effect {
     StopOnline,
     /// Relay only changed in the preferences: the net service hears of it (`app::online`).
     RelayOnlyChanged,
+    /// Save the last seconds of the running game as a clip (`app::clips`).
+    SaveClip,
     /// The player came online: read what they earned in every unlocked game for the network.
     SyncTrophies,
 }
@@ -233,6 +246,8 @@ pub struct Model {
     pub progress: HashMap<GameId, (UnlockStep, f32)>,
     /// Games waiting for their unlock.
     pub queue: Vec<GameId>,
+    /// Preparing in the background, and the time left of every unlock (`app/prepare.rs`).
+    pub prep: crate::app::prepare::Prep,
     pub failures: HashMap<GameId, String>,
     /// The game from the press of Play until its first window shows.
     pub starting: Option<GameId>,
@@ -326,6 +341,7 @@ impl Model {
             settings_page: None,
             progress: HashMap::new(),
             queue: Vec::new(),
+            prep: Default::default(),
             failures: HashMap::new(),
             starting: None,
             running: None,
@@ -416,6 +432,7 @@ impl Model {
     pub fn tick(&mut self, now: f64) {
         self.now = now;
         self.checkpoint(Instant::now());
+        self.prepare_tick();
     }
 
     // --- playtime ----------------------------------------------------------------------------
@@ -520,6 +537,9 @@ impl Model {
         if self.running.as_ref() == Some(id) {
             return GameState::Running;
         }
+        if let Some(preparing) = self.preparing_state(id) {
+            return preparing;
+        }
         if let Some(&(step, fraction)) = self.progress.get(id) {
             return GameState::Installing { step, fraction };
         }
@@ -616,6 +636,7 @@ impl Model {
     pub fn choose_folder(&mut self, folder: Option<std::path::PathBuf>) {
         let Some(folder) = folder else { return };
         self.edit_prefs(|p| p.games_folder = Some(folder));
+        self.forget_known_games();
         self.selected = 0;
         if !self.onboarded() && self.onboarding.step == 2 {
             self.onboarding.set_choice(2, 1);
@@ -710,6 +731,7 @@ impl Model {
                 self.games = games;
                 self.scanning = false;
                 self.library_loaded = true;
+                self.note_new_games();
                 self.selected = current
                     .and_then(|id| self.games.iter().position(|g| g.id == id))
                     .unwrap_or_else(|| self.selected.min(self.games.len().saturating_sub(1)));
@@ -760,12 +782,14 @@ impl Model {
                     None => true,
                 };
                 if moved {
-                    self.progress.insert(game, (step, fraction));
+                    self.progress.insert(game.clone(), (step, fraction));
+                    self.prep_progress(&game, step, fraction);
                 }
             }
             PipelineEvent::UnlockFinished { game, result } => {
                 self.progress.remove(&game);
                 self.queue.retain(|q| q != &game);
+                let prepared = self.prep_ended(&game);
                 let name = self.game(&game).map(|g| g.name.clone()).unwrap_or_default();
                 match result {
                     Ok(toolkit) => {
@@ -779,15 +803,25 @@ impl Model {
                     }
                     Err(message) => {
                         self.failures.insert(game, message);
-                        let text = format!("{}: {name}", self.text(Key::UnlockFailed));
+                        let headline = if prepared {
+                            crate::screens::prepare_strings::prepare_failed(self.language())
+                        } else {
+                            self.text(Key::UnlockFailed)
+                        };
+                        let text = format!("{headline}: {name}");
                         self.toast(text, Icon::WARNING);
                     }
                 }
+                self.rescan_after_unlock();
             }
             PipelineEvent::UnlockCancelled { game } => {
                 self.progress.remove(&game);
                 self.queue.retain(|q| q != &game);
+                self.prep_ended(&game);
+                self.rescan_after_unlock();
             }
+            PipelineEvent::UnlockPaused { game, paused } => self.prep_paused(&game, paused),
+            PipelineEvent::StepSeconds(seconds) => self.set_step_seconds(Some(seconds)),
             PipelineEvent::Spawned { game } => {
                 if self.starting.as_ref() == Some(&game) {
                     self.running = Some(game);
@@ -863,6 +897,7 @@ impl Model {
         };
         match self.state_of(&game) {
             GameState::Installed { .. } => self.play(&game.id),
+            GameState::Preparing { .. } => self.promote(&game.id),
             GameState::Locked => self.unlock(&game.id),
             GameState::Failed(_) => self.retry(&game.id),
             GameState::Installing { .. } | GameState::Queued => self.cancel_unlock(&game.id),
@@ -900,6 +935,10 @@ impl Model {
         if self.prefs.games_folder.is_none() {
             return;
         }
+        if self.is_preparing(id) {
+            self.promote(id);
+            return;
+        }
         if !self.toolkit_ready(id) {
             return;
         }
@@ -918,6 +957,17 @@ impl Model {
     }
 
     pub fn cancel_unlock(&mut self, id: &GameId) {
+        if self.prep.background.remove(id) {
+            // Held back or not yet started in the core: it still has to be told.
+            self.effects
+                .push(Effect::Pipeline(PipelineCommand::Cancel(id.clone())));
+            // The player does not want it prepared: it is not tried again.
+            self.prep.paused.remove(id);
+            let key = id.as_str().to_owned();
+            self.edit_prefs(|p| {
+                p.prepare_pending.remove(&key);
+            });
+        }
         if let Some(index) = self.queue.iter().position(|q| q == id) {
             self.queue.remove(index);
             self.effects
@@ -933,6 +983,11 @@ impl Model {
 
     pub fn play(&mut self, id: &GameId) {
         if self.prefs.games_folder.is_none() || self.starting.is_some() || self.running.is_some() {
+            return;
+        }
+        if self.is_preparing(id) {
+            // Not ready yet: it goes first and shows its progress.
+            self.promote(id);
             return;
         }
         if self.saves_busy.as_ref() == Some(id) {

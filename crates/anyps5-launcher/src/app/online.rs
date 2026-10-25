@@ -726,6 +726,12 @@ fn share_screen_enabled(model: &Model) -> bool {
         || std::env::var_os(net::SHARE_SCREEN_VARIABLE).is_some_and(|v| v == "1")
 }
 
+/// The share worker on this PC: the one named by `ANYPLAY_SHARE`, next to the launcher, or the one
+/// the launcher carries. Clips run it too.
+pub fn share_worker_path(model: &Model) -> Option<std::path::PathBuf> {
+    net::locate_worker().or_else(|| bundled_worker(&model.paths))
+}
+
 /// Tells the net service where the share worker is, when share screen is on and there is one.
 /// Without this the net service reports neither `can_share` nor `can_watch` and the launcher
 /// shows nothing of it.

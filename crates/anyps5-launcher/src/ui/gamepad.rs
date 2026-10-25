@@ -5,7 +5,7 @@
 //! the dominant axis wins). A / Cross = select, B / Circle = back, Y / Triangle = options,
 //! Menu / Start = options. The Home / Guide button (`Button::Mode`) never becomes a command: it
 //! switches between the game and the launcher (`ui::home_button`), and while a game is in front
-//! it is the only button that counts.
+//! it and Create (which saves a clip) are the only buttons that count.
 
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -139,6 +139,9 @@ fn poll(ctx: &egui::Context, tx: &Sender<PadMessage>, home: &HomeButton) {
                 EventType::ButtonPressed(Button::Mode, _) => {
                     home.press();
                 }
+                // Create on a DualSense, Share on a DualShock, View or Back on an Xbox pad: it
+                // saves a clip, which is only ever wanted while a game is in front.
+                EventType::ButtonPressed(Button::Select, _) => send(PadMessage::Create),
                 EventType::ButtonPressed(..) if !mine => {}
                 EventType::ButtonPressed(button, _) => match button {
                     Button::South => send(PadMessage::Button(Command::Select)),

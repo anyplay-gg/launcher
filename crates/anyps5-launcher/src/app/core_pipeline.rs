@@ -6,12 +6,15 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use anyps5_core::compat::{self, Feature, Fit};
 use anyps5_core::diagnosis::Diagnosis;
 use anyps5_core::fonts;
 use anyps5_core::hostcpu::{CpuConversion, HostCpu};
+use anyps5_core::idle;
 use anyps5_core::launch::{LaunchEvent, LaunchRequest, Launcher, RunHandle, WindowPrefs};
 use anyps5_core::paths::{self, AppPaths, GameId};
 use anyps5_core::settings::{self, EnvContext, Preferences};
@@ -36,7 +39,13 @@ pub struct CorePipeline {
     pinned: HashMap<String, GameToolkit>,
     /// The releases games stay on, opened, by plain tag.
     opened: HashMap<String, Toolkit>,
-    queue: UnlockQueue,
+    queue: Arc<UnlockQueue>,
+    /// A game starts or runs: prepared games stand still (the idle gate's thread reads it).
+    game_active: Arc<AtomicBool>,
+    /// How long the steps of the last full unlock took here.
+    step_seconds: Option<[f32; 5]>,
+    /// Ends the idle gate's thread.
+    gate_stop: Arc<AtomicBool>,
     runs: HashMap<GameId, RunHandle>,
     events: Shared,
     wake: Arc<dyn Fn() + Send + Sync>,
@@ -69,12 +78,95 @@ fn diagnosis_text(diagnosis: &Diagnosis, language: Language) -> String {
     language.format(key, &args)
 }
 
+/// The one-sentence reason of a failed unlock, with the next step, in the player's language. The
+/// technical message goes to the log.
+fn failure_text(error: &UnlockError, language: Language) -> String {
+    let sentence = crate::screens::prepare_strings::failure(error.kind(), language);
+    // How much is missing is worth saying; the sentence then says what to do.
+    if matches!(error, UnlockError::NotEnoughSpace { .. }) {
+        return format!("{}. {sentence}", error.to_string().trim_end_matches('.'));
+    }
+    sentence.to_owned()
+}
+
+/// How often the idle gate looks at the machine.
+const GATE_PERIOD: Duration = Duration::from_secs(2);
+
+/// Holds the games the launcher prepares on its own while the PC is not idle (a game runs, the
+/// battery is in use, memory is short, the processors are busy). Ends when the queue is gone or
+/// `stop` is set.
+fn watch_machine(queue: &Arc<UnlockQueue>, game_active: &Arc<AtomicBool>, stop: &Arc<AtomicBool>) {
+    let (queue, game_active, stop) = (Arc::downgrade(queue), game_active.clone(), stop.clone());
+    let spawned = std::thread::Builder::new()
+        .name("idle-gate".into())
+        .spawn(move || {
+            let mut meter = idle::Meter::new();
+            let mut gate = idle::Gate::new();
+            loop {
+                let Some(queue) = queue.upgrade() else {
+                    return;
+                };
+                let reading = meter.sample();
+                let hold = gate.update(
+                    &reading,
+                    game_active.load(Ordering::Relaxed),
+                    queue.background_active(),
+                );
+                // Read again: a game may have started since the reading above.
+                queue.hold_background(hold.is_some() || game_active.load(Ordering::Relaxed));
+                drop(queue);
+                // Short sleeps, so the launcher ends without waiting for the period.
+                for _ in 0..20 {
+                    if stop.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    std::thread::sleep(GATE_PERIOD / 20);
+                }
+            }
+        });
+    if let Err(error) = spawned {
+        tracing::warn!("the idle gate did not start: {error}");
+    }
+}
+
+/// `{"seconds":[unwrap,relink,layout,assemble,finish]}` from the last full unlock here.
+fn read_step_seconds(file: &Path) -> Option<[f32; 5]> {
+    let text = std::fs::read_to_string(file).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let list = value.get("seconds")?.as_array()?;
+    let mut seconds = [0.0f32; 5];
+    if list.len() != seconds.len() {
+        return None;
+    }
+    for (slot, item) in seconds.iter_mut().zip(list) {
+        *slot = item.as_f64()? as f32;
+    }
+    Some(seconds)
+}
+
+fn write_step_seconds(file: &Path, seconds: [f32; 5]) {
+    if let Some(parent) = file.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let text = serde_json::json!({ "seconds": seconds }).to_string();
+    if let Err(error) = std::fs::write(file, text) {
+        tracing::debug!("could not keep the unlock timings: {error}");
+    }
+}
+
+impl Drop for CorePipeline {
+    fn drop(&mut self) {
+        self.gate_stop.store(true, Ordering::Relaxed);
+    }
+}
+
 impl CorePipeline {
     /// `wake` repaints the UI (called after every event).
     pub fn new(paths: AppPaths, prefs: &Preferences, wake: Arc<dyn Fn() + Send + Sync>) -> Self {
         let events: Shared = Arc::default();
+        let language = Arc::new(Mutex::new(ui_language(prefs.language)));
         let sink = {
-            let (events, wake) = (events.clone(), wake.clone());
+            let (events, wake, language) = (events.clone(), wake.clone(), language.clone());
             Arc::new(move |event: UnlockEvent| {
                 let mapped = match event {
                     UnlockEvent::Started { game } => Some(PipelineEvent::Progress {
@@ -97,11 +189,21 @@ impl CorePipeline {
                             result: Ok(record.toolkit),
                         },
                         Err(UnlockError::Cancelled) => PipelineEvent::UnlockCancelled { game },
-                        Err(error) => PipelineEvent::UnlockFinished {
-                            game,
-                            result: Err(error.to_string()),
-                        },
+                        Err(error) => {
+                            tracing::warn!("unlock of {} failed: {error}", game.as_str());
+                            let language = *language.lock().expect("language lock");
+                            PipelineEvent::UnlockFinished {
+                                game,
+                                result: Err(failure_text(&error, language)),
+                            }
+                        }
                     }),
+                    UnlockEvent::Paused { game, paused } => {
+                        Some(PipelineEvent::UnlockPaused { game, paused })
+                    }
+                    UnlockEvent::Timings { seconds, .. } => {
+                        Some(PipelineEvent::StepSeconds(seconds))
+                    }
                     _ => None,
                 };
                 if let Some(event) = mapped {
@@ -110,16 +212,23 @@ impl CorePipeline {
                 }
             })
         };
+        let queue = Arc::new(UnlockQueue::new(sink));
+        let game_active = Arc::new(AtomicBool::new(false));
+        let gate_stop = Arc::new(AtomicBool::new(false));
+        watch_machine(&queue, &game_active, &gate_stop);
         let mut pipeline = Self {
             toolkit: None,
             glibc: None,
             pinned: HashMap::new(),
             opened: HashMap::new(),
-            queue: UnlockQueue::new(sink),
+            queue,
+            game_active,
+            step_seconds: read_step_seconds(&paths.unlock_timings_file()),
+            gate_stop,
             runs: HashMap::new(),
             events,
             wake,
-            language: Arc::new(Mutex::new(ui_language(prefs.language))),
+            language,
             paths,
         };
         pipeline.locate_toolkit(prefs);
@@ -208,11 +317,24 @@ impl CorePipeline {
         Ok(opened)
     }
 
-    fn unlock(&mut self, game: &anyps5_core::library::Game, root: &Path, prefs: &Preferences) {
+    fn unlock(
+        &mut self,
+        game: &anyps5_core::library::Game,
+        root: &Path,
+        prefs: &Preferences,
+        background: bool,
+        fresh: bool,
+    ) {
         let pin = prefs.game_settings(&game.id).toolkit;
         let toolkit = match self.toolkit_for(pin.as_deref()) {
             Ok(Some(toolkit)) => toolkit,
-            Ok(None) => return,
+            Ok(None) => {
+                // Nothing to unlock with: the model must not wait for it.
+                self.push(PipelineEvent::UnlockCancelled {
+                    game: game.id.clone(),
+                });
+                return;
+            }
             Err(error) => {
                 self.push(PipelineEvent::UnlockFinished {
                     game: game.id.clone(),
@@ -237,7 +359,18 @@ impl CorePipeline {
         request.resolution = prefs.game_settings(&game.id).resolution;
         // Unlocking again replaces the copy; its saves are backed up first.
         request.backup_dir = Some(self.paths.game_backups_dir(&game.title_id));
+        request.background = background;
+        request.fresh = fresh;
+        if background {
+            // The gate looks only every few seconds; a game that runs now must not wait for it.
+            self.queue
+                .hold_background(self.game_active.load(Ordering::Relaxed));
+        }
         if !self.queue.enqueue(request) {
+            // Asked for by the player while the launcher prepares it: it goes first.
+            if !background {
+                self.queue.promote(&game.id);
+            }
             tracing::debug!("{} is already queued", game.name);
         }
     }
@@ -346,14 +479,20 @@ impl CorePipeline {
                 wake();
             }
         });
+        // The game gets the whole PC: what the launcher prepares stands still from now on.
+        self.game_active.store(true, Ordering::Relaxed);
+        self.queue.hold_background(true);
         match Launcher::start(request, sink) {
             Ok(handle) => {
                 self.runs.insert(game.id.clone(), handle);
             }
-            Err(error) => self.push(PipelineEvent::StartFailed {
-                game: game.id.clone(),
-                message: error.to_string(),
-            }),
+            Err(error) => {
+                self.game_active.store(false, Ordering::Relaxed);
+                self.push(PipelineEvent::StartFailed {
+                    game: game.id.clone(),
+                    message: error.to_string(),
+                });
+            }
         }
     }
 }
@@ -369,6 +508,7 @@ impl Pipeline for CorePipeline {
 
     fn submit(&mut self, command: PipelineCommand, cx: &PipelineContext<'_>) {
         *self.language.lock().expect("language lock") = ui_language(cx.prefs.language);
+        let fresh = matches!(command, PipelineCommand::UnlockAgain(_));
         match command {
             PipelineCommand::Unlock(_)
             | PipelineCommand::Retry(_)
@@ -377,8 +517,22 @@ impl Pipeline for CorePipeline {
                     self.locate_toolkit(cx.prefs);
                 }
                 if let (Some(game), Some(root)) = (cx.game, cx.root) {
-                    self.unlock(game, root, cx.prefs);
+                    // Unlock again repairs a copy: it relinks and keeps nothing of the old one.
+                    self.unlock(game, root, cx.prefs, false, fresh);
                 }
+            }
+            PipelineCommand::Prepare(prepared) => {
+                if self.toolkit.is_none() {
+                    self.locate_toolkit(cx.prefs);
+                }
+                if let (Some(game), Some(root)) = (cx.game, cx.root) {
+                    self.unlock(game, root, cx.prefs, true, false);
+                } else {
+                    self.push(PipelineEvent::UnlockCancelled { game: prepared });
+                }
+            }
+            PipelineCommand::Promote(game) => {
+                self.queue.promote(&game);
             }
             PipelineCommand::Cancel(game) => self.queue.cancel(&game),
             PipelineCommand::Play(game_id) => {
@@ -415,11 +569,31 @@ impl Pipeline for CorePipeline {
     fn poll(&mut self, _now: f64) -> Vec<PipelineEvent> {
         let events = std::mem::take(&mut *self.events.lock().expect("events lock"));
         for event in &events {
-            if let PipelineEvent::Exited { game, .. } = event {
-                self.runs.remove(game);
+            match event {
+                PipelineEvent::Exited { game, .. } => {
+                    self.runs.remove(game);
+                }
+                PipelineEvent::StepSeconds(seconds) => {
+                    self.step_seconds = Some(*seconds);
+                    write_step_seconds(&self.paths.unlock_timings_file(), *seconds);
+                }
+                _ => {}
             }
         }
+        if events.iter().any(|e| {
+            matches!(
+                e,
+                PipelineEvent::Exited { .. } | PipelineEvent::StartFailed { .. }
+            )
+        }) {
+            let active = self.runs.values().any(RunHandle::is_alive);
+            self.game_active.store(active, Ordering::Relaxed);
+        }
         events
+    }
+
+    fn step_seconds(&self) -> Option<[f32; 5]> {
+        self.step_seconds
     }
 
     fn before_scan(&mut self, root: &Path) {

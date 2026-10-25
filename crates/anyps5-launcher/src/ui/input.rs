@@ -50,6 +50,8 @@ pub enum InputEvent {
     OpenSettings,
     /// `F11`
     ToggleFullscreen,
+    /// The controller's Create (Share) button: save a clip.
+    Create,
     /// A raw key press while [`Input::capture_keys`] is on (the controls panel binds keys with it).
     CapturedKey {
         key: Key,
@@ -65,6 +67,8 @@ pub enum PadMessage {
     Direction(Option<Command>),
     /// A button went down.
     Button(Command),
+    /// The Create (Share, View) button went down.
+    Create,
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -325,6 +329,7 @@ impl Input {
                         crate::ui::latency::pad_event_seen();
                         out.push(InputEvent::Command(command));
                     }
+                    PadMessage::Create => out.push(InputEvent::Create),
                 }
             }
         }

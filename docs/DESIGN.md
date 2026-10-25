@@ -1150,6 +1150,21 @@ moved by >= 0.005, or fraction >= 1. The tile shows the small bar, the hero show
 Cancel (button or Esc/B while selected): sound `back`. The installer keeps an in-memory log (max 600 lines, trimmed by 100) shown in
 the log view. (Screenshot S-unlocking shows step "Converting for Mac", 39 %.)
 
+#### Launcher additions to the unlock (Windows and Linux)
+
+*Weights.* The table above is the default for a PC that has not unlocked before. After every unlock the pipeline reports how many seconds each step took (kept in `Cache\unlock-timings.json`); the next bar gives each step its measured share (a step never gets less than 2 %). On the owner's PC with a 322 MB executable the relink takes about 75 % of the time, so the default is 4 / 78 / 12 / 4 / 2 instead of the table's 12 / 50 / 26 / 8 / 4.
+
+*Time left.* The hero shows the remaining time beside the percentage once 4 % of the bar and 8 s of work lie behind it: half the speed of the last 40 s, half the speed of the whole run, smoothed with a time constant of 8 s, rounded to "Under a minute left", "About 3 min left", "About 2 h left". Time spent standing still does not count; nothing is shown before there is enough to tell.
+
+*Faster.* The dump's files are laid out by up to eight threads (hard links, copy only where the volume cannot link). The relinker starts below normal priority; the executable it made is linked, not copied, into the copy. An unlock again whose relink key (release, flags, patches, size and time of every input) matches the copy it replaces keeps that copy's converted files and skips the relinker. The relinker's own output is not changed.
+
+*Preparing.* A game that appears in the games folder after the launcher first looked at it, and a game left outdated by a toolkit update, is unlocked in the background (setting `prepareGames` "Prepare New Games Automatically", on), one at a time, at idle priority, only when the idle gate is open and no game is starting or running. The first scan only notes what is there; it prepares nothing. A preparation that fails is not tried again with the same toolkit and raises the toast "Could not prepare: <game>"; one that finishes raises "<game> · Ready to play".
+
+- Tile: a band at its foot with "Preparing… 40%" (12 medium) and the progress line; paused "Paused · 40%". The selected game's state line says Preparing or Paused; the hero shows the bar, the percentage and the time left, or one sentence while the work has not started.
+- Play or Unlock on a game being prepared moves it to the front (its relinker leaves the idle class, the others stand still) and from then on it shows as an ordinary unlock. Cancel on it stops the preparation for good.
+- Starting a game freezes a preparation at once (the relinker is suspended, not killed); it goes on after the game ends.
+- Failure sentences say what to do: toolkit missing, drive full, file held by another program, unusable dump, converter stopped; the technical message goes to the log.
+
 ### 5.5 Launch splash ("start screen with timer")
 
 Shown from the press of Play until the game's first window appears (poll every 400 ms for a visible top-level window of the game
@@ -1182,14 +1197,14 @@ category's rows (5.8).
 | Appearance (`appearance`) | brush | `theme` choice (Cosmic/Aurora/Sunset), `accent` choice (six), `backdrop` choice (`backgroundTheme` / `backgroundImage` / `backgroundVideo`; picking image/video opens a file dialog when no file is set or the kind changed), `file` action `chooseFile` (only when backdrop is not theme; detail = file name), `artwork` toggle `gameArtwork`, `motion` choice (`motionFull` / `motionReduced`) |
 | Library (`storage`) | 2x2 grid | `folder` action `folder` (detail = path or an em dash; opens the folder dialog), `rescan` action `rescan` (detail `gamesFound` with count; sound `select`), info `installedSize` |
 | Language (`language`) | globe | `language` choice (Türkçe, English; shown in their own language) |
-| Behaviour (`behaviour`) | sliders | `name` text field `profileName` (live edit), `sounds` toggle, `music` toggle (Home Screen Music, 7.3), `hide` toggle `hideWhilePlaying`, `hiddenTrophies` toggle `showHiddenTrophies` (trophy glyph; detail `showHiddenTrophiesDetail`; the trophy list's only option, 5.11) (+ platform row, see 9) |
+| Behaviour (`behaviour`) | sliders | `name` text field `profileName` (live edit), `sounds` toggle, `music` toggle (Home Screen Music, 7.3), `hide` toggle `hideWhilePlaying`, `prepare` toggle `prepareGames` (Prepare New Games Automatically), `hiddenTrophies` toggle `showHiddenTrophies` (trophy glyph; detail `showHiddenTrophiesDetail`; the trophy list's only option, 5.11) (+ platform row, see 9) |
 | Phone as Controller (`phone`) | phone | Windows and Linux addition, section 18. Sits between Behaviour and Toolkit. |
 | Advanced (`advanced`) | wrench+screwdriver | `screenshots` action `screenshotsFolder` (detail = path, `~` abbreviated), `showScreenshots` action, `fonts` action `fontsFolder` (detail = the picked path, else the built-in Noto set and whether Japanese, Chinese and Korean are included, not downloaded or downloading), `fontsReset` action (only when a fonts folder is set), `fontsCjk` command (download the Japanese, Chinese and Korean fonts; only without a picked folder and while they are missing), info `fontsHint` |
 | About (`about`) | info circle | info `aboutText`, info `version` (app version), info `toolkitVersion`, (platform row), `quit` action `quit` (destructive) |
 
 Settings are persisted per user (`Preferences`): `onboarded`, `language` (system default: Turkish if the OS UI language starts with
 `tr`, else English), `theme` (Cosmic), `accent` (nil = theme default), `backdrop` (theme), `backdropFile`, `gameArtwork` (true),
-`reducedMotion` (false), `showHiddenTrophies` (false), `sounds` (true), `music` (true), `discordPresence` (true), `hideWhilePlaying` (false), `profileName` (first word of the user's full name, fallback
+`reducedMotion` (false), `showHiddenTrophies` (false), `sounds` (true), `music` (true), `discordPresence` (true), `hideWhilePlaying` (false), `prepareGames` (true), `profileName` (first word of the user's full name, fallback
 "Player"), `gamesFolder`, `screenshotsFolder` (nil = `Pictures/AnyPS5`), `fontsFolder`, per-game settings, `lastPlayed`.
 Every change saves immediately and re-applies language, motion and sound flags.
 
@@ -2326,6 +2341,18 @@ Up to v0.1.3 the launcher was called AnyPS5 Launcher. It is AnyPlay Launcher now
 - **Installer upgrade:** the same AppId upgrades an old install in place and keeps its folder (`...\AnyPS5 Launcher`). It closes a running old launcher, removes `AnyPS5-Launcher.exe`, its `.new`/`.old` leftovers and the old shortcuts. Taskbar and Start pins of the old exe do not carry over.
 - **Linux:** the app id is `anyplay-launcher`, the same as the desktop entry's file name, `Icon` and `StartupWMClass` (a test holds them together). A desktop entry copied from an older tarball no longer matches the window: replace it and pin the launcher again.
 
+### 9.8 Clips
+
+While a game runs, the launcher can keep its last seconds and save them as a video. It is Windows only for now: the recorder is the share worker (the network repository's `spec/clips.md` and ADR 0028), which captures the game's window with Windows Graphics Capture and encodes with the GPU's H.264 encoder.
+
+- **Setting.** Settings > Behavior > Clips: Off (the default), 15 seconds, 30 seconds, 1 minute or 2 minutes (`clips_seconds`). Below it, while Clips is on, the row **Clip Key** (`clips_hotkey`, default `Alt+F12`, a key row like the talk key: choose it, press the keys, Esc keeps the old ones; a letter or digit alone is refused so that it cannot be taken from the game, a function key may stand alone) and **Show Clips**, which opens the screenshots folder and says how many clips it holds. With Clips off the Show Clips row stays only while there are clips. The row says that a clip has no sound.
+- **When it runs.** Nothing runs with Clips off or without a game: no worker, no hotkey. With Clips on, the launcher starts the worker when the game has a process (`--clips SECONDS`, the window and processes as for share screen) and ends it when the game ends or Clips is switched off. A worker that ends (no hardware video encoder, no window, a failed encoder) is told once in a toast and not started again for that game.
+- **Saving.** Three triggers, one effect (`Effect::SaveClip`): the global hotkey (`RegisterHotKey`, so the game does not also see it), the controller's Create button (the `Select` button of the pad backend: Create on a DualSense, View or Back on an Xbox pad) and the phone's `create` message. The worker writes `<game name> <date> <time>.mp4` to the screenshots folder under a temporary name and renames it when whole. A clip is at least the chosen length and up to 2 seconds longer, starts on a key frame and is 1280 by 720 at 30 pictures a second.
+- **Feedback.** A toast "Clip saved" (camera icon) and the unlock cue. A launcher hidden by "Hide Launcher While Playing" shows no toast, so the cue is the confirmation then. Create with Clips off in a running game says how to turn it on.
+- **Cost.** A hardware encoder only, 6 Mbit/s, at most 160 MiB of memory in the worker; a PC without one gets the toast "Clips need a graphics card with a video encoder" and no software encoding.
+- **Not yet.** The game's sound (process loopback capture, the same open task as share screen's sound), Linux, an in-game confirmation, playback inside the launcher (the folder opens in the system's file manager and a player).
+- **Gallery.** `--gallery=behavior-clips-off|behavior-clips|behavior-clips-key`.
+
 ---
 
 ## 10. Asset list
@@ -2665,4 +2692,4 @@ The AnyPS5 Remote phone app of the macOS fork ([utkuhalis/AnyPS5-ARM](https://gi
   - *Top bar.* While a phone is welcomed, a pill 32 dp high (the buttons' surface, white 0.10) with the `device-mobile` glyph and the phone's name (14 medium, cut in the middle past 150 dp) sits 48 dp after the title, clear of the scanning spinner. It is a status, not a button: not focusable, named "Phone connected: Pixel 8" for screen readers. It is ink on the pill, not accent: the accent is for being online with the network.
   - *Words.* English and Turkish like the rest (`screens/phone_strings.rs`). The product text names no console brand.
 
-**Tests.** `fake-phone` (`crates/fake-phone`, never shipped) is a phone and a game in one binary: `fake-phone phone --addr 127.0.0.1:47700 --key-file k.txt --script "select:ID,launch:ID,press:cross,..."`, `fake-phone phone --discover` finds the PC through mDNS, `fake-phone game` greets on the bridge. `crates/fake-phone/tests/e2e.rs` drives the real server with it: protocol round trip, pairing and key reuse, an unpaired phone rejected, a denied phone rejected, a request flood limited. The unit tests of `remote` cover the packets (golden hex), the device file, the layouts file, the rate limiter, the on-link rule, the relay's identity checks, the mDNS adapter choice and the pad mapping. Screenshots of these scenes are in `docs/media/phone/`. Gallery scenes: `phone-off`, `phone-waiting`, `phone-pairing`, `phone-connected`, `phone-driver` (Windows without ViGEmBus), `phone-access` (Linux without access to uinput), `phone-failed`, and `home-phone` (the top bar). Not tested without hardware: a real phone on a real network and a real virtual pad in a real game (any game needs the user's go).
+**Tests.** `fake-phone` (`crates/fake-phone`, never shipped) is a phone and a game in one binary: `fake-phone phone --addr 127.0.0.1:47700 --key-file k.txt --script "select:ID,launch:ID,press:cross,..."`, `fake-phone phone --discover` finds the PC through mDNS, `fake-phone game` greets on the bridge. `crates/fake-phone/tests/e2e.rs` drives the real server with it: protocol round trip, pairing and key reuse, an unpaired phone rejected, a denied phone rejected, a request flood limited. The unit tests of `remote` cover the packets (golden hex), the device file, the layouts file, the rate limiter, the on-link rule, the relay's identity checks, the mDNS adapter choice and the pad mapping. The scenes render in the gallery; `docs/media/phone-off.jpg` is a real screenshot of the off state. Gallery scenes: `phone-off`, `phone-waiting`, `phone-pairing`, `phone-connected`, `phone-driver` (Windows without ViGEmBus), `phone-access` (Linux without access to uinput), `phone-failed`, and `home-phone` (the top bar). Not tested without hardware: a real phone on a real network and a real virtual pad in a real game (any game needs the user's go).

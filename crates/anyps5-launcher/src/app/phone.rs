@@ -292,7 +292,9 @@ pub fn state_name(state: &GameState) -> &'static str {
     match state {
         GameState::Unreadable | GameState::Failed(_) => "unavailable",
         GameState::Locked => "locked",
-        GameState::Queued | GameState::Installing { .. } => "installing",
+        GameState::Queued | GameState::Installing { .. } | GameState::Preparing { .. } => {
+            "installing"
+        }
         GameState::Installed { outdated: true } => "update",
         GameState::Installed { outdated: false } => "installed",
         GameState::Starting => "starting",
@@ -578,6 +580,7 @@ impl LauncherApp {
                 self.model.dismiss_overlay();
                 self.model.effects.push(Effect::RestoreWindow);
             }
+            Message::Create => self.model.effects.push(Effect::SaveClip),
             Message::WantArt { id } => self.send_art(&id),
             Message::SaveLayout { id, layout } => {
                 if let Some(layouts) = &mut self.phone.layouts
