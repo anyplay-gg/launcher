@@ -251,6 +251,9 @@ pub struct Model {
     pub update_dismissed: Option<String>,
     /// What the notice asked for since the host looked: restart now, or cancel the held restart.
     pub update_request: Option<UpdateRequest>,
+    /// The notice fits in the top bar as drawn last frame. The focus order reads it, so the pad
+    /// never lands on a notice that is not there.
+    pub notice_fits: bool,
     /// The toolkit version on this PC (`None`: no toolkit, nothing can be unlocked).
     pub toolkit: Option<String>,
     /// The toolkit needs a newer glibc than this system has (Linux); a notice, not a block.
@@ -331,6 +334,7 @@ impl Model {
             update: Default::default(),
             update_dismissed: None,
             update_request: None,
+            notice_fits: true,
             toolkit: None,
             glibc: None,
             game_toolkits: HashMap::new(),
@@ -1089,9 +1093,14 @@ impl Model {
 
     // --- the launcher update notice -------------------------------------------------------------
 
-    /// The notice on the home screen, when there is one: a verified update waits and the player
-    /// has not sent it away, or its restart waits for the game to end.
+    /// The notice on the home screen as the player meets it: wanted, and with room in the bar.
     pub fn update_notice(&self) -> Option<UpdateNotice> {
+        self.update_notice_wanted().filter(|_| self.notice_fits)
+    }
+
+    /// The notice that is wanted, room or not: a verified update waits and the player has not
+    /// sent it away, or its restart waits for the game to end.
+    pub fn update_notice_wanted(&self) -> Option<UpdateNotice> {
         use crate::screens::settings::LauncherUpdate;
         if !self.onboarded() {
             return None;
@@ -1126,7 +1135,9 @@ impl Model {
                 self.focus = HomeFocus::Tiles;
             }
             (true, _) => {
+                // The player said no to the restart: the notice does not come back asking again.
                 self.update_request = Some(UpdateRequest::CancelRestart);
+                self.update_dismissed = Some(notice.version);
                 self.focus = HomeFocus::Tiles;
             }
         }
@@ -2115,5 +2126,39 @@ mod tests {
         });
         assert_eq!(m.overlay, None);
         assert!(!m.summoned);
+    }
+
+    #[test]
+    fn the_update_notice_needs_room_and_does_not_come_back_after_a_no() {
+        use crate::screens::settings::LauncherUpdate;
+        let mut m = model_with(Vec::new());
+        assert_eq!(m.update_notice(), None);
+        m.update = LauncherUpdate::Ready("0.3.0".into());
+        let notice = m.update_notice().expect("a ready update is noticed");
+        assert_eq!((notice.holding, notice.buttons), (false, 2));
+        // No room in the top bar: nothing to draw and nothing for the pad to land on.
+        m.notice_fits = false;
+        assert_eq!(m.update_notice(), None);
+        assert_eq!(m.home_context().notice, 0);
+        m.notice_fits = true;
+        assert_eq!(m.home_context().notice, 2);
+
+        // "Later" sends it away for this version only.
+        m.update_action(1);
+        assert_eq!(m.update_notice(), None);
+        m.update = LauncherUpdate::Ready("0.3.1".into());
+        assert!(m.update_notice().is_some());
+
+        // "Restart Now" asks the host; while a game runs the notice offers only "Cancel", and a
+        // "Cancel" is a no: the notice does not return asking again.
+        m.update_action(0);
+        assert_eq!(m.update_request.take(), Some(UpdateRequest::Restart));
+        m.update = LauncherUpdate::Holding("0.3.1".into());
+        let held = m.update_notice().unwrap();
+        assert_eq!((held.holding, held.buttons), (true, 1));
+        m.update_action(0);
+        assert_eq!(m.update_request.take(), Some(UpdateRequest::CancelRestart));
+        m.update = LauncherUpdate::Ready("0.3.1".into());
+        assert_eq!(m.update_notice(), None);
     }
 }

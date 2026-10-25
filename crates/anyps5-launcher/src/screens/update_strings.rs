@@ -48,8 +48,8 @@ pub enum UpdateText {
     NoticeHolding,
     /// The accessible name of the notice. `%@` = the version.
     NoticeName,
-    /// The button of the notes panel that opens the release page.
-    OpenRelease,
+    /// The same while the restart waits for a game.
+    NoticeHoldingName,
     /// The accessible name of the settings button while an update waits. `%@` = "Settings".
     SettingsBadge,
 }
@@ -80,7 +80,7 @@ impl UpdateText {
         UpdateText::NoticeReady,
         UpdateText::NoticeHolding,
         UpdateText::NoticeName,
-        UpdateText::OpenRelease,
+        UpdateText::NoticeHoldingName,
         UpdateText::SettingsBadge,
     ];
 
@@ -98,7 +98,7 @@ impl UpdateText {
             UpdateText::NotInstalled => "Not installed",
             UpdateText::NoteDownloading => "Launcher %@ downloads in the background.",
             UpdateText::NoteReady => {
-                "Restart now, or it installs the next time you close the launcher."
+                "Restart now, or the update installs the next time you close the launcher."
             }
             UpdateText::NoteHolding => {
                 "Launcher %@ restarts when your game closes. Your game keeps running."
@@ -108,9 +108,11 @@ impl UpdateText {
             }
             UpdateText::NoteOffline => "Could not reach GitHub. The launcher tries again later.",
             UpdateText::NoteRefused => {
-                "The update could not be verified, so it was not installed. Download it from GitHub."
+                "The update could not be verified, so it was not installed. Download the latest launcher from GitHub."
             }
-            UpdateText::NoteOther => "The update could not be installed. Download it from GitHub.",
+            UpdateText::NoteOther => {
+                "The update could not be installed. Download the latest launcher from GitHub."
+            }
             UpdateText::CancelRestart => "Cancel Restart",
             UpdateText::Later => "Later",
             UpdateText::WhatsNewIn => "What's New in %@",
@@ -118,7 +120,7 @@ impl UpdateText {
             UpdateText::NoticeReady => "Launcher %@ is ready",
             UpdateText::NoticeHolding => "Restarts when your game closes",
             UpdateText::NoticeName => "Launcher %@ is ready to install",
-            UpdateText::OpenRelease => "Open Release",
+            UpdateText::NoticeHoldingName => "Launcher %@ restarts when your game closes",
             UpdateText::SettingsBadge => "%@, update ready",
         }
     }
@@ -137,27 +139,27 @@ impl UpdateText {
             UpdateText::NotInstalled => "Kurulmadı",
             UpdateText::NoteDownloading => "Başlatıcı %@ arka planda indiriliyor.",
             UpdateText::NoteReady => {
-                "Şimdi yeniden başlat ya da başlatıcıyı bir sonraki kapatışında kurulsun."
+                "Şimdi yeniden başlat ya da güncelleme, başlatıcıyı bir sonraki kapatışında kurulur."
             }
             UpdateText::NoteHolding => {
-                "Başlatıcı %@, oyunun kapanınca yeniden başlar. Oyunun açık kalır."
+                "Başlatıcı %@, oyun kapanınca yeniden başlar. Oyunun açık kalır."
             }
             UpdateText::NoteReadOnly => {
                 "Başlatıcı bu salt okunur klasörde kendini güncelleyemez. GitHub'dan indir."
             }
             UpdateText::NoteOffline => "GitHub'a ulaşılamadı. Başlatıcı daha sonra yeniden dener.",
             UpdateText::NoteRefused => {
-                "Güncelleme doğrulanamadı, bu yüzden kurulmadı. GitHub'dan indir."
+                "Güncelleme doğrulanamadı, bu yüzden kurulmadı. Son sürümü GitHub'dan indir."
             }
-            UpdateText::NoteOther => "Güncelleme kurulamadı. GitHub'dan indir.",
-            UpdateText::CancelRestart => "Yeniden Başlatmayı İptal Et",
+            UpdateText::NoteOther => "Güncelleme kurulamadı. Son sürümü GitHub'dan indir.",
+            UpdateText::CancelRestart => "Yeniden başlatmayı iptal et",
             UpdateText::Later => "Sonra",
-            UpdateText::WhatsNewIn => "%@ Sürümünde Yenilikler",
-            UpdateText::Download => "GitHub'dan İndir",
+            UpdateText::WhatsNewIn => "%@ sürümünde yenilikler",
+            UpdateText::Download => "GitHub'dan indir",
             UpdateText::NoticeReady => "Başlatıcı %@ hazır",
             UpdateText::NoticeHolding => "Oyun kapanınca yeniden başlar",
             UpdateText::NoticeName => "Başlatıcı %@ kurulmaya hazır",
-            UpdateText::OpenRelease => "Sürümü Aç",
+            UpdateText::NoticeHoldingName => "Başlatıcı %@, oyun kapanınca yeniden başlar",
             UpdateText::SettingsBadge => "%@, güncelleme hazır",
         }
     }
@@ -207,6 +209,7 @@ mod tests {
             UpdateText::WhatsNewIn,
             UpdateText::NoticeReady,
             UpdateText::NoticeName,
+            UpdateText::NoticeHoldingName,
             UpdateText::SettingsBadge,
         ] {
             for language in Language::ALL {

@@ -22,6 +22,8 @@ pub const CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 /// After a check that could not reach GitHub: sooner, because the player may only have been
 /// offline for a moment.
 pub const RETRY_OFFLINE: Duration = Duration::from_secs(30 * 60);
+/// The shortest time between two checks the player asks for.
+pub const CHECK_NOW_EVERY: Duration = Duration::from_secs(20);
 
 /// What the worker reports.
 #[derive(Debug)]
@@ -34,7 +36,10 @@ pub enum SelfUpdateEvent {
     Found(String),
     /// The download of this version, in thousandths.
     Progress(String, u16),
-    /// A verified update waits to be swapped in; the release's notes when they are known.
+    /// An update staged by an earlier run (verified again): offered at once, while the check goes on.
+    Pending(Staged),
+    /// A verified update waits to be swapped in; the release's notes when they are known. The
+    /// worker is done.
     Ready(Staged, Option<String>),
     /// A newer release exists but the launcher's folder cannot be written to.
     ReadOnly(String),
@@ -53,6 +58,8 @@ pub struct SelfUpdateService {
     next_check: Option<Instant>,
     /// "Check Now": one check, even when the preference is off.
     force: bool,
+    /// When the last worker started (Check Now is not a way to hammer GitHub).
+    last_started: Option<Instant>,
     staged: Option<Staged>,
     /// The notes of the staged version (Markdown), when known.
     notes: Option<String>,
@@ -78,6 +85,7 @@ impl SelfUpdateService {
             busy: false,
             next_check: None,
             force: false,
+            last_started: None,
             staged: None,
             notes: None,
             holding: false,
@@ -135,9 +143,10 @@ impl SelfUpdateService {
             return;
         };
         self.busy = true;
+        self.last_started = Some(Instant::now());
         let (tx, ctx, paths) = (self.tx.clone(), self.ctx.clone(), paths.clone());
         let (have, cancel) = (self.staged.clone(), self.cancel.clone());
-        spawn("launcher update", move || {
+        self.busy = spawn("launcher update", move || {
             let send = |event| {
                 let _ = tx.send(event);
                 ctx.request_repaint();
@@ -146,9 +155,15 @@ impl SelfUpdateService {
         });
     }
 
-    /// "Check Now": a check at the next frame, whatever the preference says and however recent
-    /// the last one was.
+    /// "Check Now": a check at the next frame, whatever the preference says and when the last
+    /// regular one was. Pressed again within [`CHECK_NOW_EVERY`] it does nothing.
     pub fn check_now(&mut self) {
+        if self
+            .last_started
+            .is_some_and(|at| at.elapsed() < CHECK_NOW_EVERY)
+        {
+            return;
+        }
         self.force = true;
         self.next_check = None;
     }
@@ -190,29 +205,11 @@ impl SelfUpdateService {
                     };
                 }
             }
+            SelfUpdateEvent::Pending(staged) => self.take(staged, None),
             SelfUpdateEvent::Ready(staged, notes) => {
-                // A newer download replaces an older one; the same version only brings its notes.
-                let newer = self
-                    .staged
-                    .as_ref()
-                    .is_none_or(|have| selfupdate::is_newer(&staged.version, &have.version));
-                if newer {
-                    self.state = if self.holding {
-                        LauncherUpdate::Holding(staged.version.clone())
-                    } else {
-                        LauncherUpdate::Ready(staged.version.clone())
-                    };
-                    self.staged = Some(staged.clone());
-                    self.notes = None;
-                }
-                if notes.is_some()
-                    && self
-                        .staged
-                        .as_ref()
-                        .is_some_and(|have| have.version == staged.version)
-                {
-                    self.notes.clone_from(notes);
-                }
+                self.take(staged, notes.as_ref());
+                // Only the end of the worker frees it for the next check.
+                self.busy = false;
             }
             SelfUpdateEvent::ReadOnly(version) => {
                 self.busy = false;
@@ -236,9 +233,31 @@ impl SelfUpdateService {
                 }
             }
         }
-        // A worker that ends with a staged update is done as well.
-        if matches!(event, SelfUpdateEvent::Ready(..)) {
-            self.busy = false;
+    }
+
+    /// A verified exe is staged: it replaces an older version, or the same version when the file
+    /// is another one (the release was signed again); the same file only brings its notes.
+    fn take(&mut self, staged: &Staged, notes: Option<&String>) {
+        let replaces = self.staged.as_ref().is_none_or(|have| {
+            selfupdate::is_newer(&staged.version, &have.version)
+                || (staged.version == have.version && staged.sha256 != have.sha256)
+        });
+        if replaces {
+            self.state = if self.holding {
+                LauncherUpdate::Holding(staged.version.clone())
+            } else {
+                LauncherUpdate::Ready(staged.version.clone())
+            };
+            self.staged = Some(staged.clone());
+            self.notes = None;
+        }
+        if notes.is_some()
+            && self
+                .staged
+                .as_ref()
+                .is_some_and(|have| have.version == staged.version)
+        {
+            self.notes = notes.cloned();
         }
     }
 
@@ -349,7 +368,7 @@ fn work(
         && let Some(staged) = selfupdate::pending(paths, current)
         && selfupdate::can_install(exe)
     {
-        send(SelfUpdateEvent::Ready(staged.clone(), None));
+        send(SelfUpdateEvent::Pending(staged.clone()));
         have = Some(staged);
     }
     let release = match selfupdate::check_cached(paths, current) {
@@ -359,7 +378,10 @@ fn work(
     };
     let notes = release.notes().map(str::to_owned);
     // Already downloaded: only the notes are new.
-    if let Some(staged) = have.filter(|s| s.version == release.version()) {
+    // (the file must also be the one the signed manifest of this check states).
+    if let Some(staged) =
+        have.filter(|s| s.version == release.version() && s.sha256.as_deref() == release.sha256())
+    {
         return send(SelfUpdateEvent::Ready(staged, notes));
     }
     let version = release.version().to_owned();
@@ -385,9 +407,14 @@ fn work(
     );
 }
 
-fn spawn(name: &str, work: impl FnOnce() + Send + 'static) {
-    if let Err(error) = std::thread::Builder::new().name(name.into()).spawn(work) {
-        tracing::warn!("cannot start the {name} thread: {error}");
+/// Whether the thread started.
+fn spawn(name: &str, work: impl FnOnce() + Send + 'static) -> bool {
+    match std::thread::Builder::new().name(name.into()).spawn(work) {
+        Ok(_) => true,
+        Err(error) => {
+            tracing::warn!("cannot start the {name} thread: {error}");
+            false
+        }
     }
 }
 
@@ -468,6 +495,47 @@ mod tests {
             SelfUpdateEvent::Failed(Failure::Refused, "bad signature".into()),
         );
         assert_eq!(s.state, LauncherUpdate::Failed(UpdateFailure::Refused));
+    }
+
+    #[test]
+    fn an_update_from_an_earlier_run_does_not_free_the_worker() {
+        let mut s = service();
+        s.busy = true;
+        feed(&mut s, SelfUpdateEvent::Pending(staged("0.3.0")));
+        assert_eq!(s.state, LauncherUpdate::Ready("0.3.0".into()));
+        // The check behind it still runs: no second worker may start meanwhile.
+        assert!(s.busy);
+        assert!(!s.due(Instant::now() + CHECK_EVERY * 2));
+        feed(&mut s, SelfUpdateEvent::Ready(staged("0.3.0"), None));
+        assert!(!s.busy);
+    }
+
+    #[test]
+    fn the_same_version_as_another_file_replaces_the_staged_one() {
+        let mut s = service();
+        let mut first = staged("0.3.0");
+        first.sha256 = Some("aa".into());
+        feed(&mut s, SelfUpdateEvent::Ready(first, None));
+        let mut again = staged("0.3.0");
+        again.sha256 = Some("bb".into());
+        feed(&mut s, SelfUpdateEvent::Ready(again.clone(), None));
+        assert_eq!(s.staged, Some(again));
+    }
+
+    #[test]
+    fn check_now_does_not_hammer() {
+        let mut s = service();
+        s.check_now();
+        assert!(s.force && s.next_check.is_none());
+        s.force = false;
+        s.last_started = Some(Instant::now());
+        s.next_check = Some(Instant::now() + CHECK_EVERY);
+        s.check_now();
+        assert!(!s.force, "a check that just started is not asked for again");
+        assert!(s.next_check.is_some());
+        s.last_started = Some(Instant::now() - CHECK_NOW_EVERY - Duration::from_secs(1));
+        s.check_now();
+        assert!(s.force);
     }
 
     #[test]

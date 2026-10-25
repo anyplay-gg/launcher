@@ -1908,17 +1908,30 @@ fn resume_link(model: &Model) -> Option<String> {
         return Some(format!("{}://settings/about", anyps5_core::links::SCHEME));
     }
     let game = model.selected_game()?;
-    Some(format!(
-        "{}://game/{}",
-        anyps5_core::links::SCHEME,
-        game.title_id
-    ))
+    // The title ID comes from the game's files: it only goes into a link the strict parser accepts
+    // as a plain game link.
+    let link = format!("{}://game/{}", anyps5_core::links::SCHEME, game.title_id);
+    matches!(
+        anyps5_core::links::parse(&link),
+        Ok(anyps5_core::links::Link::Game { .. })
+    )
+    .then_some(link)
 }
+/// A release page of the launcher itself: `.../releases/tag/v` and a version of digits, letters,
+/// dots and dashes, nothing else.
+fn launcher_release_page(url: &str) -> bool {
+    url.strip_prefix("https://github.com/anyplaynet/launcher/releases/tag/v")
+        .is_some_and(|version| {
+            !version.is_empty()
+                && version
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+        })
+}
+
 /// Opens a page of the toolkit's repository in the browser. Nothing else is opened.
 fn open_url(url: &str) {
-    if !url.starts_with("https://github.com/boykopovar/AnyPS5/")
-        && !url.starts_with("https://github.com/anyplaynet/launcher/releases/tag/v")
-    {
+    if !url.starts_with("https://github.com/boykopovar/AnyPS5/") && !launcher_release_page(url) {
         return;
     }
     if let Err(error) = anyps5_core::platform::open_url(url) {
@@ -2404,5 +2417,22 @@ mod tests {
         assert!(!copy.exists());
         let selected = rig.app.model.selected;
         assert!(rig.app.model.games[selected].unlocked_with.is_none());
+    }
+
+    #[test]
+    fn only_a_release_page_of_the_launcher_may_be_opened_from_the_notes() {
+        let page = "https://github.com/anyplaynet/launcher/releases/tag/v";
+        assert!(launcher_release_page(&format!("{page}0.2.5")));
+        assert!(launcher_release_page(&format!("{page}0.3.0-rc.1")));
+        for bad in [
+            page.to_owned(),
+            format!("{page}0.2.5/../../x"),
+            format!("{page}0.2.5@evil.example"),
+            format!("{page}0.2.5?x=1"),
+            "https://github.com/anyplaynet/launcher/releases/tag/".to_owned(),
+            "https://evil.example/anyplaynet/launcher/releases/tag/v1".to_owned(),
+        ] {
+            assert!(!launcher_release_page(&bad), "{bad}");
+        }
     }
 }

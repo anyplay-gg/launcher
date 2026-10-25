@@ -200,27 +200,14 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
     }
 
     // A connected phone sits after the title, out of the focus order: it only reports.
+    let mut after_title = title.max.x;
     if let Some(name) = &cx.model.phone.connected {
-        phone_status(
+        after_title = phone_status(
             ui,
             pos2(title.max.x + PHONE_STATUS_GAP, mid),
             name,
             language,
         );
-    }
-
-    // A launcher update that waits sits after the title (and the phone), out of the way of the
-    // strip; it only appears when it fits.
-    let notice_left = cx
-        .model
-        .phone
-        .connected
-        .as_ref()
-        .map_or(title.max.x, |_| title.max.x + PHONE_STATUS_GAP + 190.0)
-        + group_gap;
-    let notice_room = (screen.max.x - pad::HOME_X - 560.0) - notice_left;
-    if notice_room > 360.0 {
-        update_notice(ui, cx, pos2(notice_left, mid), notice_room, presses);
     }
 
     // From the right: clock, then profile, settings, friends and library, all 12 apart.
@@ -271,7 +258,7 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
     if update_waiting {
         let dot = response.rect.right_top() + vec2(-8.0, 8.0);
         painter.circle_filled(dot, 6.0, theme::black(0.62));
-        painter.circle_filled(dot, 4.0, accent);
+        painter.circle_filled(dot, 4.0, white(0.92));
     }
     if response.clicked() {
         presses.push(Press::Focus(HomeFocus::SETTINGS));
@@ -298,6 +285,15 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
     if response.clicked() {
         presses.push(Press::Focus(HomeFocus::LIBRARY));
     }
+    // A launcher update that waits sits after the title (and the phone), in the room the strip
+    // leaves. It is drawn, and reachable by the pad, only when it fits there.
+    update_notice(
+        ui,
+        cx,
+        pos2(after_title + group_gap, mid),
+        row.min_rect().min.x - group_gap,
+        presses,
+    );
 }
 
 /// The launcher update, quiet: one line in the top bar with the two things to do about it. It
@@ -308,10 +304,10 @@ fn update_notice(
     ui: &mut Ui,
     cx: &mut ScreenCx<'_>,
     left_middle: egui::Pos2,
-    room: f32,
+    limit_x: f32,
     presses: &mut Vec<Press>,
 ) {
-    let Some(notice) = cx.model.update_notice() else {
+    let Some(notice) = cx.model.update_notice_wanted() else {
         return;
     };
     let language = cx.language();
@@ -331,11 +327,42 @@ fn update_notice(
     } else {
         UpdateText::NoticeReady.format(language, &version)
     };
-    let group = UpdateText::NoticeName.format(language, &version);
+    let group = if notice.holding {
+        UpdateText::NoticeHoldingName.format(language, &version)
+    } else {
+        UpdateText::NoticeName.format(language, &version)
+    };
     let height = ControlSize::Small.height() + 8.0;
+    let labels: Vec<&str> = if notice.holding {
+        vec![UpdateText::CancelRestart.text(language)]
+    } else {
+        vec![
+            Extra::RestartNow.text(language),
+            UpdateText::Later.text(language),
+        ]
+    };
+    // What it needs: the margin, the glyph, the text and its buttons, each 12 apart.
+    let measure = ui.painter().clone();
+    let needed = 16.0
+        + 18.0
+        + 12.0
+        + text::width(&measure, ty::DETAIL_LARGE, &text)
+        + labels
+            .iter()
+            .map(|label| {
+                12.0 + 2.0 * ControlSize::Small.text_pad() + text::width(&measure, ty::CHIP, label)
+            })
+            .sum::<f32>()
+        + 4.0;
+    // One rule for drawing it and for reaching it (the model's focus order reads this).
+    let fits = left_middle.x + needed <= limit_x;
+    cx.model.notice_fits = fits;
+    if !fits {
+        return;
+    }
     let rect = Rect::from_min_size(
         pos2(left_middle.x, left_middle.y - height * 0.5),
-        vec2(room, height),
+        vec2(needed, height),
     );
     let background = ui.painter().add(egui::Shape::Noop);
     let mut row = ui.new_child(
@@ -365,20 +392,11 @@ fn update_notice(
         Align2::LEFT_CENTER,
         ty::DETAIL_LARGE,
         &text,
-        white(0.92),
+        color::text_subtitle(),
     );
-    let labels: Vec<&str> = if notice.holding {
-        vec![UpdateText::CancelRestart.text(language)]
-    } else {
-        vec![
-            Extra::RestartNow.text(language),
-            UpdateText::Later.text(language),
-        ]
-    };
     for (i, label) in labels.into_iter().enumerate() {
         let response = ConsoleButton::new(label)
             .size(ControlSize::Small)
-            .prominent(i == 0 && !notice.holding)
             .accessible_name(format!("{label}, {group}"))
             .focused(visible && cx.model.focus == HomeFocus::Update(i as u8))
             .show(&mut row);
@@ -447,7 +465,7 @@ const PHONE_STATUS_NAME_MAX: f32 = 150.0;
 
 /// The status of a connected phone: its icon and name on the pills' surface, 32 high so it
 /// reads as a note beside the 44 high buttons. Not a button: nothing happens on a press.
-fn phone_status(ui: &mut Ui, left_middle: egui::Pos2, name: &str, language: Language) {
+fn phone_status(ui: &mut Ui, left_middle: egui::Pos2, name: &str, language: Language) -> f32 {
     let painter = ui.painter().clone();
     let shown = text::middle_truncate(&painter, ty::CHIP, name, PHONE_STATUS_NAME_MAX);
     let glyph = 18.0;
@@ -460,7 +478,7 @@ fn phone_status(ui: &mut Ui, left_middle: egui::Pos2, name: &str, language: Lang
     let response = ui.allocate_rect(rect, Sense::hover());
     response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &label));
     if !ui.is_rect_visible(rect) {
-        return;
+        return rect.max.x;
     }
     components::paint_capsule(&painter, rect, color::surface());
     let ink = white(0.92);
@@ -479,6 +497,7 @@ fn phone_status(ui: &mut Ui, left_middle: egui::Pos2, name: &str, language: Lang
         &shown,
         ink,
     );
+    rect.max.x
 }
 
 /// What the profile button shows.

@@ -195,6 +195,12 @@ impl Release {
         self.tag.trim_start_matches('v')
     }
 
+    /// The SHA-256 the signed manifest states for the exe (`None` in the unsigned flow). A staged
+    /// file is the same download only when it has this hash.
+    pub fn sha256(&self) -> Option<&str> {
+        self.exe.sha256.as_deref()
+    }
+
     /// The release notes (Markdown), cut to a sane length. Text to show, never to act on.
     pub fn notes(&self) -> Option<&str> {
         self.notes.as_deref()
@@ -345,6 +351,14 @@ fn check_cached_with(
     )?;
     if document.source == crate::feed::Source::Stale {
         return Err(SelfUpdateError::Network("cannot reach GitHub".into()));
+    }
+    // A stored copy that is not release data (damaged, or planted) would be answered "not
+    // modified" for ever: drop it, so the next check asks for a new one.
+    if serde_json::from_str::<serde_json::Value>(&document.body).is_err() {
+        let feeds = paths.cache_dir().join("Feeds");
+        let _ = fs::remove_file(feeds.join("launcher-latest.json"));
+        let _ = fs::remove_file(feeds.join("launcher-latest.json.etag"));
+        return Err(SelfUpdateError::Network("bad release data".into()));
     }
     evaluate(&document.body, current, keys)
 }
