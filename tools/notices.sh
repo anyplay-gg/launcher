@@ -10,9 +10,8 @@
 set -euo pipefail
 
 CARGO_ABOUT_VERSION=0.9.2
-CARGO_ABOUT_SHA256=9099a59e820c38a68b9d65f300662a567d56562f9a10f6aa4c7e86c17c2566af
-
-out=$(realpath -m "${1:?output file}")
+mkdir -p "$(dirname "${1:?output file}")"
+out=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
 network=$(cd "$root/../network" && pwd)
@@ -21,10 +20,23 @@ trap 'rm -rf "$work"' EXIT
 
 about=${CARGO_ABOUT:-}
 if [ -z "$about" ]; then
-  name="cargo-about-$CARGO_ABOUT_VERSION-x86_64-unknown-linux-musl"
+  case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64)
+      target=x86_64-unknown-linux-musl
+      checksum=9099a59e820c38a68b9d65f300662a567d56562f9a10f6aa4c7e86c17c2566af ;;
+    Darwin-arm64)
+      target=aarch64-apple-darwin
+      checksum=ae72f0df0c399a1e96336f696fa55b1b28679fd725632eba8cf8e4568467cc3e ;;
+    *) echo "Set CARGO_ABOUT to a native cargo-about $CARGO_ABOUT_VERSION binary" >&2; exit 1 ;;
+  esac
+  name="cargo-about-$CARGO_ABOUT_VERSION-$target"
   curl -fsSL --retry 3 -o "$work/about.tar.gz" \
     "https://github.com/EmbarkStudios/cargo-about/releases/download/$CARGO_ABOUT_VERSION/$name.tar.gz"
-  echo "$CARGO_ABOUT_SHA256  $work/about.tar.gz" | sha256sum -c -
+  if command -v sha256sum >/dev/null; then
+    echo "$checksum  $work/about.tar.gz" | sha256sum -c -
+  else
+    echo "$checksum  $work/about.tar.gz" | shasum -a 256 -c -
+  fi
   tar -C "$work" -xzf "$work/about.tar.gz"
   about="$work/$name/cargo-about"
 fi

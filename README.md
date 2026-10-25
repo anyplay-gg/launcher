@@ -135,7 +135,7 @@ The online part is in development. This is what works today and what does not.
 
 ## Building
 
-You need a stable Rust toolchain, 1.88 or newer ([rustup](https://rustup.rs)), and a clone of [anyplay-gg/network](https://github.com/anyplay-gg/network) next to this repository for the online crates.
+You need Rust 1.95 or newer ([rustup](https://rustup.rs)), and a clone of [anyplay-gg/network](https://github.com/anyplay-gg/network) next to this repository for the online crates. `rust-toolchain.toml` selects 1.95.0 for local builds.
 
 ```sh
 cargo fmt --all -- --check
@@ -147,6 +147,25 @@ cargo build --release
 The executable is `target/release/anyplay-launcher.exe` (Linux: `target/release/anyplay-launcher`). For online play it looks for the net service `anyplay-net` next to itself, or where `ANYPLAY_NET` points; build it in the network repository with `cargo build --release -p anyplay-net`. Setting `ANYPLAY_NET_EMBED` to a built service at build time carries it inside the launcher, as releases do. A build names AnyPlay's own cloud with `ANYPLAY_DEFAULT_CLOUD`; without it the player enters a cloud.
 
 On Linux, install the development packages first (Debian and Ubuntu names: `pkg-config libasound2-dev libudev-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev`). `tools/linux/package.sh <version> <binary> <folder>` makes the AppImage and the tarball.
+
+### macOS
+
+Build with the commands above and run `target/release/anyplay-launcher`. The launcher UI uses wgpu's Metal backend. Games use the separate [AnyPS5-ARM toolkit](https://github.com/utkuhalis/AnyPS5-ARM), with Vulkan through MoltenVK; Apple silicon needs Rosetta 2 for the x86-64 runtime. The launcher reports a missing Rosetta installation and does not install it automatically.
+
+On macOS the toolkit picker defaults to `utkuhalis/AnyPS5-ARM`. It downloads `AnyPS5-toolkit-macos-<version>.zip`, checks the release's SHA-256 and every file in its manifest, and installs the relinker, libraries, Vulkan runtime and patch catalogue together. A local toolkit must contain `relinker`, `libs/*.prx`, and `vulkan/{libvulkan.1.dylib,libMoltenVK.dylib,MoltenVK_icd.json}`. Linux executables are refused. Windows and Linux keep their existing upstream repository and separate relinker/library downloads.
+
+Games are converted to Mach-O, with `--to-rosetta` on Apple silicon, and kept in the library's `.AnyPS5/Games` folder. APFS clones isolate the unlocked copy from the original dump; other filesystems fall back to copying. The launcher supplies the bundled MoltenVK driver manifest, applies the toolkit's checked Mach-O patches, watches real game windows and captures process output. Game compatibility is determined by the selected runtime; a successful conversion does not guarantee that every game plays.
+
+Preferences and launcher data live in `~/Library/Application Support/AnyPlay Launcher`. On first start, an existing XDG preference file is read as a fallback, preserving the profile, library and game settings. The old non-Windows default toolkit repository is changed to the macOS source; custom repositories are retained. The old preference file and previously downloaded Linux toolkit are left in place.
+
+To make a Finder-launchable app and a zip:
+
+```sh
+tools/notices.sh /tmp/THIRD-PARTY-LICENSES.txt
+tools/macos/package.sh 0.1.3 target/release/anyplay-launcher /tmp/THIRD-PARTY-LICENSES.txt dist
+```
+
+The app is signed ad hoc for local use. Publishing a notarized release needs a Developer ID signing workflow. macOS CI checks formatting, Clippy and tests, builds and packages the launcher, and renders Metal screenshots alongside the existing Windows and Linux jobs.
 
 Two toolchains are used on Windows:
 

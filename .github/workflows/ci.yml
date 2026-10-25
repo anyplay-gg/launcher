@@ -34,7 +34,7 @@ jobs:
           path: network
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
-          toolchain: stable
+          toolchain: 1.95.0
           targets: x86_64-pc-windows-msvc
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -78,7 +78,7 @@ jobs:
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
-          toolchain: stable
+          toolchain: 1.95.0
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -112,6 +112,59 @@ jobs:
         with:
           name: anyplay-launcher-linux-screenshots
           path: launcher/shots/*.png
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: launcher
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          repository: anyplay-gg/network
+          ref: ${{ env.NETWORK_REF }}
+          path: network
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: launcher
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --workspace --no-fail-fast
+      - name: Release build
+        run: cargo build --release
+      - name: Native licence tool on Intel
+        if: runner.arch == 'X64'
+        run: |
+          cargo install cargo-about --version 0.9.2 --locked
+          echo "CARGO_ABOUT=$(command -v cargo-about)" >> "$GITHUB_ENV"
+      - name: Third-party licences
+        run: tools/notices.sh "$RUNNER_TEMP/THIRD-PARTY-LICENSES.txt"
+      - name: Package
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          tools/macos/package.sh "$version" target/release/anyplay-launcher "$RUNNER_TEMP/THIRD-PARTY-LICENSES.txt" dist
+      - name: Metal smoke screenshots
+        run: |
+          mkdir -p shots
+          for scene in home controls online-friends; do
+            target/release/anyplay-launcher --gallery="$scene" --screenshot="shots/$scene.png"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: anyplay-launcher-macos
+          path: |
+            launcher/dist/*.zip
+            launcher/shots/*.png
           if-no-files-found: error
 
   # Links, licences and advisories: the rules every AnyPlay repository shares. The launcher handles
