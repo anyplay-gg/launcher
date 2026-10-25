@@ -223,7 +223,7 @@ pub fn sample_profile(state: &mut Online, look: ProfileLook) {
         p
     };
     match look {
-        L::Own | L::OwnFocus => {
+        L::Own | L::OwnFocus | L::OwnEnd => {
             let p = page(who(1, "Mira"), &|p| {
                 p.about = Some(
                     "Co-op on weekends, trophy hunting when it rains. Always up for a party."

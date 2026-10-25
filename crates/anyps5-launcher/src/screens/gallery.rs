@@ -19,7 +19,7 @@
 //!                           online-screen-cannot|online-screen-watching|online-screen-stalled|
 //!                           online-screen-home|
 //!                           online-muted|online-restriction|online-paused|online-banned|
-//!                           profile-own|profile-own-focus|profile-friend|profile-friend-hidden|
+//!                           profile-own|profile-own-focus|profile-own-end|profile-friend|profile-friend-hidden|
 //!                           profile-request|profile-new|profile-new-friend|profile-private|
 //!                           profile-loading|profile-error|profile-offline|
 //!                           feed|feed-reaction|feed-empty|feed-loading|feed-error
@@ -135,6 +135,8 @@ pub enum ProfileLook {
     Own,
     /// The same with the focus on a game row.
     OwnFocus,
+    /// The focus on the last row: the page has scrolled and the header has faded.
+    OwnEnd,
     /// A friend with everything shared.
     Friend,
     /// A friend who hides trophies and playtime: only what they share is there.
@@ -156,7 +158,7 @@ impl ProfileLook {
     /// The account the look shows.
     pub fn account(self) -> u64 {
         match self {
-            ProfileLook::Own | ProfileLook::OwnFocus | ProfileLook::New => 1,
+            ProfileLook::Own | ProfileLook::OwnFocus | ProfileLook::OwnEnd | ProfileLook::New => 1,
             ProfileLook::Friend
             | ProfileLook::Loading
             | ProfileLook::Error
@@ -416,6 +418,7 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "online-banned" => ScreenPage::Online(OnlineLook::Banned),
         "profile-own" => ScreenPage::Profile(ProfileLook::Own),
         "profile-own-focus" => ScreenPage::Profile(ProfileLook::OwnFocus),
+        "profile-own-end" => ScreenPage::Profile(ProfileLook::OwnEnd),
         "profile-friend" => ScreenPage::Profile(ProfileLook::Friend),
         "profile-friend-hidden" => ScreenPage::Profile(ProfileLook::FriendHidden),
         "profile-request" => ScreenPage::Profile(ProfileLook::Request),
@@ -1927,6 +1930,10 @@ impl ScreenGallery {
             ScreenPage::Profile(look) => {
                 self.profile
                     .open(anyps5_core::online::api::AccountId(look.account()));
+                if look == ProfileLook::OwnEnd {
+                    // Past the last row: the focus clamps to it.
+                    self.profile.set_focus(99);
+                }
                 if look == ProfileLook::OwnFocus {
                     // The third game row, after the two buttons.
                     self.profile.set_focus(3);
