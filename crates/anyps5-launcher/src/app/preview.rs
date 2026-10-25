@@ -32,7 +32,7 @@ use anyps5_core::trophies::{Grade, Trophy, TrophySet};
 use egui::{ColorImage, Context, Ui};
 use image::{Rgba, RgbaImage};
 
-use crate::app::model::{Effect, Model};
+use crate::app::model::Effect;
 use crate::app::pipeline::{SimPipeline, UnlockStep};
 use crate::app::{Config, LauncherApp};
 use crate::ui::Shell;
