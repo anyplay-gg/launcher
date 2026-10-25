@@ -465,7 +465,7 @@ fn the_own_profile_says_when_the_cloud_is_out_of_reach_and_counts_unread_message
             .unwrap()
             .starts_with("You are offline")
     );
-    assert_eq!(ready.actions[1].label, "Friends & Online (3)");
+    assert_eq!(ready.actions[1].label, "Friends (3)");
     // The own profile never waits for the cloud: it is on this PC.
     assert!(ready.games.shown());
 }

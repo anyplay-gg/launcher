@@ -43,6 +43,18 @@
 //!
 //! A refused update only logs; the installed launcher is never touched, and offline the check
 //! simply fails and the launcher runs as it is.
+//!
+//! # Platforms
+//!
+//! The same flow updates the Windows portable exe and the Linux AppImage; the manifest carries one
+//! entry per platform ([`Platform::key`]). A manifest without a Linux entry
+//! (every release before the AppImage was signed) offers nothing: a quiet `Ok(None)`, not an
+//! error. Linux has **no unsigned flow at all**: with an empty key list nothing is offered.
+//!
+//! The AppImage replaces itself in place ([`install_path`] finds it from `APPIMAGE`): the staged
+//! file is copied to a sibling temp file, hash-checked against the manifest, made executable
+//! and renamed over the original, which Linux allows while the old image runs. A launcher
+//! that is not an AppImage (the `.tar.gz`) has no install path and stays manual.
 
 use std::fs;
 use std::io;
@@ -50,8 +62,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyplay_update_manifest::{
-    Artifact, MAX_MANIFEST_BYTES, MAX_SIGNATURE_BYTES, Manifest, ManifestError, TrustedKeys,
-    WINDOWS_X64, verify_signed,
+    Artifact, LINUX_X64, MAX_MANIFEST_BYTES, MAX_SIGNATURE_BYTES, Manifest, ManifestError,
+    TrustedKeys, WINDOWS_X64, verify_signed,
 };
 pub use anyplay_update_manifest::{Version, is_newer};
 use sha2::{Digest, Sha256};
@@ -89,6 +101,73 @@ const EXE_PREFIX: &str = "AnyPlay-Launcher-";
 const LEGACY_EXE_PREFIX: &str = "AnyPS5-Launcher-";
 const EXE_SUFFIX: &str = "-x64.exe";
 
+/// The AppImage is `AnyPlay-Launcher-<v>-x86_64.AppImage`.
+const APPIMAGE_SUFFIX: &str = "-x86_64.AppImage";
+
+/// Which kind of file the launcher replaces itself with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Platform {
+    /// The portable exe; the running exe is moved aside and the new one takes its place.
+    Windows,
+    /// The AppImage; the new file is renamed over the running one.
+    Linux,
+}
+
+impl Platform {
+    /// The platform this build updates, `None` where the launcher does not update itself.
+    pub const fn current() -> Option<Platform> {
+        if cfg!(windows) {
+            Some(Platform::Windows)
+        } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+            Some(Platform::Linux)
+        } else {
+            None
+        }
+    }
+
+    /// The key of this platform in the manifest.
+    pub const fn key(self) -> &'static str {
+        match self {
+            Platform::Windows => WINDOWS_X64,
+            Platform::Linux => LINUX_X64,
+        }
+    }
+
+    /// The file names a manifest may give this platform's download for `version`.
+    fn names(self, version: &str) -> Vec<String> {
+        match self {
+            Platform::Windows => vec![exe_name(version), legacy_exe_name(version)],
+            Platform::Linux => vec![appimage_name(version)],
+        }
+    }
+
+    /// The version in a staged file's name.
+    fn version_of(self, name: &str) -> Option<&str> {
+        match self {
+            Platform::Windows => version_of_exe_name(name),
+            Platform::Linux => name.strip_prefix(EXE_PREFIX)?.strip_suffix(APPIMAGE_SUFFIX),
+        }
+    }
+
+    /// A cheap check that a download is a program of this platform and not a saved error page.
+    fn check_program(self, path: &Path) -> Result<(), SelfUpdateError> {
+        let mut head = [0u8; 11];
+        let read = io::Read::read(&mut fs::File::open(path)?, &mut head)?;
+        let ok = match self {
+            Platform::Windows => read >= 2 && &head[..2] == b"MZ",
+            // A 64-bit ELF with the AppImage type 2 magic after the ELF identification.
+            Platform::Linux => {
+                read == 11 && head.starts_with(b"\x7fELF") && &head[8..] == b"AI\x02"
+            }
+        };
+        if ok {
+            Ok(())
+        } else {
+            Err(SelfUpdateError::NotAnExecutable)
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SelfUpdateError {
     #[error("{0}")]
@@ -106,7 +185,7 @@ pub enum SelfUpdateError {
     Manifest(#[from] ManifestError),
     #[error("the release has no signed update manifest")]
     NoManifest,
-    #[error("the download is not a Windows program")]
+    #[error("the download is not a program for this system")]
     NotAnExecutable,
     /// The folder of the running exe refuses new files (a read-only or protected location).
     #[error("cannot write to {}", .0.display())]
@@ -182,6 +261,7 @@ pub struct Release {
     /// With the leading `v`. For a signed release it is made from the manifest's version, never
     /// taken from the release's tag.
     pub tag: String,
+    platform: Platform,
     exe: Asset,
     vouch: Vouch,
     /// The release's own notes, for display only. They come from the unsigned release data, so
@@ -224,6 +304,11 @@ fn notes_of(value: &serde_json::Value) -> Option<String> {
     }
     let clean = clean[..end].trim();
     (!clean.is_empty()).then(|| clean.to_owned())
+}
+
+/// The name of the AppImage of a version.
+fn appimage_name(version: &str) -> String {
+    format!("{EXE_PREFIX}{version}{APPIMAGE_SUFFIX}")
 }
 
 /// The name of the portable exe of a version.
@@ -279,6 +364,7 @@ pub(crate) fn parse_latest(json: &str, current: &str) -> Result<Option<Release>,
     let sums = find(SUMS_NAME).ok_or(SelfUpdateError::NoRelease)?;
     Ok(Some(Release {
         tag,
+        platform: Platform::Windows,
         exe,
         vouch: Vouch::Checksums(sums),
         notes: notes_of(&value),
@@ -297,30 +383,33 @@ pub fn signing_required() -> bool {
     embedded_keys().map_or(true, |keys| !keys.is_empty())
 }
 
-/// Asks GitHub whether a release newer than `current` exists. Blocking: call from a worker thread.
+/// Asks GitHub whether a release newer than `current` exists for this platform. Blocking: call
+/// from a worker thread. `Ok(None)` also where the launcher does not update itself at all.
 pub fn check(current: &str) -> Result<Option<Release>, SelfUpdateError> {
-    check_at(toolkit::API_BASE, REPOSITORY, current)
+    let Some(platform) = Platform::current() else {
+        return Ok(None);
+    };
+    check_with(
+        toolkit::API_BASE,
+        REPOSITORY,
+        current,
+        &embedded_keys()?,
+        platform,
+    )
 }
 
-/// [`check`] against another API host and repository (tests).
-pub fn check_at(
-    api_base: &str,
-    repo: &str,
-    current: &str,
-) -> Result<Option<Release>, SelfUpdateError> {
-    check_with(api_base, repo, current, &embedded_keys()?)
-}
-
-/// [`check_at`] with the trusted keys given. An empty list is the unsigned flow, any key makes the
-/// signed manifest mandatory (see the module documentation).
+/// [`check`] with the API host, repository, trusted keys and platform given. An empty list is the
+/// unsigned flow (Windows only; Linux offers nothing), any key makes the signed manifest
+/// mandatory (see the module documentation).
 pub fn check_with(
     api_base: &str,
     repo: &str,
     current: &str,
     keys: &TrustedKeys,
+    platform: Platform,
 ) -> Result<Option<Release>, SelfUpdateError> {
     let json = toolkit::latest_release_json(api_base, repo)?;
-    evaluate(&json, current, keys)
+    evaluate(&json, current, platform, keys)
 }
 
 /// [`check`] for the running launcher: the same rules, but the release data is asked for with the
@@ -328,7 +417,16 @@ pub fn check_with(
 /// does not count against the rate limit. A failing network is an error, never the last copy: an
 /// offline launcher must not call itself up to date.
 pub fn check_cached(paths: &AppPaths, current: &str) -> Result<Option<Release>, SelfUpdateError> {
-    check_cached_with(paths, toolkit::API_BASE, current, &embedded_keys()?)
+    let Some(platform) = Platform::current() else {
+        return Ok(None);
+    };
+    check_cached_with(
+        paths,
+        toolkit::API_BASE,
+        current,
+        &embedded_keys()?,
+        platform,
+    )
 }
 
 /// [`check_cached`] against another API host, with the trusted keys given (tests).
@@ -337,6 +435,7 @@ fn check_cached_with(
     api_base: &str,
     current: &str,
     keys: &TrustedKeys,
+    platform: Platform,
 ) -> Result<Option<Release>, SelfUpdateError> {
     let url = format!("{api_base}/repos/{REPOSITORY}/releases/latest");
     let document = crate::feed::fetch(
@@ -360,7 +459,7 @@ fn check_cached_with(
         let _ = fs::remove_file(feeds.join("launcher-latest.json.etag"));
         return Err(SelfUpdateError::Network("bad release data".into()));
     }
-    evaluate(&document.body, current, keys)
+    evaluate(&document.body, current, platform, keys)
 }
 
 /// The rules on the JSON of `releases/latest`: with no trusted key the unsigned flow, else the
@@ -368,14 +467,20 @@ fn check_cached_with(
 fn evaluate(
     json: &str,
     current: &str,
+    platform: Platform,
     keys: &TrustedKeys,
 ) -> Result<Option<Release>, SelfUpdateError> {
     if keys.is_empty() {
-        return parse_latest(json, current);
+        // Only Windows has an unsigned flow; Linux offers nothing without a trusted key.
+        return match platform {
+            Platform::Windows => parse_latest(json, current),
+            Platform::Linux => Ok(None),
+        };
     }
     parse_signed(
         json,
         current,
+        platform,
         keys,
         OffsetDateTime::now_utc(),
         &mut get_small,
@@ -416,6 +521,7 @@ type Fetch<'a> = &'a mut dyn FnMut(&str, u64) -> Result<Vec<u8>, SelfUpdateError
 fn parse_signed(
     json: &str,
     current: &str,
+    platform: Platform,
     keys: &TrustedKeys,
     now: OffsetDateTime,
     fetch: Fetch,
@@ -450,9 +556,13 @@ fn parse_signed(
         Err(other) => return Err(other.into()),
     }
     manifest.check_time(now)?;
-    let artifact = signed_artifact(&manifest)?;
+    // A manifest from before the AppImage was signed has no Linux file: nothing, and no error.
+    let Some(artifact) = signed_artifact(&manifest, platform)? else {
+        return Ok(None);
+    };
     Ok(Some(Release {
         tag: format!("v{}", manifest.version),
+        platform,
         exe: Asset {
             name: artifact.name.clone(),
             url: artifact.url.clone(),
@@ -517,19 +627,28 @@ fn vet_url(raw: &str, github_only: bool) -> Result<Url, SelfUpdateError> {
 /// The exe of a verified manifest, once its name and address pass: the name must be exactly one
 /// the launcher stages under (so it cannot point outside the updates folder), and the address
 /// must be https (see [`vet_url`]).
-fn signed_artifact(manifest: &Manifest) -> Result<&Artifact, SelfUpdateError> {
-    let refuse = |why: &str| Err(ManifestError::Malformed(why.to_owned()).into());
-    let artifact = manifest
-        .artifact(WINDOWS_X64)
-        .ok_or(SelfUpdateError::NoRelease)?;
-    if artifact.name != exe_name(&manifest.version)
-        && artifact.name != legacy_exe_name(&manifest.version)
-    {
-        return refuse("the exe has an unexpected file name");
+/// `None` when the manifest has no file for `platform`.
+fn signed_artifact(
+    manifest: &Manifest,
+    platform: Platform,
+) -> Result<Option<&Artifact>, SelfUpdateError> {
+    let Some(artifact) = manifest.artifact(platform.key()) else {
+        // Only Linux is optional: every release has its Windows exe, so a manifest without it is
+        // broken. A manifest from before the AppImage was signed simply has nothing for Linux.
+        return match platform {
+            Platform::Linux => Ok(None),
+            Platform::Windows => Err(SelfUpdateError::NoRelease),
+        };
+    };
+    if !platform.names(&manifest.version).contains(&artifact.name) {
+        return Err(ManifestError::Malformed(
+            "the download has an unexpected file name".to_owned(),
+        )
+        .into());
     }
     // The hash is signed, so the exe may sit on any https host.
     vet_url(&artifact.url, false)?;
-    Ok(artifact)
+    Ok(Some(artifact))
 }
 
 /// The SHA-256 (lower case hex) that a `SHA256SUMS.txt` lists for `file`. Lines look like
@@ -555,6 +674,8 @@ pub struct Staged {
     /// The SHA-256 the file must have when it is installed (a signed update only): the swap hashes
     /// its own copy against it, whatever happened to the staged file since it was checked.
     pub sha256: Option<String>,
+    /// How the swap is done.
+    pub platform: Platform,
 }
 
 /// Where downloads wait: `%LOCALAPPDATA%\AnyPS5\Updates`.
@@ -580,6 +701,7 @@ pub fn stage(
         version: release.version().to_owned(),
         path: dir.join(&release.exe.name),
         sha256: None,
+        platform: release.platform,
     };
     let sums_asset = match &release.vouch {
         Vouch::Checksums(sums) => sums,
@@ -606,10 +728,10 @@ pub fn stage(
         sha256: Some(want),
         ..release.exe.clone()
     };
-    let part = staged.path.with_extension("exe.part");
+    let part = sidecar(&staged.path, ".part");
     let result = toolkit::download_to(&download_agent(), &verified, &part, progress, cancel)
         .map_err(SelfUpdateError::from)
-        .and_then(|()| check_executable(&part));
+        .and_then(|()| release.platform.check_program(&part));
     match result {
         Ok(()) => {
             fs::rename(&part, &staged.path)?;
@@ -649,7 +771,7 @@ fn stage_signed(
         write_proof(&staged.path, manifest, signature)?;
         return Ok(staged);
     }
-    let part = staged.path.with_extension("exe.part");
+    let part = sidecar(&staged.path, ".part");
     let result = toolkit::download_capped(
         &download_agent(),
         &release.exe,
@@ -666,7 +788,7 @@ fn stage_signed(
             Err(SelfUpdateError::Size)
         }
     })
-    .and_then(|()| check_executable(&part));
+    .and_then(|()| release.platform.check_program(&part));
     match result {
         Ok(()) => {
             if let Err(error) = write_proof(&staged.path, manifest, signature) {
@@ -724,6 +846,7 @@ fn read_small(path: &Path, max: u64) -> Option<Vec<u8>> {
 /// version and file name of this exe, and the exe must have the size and SHA-256 the manifest
 /// states. Returns that SHA-256. A marker or any other file next to the exe proves nothing.
 fn vouched_hash(
+    platform: Platform,
     exe: &Path,
     version: &str,
     current: &str,
@@ -736,7 +859,7 @@ fn vouched_hash(
     let manifest = verify_signed(&manifest_bytes, &signature, keys).ok()?;
     manifest.allows_update_from(current).ok()?;
     manifest.check_time(now).ok()?;
-    let artifact = signed_artifact(&manifest).ok()?;
+    let artifact = signed_artifact(&manifest, platform).ok()??;
     let file_name = exe.file_name()?.to_str()?;
     if manifest.version != version || artifact.name != file_name {
         return None;
@@ -753,16 +876,49 @@ fn hash_file(path: &Path) -> io::Result<String> {
     Ok(toolkit::hex(&hasher.finalize()))
 }
 
-/// A Windows program starts with `MZ`: a cheap check against a saved error page.
-fn check_executable(path: &Path) -> Result<(), SelfUpdateError> {
-    let mut head = [0u8; 2];
-    io::Read::read_exact(&mut fs::File::open(path)?, &mut head)
-        .map_err(|_| SelfUpdateError::NotAnExecutable)?;
-    if &head == b"MZ" {
-        Ok(())
-    } else {
-        Err(SelfUpdateError::NotAnExecutable)
+/// The file the launcher would replace with an update, `None` when it cannot update itself in
+/// place and an update stays manual: on Windows the running exe; on Linux the AppImage that is
+/// running (see [`appimage_path`]), so a launcher started from the `.tar.gz` has none.
+pub fn install_path() -> Option<PathBuf> {
+    match Platform::current()? {
+        Platform::Windows => std::env::current_exe().ok(),
+        Platform::Linux => appimage_path(
+            std::env::var_os("APPIMAGE").as_deref(),
+            std::env::var_os("APPDIR").as_deref(),
+            &std::env::current_exe().ok()?,
+        ),
     }
+}
+
+/// The AppImage that is running, from the `APPIMAGE` and `APPDIR` variables its runtime sets, or
+/// `None`. Both are inherited by child processes, so they are not taken on trust: `running` (the
+/// program's own path) must lie inside `appdir`, or this program is not that AppImage (a `.tar.gz`
+/// launcher started from some other AppImage's terminal would otherwise overwrite that one). The
+/// path must be absolute, without `..`, end in `.AppImage` and be a regular file, not a link.
+/// Whether its folder accepts a new file is [`can_install`] and [`stage`].
+fn appimage_path(
+    appimage: Option<&std::ffi::OsStr>,
+    appdir: Option<&std::ffi::OsStr>,
+    running: &Path,
+) -> Option<PathBuf> {
+    use std::path::Component;
+    let (image, appdir) = (Path::new(appimage?), Path::new(appdir?));
+    let clean = |path: &Path| {
+        path.is_absolute() && !path.components().any(|part| part == Component::ParentDir)
+    };
+    if !clean(image) || !clean(appdir) || appdir.parent().is_none() || !running.starts_with(appdir)
+    {
+        return None;
+    }
+    let name = image.file_name()?.to_str()?;
+    if !name.ends_with(".AppImage") || name.len() == ".AppImage".len() {
+        return None;
+    }
+    fs::symlink_metadata(image)
+        .ok()?
+        .file_type()
+        .is_file()
+        .then(|| image.to_path_buf())
 }
 
 /// Whether an update can be installed over `exe`: its folder accepts new files.
@@ -788,32 +944,45 @@ fn ensure_writable(dir: &Path) -> Result<(), SelfUpdateError> {
 /// version) and the exe must hash to the manifest's value. What an unsigned launcher left behind,
 /// or anything planted in the folder, is not offered.
 pub fn pending(paths: &AppPaths, current: &str) -> Option<Staged> {
+    let platform = Platform::current()?;
     let now = OffsetDateTime::now_utc();
     match embedded_keys() {
-        Ok(keys) if keys.is_empty() => pending_with(paths, current, None, now),
-        Ok(keys) => pending_with(paths, current, Some(&keys), now),
+        Ok(keys) if keys.is_empty() => pending_with(paths, current, platform, None, now),
+        Ok(keys) => pending_with(paths, current, platform, Some(&keys), now),
         Err(_) => None,
     }
 }
 
-/// [`pending`] with the trusted keys given (`None`: signing is not required) and the time.
+/// [`pending`] with the platform, the trusted keys (`None`: signing is not required, which only
+/// Windows allows) and the time given.
 fn pending_with(
     paths: &AppPaths,
     current: &str,
+    platform: Platform,
     keys: Option<&TrustedKeys>,
     now: OffsetDateTime,
 ) -> Option<Staged> {
+    if keys.is_none() && platform == Platform::Linux {
+        return None;
+    }
     fs::read_dir(updates_dir(paths))
         .ok()?
         .flatten()
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().into_owned();
-            let version = version_of_exe_name(&name)?.to_owned();
+            let version = platform.version_of(&name)?.to_owned();
             if !is_newer(&version, current) || !entry.path().is_file() {
                 return None;
             }
             let expect = match keys {
-                Some(keys) => Some(vouched_hash(&entry.path(), &version, current, keys, now)?),
+                Some(keys) => Some(vouched_hash(
+                    platform,
+                    &entry.path(),
+                    &version,
+                    current,
+                    keys,
+                    now,
+                )?),
                 None => None,
             };
             Some((Version::parse(&version)?, version, entry.path(), expect))
@@ -823,6 +992,7 @@ fn pending_with(
             version,
             path,
             sha256: expect,
+            platform,
         })
 }
 
@@ -830,9 +1000,10 @@ fn pending_with(
 // The swap
 
 impl Staged {
-    /// Replaces the exe at `exe` (normally the running one) with the staged file.
+    /// Replaces the program at `exe` (normally the running one) with the staged file.
     ///
-    /// The staged file is first copied beside `exe` (it may sit on another drive, and a rename
+    /// On Linux the AppImage is replaced by a rename over it, see [`Staged::swap_in_image`]. On
+    /// Windows: the staged file is first copied beside `exe` (it may sit on another drive, and a rename
     /// needs one), then `exe` is renamed to `<name>.old` and the copy to `exe`. If the second
     /// rename fails the first is undone, so `exe` is never left missing. The staged file is
     /// deleted afterwards. The running process keeps running from the `.old` file.
@@ -850,17 +1021,9 @@ impl Staged {
         let incoming = dir.join(format!("{name}.new"));
         let _ = fs::remove_file(&incoming);
         fs::copy(&self.path, &incoming).map_err(|e| writable_or(e, dir))?;
-        if let Some(want) = &self.sha256 {
-            match hash_file(&incoming) {
-                Ok(have) if have == *want => {}
-                other => {
-                    let _ = fs::remove_file(&incoming);
-                    return Err(match other {
-                        Ok(_) => SelfUpdateError::Digest,
-                        Err(error) => error.into(),
-                    });
-                }
-            }
+        self.check_copy(&incoming)?;
+        if self.platform == Platform::Linux {
+            return self.swap_in_image(exe, &incoming);
         }
         let old = free_old_name(dir, &name);
         if let Err(error) = fs::rename(exe, &old) {
@@ -877,6 +1040,58 @@ impl Staged {
         Ok(())
     }
 
+    /// A signed update's copy must be the exact file the manifest vouched for: it is hashed before
+    /// it is renamed into place, and removed when it is not.
+    fn check_copy(&self, incoming: &Path) -> Result<(), SelfUpdateError> {
+        let Some(want) = &self.sha256 else {
+            // Only Windows has an unsigned flow; an AppImage is never installed without a hash.
+            return match self.platform {
+                Platform::Windows => Ok(()),
+                Platform::Linux => {
+                    let _ = fs::remove_file(incoming);
+                    Err(SelfUpdateError::Digest)
+                }
+            };
+        };
+        match hash_file(incoming) {
+            Ok(have) if have == *want => Ok(()),
+            other => {
+                let _ = fs::remove_file(incoming);
+                Err(match other {
+                    Ok(_) => SelfUpdateError::Digest,
+                    Err(error) => error.into(),
+                })
+            }
+        }
+    }
+
+    /// The Linux half of [`swap_in`](Self::swap_in): `incoming` is the verified copy beside the
+    /// AppImage. It is made executable and renamed over the original in one atomic step, which
+    /// Linux allows while the old image runs (the running process keeps the old file open). A
+    /// failure at any point leaves the original untouched and `incoming` removed. `exe` must be a
+    /// regular file, not a link: a link would be replaced instead of the file it points to.
+    fn swap_in_image(&self, exe: &Path, incoming: &Path) -> Result<(), SelfUpdateError> {
+        let dir = exe.parent().unwrap_or(Path::new("."));
+        let result = (|| {
+            if !fs::symlink_metadata(exe)?.file_type().is_file() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "the AppImage is not a regular file",
+                ));
+            }
+            make_executable(incoming)?;
+            fs::File::open(incoming)?.sync_all()?;
+            fs::rename(incoming, exe)
+        })();
+        if let Err(error) = result {
+            let _ = fs::remove_file(incoming);
+            return Err(writable_or(error, dir));
+        }
+        let _ = fs::remove_file(&self.path);
+        remove_proof(&self.path);
+        Ok(())
+    }
+
     /// [`swap_in`](Self::swap_in), then starts the new exe with `args`. The caller closes this
     /// process afterwards.
     pub fn restart(
@@ -885,9 +1100,34 @@ impl Staged {
         args: impl IntoIterator<Item = std::ffi::OsString>,
     ) -> Result<(), SelfUpdateError> {
         self.swap_in(exe)?;
-        Command::new(exe).args(args).spawn()?;
+        let mut command = Command::new(exe);
+        command.args(args);
+        if self.platform == Platform::Linux {
+            // The new image sets these for itself; the old image's values must not leak into it.
+            command
+                .env_remove("APPIMAGE")
+                .env_remove("APPDIR")
+                .env_remove("ARGV0")
+                .env_remove("OWD");
+        }
+        command.spawn()?;
         Ok(())
     }
+}
+
+/// `rwxr-xr-x`.
+#[cfg(unix)]
+fn make_executable(path: &Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755))
+}
+
+#[cfg(not(unix))]
+fn make_executable(_: &Path) -> io::Result<()> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "an AppImage can only be installed on Linux",
+    ))
 }
 
 fn writable_or(error: io::Error, dir: &Path) -> SelfUpdateError {
@@ -914,6 +1154,12 @@ fn free_old_name(dir: &Path, name: &str) -> PathBuf {
 /// the updates folder the partial downloads and every staged exe that is not newer than
 /// `current`. Best effort: a file that is still in use stays for the next start.
 pub fn cleanup(exe: &Path, paths: &AppPaths, current: &str) {
+    if let Some(platform) = Platform::current() {
+        cleanup_for(platform, exe, paths, current);
+    }
+}
+
+fn cleanup_for(platform: Platform, exe: &Path, paths: &AppPaths, current: &str) {
     if let (Some(dir), Some(name)) = (exe.parent(), exe.file_name()) {
         let name = name.to_string_lossy().into_owned();
         for entry in fs::read_dir(dir).into_iter().flatten().flatten() {
@@ -940,7 +1186,8 @@ pub fn cleanup(exe: &Path, paths: &AppPaths, current: &str) {
         let orphan = belongs_to.is_some_and(|exe| !updates_dir(paths).join(exe).exists());
         let stale = name.ends_with(".part")
             || orphan
-            || version_of_exe_name(belongs_to.unwrap_or(&name))
+            || platform
+                .version_of(belongs_to.unwrap_or(&name))
                 .is_some_and(|v| !is_newer(v, current));
         if stale {
             remove(&entry.path());
@@ -1182,21 +1429,27 @@ mod tests {
 
     /// [`pending`] in the unsigned flow.
     fn pending_unsigned(paths: &AppPaths, current: &str) -> Option<Staged> {
-        pending_with(paths, current, None, OffsetDateTime::now_utc())
+        pending_with(
+            paths,
+            current,
+            Platform::Windows,
+            None,
+            OffsetDateTime::now_utc(),
+        )
     }
 
     #[test]
     fn check_reads_the_latest_release_from_the_api() {
         let json = release_json("v0.2.0", "http://x", true, true, true);
         let (base, stop) = serve(vec![("/repos/o/r/releases/latest", json.into_bytes())]);
-        let newer = check_with(&base, "o/r", "0.1.1", &unsigned()).unwrap();
+        let newer = check_with(&base, "o/r", "0.1.1", &unsigned(), Platform::Windows).unwrap();
         assert_eq!(newer.map(|r| r.tag), Some("v0.2.0".into()));
         assert_eq!(
-            check_with(&base, "o/r", "0.2.0", &unsigned()).unwrap(),
+            check_with(&base, "o/r", "0.2.0", &unsigned(), Platform::Windows).unwrap(),
             None
         );
         assert!(matches!(
-            check_with(&base, "o/missing", "0.1.1", &unsigned()),
+            check_with(&base, "o/missing", "0.1.1", &unsigned(), Platform::Windows),
             Err(SelfUpdateError::NoRelease)
         ));
         stop.store(true, AtomicOrdering::SeqCst);
@@ -1311,6 +1564,7 @@ mod tests {
             version: version.into(),
             path,
             sha256: None,
+            platform: Platform::Windows,
         }
     }
 
@@ -1325,7 +1579,7 @@ mod tests {
         assert!(!staged.path.exists(), "the staged file is consumed");
         assert!(!exe.with_file_name("AnyPlay-Launcher.exe.new").exists());
 
-        cleanup(&exe, &paths, "0.2.0");
+        cleanup_for(Platform::Windows, &exe, &paths, "0.2.0");
         assert!(!old.exists());
         assert!(exe.exists());
     }
@@ -1352,6 +1606,7 @@ mod tests {
             version: "0.2.0".into(),
             path: updates_dir(&paths).join(exe_name("0.2.0")),
             sha256: None,
+            platform: Platform::Windows,
         };
         assert!(staged.swap_in(&exe).is_err());
         assert_eq!(fs::read(&exe).unwrap(), b"MZ-old-launcher");
@@ -1384,7 +1639,7 @@ mod tests {
             pending_unsigned(&paths, "0.1.1").map(|s| s.version),
             Some("0.2.0".into())
         );
-        cleanup(&exe, &paths, "0.2.0");
+        cleanup_for(Platform::Windows, &exe, &paths, "0.2.0");
         assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
     }
 
@@ -1399,7 +1654,7 @@ mod tests {
         )
         .unwrap();
         fs::write(exe.with_file_name("AnyPlay-Launcher.exe.old2"), b"x").unwrap();
-        cleanup(&exe, &paths, "0.2.0");
+        cleanup_for(Platform::Windows, &exe, &paths, "0.2.0");
         let left: Vec<_> = fs::read_dir(updates_dir(&paths))
             .unwrap()
             .flatten()
@@ -1440,14 +1695,22 @@ mod tests {
             Box::leak(release_json("v0.2.0", "http://x", true, true, false).into_boxed_str());
         let (base, hits) = crate::feed::testing::serve(json);
         let (_root, paths, _) = fixture();
-        let first = check_cached_with(&paths, &base, "0.1.1", &unsigned()).unwrap();
+        let first =
+            check_cached_with(&paths, &base, "0.1.1", &unsigned(), Platform::Windows).unwrap();
         assert_eq!(first.map(|r| r.tag), Some("v0.2.0".into()));
         // The second ask carries the ETag and gets "not modified".
-        let again = check_cached_with(&paths, &base, "0.2.0", &unsigned()).unwrap();
+        let again =
+            check_cached_with(&paths, &base, "0.2.0", &unsigned(), Platform::Windows).unwrap();
         assert_eq!(again, None);
         assert_eq!(hits.load(AtomicOrdering::SeqCst), 2);
         // With the server gone, the stored copy must not turn into a verdict.
-        let down = check_cached_with(&paths, "http://127.0.0.1:9", "0.2.0", &unsigned());
+        let down = check_cached_with(
+            &paths,
+            "http://127.0.0.1:9",
+            "0.2.0",
+            &unsigned(),
+            Platform::Windows,
+        );
         assert!(
             matches!(&down, Err(e) if e.failure() == Failure::Offline),
             "{down:?}"
@@ -1469,3 +1732,6 @@ mod tests {
 
 #[cfg(test)]
 mod signed_tests;
+
+#[cfg(test)]
+mod appimage_tests;

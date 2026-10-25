@@ -10,7 +10,7 @@ use egui::{Color32, Margin, ScrollArea, Ui};
 
 use crate::screens::scroll::Follow;
 use crate::ui::Shell;
-use crate::ui::chrome::{KeyCapSpec, PanelRow, RowControl};
+use crate::ui::chrome::{KeyCapSpec, PanelRow, RowAvatar, RowControl};
 use crate::ui::components::{Force, PadGlyph};
 use crate::ui::focus::{PanelEffect, PanelNav, RowKind};
 use crate::ui::i18n::{Key, Language};
@@ -80,6 +80,10 @@ pub struct Row {
     pub attached: bool,
     /// A text row whose field takes the room the title leaves, written from the left.
     pub wide: bool,
+    /// A person's picture in the place of the glyph.
+    pub avatar: Option<RowAvatar>,
+    /// The buttons of a buttons row come up with the focus or the pointer.
+    pub reveal: bool,
 }
 
 impl Row {
@@ -96,7 +100,21 @@ impl Row {
             group_start: false,
             attached: false,
             wide: false,
+            avatar: None,
+            reveal: false,
         }
+    }
+
+    /// A person's picture instead of a glyph.
+    pub fn avatar(mut self, avatar: RowAvatar) -> Row {
+        self.avatar = Some(avatar);
+        self
+    }
+
+    /// The buttons rest hidden and come up with the focus or the pointer.
+    pub fn reveal(mut self) -> Row {
+        self.reveal = true;
+        self
     }
 
     pub fn choice(
@@ -630,6 +648,8 @@ fn show_row(
         group_start: _,
         attached,
         wide,
+        avatar,
+        reveal,
     } = row;
     let caps;
     let none_label = language.text(Key::NoKey);
@@ -688,6 +708,8 @@ fn show_row(
         .warning(*warning)
         .attached(*attached)
         .wide(*wide)
+        .avatar(*avatar)
+        .reveal(*reveal)
         .force(force);
     if let Some(icon) = icon {
         panel_row = panel_row.icon(*icon);

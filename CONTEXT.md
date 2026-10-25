@@ -253,14 +253,20 @@ _Avoid_: Lock, mutex (how it is done)
 The network's own words (account, handle, friend, presence, session, invitation, join intent, version guard, cloud, party, party leader, conversation, message, message number, read mark, message request) are defined in [anyplaynet/network](https://github.com/anyplaynet/network/blob/main/CONTEXT.md). The launcher adds these:
 
 **Friends button**:
-The top bar's button between the library and the settings. It opens the online area on the friends list and shows how many friends are online (a dot and the number; nothing at none or while signed out).
+The top bar's button between the library and the settings. It opens the Friends screen on the friends list and shows how many friends are online (a dot and the number; nothing at none or while signed out).
 
-**Online area**:
-The side panel the friends button opens (and the profile screen's Friends & Online; the profile button opens it on sign-in while signed out): signing in, the friends and their presence, requests, invitations and the account.
-_Avoid_: Social, community (that is the layout gallery), friends list (one part of it)
+**Friends screen**:
+The full-screen page the friends button opens (and the profile screen's Friends button; the profile button opens it on sign-in while signed out): a header with who you are and how the connection is, a rail of sections (**Friends**, **Party**, **Messages**, **Activity**, **Settings**) with Your Profile below them, and the page of the section beside it. Signing in, the friends and their presence, requests, invitations, parties, messages, the feed and the online settings all live in it; Back returns to where it was opened from (home, or the profile). It replaced the drawer the online area used to be.
+_Avoid_: Online area, online panel, drawer, Social, community (that is the layout gallery), friends list (one page of it)
+
+**Section**:
+One entry of the Friends screen's rail with a first page of its own. Every page belongs to one section; Back leaves the screen from the first page of a section and goes up one page elsewhere.
+
+**Quick actions**:
+The buttons at the end of a friend's row (Join, Message, Invite to Party, View Profile, Options). They rest hidden and come up with the focus or the pointer; select presses the chosen one and a click on the row's body opens Options, the friend's own page.
 
 **Profile screen**:
-The full-screen page of a player's profile, the player's own or another's, opened from the profile button, a friend's page or a card of the feed; Back returns to where it was opened from. A header (avatar, handle, how you know each other, a line about them), a few figures (games, hours, trophies by grade) and up to three quiet lists: games, recent trophies, recent activity. Everything is only what the player may see; a part the cloud leaves out leaves no gap and no placeholder for another player. The player's own profile reads games and trophies from this PC and adds Edit Profile (opens the account web) and Friends & Online (the online panel). The launcher shows games by name and art from the player's own library only; the cloud only knows title IDs.
+The full-screen page of a player's profile, the player's own or another's, opened from the profile button, a friend's page or a card of the feed; Back returns to where it was opened from. A header (avatar, handle, how you know each other, a line about them), a few figures (games, hours, trophies by grade) and up to three quiet lists: games, recent trophies, recent activity. Everything is only what the player may see; a part the cloud leaves out leaves no gap and no placeholder for another player. The player's own profile reads games and trophies from this PC and adds Edit Profile (opens the account web) and Friends (the Friends screen). The launcher shows games by name and art from the player's own library only; the cloud only knows title IDs.
 _Avoid_: Profile page (the side panel's old page), banner
 
 **Profile wash**:

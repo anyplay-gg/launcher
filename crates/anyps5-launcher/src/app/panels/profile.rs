@@ -8,9 +8,9 @@ use anyps5_core::trophies::Grade as CoreGrade;
 use anyps5_core::{online as net, paths::GameId};
 
 use super::PanelHost;
-use super::online::online_action;
+use super::friends::online_action;
 use crate::app::model::Effect;
-use crate::app::overlay::{Overlay, OverlayCx};
+use crate::app::overlay::OverlayCx;
 use crate::app::profile::Target;
 use crate::screens::convert;
 use crate::screens::online::{OnlineAction, Page};
@@ -102,20 +102,20 @@ impl PanelHost {
             Press::FriendsOnline => {
                 model.online_resume = false;
                 self.online_start = None;
-                model.switch_overlay(Overlay::Online);
+                model.open_friends_from_profile();
             }
             Press::FriendOptions(id) => {
                 self.online_start = Some((Page::Friend(id), None));
-                model.switch_overlay(Overlay::Online);
+                model.open_friends_from_profile();
             }
             Press::AnswerRequest(id, _) => {
                 self.online_start = Some((Page::Request(id), None));
-                model.switch_overlay(Overlay::Online);
+                model.open_friends_from_profile();
             }
             Press::Compare(other, title_id) => model.open_compare(other, title_id),
             Press::OpenFeed(item) => {
                 self.online_start = Some((Page::Feed, Some(item)));
-                model.switch_overlay(Overlay::Online);
+                model.open_friends_from_profile();
             }
             Press::OpenGame(title_id) => {
                 if let Some(index) = model.games.iter().position(|g| g.title_id == title_id) {

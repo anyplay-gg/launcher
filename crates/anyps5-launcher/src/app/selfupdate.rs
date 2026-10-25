@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use anyps5_core::error::CancelToken;
 use anyps5_core::notes::ReleaseNotes;
 use anyps5_core::paths::AppPaths;
-use anyps5_core::selfupdate::{self, Failure, SelfUpdateError, Staged};
+use anyps5_core::selfupdate::{self, Failure, Platform, SelfUpdateError, Staged};
 use egui::Context;
 
 use crate::screens::settings::{LauncherUpdate, UpdateFailure};
@@ -43,6 +43,9 @@ pub enum SelfUpdateEvent {
     Ready(Staged, Option<String>),
     /// A newer release exists but the launcher's folder cannot be written to.
     ReadOnly(String),
+    /// A newer release exists but this launcher cannot replace itself (a Linux `.tar.gz`): the
+    /// player takes it from the releases page. Nothing is downloaded.
+    Manual(String),
     /// The check or the download failed. The text is for the log only.
     Failed(Failure, String),
 }
@@ -104,6 +107,7 @@ impl SelfUpdateService {
                 version: version.clone(),
                 path: PathBuf::new(),
                 sha256: None,
+                platform: Platform::Windows,
             });
             service.holding = matches!(state, LauncherUpdate::Holding(_));
         }
@@ -121,8 +125,8 @@ impl SelfUpdateService {
     /// [`CHECK_EVERY`]) and keeps the window waking up for the next one. Does nothing when the
     /// *Check for Updates* preference is off.
     pub fn tick(&mut self, paths: &AppPaths, enabled: bool) {
-        // The update is the Windows portable exe; a Linux build is replaced from the releases page.
-        if self.simulated || !cfg!(windows) || !(enabled || self.force) {
+        // The Windows exe and the Linux AppImage update themselves; elsewhere nothing happens.
+        if self.simulated || Platform::current().is_none() || !(enabled || self.force) {
             return;
         }
         let now = Instant::now();
@@ -139,9 +143,9 @@ impl SelfUpdateService {
     }
 
     fn start(&mut self, paths: &AppPaths) {
-        let Ok(exe) = std::env::current_exe() else {
-            return;
-        };
+        // The file to replace; none for a launcher that cannot (the Linux `.tar.gz`), which is
+        // only told that a newer version exists.
+        let exe = selfupdate::install_path();
         self.busy = true;
         self.last_started = Some(Instant::now());
         let (tx, ctx, paths) = (self.tx.clone(), self.ctx.clone(), paths.clone());
@@ -151,7 +155,10 @@ impl SelfUpdateService {
                 let _ = tx.send(event);
                 ctx.request_repaint();
             };
-            work(&paths, &exe, have, &cancel, &send);
+            match exe {
+                Some(exe) => work(&paths, &exe, have, &cancel, &send),
+                None => notice_only(&paths, &send),
+            }
         });
     }
 
@@ -215,6 +222,12 @@ impl SelfUpdateService {
                 self.busy = false;
                 if idle {
                     self.state = LauncherUpdate::ReadOnly(version.clone());
+                }
+            }
+            SelfUpdateEvent::Manual(version) => {
+                self.busy = false;
+                if idle {
+                    self.state = LauncherUpdate::Manual(version.clone());
                 }
             }
             SelfUpdateEvent::Failed(failure, error) => {
@@ -321,7 +334,12 @@ impl SelfUpdateService {
             return Ok(());
         };
         self.state = LauncherUpdate::None;
-        let exe: PathBuf = std::env::current_exe()?;
+        let exe: PathBuf = selfupdate::install_path().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "this launcher cannot replace itself",
+            )
+        })?;
         if std::mem::take(&mut self.restart) {
             // The new launcher waits for this one to end before it takes the single instance.
             let mut args: Vec<std::ffi::OsString> = std::env::args_os()
@@ -407,6 +425,19 @@ fn work(
     );
 }
 
+/// The worker of a launcher that cannot replace itself: the check alone, so About can say that a
+/// newer version is on the releases page.
+fn notice_only(paths: &AppPaths, send: &dyn Fn(SelfUpdateEvent)) {
+    send(SelfUpdateEvent::Checking);
+    send(
+        match selfupdate::check_cached(paths, env!("CARGO_PKG_VERSION")) {
+            Ok(Some(release)) => SelfUpdateEvent::Manual(release.version().to_owned()),
+            Ok(None) => SelfUpdateEvent::UpToDate,
+            Err(error) => SelfUpdateEvent::Failed(error.failure(), error.to_string()),
+        },
+    );
+}
+
 /// Whether the thread started.
 fn spawn(name: &str, work: impl FnOnce() + Send + 'static) -> bool {
     match std::thread::Builder::new().name(name.into()).spawn(work) {
@@ -431,6 +462,7 @@ mod tests {
             version: version.into(),
             path: PathBuf::from("x"),
             sha256: None,
+            platform: Platform::Windows,
         }
     }
 

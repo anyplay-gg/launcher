@@ -5,32 +5,14 @@
 
 use anyps5_core::online::api::AccountId;
 
-use super::{OnlineAction, OnlineData, OnlinePanel, Page, Row};
-use crate::screens::online_feed_strings::FeedText as F;
+use super::{OnlineAction, OnlineData, OnlinePanel, Page};
 use crate::screens::rows;
 use crate::ui::focus::RowKind;
-use crate::ui::icons::Icon;
 
 impl OnlinePanel {
     /// Asks the host to open the profile screen on `account`.
     pub(super) fn open_profile(&mut self, account: AccountId) {
         self.queued.push(OnlineAction::OpenProfile(account));
-    }
-
-    /// The rows of Home that lead to the player's own profile and to the feed.
-    pub(super) fn home_profile_rows(&self, data: &OnlineData<'_>, rows: &mut Vec<Row>) {
-        let language = data.language;
-        let after_others = !rows.is_empty();
-        let mut profile = Row::action("profile", F::YourProfile.text(language))
-            .icon(Icon::USER_CIRCLE)
-            .detail(F::YourProfileDetail.text(language));
-        profile.group_start = after_others;
-        rows.push(profile);
-        rows.push(
-            Row::action("feed", F::Feed.text(language))
-                .icon(Icon::LIST)
-                .detail(F::FeedDetail.text(language)),
-        );
     }
 
     /// The rows of the Feed page without cards arrive after the page opened (the retry row once
@@ -51,20 +33,8 @@ impl OnlinePanel {
     }
 
     /// A row of these pages ran. `false` for any other row.
-    pub(super) fn profile_feed_run(
-        &mut self,
-        row: &str,
-        data: &OnlineData<'_>,
-        actions: &mut Vec<OnlineAction>,
-    ) -> bool {
-        let me = data.online.account.as_ref().map(|a| a.id);
+    pub(super) fn profile_feed_run(&mut self, row: &str, actions: &mut Vec<OnlineAction>) -> bool {
         match (row, &self.page) {
-            ("profile", _) => {
-                if let Some(me) = me {
-                    self.open_profile(me);
-                }
-            }
-            ("feed", _) => self.go(Page::Feed, data),
             ("viewProfile", Page::Friend(id)) => {
                 let id = *id;
                 self.open_profile(id);

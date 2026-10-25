@@ -184,3 +184,58 @@ fn bad_input_is_refused_and_the_secret_is_never_echoed() {
     );
     assert!(!out.status.success());
 }
+
+#[test]
+fn the_appimage_is_an_optional_second_platform_with_its_own_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = dir.path().join("AnyPlay-Launcher-0.2.0-x64.exe");
+    fs::write(&exe, b"MZ-the-new-launcher").unwrap();
+    let image = dir.path().join("AnyPlay-Launcher-0.2.0-x86_64.AppImage");
+    fs::write(&image, b"\x7fELF-the-new-image").unwrap();
+    let manifest = dir.path().join("latest.json");
+    let make = |extra: &[&str]| {
+        let mut args = vec![
+            "manifest",
+            "--version",
+            "0.2.0",
+            "--exe",
+            path(&exe),
+            "--out",
+            path(&manifest),
+        ];
+        args.extend_from_slice(extra);
+        tool(&args, &[])
+    };
+
+    // Without --appimage the manifest is the Windows-only one it always was.
+    assert!(make(&[]).status.success());
+    let json = fs::read_to_string(&manifest).unwrap();
+    assert!(
+        json.contains("windows-x86_64") && !json.contains("linux-x86_64"),
+        "{json}"
+    );
+
+    // With it, a second entry: the hash and size of that file, served beside the exe.
+    let out = make(&["--appimage", path(&image)]);
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let json = fs::read_to_string(&manifest).unwrap();
+    assert!(
+        json.contains("windows-x86_64") && json.contains("linux-x86_64"),
+        "{json}"
+    );
+    assert!(json.contains("releases/download/v0.2.0/AnyPlay-Launcher-0.2.0-x86_64.AppImage"));
+    let want = {
+        use sha2::{Digest, Sha256};
+        anyplay_update_manifest::to_hex(&Sha256::digest(b"\x7fELF-the-new-image"))
+    };
+    assert!(json.contains(&want), "{json}");
+
+    // The AppImage must carry the name the launcher stages, and exist.
+    let wrong = dir.path().join("renamed.AppImage");
+    fs::write(&wrong, b"x").unwrap();
+    assert!(!make(&["--appimage", path(&wrong)]).status.success());
+    let missing = dir
+        .path()
+        .join("AnyPlay-Launcher-0.2.0-x86_64.AppImage.gone");
+    assert!(!make(&["--appimage", path(&missing)]).status.success());
+}

@@ -21,15 +21,17 @@ use anyps5_core::online::{
     self, Cloud, DeviceKind, Link, Online, Pending, Purpose, ScreenCommand, VoiceMode,
     VoiceProvider,
 };
-use egui::{Color32, Context};
+use egui::{Color32, Context, Ui};
 
+use crate::screens::friends_strings::FriendsText as FX;
 use crate::screens::online_call_strings::{self as call_text, CallText as CT};
 use crate::screens::online_feed_strings::FeedText as F;
 use crate::screens::online_strings::OnlineText as T;
 use crate::screens::online_voice_strings::VoiceText as V;
 use crate::screens::rows::{self, Change, Row, RowId};
-use crate::screens::side::{self, SideDrawn, SideState, SideView};
+use crate::screens::side::{self, SideState};
 use crate::ui::Shell;
+use crate::ui::chrome::RowAvatar;
 use crate::ui::focus::RowKind;
 use crate::ui::i18n::{Arg, Key, Language};
 use crate::ui::icons::Icon;
@@ -49,6 +51,8 @@ pub enum OnlineAction {
     OpenSignInPage,
     /// Stop waiting for the browser.
     CancelSignIn,
+    /// Start the net service again: the connection is out.
+    Reconnect,
     /// Open the account web: e-mail, passkeys, devices and deleting the account.
     ManageAccount,
     /// Appeal the mute an action made.
@@ -184,6 +188,83 @@ pub enum Page {
     Feed,
 }
 
+/// The sections of the Friends screen: one entry of its rail each, with a page of its own to start
+/// on. Every page belongs to one of them (or to none: signing in).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Section {
+    Friends,
+    Party,
+    Messages,
+    Activity,
+    Settings,
+}
+
+impl Section {
+    pub const ALL: [Section; 5] = [
+        Section::Friends,
+        Section::Party,
+        Section::Messages,
+        Section::Activity,
+        Section::Settings,
+    ];
+
+    /// The page a section starts on.
+    pub fn root(self) -> Page {
+        match self {
+            Section::Friends => Page::Home,
+            Section::Party => Page::Party,
+            Section::Messages => Page::Messages,
+            Section::Activity => Page::Feed,
+            Section::Settings => Page::Account,
+        }
+    }
+}
+
+impl Page {
+    /// The section a page belongs to; `None` for the pages before sign-in. A restriction page
+    /// belongs to where it was opened from, which the panel knows (`OnlinePanel::section`).
+    pub fn section(&self) -> Option<Section> {
+        match self {
+            Page::Start | Page::Cloud | Page::Browser => None,
+            Page::Home
+            | Page::Friend(_)
+            | Page::Requests
+            | Page::Request(_)
+            | Page::Outgoing(_)
+            | Page::Invitation(_)
+            | Page::AddFriend
+            | Page::Report(_)
+            | Page::Picker => Some(Section::Friends),
+            Page::Party
+            | Page::PartyMember(_)
+            | Page::PartyPicker
+            | Page::PartyInvitation(_)
+            | Page::Voice
+            | Page::VoiceDevices(_) => Some(Section::Party),
+            Page::Messages
+            | Page::Conversation(_)
+            | Page::MessageRequest(_)
+            | Page::Message(..) => Some(Section::Messages),
+            Page::Feed => Some(Section::Activity),
+            Page::Account | Page::Blocked(_) | Page::Restriction(_) => Some(Section::Settings),
+        }
+    }
+
+    /// The first page of a section: Back from it leaves the screen.
+    pub fn is_root(&self) -> bool {
+        matches!(
+            self,
+            Page::Start
+                | Page::Home
+                | Page::Picker
+                | Page::Party
+                | Page::Messages
+                | Page::Feed
+                | Page::Account
+        )
+    }
+}
+
 /// What the panel shows, borrowed for one frame.
 pub struct OnlineData<'a> {
     pub online: &'a Online,
@@ -231,6 +312,8 @@ pub struct OnlinePanel {
     shown: usize,
     /// Which answer of a request row the keys would press: 0 Accept, 1 Decline.
     request_answer: usize,
+    /// Which quick action of a friend's row the keys would press.
+    friend_action: Option<usize>,
     /// The page the player came from.
     previous: Option<Page>,
     /// Where Back from the report page leads, when it did not open from a friend.
@@ -287,6 +370,75 @@ impl OnlinePanel {
         self.side.is_active()
     }
 
+    /// The section the page on screen belongs to. A restriction page belongs to the page it was
+    /// opened from.
+    pub fn section(&self) -> Option<Section> {
+        match (&self.page, &self.previous) {
+            (Page::Restriction(_), Some(from)) if from.section().is_some() => from.section(),
+            (page, _) => page.section(),
+        }
+    }
+
+    /// The page on screen.
+    pub fn page(&self) -> &Page {
+        &self.page
+    }
+
+    /// The title and the line under it of the page on screen.
+    pub fn heading(&self, data: &OnlineData<'_>) -> (String, Option<String>) {
+        let (title, subtitle, _) = self.rows(data);
+        (title, subtitle)
+    }
+
+    /// Puts the focus on the `nth` row with this id (previews).
+    pub fn focus_row(&mut self, id: RowId, nth: usize, data: &OnlineData<'_>) {
+        let rows = self.rows(data).2;
+        if let Some(row) = rows
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.id == id)
+            .nth(nth)
+            .map(|(i, _)| i)
+        {
+            self.side.nav.row = row;
+        }
+    }
+
+    /// The talk key row waits for a key.
+    pub fn capturing(&self) -> bool {
+        self.capturing
+    }
+
+    /// The picture of an avatar hash, once this PC has it.
+    pub fn avatar_texture(&self, hash: Option<&str>) -> Option<egui::TextureId> {
+        self.local.avatar(hash).map(|a| a.texture)
+    }
+
+    /// Whether Left on the focused row would only bump into its start: then the screen takes it
+    /// to the rail. A row that steps (a choice, buttons) keeps it while it still has a step to go.
+    pub fn left_leaves(&self, data: &OnlineData<'_>) -> bool {
+        if self.capturing {
+            return false;
+        }
+        if self.feed_is_list(data) {
+            return self.feed_focus.slot.is_none();
+        }
+        let rows = self.rows(data).2;
+        match rows.get(self.side.nav.row).map(|r| &r.control) {
+            Some(
+                rows::Control::Choice { selected, .. } | rows::Control::Buttons { selected, .. },
+            ) => *selected == 0,
+            Some(rows::Control::Stepper { value, min, .. }) => value <= min,
+            Some(rows::Control::Toggle(_)) => true,
+            _ => true,
+        }
+    }
+
+    /// Back would leave the screen from this page.
+    pub fn back_closes(&self, data: &OnlineData<'_>) -> bool {
+        self.back_page(data).is_none()
+    }
+
     pub fn is_open(&self) -> bool {
         self.side.is_open()
     }
@@ -294,7 +446,7 @@ impl OnlinePanel {
     /// The page shows games, avatars or trophy names of this PC: the host builds a [`Local`] for
     /// it every frame.
     pub fn wants_local(&self) -> bool {
-        self.side.is_active() && self.page == Page::Feed
+        self.side.is_active()
     }
 
     pub fn set_local(&mut self, local: Local) {
@@ -312,7 +464,7 @@ impl OnlinePanel {
     }
 
     /// Shows `page`, focused on its first row that takes focus.
-    fn go(&mut self, page: Page, data: &OnlineData<'_>) {
+    pub fn go(&mut self, page: Page, data: &OnlineData<'_>) {
         if page == Page::Cloud {
             self.cloud_text = data.cloud.unwrap_or_default().to_owned();
         }
@@ -413,7 +565,7 @@ impl OnlinePanel {
     /// The page that Back leads to, or `None` to close the panel.
     fn back_page(&self, data: &OnlineData<'_>) -> Option<Page> {
         match self.page {
-            Page::Start | Page::Home | Page::Picker => None,
+            Page::Start | Page::Home | Page::Picker | Page::Feed | Page::Account => None,
             Page::Cloud => Some(Page::Start),
             // Leaving the page leaves the sign-in waiting; Cancel stops it.
             Page::Browser => Some(entry_page(data)).filter(|p| *p != self.page),
@@ -421,12 +573,13 @@ impl OnlinePanel {
             Page::Voice | Page::VoiceDevices(_) => self.voice_back(),
             Page::Restriction(_) => Some(self.restriction_back(data)),
             Page::Report(id) => Some(self.report_from.clone().unwrap_or(Page::Friend(id))),
-            Page::Feed => Some(Page::Home),
             _ => self.social_back(data).unwrap_or(Some(Page::Home)),
         }
     }
 
-    pub fn show(
+    /// Runs the frame's commands on the page (the focus, the rows, Back) and follows the service.
+    /// Call it before [`OnlinePanel::draw`]; `commands` are the commands the page may take.
+    pub fn update(
         &mut self,
         shell: &mut Shell,
         ctx: &Context,
@@ -434,96 +587,117 @@ impl OnlinePanel {
         data: &OnlineData<'_>,
     ) -> Vec<OnlineAction> {
         let mut actions = Vec::new();
-        if !self.side.is_active() {
+        if !self.side.is_open() {
             self.capturing = false;
             self.sync_capture(shell);
             return actions;
         }
-        if self.side.is_open() {
-            self.follow(data);
-            if self.anchor.is_some() {
-                let rows = self.rows(data).2;
-                self.restore_anchor(data, &rows);
-            }
-            if let Page::Conversation(id) = &self.page
-                && data.online.social.read_target(id).is_some()
-            {
-                actions.push(OnlineAction::MarkRead(id.clone()));
-            }
-            let capturing = self.capturing;
+        self.follow(data);
+        if self.anchor.is_some() {
+            let rows = self.rows(data).2;
+            self.restore_anchor(data, &rows);
+        }
+        if let Page::Conversation(id) = &self.page
+            && data.online.social.read_target(id).is_some()
+        {
+            actions.push(OnlineAction::MarkRead(id.clone()));
+        }
+        let capturing = self.capturing;
+        if capturing {
+            self.capture(events, &mut actions);
+        }
+        for command in side::commands(events) {
             if capturing {
-                self.capture(events, &mut actions);
+                break;
             }
-            for command in side::commands(events) {
-                if capturing {
-                    break;
-                }
-                if self.feed_is_list(data) {
-                    if self.feed_command(shell, command, data, &mut actions) {
-                        self.back(data, &mut actions);
-                        break;
-                    }
-                    continue;
-                }
-                let rows = self.rows(data).2;
-                let driven = rows::drive(shell, &mut self.side.nav, &rows, &[command]);
-                for change in &driven.changes {
-                    self.handle(ctx, change, data, &mut actions);
-                }
-                if driven.close {
+            if self.feed_is_list(data) {
+                if self.feed_command(shell, command, data, &mut actions) {
                     self.back(data, &mut actions);
                     break;
                 }
+                continue;
+            }
+            let rows = self.rows(data).2;
+            let driven = rows::drive(shell, &mut self.side.nav, &rows, &[command]);
+            for change in &driven.changes {
+                self.handle(ctx, change, data, &mut actions);
+            }
+            if driven.close {
+                self.back(data, &mut actions);
+                break;
             }
         }
-        let (title, subtitle, mut rows) = self.rows(data);
-        let view = SideView {
-            title: &title,
-            subtitle: subtitle.as_deref(),
-            question: false,
-            list_id: "online-rows",
-            nav: &self.side.nav,
+        actions
+    }
+
+    /// Draws the page's rows (or the feed's cards) into `ui` and applies what the mouse did.
+    /// `focused` is false while the focus stands elsewhere on the screen (the rail).
+    pub fn draw(
+        &mut self,
+        shell: &mut Shell,
+        ctx: &Context,
+        ui: &mut Ui,
+        data: &OnlineData<'_>,
+        focused: bool,
+    ) -> Vec<OnlineAction> {
+        let mut actions = Vec::new();
+        let open = self.side.is_open();
+        let (_, _, mut rows) = self.rows(data);
+        let opts = rows::ListOptions {
             accent: data.accent,
             language: data.language,
+            focus: focused.then_some(self.side.nav.row),
             force: None,
         };
-        let drawn = match self.page.clone() {
-            Page::Feed if self.feed_is_list(data) => self
-                .feed_draw(ctx, &title, subtitle.as_deref(), data, &mut actions)
-                .map(|scrim_clicked| SideDrawn {
-                    scrim_clicked,
-                    events: Vec::new(),
-                }),
-            Page::Feed => self.feed_state_draw(ctx, &view, &mut rows, data),
-            _ => side::draw(ctx, self.side.is_open(), &view, &mut rows),
-        };
-        match drawn {
-            Some(drawn) if self.side.is_open() => {
-                let (changes, texts) =
-                    rows::apply_mouse(shell, &mut self.side.nav, &rows, drawn.events);
-                for (row, value) in texts {
-                    self.typed(row, value, &mut actions);
-                }
-                for change in &changes {
-                    self.handle(ctx, change, data, &mut actions);
-                }
-                if drawn.scrim_clicked {
-                    shell.play(crate::ui::sound::Cue::Close);
-                    self.close_panel(data, &mut actions);
-                }
+        // Each kind of page keeps its own scroll: walking the rail never lands on an old offset.
+        let list_id = ("online-rows", std::mem::discriminant(&self.page));
+        let events = match self.page.clone() {
+            Page::Feed if self.feed_is_list(data) => {
+                self.feed_draw(ui, data, open && focused, &mut actions);
+                Vec::new()
             }
-            Some(_) => {}
-            None => self.side.finished(),
+            Page::Feed => {
+                let (icon, title, note) = self.feed_state(data);
+                let language = data.language;
+                rows::list_with_header(ui, list_id, &mut rows, &opts, |ui| {
+                    feed::paint_state(
+                        ui,
+                        icon,
+                        title.text(language),
+                        note.map(|n| n.text(language)),
+                    );
+                })
+            }
+            _ => rows::list(ui, list_id, &mut rows, &opts),
+        };
+        if open {
+            let (changes, texts) = rows::apply_mouse(shell, &mut self.side.nav, &rows, events);
+            for (row, value) in texts {
+                self.typed(row, value, &mut actions);
+            }
+            for change in &changes {
+                self.handle(ctx, change, data, &mut actions);
+            }
         }
+        actions
+    }
+
+    /// After the draw: where the focus stands now, what a page change asked for, the key capture.
+    pub fn end_frame(&mut self, shell: &mut Shell, data: &OnlineData<'_>) -> Vec<OnlineAction> {
         self.anchor = if self.side.is_open() {
             let rows = self.rows(data).2;
             self.anchor_now(data, &rows)
         } else {
             None
         };
-        actions.append(&mut self.queued);
+        let actions = std::mem::take(&mut self.queued);
         self.sync_capture(shell);
         actions
+    }
+
+    /// The panel has finished closing (the screen is gone).
+    pub fn finished(&mut self) {
+        self.side.finished();
     }
 
     /// Hands the keys to the talk key row while it waits, and gives them back after.
@@ -654,6 +828,27 @@ impl OnlinePanel {
                     }
                 }
             }
+            Change::Choice {
+                row: "friendRow",
+                index,
+            } => self.friend_action = Some(*index),
+            Change::Press {
+                row: "friendRow",
+                index,
+            } => {
+                let item = self.occurrence(data, "friendRow");
+                if let Some(friend) = online.sorted_friends().get(item) {
+                    let id = friend.account.id;
+                    let acts = friend_actions(data, friend);
+                    match acts.get(*index).copied().unwrap_or(FriendAct::Options) {
+                        FriendAct::Join => actions.push(OnlineAction::Join(id)),
+                        FriendAct::Message => self.message_friend(id, data, actions),
+                        FriendAct::Invite => actions.push(OnlineAction::PartyInvite(vec![id])),
+                        FriendAct::Profile => self.open_profile(id),
+                        FriendAct::Options => self.go(Page::Friend(id), data),
+                    }
+                }
+            }
             Change::Run { row } => self.run(row, data, actions),
             _ => {}
         }
@@ -661,7 +856,7 @@ impl OnlinePanel {
 
     fn run(&mut self, row: &str, data: &OnlineData<'_>, actions: &mut Vec<OnlineAction>) {
         let online = data.online;
-        if self.profile_feed_run(row, data, actions)
+        if self.profile_feed_run(row, actions)
             || self.social_run(row, data, actions)
             || self.restriction_run(row, data, actions)
             || self.voice_run(row, data, actions)
@@ -698,12 +893,6 @@ impl OnlinePanel {
                 }
             }
             ("allRequests", _) => self.go(Page::Requests, data),
-            ("friendRow", _) => {
-                let index = self.nth(data, "friendRow");
-                if let Some(friend) = online.sorted_friends().get(index) {
-                    self.go(Page::Friend(friend.account.id), data);
-                }
-            }
             ("sent", _) => {
                 let index = self.nth(data, "sent");
                 if let Some(request) = online.friends.outgoing.get(index) {
@@ -723,7 +912,7 @@ impl OnlinePanel {
             ("sendRequest", _) => {
                 actions.push(OnlineAction::AddFriend(self.friend_text.trim().into()));
             }
-            ("account", _) => self.go(Page::Account, data),
+            ("reconnect", _) => actions.push(OnlineAction::Reconnect),
             ("signOut", _) => actions.push(OnlineAction::SignOut),
             ("cancel", Page::Picker) => {
                 actions.push(OnlineAction::Dialog(None));
@@ -857,7 +1046,7 @@ impl OnlinePanel {
             }
             Page::Home => {
                 self.home_rows(data, &mut rows);
-                (t(T::Friends).to_owned(), Some(home_subtitle(data)))
+                (t(T::Friends).to_owned(), None)
             }
             Page::Requests => {
                 self.request_rows(data, &mut rows, None);
@@ -1042,7 +1231,10 @@ impl OnlinePanel {
                     )
                     .group_start(),
                 );
-                (t(T::Account).to_owned(), account.map(|a| a.handle.clone()))
+                (
+                    FX::OnlineSettings.text(language).to_owned(),
+                    account.map(|a| a.handle.clone()),
+                )
             }
             Page::Report(id) => {
                 let reasons = [
@@ -1156,7 +1348,7 @@ impl OnlinePanel {
                     answers.clone(),
                     self.request_answer.min(1),
                 )
-                .icon(Icon::USER_PLUS)
+                .avatar(self.avatar_of(data, &request.account, None))
                 .detail(t(T::WantsFriend)),
             );
         }
@@ -1177,16 +1369,36 @@ impl OnlinePanel {
         let language = data.language;
         let t = |text: T| text.text(language);
         let online = data.online;
-        // A limit on the account comes first: it explains why an action will not work. Then what
-        // waits for an answer: friend requests, then invitations.
+        // The state of the connection comes first: a list that may be old says so, with the way
+        // out beside it.
+        match online.cloud {
+            Some(Cloud::Online) => {}
+            Some(Cloud::Connecting) | None => {
+                rows.push(Row::info(
+                    "connecting",
+                    FX::ConnectingNote.text(language),
+                    None,
+                ));
+            }
+            Some(Cloud::Offline) => {
+                rows.push(Row::info(
+                    "offlineNote",
+                    FX::OfflineNote.text(language),
+                    None,
+                ));
+                rows.push(
+                    Row::command("reconnect", FX::TryAgain.text(language))
+                        .icon(Icon::ARROWS_CLOCKWISE),
+                );
+            }
+        }
+        // A limit on the account explains why an action will not work. Then what waits for an
+        // answer: friend requests, then invitations.
         self.restriction_rows_for_page(data, rows);
         self.request_rows(data, rows, Some(MAX_INLINE_REQUESTS));
-        let restricted = !rows.is_empty();
         if !online.invitations.is_empty() || !online.social.party_invitations.is_empty() {
             let mut caption = Row::caption("invitationsCaption", t(T::Invitations));
-            if restricted {
-                caption = caption.group_start();
-            }
+            caption.group_start = !rows.is_empty();
             rows.push(caption);
             for invitation in &online.invitations {
                 rows.push(
@@ -1200,6 +1412,8 @@ impl OnlinePanel {
             }
             self.party_invitation_rows(data, rows);
         }
+        // A stream on offer in the party: one line that leads to the party page.
+        screen::home_row(data, rows);
         if let Some(session) = &online.session {
             let me = online.account.as_ref().map(|a| a.id);
             rows.push(Row::caption("sessionCaption", t(T::Session)).group_start());
@@ -1216,40 +1430,159 @@ impl OnlinePanel {
                 ));
             }
         }
-        self.home_social_rows(data, rows);
-        self.home_profile_rows(data, rows);
-        rows.push(Row::caption("friendsCaption", t(T::Friends)).group_start());
+        let mut add = Row::command("addFriend", t(T::AddFriend)).icon(Icon::USER_PLUS);
+        add.group_start = !rows.is_empty();
+        rows.push(add);
         let friends = online.sorted_friends();
         if friends.is_empty() {
-            rows.push(Row::info("noFriends", t(T::NoFriends), None));
+            rows.push(Row::info("noFriends", t(T::NoFriends), None).group_start());
         }
+        let mut group = None;
         for friend in friends {
-            rows.push(
-                Row::action("friendRow", friend.account.handle.clone())
-                    .icon(match (&friend.presence.activity, friend.presence.online) {
-                        (Some(_), _) => Icon::GAME_CONTROLLER,
-                        (None, true) => Icon::USER_CIRCLE,
-                        (None, false) => Icon::CIRCLE_DASHED,
-                    })
-                    .detail(friend_detail(data, friend)),
-            );
+            let rank = friend_group(friend);
+            if group != Some(rank) {
+                group = Some(rank);
+                let title = match rank {
+                    FriendGroup::Playing => FX::PlayingNow,
+                    FriendGroup::Online => FX::OnlineCaption,
+                    FriendGroup::Offline => FX::OfflineCaption,
+                };
+                rows.push(Row::caption("friendsCaption", title.text(language)).group_start());
+            }
+            rows.push(self.friend_row(data, friend));
         }
-        rows.push(Row::command("addFriend", t(T::AddFriend)).icon(Icon::USER_PLUS));
         if !online.friends.outgoing.is_empty() {
             rows.push(Row::caption("sentCaption", t(T::Sent)).group_start());
             for request in &online.friends.outgoing {
                 rows.push(
                     Row::action("sent", request.account.handle.clone())
-                        .icon(Icon::HOURGLASS)
+                        .avatar(self.avatar_of(data, &request.account, None))
                         .detail(t(T::Waiting)),
                 );
             }
         }
-        rows.push(
-            Row::action("account", t(T::Account))
-                .icon(Icon::GEAR_SIX)
-                .group_start(),
-        );
+    }
+
+    /// A friend's row: picture, name, what they do, and the quick actions that come up with the
+    /// focus. The row's own press is the last one, Options: the friend's page.
+    fn friend_row(&self, data: &OnlineData<'_>, friend: &online::api::Friend) -> Row {
+        let language = data.language;
+        let acts = friend_actions(data, friend);
+        let labels: Vec<String> = acts.iter().map(|a| a.label(language).to_owned()).collect();
+        // Without a choice yet the keys press Message, never a Join the player did not pick.
+        let default = acts
+            .iter()
+            .position(|a| *a == FriendAct::Message)
+            .unwrap_or(0);
+        let selected = self
+            .friend_action
+            .unwrap_or(default)
+            .min(labels.len().saturating_sub(1));
+        Row::buttons("friendRow", friend.account.handle.clone(), labels, selected)
+            .avatar(self.avatar_of(data, &friend.account, Some(&friend.presence)))
+            .detail(friend_detail(data, friend))
+            .reveal()
+    }
+
+    /// The picture of a person in a row. A friend's presence marks the picture: a dot while they
+    /// are here, quieter while they are not.
+    fn avatar_of(
+        &self,
+        data: &OnlineData<'_>,
+        account: &online::api::Account,
+        presence: Option<&online::api::Presence>,
+    ) -> RowAvatar {
+        let hash = data
+            .online
+            .avatars
+            .get(&account.id)
+            .and_then(|hash| hash.as_deref());
+        RowAvatar {
+            texture: self.local.avatar(hash).map(|a| a.texture),
+            colour: monogram_colour(account.id),
+            initial: account.handle.chars().next(),
+            dot: presence.filter(|p| p.online).map(|_| data.accent),
+            away: presence.is_some_and(|p| !p.online),
+        }
+    }
+
+    /// How many rows with this id stand above the focused one: the place of the focused row among
+    /// its kind, across the captions that split a list.
+    fn occurrence(&self, data: &OnlineData<'_>, id: RowId) -> usize {
+        let rows = self.rows(data).2;
+        rows.iter()
+            .take(self.side.nav.row)
+            .filter(|row| row.id == id)
+            .count()
+    }
+}
+
+/// The quick actions of a friend's row, in the order of the buttons.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FriendAct {
+    Join,
+    Message,
+    Invite,
+    Profile,
+    Options,
+}
+
+impl FriendAct {
+    fn label(self, language: Language) -> &'static str {
+        match self {
+            FriendAct::Join => FX::ActionJoin.text(language),
+            FriendAct::Message => FX::ActionMessage.text(language),
+            FriendAct::Invite => {
+                crate::screens::online_social_strings::SocialText::InviteToParty.text(language)
+            }
+            FriendAct::Profile => F::ViewProfile.text(language),
+            FriendAct::Options => FX::MoreAbout.text(language),
+        }
+    }
+}
+
+/// What a friend's row offers right now. Join only while they play in a session others may join;
+/// the invitation only to a party the player may add to.
+pub(super) fn friend_actions(
+    data: &OnlineData<'_>,
+    friend: &online::api::Friend,
+) -> Vec<FriendAct> {
+    let online = data.online;
+    let social = &online.social;
+    let mut acts = Vec::new();
+    let joinable = friend
+        .presence
+        .activity
+        .as_ref()
+        .and_then(|a| a.session.as_ref())
+        .is_some_and(|s| s.joinable);
+    if joinable {
+        acts.push(FriendAct::Join);
+    }
+    acts.push(FriendAct::Message);
+    let me = online.account.as_ref().map(|a| a.id);
+    let may_invite = social.party.is_none() || me.is_some_and(|me| social.leads(me));
+    if may_invite && !social.in_party(friend.account.id) && social::free_places(online) > 0 {
+        acts.push(FriendAct::Invite);
+    }
+    acts.push(FriendAct::Profile);
+    acts.push(FriendAct::Options);
+    acts
+}
+
+/// Where a friend stands in the list: playing, here, away.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FriendGroup {
+    Playing,
+    Online,
+    Offline,
+}
+
+fn friend_group(friend: &online::api::Friend) -> FriendGroup {
+    match (&friend.presence.activity, friend.presence.online) {
+        (Some(_), _) => FriendGroup::Playing,
+        (None, true) => FriendGroup::Online,
+        (None, false) => FriendGroup::Offline,
     }
 }
 
@@ -1267,27 +1600,27 @@ pub(super) fn appear_offline_row(data: &OnlineData<'_>) -> Row {
 }
 
 /// How many friend requests the friends list answers in place; the rest wait behind a row.
-const MAX_INLINE_REQUESTS: usize = 3;
+const MAX_INLINE_REQUESTS: usize = 5;
 
-/// Under the friends title: the handle, then how many friends are online (left out at none) or,
-/// while the cloud does not answer, what the connection is doing.
-fn home_subtitle(data: &OnlineData<'_>) -> String {
+/// The line under the handle in the header of the Friends screen: how the connection is, and,
+/// once it is up, how many friends are here.
+pub fn status_line(data: &OnlineData<'_>) -> String {
     let (online, language) = (data.online, data.language);
-    let handle = online.account.as_ref().map_or("", |a| a.handle.as_str());
-    let tail = match online.cloud {
+    match online.cloud {
         Some(Cloud::Online) if online.appears_offline() => {
-            Some(T::AppearingOffline.text(language).to_owned())
+            T::AppearingOffline.text(language).to_owned()
         }
-        Some(Cloud::Online) => match online.friends_online() {
-            0 => None,
-            n => Some(T::FriendsOnlineCount.format(language, &[Arg::Int(n as i64)])),
-        },
-        Some(Cloud::Connecting) | None => Some(T::StatusConnecting.text(language).to_owned()),
-        Some(Cloud::Offline) => Some(T::StatusOffline.text(language).to_owned()),
-    };
-    match tail {
-        Some(tail) => format!("@{handle} · {tail}"),
-        None => format!("@{handle}"),
+        Some(Cloud::Online) => {
+            let status = T::StatusOnline.text(language);
+            let count = match online.friends_online() {
+                0 => FX::CountNone.text(language).to_owned(),
+                1 => FX::CountOne.text(language).to_owned(),
+                n => FX::CountMany.format(language, &[Arg::Int(n as i64)]),
+            };
+            format!("{status} · {count}")
+        }
+        Some(Cloud::Connecting) | None => T::StatusConnecting.text(language).to_owned(),
+        Some(Cloud::Offline) => T::StatusOffline.text(language).to_owned(),
     }
 }
 
@@ -1560,45 +1893,238 @@ mod tests {
         panel.open(&data(&online));
         let (title, subtitle, rows) = panel.rows(&data(&online));
         assert_eq!(title, "Friends");
-        assert_eq!(subtitle.as_deref(), Some("@Alec · 1 online"));
+        // The header of the screen says who and how many; the page keeps no line of its own.
+        assert_eq!(subtitle, None);
         assert_eq!(
             ids(&rows),
             [
                 "requestsCaption",
                 "requestRow",
-                "messages",
-                "voice",
-                "startParty",
-                "profile",
-                "feed",
+                "addFriend",
                 "friendsCaption",
                 "friendRow",
-                "addFriend",
-                "account"
             ]
         );
         assert_eq!(
-            rows[8].detail.as_deref(),
+            rows[4].detail.as_deref(),
             Some("Playing Test Game · You can join")
         );
-        // The panel opens on the first row that takes focus, not on a caption.
+        // The first row that takes focus, not a caption.
         assert_eq!(panel.side.nav.row, 1);
     }
 
     #[test]
-    fn the_subtitle_names_the_handle_and_leaves_out_a_count_of_none() {
+    fn a_friends_row_offers_the_quick_actions_that_fit() {
         let mut online = signed_in();
-        assert_eq!(home_subtitle(&data(&online)), "@Alec · 1 online");
-        online.friends.friends[0].presence.online = false;
-        assert_eq!(home_subtitle(&data(&online)), "@Alec");
-        online.cloud = Some(Cloud::Connecting);
-        assert_eq!(home_subtitle(&data(&online)), "@Alec · Connecting…");
+        let labels = |online: &Online| {
+            let mut panel = OnlinePanel::default();
+            panel.open(&data(online));
+            let rows = panel.rows(&data(online)).2;
+            match &rows.iter().find(|r| r.id == "friendRow").unwrap().control {
+                Control::Buttons { labels, .. } => labels.clone(),
+                other => panic!("{other:?}"),
+            }
+        };
+        // Joinable, and a party can be started: all five, Options last.
+        assert_eq!(
+            labels(&online),
+            [
+                "Join",
+                "Message",
+                "Invite to Party",
+                "View Profile",
+                "Options"
+            ]
+        );
+        // Not joinable: no Join.
+        online.friends.friends[0]
+            .presence
+            .activity
+            .as_mut()
+            .unwrap()
+            .session = None;
+        assert_eq!(
+            labels(&online),
+            ["Message", "Invite to Party", "View Profile", "Options"]
+        );
+        // Already in the party: no invitation.
+        online.social.apply_party(Some(online::api::Party {
+            id: "p".into(),
+            leader: AccountId(1),
+            members: [(1, "Alec"), (2, "Lumen")]
+                .iter()
+                .map(|(id, handle)| online::api::PartyMember {
+                    account: account(*id, handle),
+                    joined: 0,
+                    endpoint: String::new(),
+                    relay: None,
+                    voice: false,
+                })
+                .collect(),
+            max_members: 8,
+            conversation: "c".into(),
+            created: 0,
+            revision: 1,
+            discord: None,
+        }));
+        assert_eq!(labels(&online), ["Message", "View Profile", "Options"]);
     }
 
     #[test]
-    fn requests_are_answered_in_place_and_more_than_three_lead_to_all_of_them() {
+    fn a_friends_quick_actions_do_what_they_say() {
+        let online = signed_in();
+        let mut panel = OnlinePanel::default();
+        panel.open(&data(&online));
+        let focus = rows::position(&panel.rows(&data(&online)).2, "friendRow").unwrap();
+        let press = |panel: &mut OnlinePanel, index: usize| {
+            panel.side.nav.row = focus;
+            let mut actions = Vec::new();
+            panel.handle(
+                &Context::default(),
+                &Change::Press {
+                    row: "friendRow",
+                    index,
+                },
+                &data(&online),
+                &mut actions,
+            );
+            actions
+        };
+        assert_eq!(press(&mut panel, 0), [OnlineAction::Join(AccountId(2))]);
+        // Message asks for the conversation first; the page stays on the list.
+        assert_eq!(
+            press(&mut panel, 1),
+            [OnlineAction::OpenDirect(AccountId(2))]
+        );
+        assert_eq!(panel.page, Page::Home);
+        assert_eq!(
+            press(&mut panel, 2),
+            [OnlineAction::PartyInvite(vec![AccountId(2)])]
+        );
+        // View Profile opens the profile screen and leaves the page where it is.
+        assert!(press(&mut panel, 3).is_empty());
+        assert_eq!(panel.queued, [OnlineAction::OpenProfile(AccountId(2))]);
+        // Options, and the row's body, are the friend's page.
+        assert!(press(&mut panel, 4).is_empty());
+        assert_eq!(panel.page, Page::Friend(AccountId(2)));
+        panel.go(Page::Home, &data(&online));
+        assert!(press(&mut panel, 9).is_empty());
+        assert_eq!(panel.page, Page::Friend(AccountId(2)));
+    }
+
+    #[test]
+    fn friends_are_grouped_by_what_they_do_and_the_press_finds_the_right_one() {
         let mut online = signed_in();
-        online.friends.incoming = (3..8)
+        let friend = |id: u64, handle: &str, online: bool| Friend {
+            account: account(id, handle),
+            since: 0,
+            presence: Presence {
+                online,
+                activity: None,
+                revision: 0,
+            },
+        };
+        online
+            .friends
+            .friends
+            .extend([friend(3, "Kit", true), friend(4, "Rook", false)]);
+        let mut panel = OnlinePanel::default();
+        panel.open(&data(&online));
+        let rows = panel.rows(&data(&online)).2;
+        assert_eq!(
+            &ids(&rows)[3..],
+            [
+                "friendsCaption",
+                "friendRow",
+                "friendsCaption",
+                "friendRow",
+                "friendsCaption",
+                "friendRow",
+            ]
+        );
+        let titles: Vec<&str> = rows
+            .iter()
+            .filter(|r| r.id == "friendsCaption")
+            .map(|r| r.title.as_str())
+            .collect();
+        assert_eq!(titles, ["Playing Now", "Online", "Offline"]);
+        // The third friend row is Rook, across the captions between them.
+        panel.side.nav.row = rows.len() - 1;
+        let mut actions = Vec::new();
+        panel.handle(
+            &Context::default(),
+            &Change::Press {
+                row: "friendRow",
+                index: 99,
+            },
+            &data(&online),
+            &mut actions,
+        );
+        assert_eq!(panel.page, Page::Friend(AccountId(4)));
+    }
+
+    #[test]
+    fn the_status_line_names_the_connection_and_the_friends_here() {
+        let mut online = signed_in();
+        assert_eq!(status_line(&data(&online)), "Online · 1 friend online");
+        online.friends.friends[0].presence.online = false;
+        assert_eq!(status_line(&data(&online)), "Online · No friends online");
+        online.cloud = Some(Cloud::Connecting);
+        assert_eq!(status_line(&data(&online)), "Connecting…");
+        online.cloud = Some(Cloud::Offline);
+        assert_eq!(status_line(&data(&online)), "Offline, trying again");
+    }
+
+    #[test]
+    fn a_connection_that_is_out_says_so_and_offers_to_try_again() {
+        let mut online = signed_in();
+        online.cloud = Some(Cloud::Offline);
+        let mut panel = OnlinePanel::default();
+        panel.open(&data(&online));
+        let rows = panel.rows(&data(&online)).2;
+        assert_eq!(&ids(&rows)[..2], ["offlineNote", "reconnect"]);
+        let mut actions = Vec::new();
+        panel.run("reconnect", &data(&online), &mut actions);
+        assert_eq!(actions, [OnlineAction::Reconnect]);
+        online.cloud = Some(Cloud::Connecting);
+        assert_eq!(ids(&panel.rows(&data(&online)).2)[0], "connecting");
+        online.cloud = Some(Cloud::Online);
+        assert_ne!(ids(&panel.rows(&data(&online)).2)[0], "connecting");
+    }
+
+    #[test]
+    fn every_page_belongs_to_a_section_and_each_section_starts_on_its_own_page() {
+        for section in Section::ALL {
+            assert_eq!(section.root().section(), Some(section), "{section:?}");
+            assert!(section.root().is_root(), "{section:?}");
+        }
+        assert_eq!(Page::Start.section(), None);
+        assert_eq!(Page::Browser.section(), None);
+        assert_eq!(Page::Voice.section(), Some(Section::Party));
+        assert_eq!(
+            Page::Conversation("c".into()).section(),
+            Some(Section::Messages)
+        );
+        assert_eq!(Page::Friend(AccountId(2)).section(), Some(Section::Friends));
+        assert!(!Page::Friend(AccountId(2)).is_root());
+    }
+
+    #[test]
+    fn a_restriction_page_belongs_to_the_page_it_was_opened_from() {
+        let online = signed_in();
+        let mut panel = OnlinePanel::default();
+        panel.go(Page::Home, &data(&online));
+        panel.go(Page::Restriction("muted".into()), &data(&online));
+        assert_eq!(panel.section(), Some(Section::Friends));
+        panel.go(Page::Account, &data(&online));
+        panel.go(Page::Restriction("muted".into()), &data(&online));
+        assert_eq!(panel.section(), Some(Section::Settings));
+    }
+
+    #[test]
+    fn requests_are_answered_in_place_and_more_than_five_lead_to_all_of_them() {
+        let mut online = signed_in();
+        online.friends.incoming = (3..10)
             .map(|id| Request {
                 account: account(id, &format!("Req{id}")),
                 since: 0,
@@ -1608,9 +2134,11 @@ mod tests {
         panel.open(&data(&online));
         let rows = panel.rows(&data(&online)).2;
         assert_eq!(
-            &ids(&rows)[..5],
+            &ids(&rows)[..7],
             [
                 "requestsCaption",
+                "requestRow",
+                "requestRow",
                 "requestRow",
                 "requestRow",
                 "requestRow",
@@ -1661,8 +2189,8 @@ mod tests {
         panel.go(Page::Requests, &data(&online));
         let (title, subtitle, rows) = panel.rows(&data(&online));
         assert_eq!(title, "Friend Requests");
-        assert_eq!(subtitle.as_deref(), Some("5 waiting"));
-        assert_eq!(ids(&rows), ["requestRow"; 5]);
+        assert_eq!(subtitle.as_deref(), Some("7 waiting"));
+        assert_eq!(ids(&rows), ["requestRow"; 7]);
         // The last answered request leaves the page for the friends.
         online.friends.incoming.clear();
         panel.follow(&data(&online));
@@ -1838,9 +2366,8 @@ mod tests {
         let (_, _, rows) = panel.rows(&data(&online));
         let row = rows.iter().find(|r| r.id == "appearOffline").unwrap();
         assert_eq!(row.control, Control::Toggle(true));
-        panel.go(Page::Home, &data(&online));
-        let (_, subtitle, _) = panel.rows(&data(&online));
-        assert_eq!(subtitle.as_deref(), Some("@Alec · Appearing offline"));
+        // The header of the Friends screen says it under the name.
+        assert_eq!(status_line(&data(&online)), "Appearing offline");
     }
 
     #[test]
@@ -1939,17 +2466,11 @@ mod tests {
     }
 
     #[test]
-    fn home_leads_to_the_own_profile_screen_and_the_feed() {
+    fn the_activity_section_asks_for_the_feed_and_back_leaves_the_screen() {
         let online = signed_in();
         let mut panel = OnlinePanel::default();
         panel.open(&data(&online));
-        let mut actions = Vec::new();
-        panel.run("profile", &data(&online), &mut actions);
-        // The profile is a screen of its own: the panel stays where it is.
-        assert_eq!(panel.page, Page::Home);
-        assert_eq!(panel.queued, [OnlineAction::OpenProfile(AccountId(1))]);
-        panel.queued.clear();
-        panel.run("feed", &data(&online), &mut actions);
+        panel.go(Section::Activity.root(), &data(&online));
         assert_eq!(panel.page, Page::Feed);
         assert_eq!(
             panel.queued[..2],
@@ -1958,7 +2479,9 @@ mod tests {
                 OnlineAction::Profile(AccountId(1))
             ]
         );
-        assert_eq!(panel.back_page(&data(&online)), Some(Page::Home));
+        // The first page of a section: Back leaves.
+        assert_eq!(panel.back_page(&data(&online)), None);
+        assert!(panel.back_closes(&data(&online)));
     }
 
     #[test]

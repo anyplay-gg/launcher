@@ -193,8 +193,8 @@ pub fn poll_join(pending: &mut Option<JoinLink>, model: &mut Model) {
         join.told = true;
         let text = DiscordText::SignIn.text(model.language()).to_owned();
         model.toast(text, Icon::USER_CIRCLE);
-        if model.overlay != Some(Overlay::Online) {
-            model.open(Overlay::Online);
+        if model.overlay != Some(Overlay::Friends) {
+            model.open(Overlay::Friends);
         }
     }
 }
@@ -408,7 +408,7 @@ mod tests {
         let mut m = model();
         let mut join = waiting("k3x9m2pqra");
         poll_join(&mut join, &mut m);
-        assert_eq!(m.overlay, Some(Overlay::Online), "the sign-in page");
+        assert_eq!(m.overlay, Some(Overlay::Friends), "the sign-in page");
         assert!(
             m.toast
                 .as_ref()

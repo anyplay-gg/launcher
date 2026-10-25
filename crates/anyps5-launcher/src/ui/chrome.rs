@@ -396,6 +396,59 @@ pub enum RowControl<'a> {
     },
 }
 
+/// A person's picture in the place of a row's glyph: a round picture, or the first letter on a calm
+/// colour. The row dims it for someone who is away and marks someone who is here with a dot.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RowAvatar {
+    pub texture: Option<egui::TextureId>,
+    /// The calm colour behind the letter.
+    pub colour: Color32,
+    pub initial: Option<char>,
+    /// The dot at the lower right, in this colour: the person is here.
+    pub dot: Option<Color32>,
+    /// The person is away: the picture rests quieter.
+    pub away: bool,
+}
+
+/// The size of a row's avatar (dp).
+pub const ROW_AVATAR: f32 = 36.0;
+
+/// Paints a row's avatar: picture or letter, a faint edge, the dot.
+pub fn paint_row_avatar(painter: &Painter, rect: Rect, avatar: RowAvatar) {
+    let mut painter = painter.clone();
+    if avatar.away {
+        painter.set_opacity(0.55);
+    }
+    let r = rect.width() * 0.5;
+    match avatar.texture {
+        Some(texture) => {
+            // One dp less than half keeps egui's seam off a snapped square (see `paint_capsule`).
+            painter.add(
+                egui::epaint::RectShape::filled(rect, corner(r - 1.0), Color32::WHITE)
+                    .with_texture(texture, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0))),
+            );
+            painter.circle_stroke(rect.center(), r - 0.5, egui::Stroke::new(1.0, black(0.18)));
+        }
+        None => {
+            painter.circle_filled(rect.center(), r, avatar.colour);
+            if let Some(initial) = avatar.initial {
+                painter.text(
+                    rect.center(),
+                    Align2::CENTER_CENTER,
+                    initial.to_uppercase().to_string(),
+                    ty::BUTTON.font(),
+                    Color32::WHITE,
+                );
+            }
+        }
+    }
+    if let Some(dot) = avatar.dot {
+        let at = pos2(rect.max.x - 3.0, rect.max.y - 3.0);
+        painter.circle_filled(at, 7.0, black(0.55));
+        painter.circle_filled(at, 4.5, dot);
+    }
+}
+
 /// A settings row: glyph, title, detail and a value control.
 pub struct PanelRow<'a> {
     pub icon: Option<Icon>,
@@ -416,6 +469,12 @@ pub struct PanelRow<'a> {
     pub wide: bool,
     /// Language of the accessible names of the chevrons.
     pub language: Language,
+    /// A person's picture in the place of the glyph.
+    pub avatar: Option<RowAvatar>,
+    /// A row's buttons come up with the focus or the pointer and rest hidden otherwise.
+    pub reveal: bool,
+    /// How much of the buttons shows this frame (set by `show`).
+    reveal_alpha: f32,
 }
 
 /// What happened in a row this frame.
@@ -459,7 +518,18 @@ impl<'a> PanelRow<'a> {
             attached: false,
             wide: false,
             language: Language::English,
+            avatar: None,
+            reveal: false,
+            reveal_alpha: 1.0,
         }
+    }
+    pub fn avatar(mut self, avatar: Option<RowAvatar>) -> Self {
+        self.avatar = avatar;
+        self
+    }
+    pub fn reveal(mut self, reveal: bool) -> Self {
+        self.reveal = reveal;
+        self
     }
     pub fn attached(mut self, attached: bool) -> Self {
         self.attached = attached;
@@ -620,7 +690,9 @@ impl<'a> PanelRow<'a> {
         // Value width decides how much room the text column has.
         let value_width = self.value_width(&painter, width);
         // A pad glyph without an icon stands in the icon column, so every title starts on one edge.
-        let icon_block = if self.icon.is_some() || self.pad_glyph.is_some() {
+        let icon_block = if self.avatar.is_some() {
+            ROW_AVATAR + 14.0
+        } else if self.icon.is_some() || self.pad_glyph.is_some() {
             size::ROW_ICON_BOX + 14.0
         } else {
             0.0
@@ -754,7 +826,14 @@ impl<'a> PanelRow<'a> {
         }
         let (destructive, warning) = (self.destructive, self.warning);
         let mut x = rect.min.x + pad;
-        if let Some(icon) = self.icon {
+        if let Some(avatar) = self.avatar {
+            let at = Rect::from_center_size(
+                pos2(x + ROW_AVATAR * 0.5, rect.center().y),
+                vec2(ROW_AVATAR, ROW_AVATAR),
+            );
+            paint_row_avatar(&painter, at, avatar);
+            x += icon_block;
+        } else if let Some(icon) = self.icon {
             let tint = if destructive {
                 color::destructive_icon()
             } else if warning {
@@ -810,6 +889,7 @@ impl<'a> PanelRow<'a> {
         }
 
         // Value control.
+        self.reveal_alpha = if self.reveal { hover_t.max(t) } else { 1.0 };
         let value_rect = Rect::from_min_max(
             pos2(rect.max.x - pad - value_width, rect.min.y),
             pos2(rect.max.x - pad, rect.max.y),
@@ -1057,7 +1137,14 @@ impl<'a> PanelRow<'a> {
             RowControl::Buttons { labels, selected } => {
                 // Right to left, so the first label ends up leftmost and the group ends on the row's edge.
                 let mut right = rect.max.x;
+                let reveal = self.reveal_alpha;
+                let mut painter = painter.clone();
+                painter.set_opacity(reveal);
                 for (index, label) in labels.iter().enumerate().rev() {
+                    // Hidden buttons take no clicks either: the row's body gets them.
+                    if reveal < 0.05 {
+                        break;
+                    }
                     let w = text::width(&painter, ty::CHOICE_VALUE, label) + 2.0 * BUTTON_PAD;
                     let at = Rect::from_center_size(
                         pos2(right - w * 0.5, rect.center().y),

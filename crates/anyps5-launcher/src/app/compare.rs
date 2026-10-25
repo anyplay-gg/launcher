@@ -55,7 +55,7 @@ mod tests {
     #[test]
     fn back_from_the_comparison_leads_to_the_profile_it_came_from() {
         let mut m = model();
-        m.open_profile(AccountId(2), Back::Online);
+        m.open_profile(AccountId(2), Back::Friends);
         m.open_compare(AccountId(2), "GAME00001".into());
         assert_eq!(m.overlay, Some(Overlay::Compare));
         assert_eq!(

@@ -12,8 +12,9 @@ use crate::app::textures::Textures;
 use crate::ui::Shell;
 use crate::ui::input::Command;
 
-/// The overlays of the original (`Overlay` in `AppModel.swift`). Settings, library, log and
-/// trophies are full-screen panels; the others slide in as the side panel family.
+/// The overlays of the original (`Overlay` in `AppModel.swift`). Settings, library, log, trophies,
+/// the profile and the friends are full-screen panels; the others slide in as the side panel
+/// family.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Overlay {
     Settings,
@@ -32,8 +33,9 @@ pub enum Overlay {
     Recommended,
     /// The notes of a toolkit release (a full-screen panel).
     WhatsNew,
-    /// Sign-in, friends and invitations of the AnyPlay network (a side panel).
-    Online,
+    /// Friends, party, messages, activity and the online settings of the AnyPlay network, and
+    /// signing in to it (a full-screen panel).
+    Friends,
     /// A player's profile, the player's own or another's (a full-screen panel).
     Profile,
     /// The player's trophies in a game next to another player's (a full-screen panel).
@@ -59,7 +61,6 @@ impl Overlay {
                 | Overlay::Controls
                 | Overlay::Advanced
                 | Overlay::Recommended
-                | Overlay::Online
                 | Overlay::ToolkitMissing
                 | Overlay::InGame
                 | Overlay::ConfirmCloseGame

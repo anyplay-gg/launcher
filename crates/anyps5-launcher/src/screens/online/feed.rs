@@ -8,7 +8,7 @@
 use anyps5_core::online::api::{AccountId, FeedEvent, FeedItem, Grade, Reaction};
 use anyps5_core::online::{self, Ago, Rarity};
 use egui::containers::scroll_area::ScrollBarVisibility;
-use egui::{Align2, Color32, Context, Margin, Rect, ScrollArea, Sense, Ui, pos2, vec2};
+use egui::{Align2, Color32, Margin, Rect, ScrollArea, Sense, Ui, pos2, vec2};
 
 use super::local::{Avatar, Local};
 use super::{OnlineAction, OnlineData, OnlinePanel, Page, Row};
@@ -16,7 +16,6 @@ use crate::screens::format;
 use crate::screens::online_feed_strings::FeedText as F;
 use crate::screens::online_strings::OnlineText as T;
 use crate::screens::scroll::Follow;
-use crate::screens::side::{self, SideDrawn, SideView};
 use crate::ui::Shell;
 use crate::ui::anim::{AnimExt, Motion};
 use crate::ui::chrome::{PanelRow, RowControl};
@@ -383,26 +382,6 @@ impl OnlinePanel {
         }
     }
 
-    /// Draws the Feed page without cards: the state block over its action rows.
-    pub(super) fn feed_state_draw(
-        &self,
-        ctx: &Context,
-        view: &SideView<'_>,
-        rows: &mut [Row],
-        data: &OnlineData<'_>,
-    ) -> Option<SideDrawn> {
-        let (icon, title, note) = self.feed_state(data);
-        let language = data.language;
-        side::draw_with_header(ctx, self.side.is_open(), view, rows, |ui| {
-            paint_state(
-                ui,
-                icon,
-                title.text(language),
-                note.map(|n| n.text(language)),
-            );
-        })
-    }
-
     /// A command on the card list. `true` leaves the page.
     pub(super) fn feed_command(
         &mut self,
@@ -500,15 +479,14 @@ impl OnlinePanel {
             .map(|i| i.id);
     }
 
-    /// Draws the cards in the side panel; the actions come out of the mouse.
+    /// Draws the cards into `ui`; `focused` is whether the focus stands on them.
     pub(super) fn feed_draw(
         &mut self,
-        ctx: &Context,
-        title: &str,
-        subtitle: Option<&str>,
+        ui: &mut Ui,
         data: &OnlineData<'_>,
+        focused: bool,
         actions: &mut Vec<OnlineAction>,
-    ) -> Option<bool> {
+    ) {
         self.feed_sync(data);
         let local = &self.local;
         let feed = &data.online.feed;
@@ -517,7 +495,7 @@ impl OnlinePanel {
             .iter()
             .map(|item| prepare(item, data, local))
             .collect();
-        let focus = self.side.is_open().then_some(self.feed_focus);
+        let focus = focused.then_some(self.feed_focus);
         let loading = data.online.feed_loading();
         let older = feed.next.is_some().then_some(if loading {
             Older::Loading
@@ -528,10 +506,7 @@ impl OnlinePanel {
         });
         let ended = feed.next.is_none() && !cards.is_empty();
         let language = data.language;
-        let (scrim, events) =
-            crate::screens::side::frame(ctx, self.side.is_open(), title, subtitle, |ui| {
-                list(ui, &cards, focus, older, ended, language)
-            })?;
+        let events = list(ui, &cards, focus, older, ended, language);
         for event in events {
             match event {
                 Mouse::Press(focus) => {
@@ -542,7 +517,6 @@ impl OnlinePanel {
             }
         }
         self.feed_prefetch(data, actions);
-        Some(scrim)
     }
 }
 
@@ -901,7 +875,7 @@ fn show_card(
 
 /// The headline of a page without cards: an icon on a quiet disc, the headline and a note, in
 /// the middle of the room the rows below leave.
-fn paint_state(ui: &mut Ui, icon: Icon, title: &str, note: Option<&str>) {
+pub(super) fn paint_state(ui: &mut Ui, icon: Icon, title: &str, note: Option<&str>) {
     let painter = ui.painter().clone();
     let width = ui.available_width();
     let wrap = (width - 2.0 * 24.0).min(380.0);

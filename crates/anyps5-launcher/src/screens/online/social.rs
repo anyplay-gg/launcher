@@ -9,6 +9,7 @@ use anyps5_core::online::{Blocked, Online, Purpose, Social, others, plain, read_
 
 use super::{OnlineAction, OnlineData, OnlinePanel, Page, presence_text, restriction};
 use crate::screens::format;
+use crate::screens::friends_strings::FriendsText as FX;
 use crate::screens::online_social_strings::SocialText as S;
 use crate::screens::online_strings::OnlineText as T;
 use crate::screens::online_voice_strings::VoiceText as V;
@@ -68,7 +69,7 @@ pub(super) fn party_candidates(online: &Online) -> Vec<&Friend> {
 }
 
 /// How many more members the party takes; seven for a party that does not exist yet.
-fn free_places(online: &Online) -> usize {
+pub(super) fn free_places(online: &Online) -> usize {
     let (max, members) = online
         .social
         .party
@@ -82,62 +83,6 @@ fn free_places(online: &Online) -> usize {
 impl OnlinePanel {
     fn me(data: &OnlineData<'_>) -> AccountId {
         data.online.account.as_ref().map_or(AccountId(0), |a| a.id)
-    }
-
-    /// The part of a page that the Home page gives to the party and the messages.
-    pub(super) fn home_social_rows(&self, data: &OnlineData<'_>, rows: &mut Vec<Row>) {
-        let language = data.language;
-        let online = data.online;
-        let social = &online.social;
-        if let Some(party) = &social.party {
-            let names = party
-                .members
-                .iter()
-                .map(|m| m.account.handle.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            rows.push(Row::caption("partyCaption", S::Party.text(language)).group_start());
-            rows.push(Row::action("party", names).icon(Icon::USERS).detail(
-                S::PartySubtitle.format(
-                    language,
-                    &[
-                        Arg::Int(party.members.len() as i64),
-                        Arg::Int(i64::from(party.max_members)),
-                    ],
-                ),
-            ));
-        }
-        super::screen::home_row(data, rows);
-        // One number for the button, this row and the page: every message not read yet.
-        let unread = social.unread_total();
-        let requests = social.requests().len();
-        let mut detail = Vec::new();
-        if unread > 0 {
-            detail.push(S::MessagesUnread.format(language, &[Arg::Int(unread as i64)]));
-        }
-        if requests > 0 {
-            detail.push(S::RequestsCount.format(language, &[Arg::Int(requests as i64)]));
-        }
-        let mut messages =
-            Row::action("messages", S::Messages.text(language)).icon(Icon::ENVELOPE_SIMPLE);
-        if !detail.is_empty() {
-            messages = messages.detail(detail.join(" · "));
-        }
-        rows.push(messages.group_start());
-        if online.is_online() {
-            rows.push(
-                Row::action("voice", V::Voice.text(language))
-                    .icon(Icon::MICROPHONE)
-                    .detail(super::voice::home_detail(data)),
-            );
-        }
-        if social.party.is_none() {
-            rows.push(
-                Row::action("startParty", S::StartParty.text(language))
-                    .icon(Icon::USERS)
-                    .detail(S::StartPartyDetail.text(language)),
-            );
-        }
     }
 
     /// Party invitations, listed with the other invitations on the Home page.
@@ -216,7 +161,32 @@ impl OnlinePanel {
         }
         Some(match &self.page {
             Page::Party => {
-                let party = social.party.as_ref()?;
+                let Some(party) = social.party.as_ref() else {
+                    // The first page of the section stands without a party: how to start one,
+                    // the invitations that wait, and the voice settings.
+                    rows.push(Row::info(
+                        "notInParty",
+                        FX::NotInPartyNote.text(language),
+                        None,
+                    ));
+                    self.party_invitation_rows(data, rows);
+                    let mut start = Row::action("startParty", t(S::StartParty))
+                        .icon(Icon::USERS)
+                        .detail(t(S::StartPartyDetail));
+                    start.group_start = rows.len() > 1;
+                    rows.push(start);
+                    if online.is_online() {
+                        rows.push(
+                            Row::action("voice", V::Voice.text(language))
+                                .icon(Icon::MICROPHONE)
+                                .detail(super::voice::home_detail(data)),
+                        );
+                    }
+                    return Some((
+                        t(S::Party).to_owned(),
+                        Some(FX::NotInParty.text(language).to_owned()),
+                    ));
+                };
                 let leads = party.leader == me;
                 let alone = party.members.len() <= 1;
                 let chat = social.party_chat();
@@ -704,7 +674,7 @@ impl OnlinePanel {
         // A conversation the player asked to open appears in the list.
         // The player may have left the friend's page since: then the chat stays closed.
         if let Some(account) = self.opening {
-            if self.page != Page::Friend(account) {
+            if self.page != Page::Friend(account) && self.page != Page::Home {
                 self.opening = None;
             } else if let Some(direct) = social.direct_with(account) {
                 self.opening = None;
@@ -714,7 +684,7 @@ impl OnlinePanel {
             }
         }
         match &self.page {
-            Page::Party | Page::PartyMember(_) if social.party.is_none() => Some(Page::Home),
+            Page::PartyMember(_) if social.party.is_none() => Some(Page::Party),
             Page::PartyMember(id) if !social.in_party(*id) => Some(Page::Party),
             Page::PartyPicker if social.party.is_some() && !social.leads(me) => Some(Page::Party),
             Page::PartyInvitation(id) if !social.party_invitations.iter().any(|i| &i.id == id) => {
@@ -746,17 +716,15 @@ impl OnlinePanel {
     /// The page Back leads to from a party or message page, if the page is one of them.
     pub(super) fn social_back(&self, data: &OnlineData<'_>) -> Option<Option<Page>> {
         Some(Some(match &self.page {
-            Page::Party | Page::Messages | Page::PartyInvitation(_) => Page::Home,
-            Page::PartyMember(_) => Page::Party,
-            Page::PartyPicker => {
-                if data.online.social.party.is_some() {
-                    Page::Party
-                } else {
-                    Page::Home
-                }
-            }
+            // The first pages of their sections: Back leaves the screen.
+            Page::Party | Page::Messages => return Some(None),
+            Page::PartyInvitation(_) => match &self.previous {
+                Some(page @ (Page::Party | Page::Home)) => page.clone(),
+                _ => Page::Home,
+            },
+            Page::PartyMember(_) | Page::PartyPicker => Page::Party,
             Page::Conversation(_) | Page::MessageRequest(_) => match &self.previous {
-                Some(page @ (Page::Friend(_) | Page::Party)) => page.clone(),
+                Some(page @ (Page::Friend(_) | Page::Party | Page::Home)) => page.clone(),
                 _ => Page::Messages,
             },
             Page::Message(id, _) => {
@@ -787,6 +755,22 @@ impl OnlinePanel {
         true
     }
 
+    /// Opens the conversation with a friend, asking for it first when there is none yet.
+    pub(super) fn message_friend(
+        &mut self,
+        id: AccountId,
+        data: &OnlineData<'_>,
+        actions: &mut Vec<OnlineAction>,
+    ) {
+        match data.online.social.direct_with(id) {
+            Some(direct) => self.go(Page::Conversation(direct.id.clone()), data),
+            None => {
+                self.opening = Some(id);
+                actions.push(OnlineAction::OpenDirect(id));
+            }
+        }
+    }
+
     /// What the rows of the party and message pages do. Returns true when `row` was one of them.
     pub(super) fn social_run(
         &mut self,
@@ -798,8 +782,6 @@ impl OnlinePanel {
         let social = &online.social;
         let me = Self::me(data);
         match (row, self.page.clone()) {
-            ("messages", _) => self.go(Page::Messages, data),
-            ("party", _) => self.go(Page::Party, data),
             ("startParty", _) => self.go(Page::PartyPicker, data),
             ("inviteFriends", _) => self.go(Page::PartyPicker, data),
             ("partyChat", _) => {
@@ -850,28 +832,10 @@ impl OnlinePanel {
                 actions.push(OnlineAction::PartyInvite(
                     self.picked.iter().copied().collect(),
                 ));
-                let page = if social.party.is_some() {
-                    Page::Party
-                } else {
-                    Page::Home
-                };
-                self.go(page, data);
+                self.go(Page::Party, data);
             }
-            ("cancel", Page::PartyPicker) => {
-                let page = if social.party.is_some() {
-                    Page::Party
-                } else {
-                    Page::Home
-                };
-                self.go(page, data);
-            }
-            ("sendMessage", Page::Friend(id)) => match social.direct_with(id) {
-                Some(direct) => self.go(Page::Conversation(direct.id.clone()), data),
-                None => {
-                    self.opening = Some(id);
-                    actions.push(OnlineAction::OpenDirect(id));
-                }
-            },
+            ("cancel", Page::PartyPicker) => self.go(Page::Party, data),
+            ("sendMessage", Page::Friend(id)) => self.message_friend(id, data, actions),
             ("inviteToParty", Page::Friend(id)) => {
                 actions.push(OnlineAction::PartyInvite(vec![id]));
             }
@@ -1076,29 +1040,31 @@ mod tests {
     }
 
     #[test]
-    fn home_offers_a_party_to_start_or_the_party_in_progress() {
+    fn the_party_section_offers_a_party_to_start_or_shows_the_one_in_progress() {
         let mut online = online();
-        let panel = OnlinePanel::default();
-        let mut rows = Vec::new();
-        panel.home_social_rows(&data(&online), &mut rows);
-        assert_eq!(ids(&rows), ["messages", "voice", "startParty"]);
-        assert!(
-            rows[0].group_start && rows[0].detail.is_none(),
-            "no news: no detail"
+        let mut panel = OnlinePanel::default();
+        panel.go(Page::Party, &data(&online));
+        let (title, subtitle, rows) = panel.rows(&data(&online));
+        assert_eq!(title, "Party");
+        assert_eq!(subtitle.as_deref(), Some("You are not in a party"));
+        assert_eq!(ids(&rows), ["notInParty", "startParty", "voice"]);
+        assert_eq!(
+            panel.page,
+            Page::Party,
+            "the first page of the section stays"
         );
+        assert_eq!(panel.back_page(&data(&online)), None);
 
         online
             .social
             .apply_party(Some(party(1, &[(1, "Mira"), (2, "Lumen")])));
-        let mut rows = Vec::new();
-        panel.home_social_rows(&data(&online), &mut rows);
-        assert_eq!(ids(&rows), ["partyCaption", "party", "messages", "voice"]);
-        assert_eq!(rows[1].title, "Mira, Lumen");
-        assert_eq!(rows[1].detail.as_deref(), Some("2 of 8 members"));
+        let (_, subtitle, rows) = panel.rows(&data(&online));
+        assert_eq!(subtitle.as_deref(), Some("2 of 8 members"));
+        assert!(!ids(&rows).contains(&"notInParty"));
     }
 
     #[test]
-    fn the_messages_row_counts_what_waits() {
+    fn the_messages_page_counts_what_waits() {
         let mut online = online();
         list(
             &mut online,
@@ -1117,12 +1083,12 @@ mod tests {
                 0,
             )],
         );
-        let mut rows = Vec::new();
-        OnlinePanel::default().home_social_rows(&data(&online), &mut rows);
+        let mut panel = OnlinePanel::default();
+        panel.go(Page::Messages, &data(&online));
         assert_eq!(
-            rows[0].detail.as_deref(),
-            Some("4 unread · Requests: 1"),
-            "the same number as the button and the page: every message not read"
+            panel.rows(&data(&online)).1.as_deref(),
+            Some("4 unread"),
+            "the same number as the button and the rail: every message not read"
         );
     }
 
@@ -1308,7 +1274,7 @@ mod tests {
         assert!(actions.is_empty());
         assert_eq!(panel.page, Page::PartyPicker);
         panel.run("cancel", &data(&online), &mut actions);
-        assert_eq!(panel.page, Page::Home);
+        assert_eq!(panel.page, Page::Party);
     }
 
     #[test]
@@ -1876,9 +1842,13 @@ mod tests {
         online.social.remove("a");
         panel.follow(&data(&online));
         assert_eq!(panel.page, Page::Messages);
-        panel.go(Page::Party, &data(&online));
+        panel.go(Page::PartyMember(AccountId(2)), &data(&online));
         panel.follow(&data(&online));
-        assert_eq!(panel.page, Page::Home, "no party");
+        assert_eq!(
+            panel.page,
+            Page::Party,
+            "no party: the first page of the section"
+        );
         // Signed out, everything returns to the start.
         panel.go(Page::Messages, &data(&online));
         online.account = None;
@@ -1905,7 +1875,11 @@ mod tests {
         );
         let mut panel = OnlinePanel::default();
         panel.go(Page::Party, &data(&online));
-        assert_eq!(panel.back_page(&data(&online)), Some(Page::Home));
+        assert_eq!(
+            panel.back_page(&data(&online)),
+            None,
+            "the first page of its section: Back leaves the screen"
+        );
         panel.go(Page::Conversation("pc".into()), &data(&online));
         assert_eq!(
             panel.back_page(&data(&online)),
@@ -2114,7 +2088,7 @@ mod tests {
         let mut actions = Vec::new();
         panel.run("sendMessage", &data(&online), &mut actions);
         assert_eq!(panel.opening, Some(AccountId(2)));
-        panel.go(Page::Home, &data(&online));
+        panel.go(Page::Account, &data(&online));
         online.social.upsert(conversation(
             "a",
             ConversationKind::Direct,
@@ -2123,7 +2097,7 @@ mod tests {
             0,
         ));
         panel.follow(&data(&online));
-        assert_eq!(panel.page, Page::Home);
+        assert_eq!(panel.page, Page::Account);
         assert_eq!(panel.opening, None);
     }
 
@@ -2363,7 +2337,7 @@ mod tests {
         assert_eq!(detail(&mut panel, &online).as_deref(), Some("On"));
         online.social.apply_party(None);
         let home = {
-            panel.go(Page::Home, &data(&online));
+            panel.go(Page::Party, &data(&online));
             panel.rows(&data(&online)).2
         };
         let row = home.iter().find(|r| r.id == "voice").unwrap();
@@ -2558,9 +2532,10 @@ mod tests {
         );
         // Back leads to where the page was opened.
         assert_eq!(panel.back_page(&data(&online)), Some(Page::Party));
-        panel.go(Page::Home, &data(&online));
+        panel.go(Page::Party, &data(&online));
         panel.run("voice", &data(&online), &mut actions);
-        assert_eq!(panel.back_page(&data(&online)), Some(Page::Home));
+        assert_eq!(panel.page, Page::Voice);
+        assert_eq!(panel.back_page(&data(&online)), Some(Page::Party));
     }
 
     #[test]

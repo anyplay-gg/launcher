@@ -231,6 +231,16 @@ pub enum OnlineLook {
     FriendsBusy,
     /// Signed in with nobody yet.
     FriendsEmpty,
+    /// The cloud is out of reach: the list says so and offers Try Again.
+    FriendsOffline,
+    /// The cloud has not answered yet.
+    FriendsConnecting,
+    /// A friend's row has the focus: the quick actions come up.
+    FriendsFocus,
+    /// The focus stands on the rail.
+    FriendsRail,
+    /// The Party section while the player is in no party.
+    PartyNone,
     /// Every friend request on a page of its own.
     Requests,
     Friend,
@@ -468,39 +478,44 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "saves" => ScreenPage::Saves,
         "saves-empty" => ScreenPage::SavesEmpty,
         "restore" => ScreenPage::Restore,
-        "online" => ScreenPage::Online(OnlineLook::Start),
-        "online-browser" => ScreenPage::Online(OnlineLook::Browser),
-        "online-friends" => ScreenPage::Online(OnlineLook::Friends),
-        "online-account-appearing" => ScreenPage::Online(OnlineLook::AccountAppearing),
-        "online-friends-busy" => ScreenPage::Online(OnlineLook::FriendsBusy),
-        "online-friends-empty" => ScreenPage::Online(OnlineLook::FriendsEmpty),
-        "online-requests" => ScreenPage::Online(OnlineLook::Requests),
-        "online-friend" => ScreenPage::Online(OnlineLook::Friend),
-        "online-account" => ScreenPage::Online(OnlineLook::Account),
-        "online-picker" => ScreenPage::Online(OnlineLook::Picker),
-        "online-party" => ScreenPage::Online(OnlineLook::Party),
-        "online-party-picker" => ScreenPage::Online(OnlineLook::PartyPicker),
-        "online-messages" => ScreenPage::Online(OnlineLook::Messages),
-        "online-message" => ScreenPage::Online(OnlineLook::Message),
-        "online-conversation" => ScreenPage::Online(OnlineLook::Conversation),
-        "online-request" => ScreenPage::Online(OnlineLook::Request),
-        "online-party-voice" => ScreenPage::Online(OnlineLook::PartyVoice),
-        "online-party-member" => ScreenPage::Online(OnlineLook::PartyMember),
-        "online-voice" => ScreenPage::Online(OnlineLook::Voice),
-        "online-voice-key" => ScreenPage::Online(OnlineLook::VoiceKey),
-        "online-voice-devices" => ScreenPage::Online(OnlineLook::VoiceDevices),
-        "online-voice-denied" => ScreenPage::Online(OnlineLook::VoiceDenied),
-        "online-screen-ready" => ScreenPage::Online(OnlineLook::ScreenReady),
-        "online-screen-hosting" => ScreenPage::Online(OnlineLook::ScreenHosting),
-        "online-screen-offer" => ScreenPage::Online(OnlineLook::ScreenOffer),
-        "online-screen-cannot" => ScreenPage::Online(OnlineLook::ScreenCannot),
-        "online-screen-watching" => ScreenPage::Online(OnlineLook::ScreenWatching),
-        "online-screen-stalled" => ScreenPage::Online(OnlineLook::ScreenStalled),
-        "online-screen-home" => ScreenPage::Online(OnlineLook::ScreenHome),
-        "online-muted" => ScreenPage::Online(OnlineLook::Muted),
-        "online-restriction" => ScreenPage::Online(OnlineLook::Restriction),
-        "online-paused" => ScreenPage::Online(OnlineLook::Paused),
-        "online-banned" => ScreenPage::Online(OnlineLook::Banned),
+        "friends-signin" => ScreenPage::Online(OnlineLook::Start),
+        "friends-browser" => ScreenPage::Online(OnlineLook::Browser),
+        "friends" => ScreenPage::Online(OnlineLook::Friends),
+        "friends-busy" => ScreenPage::Online(OnlineLook::FriendsBusy),
+        "friends-empty" => ScreenPage::Online(OnlineLook::FriendsEmpty),
+        "friends-offline" => ScreenPage::Online(OnlineLook::FriendsOffline),
+        "friends-connecting" => ScreenPage::Online(OnlineLook::FriendsConnecting),
+        "friends-focus" => ScreenPage::Online(OnlineLook::FriendsFocus),
+        "friends-rail" => ScreenPage::Online(OnlineLook::FriendsRail),
+        "friends-party-none" => ScreenPage::Online(OnlineLook::PartyNone),
+        "friends-requests" => ScreenPage::Online(OnlineLook::Requests),
+        "friends-friend" => ScreenPage::Online(OnlineLook::Friend),
+        "friends-settings" => ScreenPage::Online(OnlineLook::Account),
+        "friends-settings-appearing" => ScreenPage::Online(OnlineLook::AccountAppearing),
+        "friends-picker" => ScreenPage::Online(OnlineLook::Picker),
+        "friends-party" => ScreenPage::Online(OnlineLook::Party),
+        "friends-party-picker" => ScreenPage::Online(OnlineLook::PartyPicker),
+        "friends-messages" => ScreenPage::Online(OnlineLook::Messages),
+        "friends-message" => ScreenPage::Online(OnlineLook::Message),
+        "friends-conversation" => ScreenPage::Online(OnlineLook::Conversation),
+        "friends-request" => ScreenPage::Online(OnlineLook::Request),
+        "friends-party-voice" => ScreenPage::Online(OnlineLook::PartyVoice),
+        "friends-party-member" => ScreenPage::Online(OnlineLook::PartyMember),
+        "friends-voice" => ScreenPage::Online(OnlineLook::Voice),
+        "friends-voice-key" => ScreenPage::Online(OnlineLook::VoiceKey),
+        "friends-voice-devices" => ScreenPage::Online(OnlineLook::VoiceDevices),
+        "friends-voice-denied" => ScreenPage::Online(OnlineLook::VoiceDenied),
+        "friends-screen-ready" => ScreenPage::Online(OnlineLook::ScreenReady),
+        "friends-screen-hosting" => ScreenPage::Online(OnlineLook::ScreenHosting),
+        "friends-screen-offer" => ScreenPage::Online(OnlineLook::ScreenOffer),
+        "friends-screen-cannot" => ScreenPage::Online(OnlineLook::ScreenCannot),
+        "friends-screen-watching" => ScreenPage::Online(OnlineLook::ScreenWatching),
+        "friends-screen-stalled" => ScreenPage::Online(OnlineLook::ScreenStalled),
+        "friends-screen-home" => ScreenPage::Online(OnlineLook::ScreenHome),
+        "friends-muted" => ScreenPage::Online(OnlineLook::Muted),
+        "friends-restriction" => ScreenPage::Online(OnlineLook::Restriction),
+        "friends-paused" => ScreenPage::Online(OnlineLook::Paused),
+        "friends-banned" => ScreenPage::Online(OnlineLook::Banned),
         "profile-own" => ScreenPage::Profile(ProfileLook::Own),
         "profile-own-appearing" => ScreenPage::Profile(ProfileLook::OwnAppearing),
         "profile-friend-compare" => ScreenPage::Profile(ProfileLook::FriendCompare),
@@ -524,11 +539,11 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "profile-loading" => ScreenPage::Profile(ProfileLook::Loading),
         "profile-error" => ScreenPage::Profile(ProfileLook::Error),
         "profile-offline" => ScreenPage::Profile(ProfileLook::Offline),
-        "feed" => ScreenPage::Online(OnlineLook::Feed),
-        "feed-reaction" => ScreenPage::Online(OnlineLook::FeedReaction),
-        "feed-empty" => ScreenPage::Online(OnlineLook::FeedEmpty),
-        "feed-loading" => ScreenPage::Online(OnlineLook::FeedLoading),
-        "feed-error" => ScreenPage::Online(OnlineLook::FeedError),
+        "friends-activity" => ScreenPage::Online(OnlineLook::Feed),
+        "friends-activity-reaction" => ScreenPage::Online(OnlineLook::FeedReaction),
+        "friends-activity-empty" => ScreenPage::Online(OnlineLook::FeedEmpty),
+        "friends-activity-loading" => ScreenPage::Online(OnlineLook::FeedLoading),
+        "friends-activity-error" => ScreenPage::Online(OnlineLook::FeedError),
         "incoming-call" => ScreenPage::Online(OnlineLook::IncomingCall),
         "incoming-call-discord" => ScreenPage::Online(OnlineLook::IncomingCallDiscord),
         "in-call" => ScreenPage::Online(OnlineLook::InCall),
@@ -700,6 +715,14 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         state.invitations.clear();
     } else {
         sample_social(&mut state);
+    }
+    match look {
+        OnlineLook::FriendsOffline => state.cloud = Some(Cloud::Offline),
+        OnlineLook::FriendsConnecting => state.cloud = None,
+        OnlineLook::PartyNone => {
+            state.social.apply_party(None);
+        }
+        _ => {}
     }
     sample_voice(&mut state, look);
     sample_screen(&mut state, look);
@@ -1437,7 +1460,7 @@ pub struct ScreenGallery {
     uninstall: UninstallPanel,
     saves: SavesPanel,
     restore: RestorePanel,
-    online_panel: crate::screens::online::OnlinePanel,
+    friends: crate::screens::friends::FriendsScreen,
     online: anyps5_core::online::Online,
     profile: crate::screens::profile::ProfileScreen,
     compare: crate::screens::compare::CompareScreen,
@@ -1539,7 +1562,7 @@ impl ScreenGallery {
             uninstall: UninstallPanel::default(),
             saves: SavesPanel::default(),
             restore: RestorePanel::default(),
-            online_panel: crate::screens::online::OnlinePanel::default(),
+            friends: crate::screens::friends::FriendsScreen::default(),
             profile: crate::screens::profile::ProfileScreen::default(),
             compare: crate::screens::compare::CompareScreen::default(),
             online: match page {
@@ -1884,15 +1907,14 @@ impl ScreenGallery {
         }
         {
             let data = online_data(&self.online, language, accent);
-            if self.online_panel.wants_local() {
-                self.online_panel
-                    .set_local(crate::screens::gallery_feed::local(
-                        &self.covers,
-                        &self.avatars,
-                        &NAMES,
-                    ));
+            if self.friends.wants_local() {
+                self.friends.set_local(crate::screens::gallery_feed::local(
+                    &self.covers,
+                    &self.avatars,
+                    &NAMES,
+                ));
             }
-            self.online_panel.show(shell, &ctx, &events, &data);
+            self.friends.show(shell, &ctx, &events, &data);
         }
         if let ScreenPage::Online(look) = self.page {
             self.call_surfaces(&ctx, look, accent, language);
@@ -2034,20 +2056,25 @@ impl ScreenGallery {
                 ) {
                     return;
                 }
-                self.online_panel.open(&data);
+                self.friends.open(&data);
                 match look {
-                    OnlineLook::Requests => self.online_panel.show_page(Page::Requests, &data),
-                    OnlineLook::MissedCall => self.online_panel.show_page(Page::Home, &data),
-                    OnlineLook::PartyDiscord => self.online_panel.show_page(Page::Party, &data),
+                    OnlineLook::Requests => self.friends.show_page(Page::Requests, &data),
+                    OnlineLook::FriendsFocus => {
+                        self.friends.focus_row("friendRow", 1, &data);
+                    }
+                    OnlineLook::FriendsRail => self.friends.focus_rail(),
+                    OnlineLook::PartyNone => self.friends.show_page(Page::Party, &data),
+                    OnlineLook::MissedCall => self.friends.show_page(Page::Home, &data),
+                    OnlineLook::PartyDiscord => self.friends.show_page(Page::Party, &data),
                     OnlineLook::Friend => self
-                        .online_panel
+                        .friends
                         .show_page(Page::Friend(anyps5_core::online::api::AccountId(2)), &data),
                     OnlineLook::Account | OnlineLook::AccountAppearing => {
-                        self.online_panel.show_page(Page::Account, &data);
+                        self.friends.show_page(Page::Account, &data);
                     }
-                    OnlineLook::Party => self.online_panel.show_page(Page::Party, &data),
+                    OnlineLook::Party => self.friends.show_page(Page::Party, &data),
                     OnlineLook::PartyPicker => {
-                        self.online_panel.show_page(Page::PartyPicker, &data);
+                        self.friends.show_page(Page::PartyPicker, &data);
                     }
                     OnlineLook::PartyVoice
                     | OnlineLook::ScreenReady
@@ -2055,52 +2082,49 @@ impl ScreenGallery {
                     | OnlineLook::ScreenOffer
                     | OnlineLook::ScreenCannot
                     | OnlineLook::ScreenWatching
-                    | OnlineLook::ScreenStalled => self.online_panel.show_page(Page::Party, &data),
-                    OnlineLook::ScreenHome => self.online_panel.show_page(Page::Home, &data),
-                    OnlineLook::PartyMember => self.online_panel.show_page(
+                    | OnlineLook::ScreenStalled => self.friends.show_page(Page::Party, &data),
+                    OnlineLook::PartyMember => self.friends.show_page(
                         Page::PartyMember(anyps5_core::online::api::AccountId(2)),
                         &data,
                     ),
                     OnlineLook::Voice | OnlineLook::VoiceDenied => {
-                        self.online_panel.show_page(Page::Voice, &data);
+                        self.friends.show_page(Page::Voice, &data);
                     }
                     OnlineLook::VoiceKey => {
-                        self.online_panel.show_page(Page::Voice, &data);
-                        self.online_panel.begin_capture();
+                        self.friends.show_page(Page::Voice, &data);
+                        self.friends.begin_capture();
                     }
-                    OnlineLook::VoiceDevices => self.online_panel.show_page(
+                    OnlineLook::VoiceDevices => self.friends.show_page(
                         Page::VoiceDevices(anyps5_core::online::DeviceKind::Input),
                         &data,
                     ),
-                    OnlineLook::Messages => self.online_panel.show_page(Page::Messages, &data),
+                    OnlineLook::Messages => self.friends.show_page(Page::Messages, &data),
                     OnlineLook::Message => self
-                        .online_panel
+                        .friends
                         .show_page(Page::Message("c-lumen".into(), 6), &data),
                     OnlineLook::Conversation => self
-                        .online_panel
+                        .friends
                         .show_page(Page::Conversation("c-lumen".into()), &data),
                     OnlineLook::Request => self
-                        .online_panel
+                        .friends
                         .show_page(Page::MessageRequest("c-nyx".into()), &data),
-                    OnlineLook::Muted => self.online_panel.show_page(Page::Home, &data),
+                    OnlineLook::Muted => self.friends.show_page(Page::Home, &data),
                     OnlineLook::Restriction => self
-                        .online_panel
+                        .friends
                         .show_page(Page::Restriction("muted".into()), &data),
                     OnlineLook::Paused => self
-                        .online_panel
+                        .friends
                         .show_page(Page::Conversation("c-lumen".into()), &data),
-                    OnlineLook::Banned => self.online_panel.show_page(Page::Start, &data),
+                    OnlineLook::Banned => self.friends.show_page(Page::Start, &data),
                     OnlineLook::Feed
                     | OnlineLook::FeedReaction
                     | OnlineLook::FeedEmpty
                     | OnlineLook::FeedLoading
                     | OnlineLook::FeedError => {
-                        self.online_panel.show_page(Page::Feed, &data);
+                        self.friends.show_page(Page::Feed, &data);
                         match look {
-                            OnlineLook::Feed => self.online_panel.set_feed_focus(1, None),
-                            OnlineLook::FeedReaction => {
-                                self.online_panel.set_feed_focus(1, Some(1))
-                            }
+                            OnlineLook::Feed => self.friends.set_feed_focus(1, None),
+                            OnlineLook::FeedReaction => self.friends.set_feed_focus(1, Some(1)),
                             _ => {}
                         }
                     }

@@ -102,7 +102,7 @@ impl Config {
         };
         crate::startup::mark("preferences loaded");
         // Whatever the last self-update swap left behind (`.old` exes, stale downloads).
-        if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe) = anyps5_core::selfupdate::install_path() {
             anyps5_core::selfupdate::cleanup(&exe, &paths, env!("CARGO_PKG_VERSION"));
         }
         crate::startup::mark("update leftovers cleaned");
