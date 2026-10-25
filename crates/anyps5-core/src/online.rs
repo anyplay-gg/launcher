@@ -433,6 +433,8 @@ pub enum Purpose {
     },
     /// Mute or pin, answered with the conversation.
     ConversationSettings(String),
+    /// The newest message of a conversation, fetched for its row in the list.
+    Preview(String),
     /// The typing signal: nothing waits for it, but the net service answers.
     Typing(String),
     MarkRead {
@@ -903,6 +905,13 @@ impl Online {
                 }
             }
             Purpose::LeaveConversation(id) => self.social.remove(id),
+            Purpose::Preview(_) => {
+                if let Ok(page) = serde_json::from_value::<api::Messages>(value.clone())
+                    && let Some(message) = page.messages.into_iter().next_back()
+                {
+                    self.social.set_preview(message);
+                }
+            }
             Purpose::ConversationSettings(_) => {
                 if let Ok(conversation) = serde_json::from_value::<Conversation>(value.clone()) {
                     self.social.upsert(conversation);
@@ -965,6 +974,26 @@ impl Online {
             self.fetch(&id, fetch, false);
         }
         notices.extend(listed.new_requests.into_iter().map(Notice::MessageRequest));
+    }
+
+    /// Asks for the newest message of each of these conversations that has no preview yet: the
+    /// list shows them. At most a few at a time; the rest are asked for as they come into view.
+    pub fn request_previews(&mut self, ids: &[String]) {
+        if !self.is_online() {
+            return;
+        }
+        for id in self.social.wants_previews(ids) {
+            self.send(
+                Purpose::Preview(id.clone()),
+                Command::Messages {
+                    conversation: id,
+                    after: None,
+                    before: None,
+                    limit: Some(1),
+                    changed_after: None,
+                },
+            );
+        }
     }
 
     /// Asks for the list of conversations, unless that question waits already.

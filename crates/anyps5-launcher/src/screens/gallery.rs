@@ -262,6 +262,12 @@ pub enum OnlineLook {
     Message,
     /// A conversation with a friend, with news.
     Conversation,
+    /// No conversation yet.
+    MessagesEmpty,
+    /// A group: names and pictures beside the bubbles, runs of messages, answers.
+    ConversationGroup,
+    /// A conversation of two lines.
+    ConversationShort,
     /// One of the player's own messages: edit, take back.
     MessageOwn,
     /// Short answers for a pad.
@@ -515,6 +521,9 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "friends-messages" => ScreenPage::Online(OnlineLook::Messages),
         "friends-message" => ScreenPage::Online(OnlineLook::Message),
         "friends-conversation" => ScreenPage::Online(OnlineLook::Conversation),
+        "friends-messages-empty" => ScreenPage::Online(OnlineLook::MessagesEmpty),
+        "friends-conversation-group" => ScreenPage::Online(OnlineLook::ConversationGroup),
+        "friends-conversation-short" => ScreenPage::Online(OnlineLook::ConversationShort),
         "friends-message-own" => ScreenPage::Online(OnlineLook::MessageOwn),
         "friends-quick-replies" => ScreenPage::Online(OnlineLook::QuickReplies),
         "friends-keyboard" => ScreenPage::Online(OnlineLook::Keyboard),
@@ -733,7 +742,7 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         })
         .collect();
     }
-    if look == OnlineLook::FriendsEmpty {
+    if matches!(look, OnlineLook::FriendsEmpty | OnlineLook::MessagesEmpty) {
         state.friends = FriendLists::default();
         state.invitations.clear();
     } else {
@@ -1021,9 +1030,8 @@ fn sample_screen(state: &mut anyps5_core::online::Online, look: OnlineLook) {
 /// An invented party of three, a session, four conversations and a stranger who wrote first.
 fn sample_social(state: &mut anyps5_core::online::Online) {
     use anyps5_core::online::api::{
-        Account, AccountId, Conversation, ConversationKind, Conversations, Message,
-        MessageReaction, Messages, Party, PartyInvitation, PartyMember, Quote, ReactionOn,
-        ReadMark, Visibility,
+        Account, AccountId, Conversation, ConversationKind, Conversations, Message, Messages,
+        Party, PartyInvitation, PartyMember, Quote, ReadMark, Visibility,
     };
     use anyps5_core::online::control::Member;
     use anyps5_core::online::{Fetch, Session};
@@ -1215,16 +1223,6 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
         text: "Bringing Juno too.".into(),
         deleted: false,
     });
-    lumen_messages[4].reactions = vec![
-        ReactionOn {
-            reaction: MessageReaction::Nice,
-            accounts: vec![AccountId(1), AccountId(3)],
-        },
-        ReactionOn {
-            reaction: MessageReaction::Wow,
-            accounts: vec![AccountId(2)],
-        },
-    ];
     lumen_messages[1].deleted = true;
     lumen_messages[1].text.clear();
     state.social.ingest(
@@ -1240,6 +1238,55 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
     state
         .social
         .apply_typing("c-lumen", AccountId(2), true, SAMPLE_NOW as u64);
+    let mut raid = vec![
+        said("c-raid", 1, 3, "Juno", "Raid is at 9. Who is in?", 30_000),
+        said("c-raid", 2, 4, "Kit", "In.", 29_900),
+        said("c-raid", 3, 4, "Kit", "Bringing the new build too.", 29_880),
+        said("c-raid", 4, 2, "Lumen", "Same. I can host.", 29_700),
+        said(
+            "c-raid",
+            5,
+            1,
+            "Mira",
+            "I will be a few minutes late.",
+            29_400,
+        ),
+        said(
+            "c-raid",
+            6,
+            3,
+            "Juno",
+            "No problem, we start with the warm-up.",
+            29_300,
+        ),
+    ];
+    raid[3].reply = Some(Quote {
+        seq: 1,
+        sender: account(3, "Juno"),
+        text: "Raid is at 9. Who is in?".into(),
+        deleted: false,
+    });
+    state.social.ingest(
+        "c-raid",
+        Fetch::Newest,
+        Messages {
+            messages: raid,
+            last: 30,
+            rev: 0,
+        },
+    );
+    state.social.ingest(
+        "c-juno",
+        Fetch::Newest,
+        Messages {
+            messages: vec![
+                said("c-juno", 11, 3, "Juno", "Did you see the new map?", 21_000),
+                said("c-juno", 12, 1, "Mira", "Not yet. Tonight.", 20_000),
+            ],
+            last: 12,
+            rev: 0,
+        },
+    );
     state.social.ingest(
         "c-nyx",
         Fetch::Newest,
@@ -2169,7 +2216,15 @@ impl ScreenGallery {
                         Page::VoiceDevices(anyps5_core::online::DeviceKind::Input),
                         &data,
                     ),
-                    OnlineLook::Messages => self.friends.show_page(Page::Messages, &data),
+                    OnlineLook::Messages | OnlineLook::MessagesEmpty => {
+                        self.friends.show_page(Page::Messages, &data)
+                    }
+                    OnlineLook::ConversationGroup => self
+                        .friends
+                        .show_page(Page::Conversation("c-raid".into()), &data),
+                    OnlineLook::ConversationShort => self
+                        .friends
+                        .show_page(Page::Conversation("c-juno".into()), &data),
                     OnlineLook::Message => self
                         .friends
                         .show_page(Page::Message("c-lumen".into(), 6), &data),

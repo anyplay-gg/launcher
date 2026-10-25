@@ -158,7 +158,10 @@ impl FriendsScreen {
         }
         let open = self.panel.is_open();
         let section = self.panel.section();
-        let has_rail = data.online.is_signed_in() && section.is_some();
+        // A conversation stands on its own, full screen, without the rail.
+        let chat = self.panel.chat_screen(data);
+        let thread = self.panel.chat_is_thread(data);
+        let has_rail = data.online.is_signed_in() && section.is_some() && !chat;
         if !has_rail {
             self.zone = Some(Zone::Page);
         }
@@ -248,7 +251,11 @@ impl FriendsScreen {
                     back_clicked = true;
                 }
                 let mut top = area.min.y + 32.0 + 28.0;
-                let (page_left, page_width) = if has_rail {
+                let (page_left, page_width) = if chat {
+                    top = area.min.y + 32.0 + 8.0;
+                    let width = area.width().min(paint::PAGE_MAX);
+                    (area.center().x - width * 0.5, width)
+                } else if has_rail {
                     let me = data.online.account.as_ref();
                     let handle = me.map_or("", |a| a.handle.as_str());
                     let status = status_line(data);
@@ -286,23 +293,31 @@ impl FriendsScreen {
                     let width = area.width().min(640.0);
                     (area.center().x - width * 0.5, width)
                 };
-                let (title, note) = self.panel.heading(data);
-                let note = note.as_deref();
-                let mut head = ui.new_child(UiBuilder::new().max_rect(Rect::from_min_size(
-                    pos2(page_left, top),
-                    vec2(page_width, 80.0),
-                )));
-                let used = paint::page_title(
-                    &mut head,
-                    pos2(page_left + crate::ui::theme::size::LIST_INSET, top),
-                    page_width - 2.0 * crate::ui::theme::size::LIST_INSET,
-                    &title,
-                    note,
-                );
-                let list_top = top + used + 22.0;
+                let list_top = if thread {
+                    // The thread draws its own header.
+                    top
+                } else {
+                    let (title, note) = self.panel.heading(data);
+                    let note = note.as_deref();
+                    let mut head = ui.new_child(UiBuilder::new().max_rect(Rect::from_min_size(
+                        pos2(page_left, top),
+                        vec2(page_width, 80.0),
+                    )));
+                    let used = paint::page_title(
+                        &mut head,
+                        pos2(page_left + crate::ui::theme::size::LIST_INSET, top),
+                        page_width - 2.0 * crate::ui::theme::size::LIST_INSET,
+                        &title,
+                        note,
+                    );
+                    top + used + 22.0
+                };
                 let list = Rect::from_min_max(
                     pos2(page_left, list_top),
-                    pos2(page_left + page_width, screen.max.y),
+                    pos2(
+                        page_left + page_width,
+                        if thread { area.max.y } else { screen.max.y },
+                    ),
                 );
                 let mut child = ui.new_child(UiBuilder::new().max_rect(list));
                 page_actions = self.panel.draw(shell, ctx, &mut child, data, page_focus);

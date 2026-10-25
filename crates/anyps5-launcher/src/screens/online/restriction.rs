@@ -507,14 +507,26 @@ mod tests {
 
     #[test]
     fn a_mute_replaces_the_message_field_but_a_new_account_may_write_to_friends() {
+        use super::super::chat::{Composer, ThreadFocus, composer};
         let mut online = muted();
         online.social.upsert(chat((2, "Lumen")));
         let mut panel = OnlinePanel::default();
         panel.go(Page::Conversation("c".into()), &data(&online));
-        let rows = panel.rows(&data(&online)).2;
-        assert_eq!(ids(&rows), ["pausedSend", "chatOptions"]);
-        assert_eq!(rows[0].title, "Messages Paused");
-        panel.run("pausedSend", &data(&online), &mut Vec::new());
+        let bar = composer(&data(&online), "c").unwrap();
+        assert!(
+            matches!(&bar, Composer::Paused { title, .. } if title == "Messages Paused"),
+            "{bar:?}"
+        );
+        // Pressing the bar opens why.
+        let mut actions = Vec::new();
+        panel.chat_press(
+            ThreadFocus::Bar,
+            "c",
+            &bar,
+            false,
+            &data(&online),
+            &mut actions,
+        );
         assert_eq!(panel.page, Page::Restriction("muted".into()));
 
         // A new account's limit is for strangers: a friend's chat keeps its field.
@@ -524,19 +536,16 @@ mod tests {
             &Restriction::new(Restriction::NEW_ACCOUNT, Some(END)),
         );
         new.social.upsert(chat((2, "Lumen")));
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::Conversation("c".into()), &data(&new));
-        assert_eq!(
-            ids(&panel.rows(&data(&new)).2),
-            ["compose", "send", "quickReplies", "keyboard", "chatOptions"]
-        );
+        assert!(matches!(
+            composer(&data(&new), "c"),
+            Some(Composer::Write { .. })
+        ));
         // With someone who is no friend it is replaced.
         new.social.upsert(chat((9, "Stranger")));
-        panel.go(Page::Conversation("c".into()), &data(&new));
-        assert_eq!(
-            ids(&panel.rows(&data(&new)).2),
-            ["pausedSend", "chatOptions"]
-        );
+        assert!(matches!(
+            composer(&data(&new), "c"),
+            Some(Composer::Paused { .. })
+        ));
     }
 
     #[test]

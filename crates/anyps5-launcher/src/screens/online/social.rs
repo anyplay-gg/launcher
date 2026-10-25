@@ -3,14 +3,11 @@
 //! plain text in rows and nowhere interpreted, so no link in it ever opens.
 
 use anyps5_core::online::api::{
-    Account, AccountId, Conversation, ConversationKind, EDIT_WINDOW_SECS, Friend, MAX_PINNED,
-    Message, MessageReaction, Visibility,
+    Account, AccountId, Conversation, ConversationKind, Friend, MAX_PINNED, Message, Visibility,
 };
-use anyps5_core::online::{
-    Blocked, Online, Purpose, Social, delivered_to_other, others, plain, read_by_other, seen_by,
-};
+use anyps5_core::online::{Online, Purpose, others, plain};
 
-use super::{OnlineAction, OnlineData, OnlinePanel, Page, presence_text, restriction};
+use super::{OnlineAction, OnlineData, OnlinePanel, Page, presence_text};
 use crate::screens::format;
 use crate::screens::friends_strings::FriendsText as FX;
 use crate::screens::online_feed_strings::FeedText as FD;
@@ -35,30 +32,8 @@ const QUICK: [S; 6] = [
     S::Quick6,
 ];
 
-/// The reactions in the order the page shows them.
-fn reaction_name(reaction: MessageReaction) -> S {
-    match reaction {
-        MessageReaction::Nice => S::ReactNice,
-        MessageReaction::Love => S::ReactLove,
-        MessageReaction::Laugh => S::ReactLaugh,
-        MessageReaction::Gg => S::ReactGg,
-        MessageReaction::Wow => S::ReactWow,
-        MessageReaction::Sad => S::ReactSad,
-    }
-}
-
 /// How many messages of a request the page shows: a stranger may send five before an answer.
 const REQUEST_SHOWN: usize = 5;
-
-/// Where the focus stands on a page whose rows change under it. New messages come in above the
-/// field, so a row is found again by what it is, not by its place in the list.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Anchor {
-    /// A message row, by its number.
-    Message(u64),
-    /// Any other row, by its distance from the end of the list: the field, Send, the answers.
-    FromEnd(usize),
-}
 
 /// A message as one line for its row: the line breaks and runs of white space become one space.
 /// The page of the message has the text as written.
@@ -86,38 +61,12 @@ pub fn chat_title(conversation: &Conversation, me: AccountId, language: Language
 }
 
 /// Who is typing, in a line.
-fn typing_text(typers: &[Account], language: Language) -> String {
+pub(super) fn typing_text(typers: &[Account], language: Language) -> String {
     match typers {
         [one] => S::TypingOne.format(language, &[Arg::Str(&one.handle)]),
         [a, b] => S::TypingTwo.format(language, &[Arg::Str(&a.handle), Arg::Str(&b.handle)]),
         _ => S::TypingMany.text(language).to_owned(),
     }
-}
-
-/// The start of a message for a note: one line, cut. A removed message has no text.
-fn snippet_of(message: &Message, language: Language) -> String {
-    if message.deleted {
-        S::Removed.text(language).to_owned()
-    } else {
-        anyps5_core::online::snippet(&message.text, 40)
-    }
-}
-
-/// The reactions of a message in a line: "Nice 2 · GG".
-fn reaction_summary(message: &Message, language: Language) -> String {
-    message
-        .reactions
-        .iter()
-        .map(|r| {
-            let name = reaction_name(r.reaction).text(language);
-            if r.accounts.len() > 1 {
-                format!("{name} {}", r.accounts.len())
-            } else {
-                name.to_owned()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" · ")
 }
 
 /// The friends a party can invite: those who are online and not in it, sorted like the list.
@@ -142,7 +91,7 @@ pub(super) fn free_places(online: &Online) -> usize {
 }
 
 impl OnlinePanel {
-    fn me(data: &OnlineData<'_>) -> AccountId {
+    pub(super) fn me(data: &OnlineData<'_>) -> AccountId {
         data.online.account.as_ref().map_or(AccountId(0), |a| a.id)
     }
 
@@ -511,157 +460,6 @@ impl OnlinePanel {
                 };
                 (t(S::Messages).to_owned(), Some(subtitle))
             }
-            Page::Conversation(id) => {
-                let conversation = social.get(id)?;
-                let held = social.messages(id);
-                let shown = self.shown_messages(social, id);
-                if held.len() > shown.len() || social.has_earlier(id) {
-                    rows.push(Row::command("earlier", t(S::ShowEarlier)).icon(Icon::CLOCK));
-                }
-                self.thread_rows(data, conversation, shown, rows);
-                if social.is_loaded(id) && held.is_empty() {
-                    rows.push(Row::info("quiet", t(S::NoMessages), None));
-                } else if social.has_failed(id) {
-                    rows.push(Row::info("loadFailed", t(S::LoadFailed), None));
-                    rows.push(
-                        Row::command("retryThread", FD::TryAgain.text(language))
-                            .icon(Icon::ARROW_CLOCKWISE),
-                    );
-                } else if !social.is_loaded(id) && conversation.last > 0 {
-                    rows.push(Row::info("loading", t(S::Loading), None));
-                }
-                let now = u64::try_from(data.now).unwrap_or(0);
-                let typers = social.typers(id, now, me);
-                if !typers.is_empty() {
-                    rows.push(Row::info("typing", typing_text(&typers, language), None));
-                }
-                let draft = social.draft(id);
-                let what = if online.is_stranger(conversation) {
-                    Blocked::Stranger
-                } else {
-                    Blocked::Message
-                };
-                let editing = social.editing(id);
-                let replying = social.replying_to(id);
-                let blocked_other = (conversation.kind == ConversationKind::Direct)
-                    .then(|| others(conversation, me).first().copied())
-                    .flatten()
-                    .filter(|other| online.friends.blocked.iter().any(|b| b.id == other.id));
-                if let Some(other) = blocked_other {
-                    // The cloud refuses what the player writes to someone they blocked: the page
-                    // says so where the field would be, and offers the way back.
-                    rows.push(
-                        Row::info(
-                            "blockedNote",
-                            S::BlockedNote.format(language, &[Arg::Str(&other.handle)]),
-                            None,
-                        )
-                        .group_start(),
-                    );
-                    rows.push(
-                        Row::command("unblockChat", T::Unblock.text(language))
-                            .icon(Icon::LOCK_OPEN),
-                    );
-                } else if let Some(paused) = online.restrictions.blocking(what, now) {
-                    // A restriction stops writing: the row that says so stands where the field
-                    // would be, and the draft waits.
-                    let mut paused = restriction::paused_row("pausedSend", what, paused, data);
-                    if !shown.is_empty() || held.is_empty() {
-                        paused = paused.group_start();
-                    }
-                    rows.push(paused);
-                } else {
-                    let mut first = !shown.is_empty() || held.is_empty();
-                    if let Some(note) =
-                        editing
-                            .map(|_| t(S::EditingMessage).to_owned())
-                            .or_else(|| {
-                                replying.map(|m| {
-                                    S::ReplyingTo.format(
-                                        language,
-                                        &[
-                                            Arg::Str(&self.sender_name(data, &m.sender)),
-                                            Arg::Str(&snippet_of(m, language)),
-                                        ],
-                                    )
-                                })
-                            })
-                    {
-                        let mut note = Row::info("composeNote", note, None);
-                        if first {
-                            note = note.group_start();
-                            first = false;
-                        }
-                        rows.push(note);
-                    }
-                    let title = if editing.is_some() {
-                        t(S::EditingMessage)
-                    } else {
-                        t(S::MessageField)
-                    };
-                    let mut compose = Row::text("compose", title, draft).wide();
-                    if first {
-                        compose = compose.group_start();
-                    }
-                    rows.push(compose);
-                    let label = if editing.is_some() {
-                        t(S::EditSave)
-                    } else {
-                        t(S::Send)
-                    };
-                    let mut send = Row::command("send", label).icon(Icon::PAPER_PLANE_RIGHT);
-                    if online.is_waiting(|p| {
-                        matches!(p, Purpose::SendMessage { conversation: c, .. }
-                            | Purpose::EditMessage { conversation: c, .. } if c == id)
-                    }) {
-                        send = send.detail(T::Sending.text(language));
-                    } else if draft.chars().count() > anyps5_core::online::api::MAX_MESSAGE_CHARS {
-                        send = send.detail(t(S::TooLong));
-                    }
-                    rows.push(send);
-                    if editing.is_some() {
-                        rows.push(Row::command("cancelCompose", t(S::CancelEdit)).icon(Icon::X));
-                    } else if replying.is_some() {
-                        rows.push(Row::command("cancelCompose", t(S::CancelReply)).icon(Icon::X));
-                    } else {
-                        rows.push(
-                            Row::action("quickReplies", t(S::QuickReplies))
-                                .icon(Icon::ENVELOPE_SIMPLE)
-                                .detail(t(S::QuickRepliesDetail)),
-                        );
-                    }
-                    rows.push(
-                        Row::action("keyboard", t(S::Keyboard))
-                            .icon(Icon::KEYBOARD)
-                            .detail(t(S::KeyboardDetail)),
-                    );
-                }
-                rows.push(
-                    Row::action("chatOptions", t(S::ChatOptions))
-                        .icon(Icon::DOTS_THREE)
-                        .group_start(),
-                );
-                let subtitle = match conversation.kind {
-                    ConversationKind::Direct => others(conversation, me)
-                        .first()
-                        .and_then(|a| online.friend(a.id))
-                        .map(|f| presence_text(f, language)),
-                    ConversationKind::Group => Some(
-                        S::GroupPeople
-                            .format(language, &[Arg::Int(conversation.members.len() as i64)]),
-                    ),
-                    ConversationKind::Party => social.party.as_ref().map(|p| {
-                        S::PartySubtitle.format(
-                            language,
-                            &[
-                                Arg::Int(p.members.len() as i64),
-                                Arg::Int(i64::from(p.max_members)),
-                            ],
-                        )
-                    }),
-                };
-                (chat_title(conversation, me, language), subtitle)
-            }
             Page::ChatOptions(id) => {
                 let conversation = social.get(id)?;
                 let mut mute = Row::command(
@@ -737,10 +535,12 @@ impl OnlinePanel {
                     self.keys[3],
                 ));
                 rows.push(
-                    Row::command("keyboardDone", t(S::KeyboardDone))
-                        .icon(Icon::CHECK)
+                    Row::action("quickReplies", t(S::QuickReplies))
+                        .icon(Icon::ENVELOPE_SIMPLE)
+                        .detail(t(S::QuickRepliesDetail))
                         .group_start(),
                 );
+                rows.push(Row::command("keyboardDone", t(S::KeyboardDone)).icon(Icon::CHECK));
                 (
                     t(S::Keyboard).to_owned(),
                     Some(chat_title(conversation, me, language)),
@@ -754,31 +554,6 @@ impl OnlinePanel {
                 (
                     t(S::QuickReplies).to_owned(),
                     Some(chat_title(conversation, me, language)),
-                )
-            }
-            Page::MessageRequest(id) => {
-                let request = social.get(id)?;
-                for message in self.shown_messages(social, id) {
-                    rows.push(
-                        Row::action("message", one_line(&message.text))
-                            .detail(self.message_meta(data, message)),
-                    );
-                }
-                rows.push(
-                    Row::command("acceptRequest", T::Accept.text(language))
-                        .icon(Icon::CHECK)
-                        .group_start(),
-                );
-                rows.push(Row::command("declineRequest", T::Decline.text(language)).icon(Icon::X));
-                rows.push(
-                    Row::command("blockSender", T::Block.text(language))
-                        .icon(Icon::PROHIBIT)
-                        .destructive(),
-                );
-                rows.push(Row::info("requestNote", t(S::RequestNote), None).group_start());
-                (
-                    chat_title(request, me, language),
-                    Some(t(S::WantsToMessage).to_owned()),
                 )
             }
             Page::Message(id, seq) => {
@@ -807,33 +582,15 @@ impl OnlinePanel {
                         None,
                     ));
                 }
-                let reacted = reaction_summary(message, language);
-                if !reacted.is_empty() {
-                    rows.push(Row::info("reactions", reacted, None));
-                }
                 if !message.deleted {
-                    let now = u64::try_from(data.now).unwrap_or(0);
                     if !conversation.request {
                         rows.push(
                             Row::action("reply", t(S::Reply))
                                 .icon(Icon::ARROW_BEND_UP_LEFT)
                                 .group_start(),
                         );
-                        rows.push(Row::caption("reactCaption", t(S::ReactCaption)).group_start());
-                        let chosen = message
-                            .reactions
-                            .iter()
-                            .find(|r| r.accounts.contains(&me))
-                            .map(|r| r.reaction);
-                        for reaction in MessageReaction::ALL {
-                            let mut row = Row::command("react", t(reaction_name(reaction)));
-                            if chosen == Some(reaction) {
-                                row = row.icon(Icon::CHECK).detail(t(S::RemoveReaction));
-                            }
-                            rows.push(row);
-                        }
                     }
-                    if mine && now <= message.created + EDIT_WINDOW_SECS {
+                    if super::chat::editable(message, me, data.now) {
                         rows.push(
                             Row::action("edit", t(S::Edit))
                                 .icon(Icon::PENCIL_SIMPLE)
@@ -867,60 +624,6 @@ impl OnlinePanel {
             }
             _ => return None,
         })
-    }
-
-    /// The messages a conversation or request page shows: the newest ones.
-    fn shown_messages<'a>(&self, social: &'a Social, id: &str) -> &'a [Message] {
-        let held = social.messages(id);
-        let limit = if matches!(self.page, Page::MessageRequest(_)) {
-            REQUEST_SHOWN
-        } else {
-            self.shown
-        };
-        &held[held.len().saturating_sub(limit)..]
-    }
-
-    /// Where the focus stands now, if the page is one that changes under it.
-    pub(super) fn anchor_now(&self, data: &OnlineData<'_>, rows: &[Row]) -> Option<Anchor> {
-        let (Page::Conversation(id) | Page::MessageRequest(id)) = &self.page else {
-            return None;
-        };
-        let row = self.side.nav.row;
-        if rows.get(row)?.id == "message" {
-            let index = rows[..row].iter().filter(|r| r.id == "message").count();
-            let message = self.shown_messages(&data.online.social, id).get(index)?;
-            Some(Anchor::Message(message.seq))
-        } else {
-            Some(Anchor::FromEnd(rows.len() - row))
-        }
-    }
-
-    /// Puts the focus back on the row it stood on before the rows changed.
-    pub(super) fn restore_anchor(&mut self, data: &OnlineData<'_>, rows: &[Row]) {
-        let (Some(anchor), Page::Conversation(id) | Page::MessageRequest(id)) =
-            (self.anchor, &self.page)
-        else {
-            return;
-        };
-        let row = match anchor {
-            Anchor::FromEnd(distance) => rows.len().checked_sub(distance),
-            Anchor::Message(seq) => {
-                let at = self
-                    .shown_messages(&data.online.social, id)
-                    .iter()
-                    .position(|m| m.seq == seq);
-                at.and_then(|at| {
-                    rows.iter()
-                        .enumerate()
-                        .filter(|(_, r)| r.id == "message")
-                        .nth(at)
-                        .map(|(row, _)| row)
-                })
-            }
-        };
-        if let Some(row) = row.filter(|row| *row < rows.len()) {
-            self.side.nav.row = row;
-        }
     }
 
     /// The labels of one row of the on-screen keyboard in the mode it is in.
@@ -998,108 +701,6 @@ impl OnlinePanel {
         });
     }
 
-    /// The local offset for a moment: the one the host knows, else the system's.
-    fn offset_at(&self, data: &OnlineData<'_>, unix: i64) -> i32 {
-        data.utc_offset
-            .unwrap_or_else(|| format::local_offset_seconds(unix.saturating_mul(1_000_000)))
-    }
-
-    /// The rows of a conversation's messages: a separator where the day changes, a line that
-    /// quotes what a reply answers, and the message with who wrote it, when, and what
-    /// happened to it. Removed messages stay as a quiet marker.
-    fn thread_rows(
-        &self,
-        data: &OnlineData<'_>,
-        conversation: &Conversation,
-        shown: &[Message],
-        rows: &mut Vec<Row>,
-    ) {
-        let language = data.language;
-        let me = Self::me(data);
-        let direct = conversation.kind == ConversationKind::Direct;
-        let read = read_by_other(conversation, me).filter(|_| direct);
-        let delivered = delivered_to_other(conversation, me).filter(|_| direct);
-        let last_own = shown
-            .iter()
-            .rev()
-            .find(|m| m.sender.id == me)
-            .map(|m| m.seq);
-        // Where several people write, the one who spoke comes first in the line.
-        let crowd = !direct;
-        let mut day = None;
-        for message in shown {
-            let created = i64::try_from(message.created).unwrap_or(0);
-            let offset = self.offset_at(data, created);
-            let this_day = format::day_number(created, offset);
-            if day != Some(this_day) {
-                day = Some(this_day);
-                rows.push(Row::caption(
-                    "day",
-                    format::day_label(created, data.now, offset, language),
-                ));
-            }
-            let mine = message.sender.id == me;
-            let clock = format::clock_text(created, offset);
-            if let Some(quote) = &message.reply {
-                let text = if quote.deleted {
-                    S::Removed.text(language).to_owned()
-                } else {
-                    one_line(&quote.text)
-                };
-                rows.push(Row::info(
-                    "quote",
-                    S::ReplyTo.format(
-                        language,
-                        &[
-                            Arg::Str(&self.sender_name(data, &quote.sender)),
-                            Arg::Str(&text),
-                        ],
-                    ),
-                    None,
-                ));
-            }
-            let text = if message.deleted {
-                S::Removed.text(language).to_owned()
-            } else {
-                one_line(&message.text)
-            };
-            // Who wrote it: in a chat of two the line says "You" or the other; in a crowd the
-            // title already names the others.
-            let mut parts = Vec::new();
-            if mine {
-                parts.push(T::You.text(language).to_owned());
-            } else if !crowd {
-                parts.push(message.sender.handle.clone());
-            }
-            parts.push(clock);
-            if message.edited.is_some() && !message.deleted {
-                parts.push(S::Edited.text(language).to_owned());
-            }
-            let reacted = reaction_summary(message, language);
-            if !reacted.is_empty() {
-                parts.push(reacted);
-            }
-            if mine && Some(message.seq) == last_own && !message.deleted {
-                if read.is_some_and(|r| r >= message.seq) {
-                    parts.push(S::Seen.text(language).to_owned());
-                } else if delivered.is_some_and(|d| d >= message.seq) {
-                    parts.push(S::Delivered.text(language).to_owned());
-                } else if !direct {
-                    let seen = seen_by(conversation, me, message.seq);
-                    if seen > 0 {
-                        parts.push(S::SeenBy.format(language, &[Arg::Int(seen as i64)]));
-                    }
-                }
-            }
-            let title = if crowd && !mine && !message.deleted {
-                format!("{}: {text}", message.sender.handle)
-            } else {
-                text
-            };
-            rows.push(Row::action("message", title).detail(parts.join(" · ")));
-        }
-    }
-
     /// "You" for the player, else the handle.
     fn sender_name(&self, data: &OnlineData<'_>, sender: &Account) -> String {
         if sender.id == Self::me(data) {
@@ -1127,7 +728,7 @@ impl OnlinePanel {
     }
 
     /// What a read conversation says under its name: a friend's presence.
-    fn conversation_detail(
+    pub(super) fn conversation_detail(
         &self,
         data: &OnlineData<'_>,
         conversation: &Conversation,
@@ -1338,43 +939,8 @@ impl OnlinePanel {
                     self.go(Page::MessageRequest(c.id.clone()), data);
                 }
             }
-            ("message", Page::Conversation(id) | Page::MessageRequest(id)) => {
-                let rows = self.rows(data).2;
-                let index = rows[..self.side.nav.row.min(rows.len())]
-                    .iter()
-                    .filter(|r| r.id == "message")
-                    .count();
-                if let Some(message) = self.shown_messages(social, &id).get(index) {
-                    self.go(Page::Message(id, message.seq), data);
-                }
-            }
-            ("earlier", Page::Conversation(id)) => {
-                self.shown += SHOWN;
-                if social.messages(&id).len() < self.shown {
-                    actions.push(OnlineAction::LoadEarlier(id));
-                }
-            }
-            ("send", Page::Conversation(id)) => actions.push(OnlineAction::SendMessage(id)),
-            ("leaveConversation", Page::Conversation(id) | Page::ChatOptions(id)) => {
+            ("leaveConversation", Page::ChatOptions(id)) => {
                 actions.push(OnlineAction::LeaveConversation(id));
-            }
-            ("acceptRequest", Page::MessageRequest(id)) => {
-                actions.push(OnlineAction::AcceptRequest(id));
-            }
-            ("declineRequest", Page::MessageRequest(id)) => {
-                actions.push(OnlineAction::LeaveConversation(id));
-                self.go(Page::Messages, data);
-            }
-            ("blockSender", Page::MessageRequest(id)) => {
-                let strangers = social
-                    .get(&id)
-                    .map(|c| others(c, me).iter().map(|a| a.id).collect::<Vec<_>>())
-                    .unwrap_or_default();
-                for account in strangers {
-                    actions.push(OnlineAction::Block(account));
-                }
-                actions.push(OnlineAction::LeaveConversation(id));
-                self.go(Page::Messages, data);
             }
             ("reply", Page::Message(id, seq)) => {
                 actions.push(OnlineAction::StartReply {
@@ -1397,31 +963,8 @@ impl OnlinePanel {
                 });
                 self.go(Page::Conversation(id), data);
             }
-            ("react", Page::Message(id, seq)) => {
-                let index = self.nth(data, "react");
-                if let Some(reaction) = MessageReaction::ALL.get(index).copied() {
-                    let mine = social
-                        .messages(&id)
-                        .iter()
-                        .find(|m| m.seq == seq)
-                        .is_some_and(|m| {
-                            m.reactions
-                                .iter()
-                                .any(|r| r.reaction == reaction && r.accounts.contains(&me))
-                        });
-                    actions.push(OnlineAction::ReactMessage {
-                        conversation: id,
-                        seq,
-                        reaction: (!mine).then_some(reaction),
-                    });
-                }
-            }
-            ("cancelCompose", Page::Conversation(id)) => {
-                actions.push(OnlineAction::CancelCompose(id));
-            }
-            ("quickReplies", Page::Conversation(id)) => self.go(Page::QuickReplies(id), data),
-            ("keyboard", Page::Conversation(id)) => self.go(Page::Keyboard(id), data),
             ("keyboardDone", Page::Keyboard(id)) => self.go(Page::Conversation(id), data),
+            ("quickReplies", Page::Keyboard(id)) => self.go(Page::QuickReplies(id), data),
             ("quick", Page::QuickReplies(id)) => {
                 let index = self.nth(data, "quick");
                 if let Some(text) = QUICK.get(index) {
@@ -1433,19 +976,7 @@ impl OnlinePanel {
                     self.go(Page::Conversation(id), data);
                 }
             }
-            ("chatOptions", Page::Conversation(id)) => self.go(Page::ChatOptions(id), data),
             ("retryList", _) => actions.push(OnlineAction::RetryMessages(None)),
-            ("retryThread", Page::Conversation(id)) => {
-                actions.push(OnlineAction::RetryMessages(Some(id)));
-            }
-            ("unblockChat", Page::Conversation(id)) => {
-                if let Some(other) = social
-                    .get(&id)
-                    .and_then(|c| others(c, me).first().map(|a| a.id))
-                {
-                    actions.push(OnlineAction::Unblock(other));
-                }
-            }
             ("toggleMute", Page::ChatOptions(id)) => {
                 if let Some(c) = social.get(&id) {
                     actions.push(OnlineAction::ConversationSettings {
@@ -1508,13 +1039,12 @@ impl OnlinePanel {
 mod tests {
     use anyps5_core::online::api::{
         ConversationKind, Conversations, Friend, Message, Party, PartyInvitation, PartyMember,
-        Presence, ReadMark,
+        Presence,
     };
     use anyps5_core::online::{Cloud, Fetch, SignedIn, Status};
     use egui::Color32;
 
     use super::*;
-    use crate::screens::rows;
     use crate::screens::rows::Control;
     use crate::ui::i18n::Language;
 
@@ -1963,65 +1493,6 @@ mod tests {
     }
 
     #[test]
-    fn the_message_list_puts_requests_apart_and_unread_first() {
-        let mut online = online();
-        let mut quiet = conversation("quiet", ConversationKind::Direct, &[(2, "Lumen")], 9, 9);
-        quiet.updated = 900;
-        let mut news = conversation("news", ConversationKind::Direct, &[(3, "Juno")], 4, 1);
-        news.updated = 100;
-        let mut group = conversation(
-            "group",
-            ConversationKind::Group,
-            &[(2, "Lumen"), (3, "Juno")],
-            2,
-            2,
-        );
-        group.name = Some("Raid night".into());
-        list(
-            &mut online,
-            vec![quiet, news, group],
-            vec![conversation(
-                "r",
-                ConversationKind::Direct,
-                &[(9, "Vale")],
-                2,
-                0,
-            )],
-        );
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::Messages, &data(&online));
-        let (title, subtitle, rows) = panel.rows(&data(&online));
-        assert_eq!(title, "Messages");
-        assert_eq!(
-            subtitle.as_deref(),
-            Some("4 unread"),
-            "three messages and the request"
-        );
-        assert_eq!(
-            ids(&rows),
-            [
-                "requestsCaption",
-                "messageRequest",
-                "conversationsCaption",
-                "conversation",
-                "conversation",
-                "conversation"
-            ]
-        );
-        assert_eq!(rows[1].title, "Vale");
-        assert_eq!(rows[1].detail.as_deref(), Some("Wants to message you"));
-        assert!(rows[2].group_start);
-        assert_eq!(rows[3].title, "Lumen", "the newest first");
-        assert_eq!(rows[3].detail.as_deref(), Some("Online"));
-        assert_eq!(rows[4].title, "Juno");
-        assert_eq!(rows[4].detail.as_deref(), Some("3 new"));
-        assert_eq!(rows[5].title, "Raid night");
-        assert_eq!(rows[5].detail.as_deref(), Some("3 people"));
-        // The first row to take focus is the request.
-        assert_eq!(panel.side.nav.row, 1);
-    }
-
-    #[test]
     fn an_empty_inbox_says_how_to_start() {
         let online = online();
         let mut panel = OnlinePanel::default();
@@ -2029,294 +1500,6 @@ mod tests {
         let (_, subtitle, rows) = panel.rows(&data(&online));
         assert_eq!(subtitle.as_deref(), Some("Talk to your friends"));
         assert_eq!(ids(&rows), ["none"]);
-    }
-
-    #[test]
-    fn a_conversation_shows_the_newest_at_the_bottom_above_the_field() {
-        let mut online = online();
-        list(
-            &mut online,
-            vec![conversation(
-                "a",
-                ConversationKind::Direct,
-                &[(2, "Lumen")],
-                4,
-                4,
-            )],
-            vec![],
-        );
-        online.social.ingest("a", Fetch::Newest, texts("a", 1, 4));
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::Conversation("a".into()), &data(&online));
-        let (title, subtitle, rows) = panel.rows(&data(&online));
-        assert_eq!(title, "Lumen");
-        assert_eq!(subtitle.as_deref(), Some("Online"));
-        assert_eq!(
-            ids(&rows),
-            [
-                "day",
-                "message",
-                "message",
-                "message",
-                "message",
-                "compose",
-                "send",
-                "quickReplies",
-                "keyboard",
-                "chatOptions"
-            ]
-        );
-        assert_eq!(rows[0].title, "Today", "a day separator names the day once");
-        assert_eq!(rows[1].title, "Message 1");
-        assert_eq!(rows[1].detail.as_deref(), Some("Lumen · 11:51"));
-        assert_eq!(rows[4].detail.as_deref(), Some("You · 11:54"));
-        assert_eq!(rows[4].title, "Message 4");
-        assert!(rows[5].wide && rows[5].group_start);
-        // It opens on the field, where the player writes.
-        assert_eq!(panel.side.nav.row, 5);
-        assert_eq!(
-            panel.queued,
-            [OnlineAction::OpenThread("a".into())],
-            "the host fetches what the thread lacks"
-        );
-    }
-
-    #[test]
-    fn the_last_own_message_shows_when_the_other_read_it() {
-        let mut online = online();
-        let mut c = conversation("a", ConversationKind::Direct, &[(2, "Lumen")], 4, 4);
-        c.marks = vec![ReadMark {
-            account: AccountId(2),
-            seq: 4,
-            delivered: 4,
-        }];
-        list(&mut online, vec![c], vec![]);
-        online.social.ingest("a", Fetch::Newest, texts("a", 1, 4));
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::Conversation("a".into()), &data(&online));
-        let rows = panel.rows(&data(&online)).2;
-        assert_eq!(rows[4].detail.as_deref(), Some("You · 11:54 · Seen"));
-        assert_eq!(
-            rows[2].detail.as_deref(),
-            Some("You · 11:52"),
-            "only the last one"
-        );
-    }
-
-    #[test]
-    fn message_text_is_shown_as_plain_text() {
-        let mut online = online();
-        list(
-            &mut online,
-            vec![conversation(
-                "a",
-                ConversationKind::Direct,
-                &[(2, "Lumen")],
-                1,
-                1,
-            )],
-            vec![],
-        );
-        let mut page = texts("a", 1, 1);
-        page.messages[0].text = "click https://evil.example/\u{202E}gpj.exe <b>now</b>".into();
-        online.social.ingest("a", Fetch::Newest, page);
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::Conversation("a".into()), &data(&online));
-        let rows = panel.rows(&data(&online)).2;
-        assert_eq!(
-            rows[1].title,
-            "click https://evil.example/gpj.exe <b>now</b>"
-        );
-        assert!(
-            matches!(rows[1].control, Control::Action),
-            "the row opens the message page and nothing else"
-        );
-    }
-
-    #[test]
-    fn writing_edits_the_draft_and_sends_it() {
-        let mut online = online();
-        list(
-            &mut online,
-            vec![conversation(
-                "a",
-                ConversationKind::Direct,
-                &[(2, "Lumen")],
-                0,
-                0,
-            )],
-            vec![],
-        );
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::Conversation("a".into()), &data(&online));
-        let rows = panel.rows(&data(&online)).2;
-        assert_eq!(
-            ids(&rows),
-            ["compose", "send", "quickReplies", "keyboard", "chatOptions"],
-            "an empty conversation has no group gap above the field"
-        );
-        let mut actions = Vec::new();
-        panel.typed("compose", "On my way".into(), &mut actions);
-        assert_eq!(
-            actions,
-            [OnlineAction::Draft {
-                conversation: "a".into(),
-                text: "On my way".into()
-            }]
-        );
-        online.social.set_draft("a", "On my way".into());
-        assert_eq!(
-            panel.rows(&data(&online)).2[0].control,
-            Control::Text("On my way".into())
-        );
-        let mut actions = Vec::new();
-        panel.run("send", &data(&online), &mut actions);
-        assert_eq!(actions, [OnlineAction::SendMessage("a".into())]);
-        online.send_draft("a");
-        assert_eq!(
-            panel.rows(&data(&online)).2[1].detail.as_deref(),
-            Some("Sending…")
-        );
-        // A text the cloud would refuse says so, and nothing goes out.
-        online.social.upsert(conversation(
-            "b",
-            ConversationKind::Direct,
-            &[(3, "Juno")],
-            0,
-            0,
-        ));
-        online.social.set_draft("b", "x".repeat(2001));
-        panel.go(Page::Conversation("b".into()), &data(&online));
-        assert_eq!(
-            panel.rows(&data(&online)).2[1].detail.as_deref(),
-            Some("Shorten it to 2,000 characters"),
-        );
-        assert!(!online.send_draft("b"));
-    }
-
-    #[test]
-    fn enter_in_the_field_sends() {
-        let mut online = online();
-        list(
-            &mut online,
-            vec![conversation(
-                "a",
-                ConversationKind::Direct,
-                &[(2, "Lumen")],
-                0,
-                0,
-            )],
-            vec![],
-        );
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::Conversation("a".into()), &data(&online));
-        let mut actions = Vec::new();
-        let ctx = egui::Context::default();
-        panel.handle(
-            &ctx,
-            &crate::screens::rows::Change::Submit { row: "compose" },
-            &data(&online),
-            &mut actions,
-        );
-        assert_eq!(actions, [OnlineAction::SendMessage("a".into())]);
-    }
-
-    #[test]
-    fn reading_further_back_fetches_when_the_memory_is_short() {
-        let mut online = online();
-        list(
-            &mut online,
-            vec![conversation(
-                "a",
-                ConversationKind::Direct,
-                &[(2, "Lumen")],
-                120,
-                120,
-            )],
-            vec![],
-        );
-        online
-            .social
-            .ingest("a", Fetch::Newest, texts("a", 71, 120));
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::Conversation("a".into()), &data(&online));
-        let rows = panel.rows(&data(&online)).2;
-        assert_eq!(
-            rows.iter().filter(|r| r.id == "message").count(),
-            40,
-            "the page shows the last 40"
-        );
-        assert_eq!(rows[0].id, "earlier");
-        // Ten more are in memory and show at once; the rest is fetched.
-        let mut actions = Vec::new();
-        panel.run("earlier", &data(&online), &mut actions);
-        assert_eq!(actions, [OnlineAction::LoadEarlier("a".into())]);
-        assert_eq!(
-            panel
-                .rows(&data(&online))
-                .2
-                .iter()
-                .filter(|r| r.id == "message")
-                .count(),
-            50
-        );
-    }
-
-    #[test]
-    fn a_request_is_read_before_it_is_answered() {
-        let mut online = online();
-        let mut request = conversation("r", ConversationKind::Direct, &[(9, "Vale")], 2, 0);
-        request.request = true;
-        list(&mut online, vec![], vec![request]);
-        let mut page = texts("r", 1, 2);
-        for m in &mut page.messages {
-            m.sender = account(9, "Vale");
-        }
-        online.social.ingest("r", Fetch::Newest, page);
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::MessageRequest("r".into()), &data(&online));
-        let (title, subtitle, rows) = panel.rows(&data(&online));
-        assert_eq!(title, "Vale");
-        assert_eq!(subtitle.as_deref(), Some("Wants to message you"));
-        assert_eq!(
-            ids(&rows),
-            [
-                "message",
-                "message",
-                "acceptRequest",
-                "declineRequest",
-                "blockSender",
-                "requestNote"
-            ]
-        );
-        assert_eq!(
-            panel.side.nav.row, 0,
-            "it opens on the first message: read before answering"
-        );
-        let mut actions = Vec::new();
-        panel.run("acceptRequest", &data(&online), &mut actions);
-        panel.run("blockSender", &data(&online), &mut actions);
-        assert_eq!(
-            actions,
-            [
-                OnlineAction::AcceptRequest("r".into()),
-                OnlineAction::Block(AccountId(9)),
-                OnlineAction::LeaveConversation("r".into())
-            ]
-        );
-        assert_eq!(panel.page, Page::Messages);
-
-        // Accepted: the page becomes the conversation.
-        panel.go(Page::MessageRequest("r".into()), &data(&online));
-        let mut accepted = online.social.get("r").unwrap().clone();
-        accepted.request = false;
-        online.social.upsert(accepted);
-        panel.follow(&data(&online));
-        assert_eq!(panel.page, Page::Conversation("r".into()));
-        // Declined or left: back to the list.
-        online.social.remove("r");
-        panel.follow(&data(&online));
-        assert_eq!(panel.page, Page::Messages);
     }
 
     #[test]
@@ -2339,22 +1522,7 @@ mod tests {
         let (title, subtitle, rows) = panel.rows(&data(&online));
         assert_eq!(title, "Lumen");
         assert_eq!(subtitle.as_deref(), Some("11:51"));
-        assert_eq!(
-            ids(&rows),
-            [
-                "body",
-                "reply",
-                "reactCaption",
-                "react",
-                "react",
-                "react",
-                "react",
-                "react",
-                "react",
-                "copyText",
-                "reportMessage"
-            ]
-        );
+        assert_eq!(ids(&rows), ["body", "reply", "copyText", "reportMessage"]);
         let mut actions = Vec::new();
         panel.run("copyText", &data(&online), &mut actions);
         assert_eq!(actions, [OnlineAction::CopyText("Message 1".into())]);
@@ -2537,83 +1705,6 @@ mod tests {
     }
 
     #[test]
-    fn the_field_keeps_the_focus_when_messages_arrive_above_it() {
-        let mut online = online();
-        list(
-            &mut online,
-            vec![conversation(
-                "a",
-                ConversationKind::Direct,
-                &[(2, "Lumen")],
-                0,
-                0,
-            )],
-            vec![],
-        );
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::Conversation("a".into()), &data(&online));
-        assert_eq!(
-            ids(&panel.rows(&data(&online)).2),
-            ["compose", "send", "quickReplies", "keyboard", "chatOptions"]
-        );
-        panel.anchor = {
-            let rows = panel.rows(&data(&online)).2;
-            panel.anchor_now(&data(&online), &rows)
-        };
-        assert_eq!(panel.anchor, Some(Anchor::FromEnd(5)));
-        // The first fifty messages come in while the panel shows the field.
-        online.social.note_last("a", 50);
-        online.social.ingest("a", Fetch::Newest, texts("a", 1, 50));
-        let rows = panel.rows(&data(&online)).2;
-        panel.restore_anchor(&data(&online), &rows);
-        assert_eq!(rows[panel.side.nav.row].id, "compose");
-        // One more arrives: still the field.
-        online.social.note_last("a", 51);
-        online
-            .social
-            .ingest("a", Fetch::After(50), texts("a", 51, 51));
-        let rows = panel.rows(&data(&online)).2;
-        panel.restore_anchor(&data(&online), &rows);
-        assert_eq!(rows[panel.side.nav.row].id, "compose");
-    }
-
-    #[test]
-    fn a_message_keeps_the_focus_by_its_number_when_older_ones_load_above_it() {
-        let mut online = online();
-        list(
-            &mut online,
-            vec![conversation(
-                "a",
-                ConversationKind::Direct,
-                &[(2, "Lumen")],
-                120,
-                120,
-            )],
-            vec![],
-        );
-        online
-            .social
-            .ingest("a", Fetch::Newest, texts("a", 71, 120));
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::Conversation("a".into()), &data(&online));
-        // Focus the 31st of the forty shown, which is message 111.
-        let rows = panel.rows(&data(&online)).2;
-        let first = rows::position(&rows, "message").unwrap();
-        panel.side.nav.row = first + 30;
-        assert_eq!(rows[panel.side.nav.row].title, "Message 111");
-        panel.anchor = panel.anchor_now(&data(&online), &rows);
-        assert_eq!(panel.anchor, Some(Anchor::Message(111)));
-        // Forty more messages come in above it: the focus follows the message.
-        online
-            .social
-            .ingest("a", Fetch::Before(71), texts("a", 21, 70));
-        panel.shown += 40;
-        let rows = panel.rows(&data(&online)).2;
-        panel.restore_anchor(&data(&online), &rows);
-        assert_eq!(rows[panel.side.nav.row].title, "Message 111");
-    }
-
-    #[test]
     fn the_leader_sees_what_a_member_page_does_before_pressing() {
         let mut online = online();
         online
@@ -2648,89 +1739,6 @@ mod tests {
         let rows = panel.rows(&data(&online)).2;
         let send = rows.iter().find(|r| r.id == "sendPartyInvites").unwrap();
         assert_eq!(send.detail.as_deref(), Some("The party is full"));
-    }
-
-    #[test]
-    fn in_a_group_the_one_who_spoke_comes_first() {
-        let mut online = online();
-        let mut group = conversation(
-            "g",
-            ConversationKind::Group,
-            &[(2, "Lumen"), (3, "Juno")],
-            2,
-            2,
-        );
-        group.name = Some("Raid night".into());
-        list(&mut online, vec![group], vec![]);
-        online.social.ingest("g", Fetch::Newest, texts("g", 1, 2));
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::Conversation("g".into()), &data(&online));
-        let rows = panel.rows(&data(&online)).2;
-        assert_eq!(rows[1].title, "Lumen: Message 1");
-        assert_eq!(rows[1].detail.as_deref(), Some("11:51"));
-        assert_eq!(
-            rows[2].title, "Message 2",
-            "the player's own words need no name"
-        );
-        assert_eq!(rows[2].detail.as_deref(), Some("You · 11:52"));
-    }
-
-    #[test]
-    fn a_row_shows_a_message_on_one_line_and_the_page_keeps_its_breaks() {
-        let mut online = online();
-        list(
-            &mut online,
-            vec![conversation(
-                "a",
-                ConversationKind::Direct,
-                &[(2, "Lumen")],
-                1,
-                1,
-            )],
-            vec![],
-        );
-        let mut page = texts("a", 1, 1);
-        page.messages[0].text = "first\n\n\n   second".into();
-        online.social.ingest("a", Fetch::Newest, page);
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::Conversation("a".into()), &data(&online));
-        assert_eq!(panel.rows(&data(&online)).2[1].title, "first second");
-        panel.go(Page::Message("a".into(), 1), &data(&online));
-        assert_eq!(
-            panel.rows(&data(&online)).2[0].title,
-            "first\n\n\n   second"
-        );
-    }
-
-    #[test]
-    fn a_chat_that_was_not_fetched_yet_says_it_loads() {
-        let mut online = online();
-        list(
-            &mut online,
-            vec![conversation(
-                "a",
-                ConversationKind::Direct,
-                &[(2, "Lumen")],
-                9,
-                9,
-            )],
-            vec![],
-        );
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::Conversation("a".into()), &data(&online));
-        assert_eq!(
-            ids(&panel.rows(&data(&online)).2),
-            [
-                "loading",
-                "compose",
-                "send",
-                "quickReplies",
-                "keyboard",
-                "chatOptions"
-            ]
-        );
-        online.social.ingest("a", Fetch::Newest, texts("a", 1, 9));
-        assert!(!ids(&panel.rows(&data(&online)).2).contains(&"loading"));
     }
 
     #[test]
@@ -3381,164 +2389,7 @@ mod tests {
     }
 
     #[test]
-    fn a_message_shows_what_became_of_it() {
-        let mut online = online();
-        let mut page = texts("a", 1, 4);
-        page.messages[0].edited = Some(5);
-        page.messages[1].deleted = true;
-        page.messages[1].text.clear();
-        page.messages[2].reply = Some(anyps5_core::online::api::Quote {
-            seq: 2,
-            sender: account(1, "Mira"),
-            text: "Message 2".into(),
-            deleted: true,
-        });
-        page.messages[2].reactions = vec![
-            anyps5_core::online::api::ReactionOn {
-                reaction: MessageReaction::Nice,
-                accounts: vec![AccountId(1), AccountId(2)],
-            },
-            anyps5_core::online::api::ReactionOn {
-                reaction: MessageReaction::Gg,
-                accounts: vec![AccountId(2)],
-            },
-        ];
-        list(
-            &mut online,
-            vec![conversation(
-                "a",
-                ConversationKind::Direct,
-                &[(2, "Lumen")],
-                4,
-                4,
-            )],
-            vec![],
-        );
-        online.social.ingest("a", Fetch::Newest, page);
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::Conversation("a".into()), &data(&online));
-        let rows = panel.rows(&data(&online)).2;
-        assert_eq!(rows[1].detail.as_deref(), Some("Lumen · 11:51 · Edited"));
-        assert_eq!(
-            rows[2].title, "Message removed",
-            "a quiet marker keeps the place"
-        );
-        assert!(
-            rows[2]
-                .detail
-                .as_deref()
-                .is_some_and(|d| !d.contains("Edited"))
-        );
-        // The answer quotes what it answers, and the quote knows it was taken back.
-        assert_eq!(rows[3].id, "quote");
-        assert_eq!(rows[3].title, "You: Message removed");
-        assert_eq!(
-            rows[4].detail.as_deref(),
-            Some("Lumen · 11:53 · Nice 2 · GG")
-        );
-        // Focus counts message rows only: the third message is the third "message" row.
-        panel.side.nav.row = 4;
-        let mut actions = Vec::new();
-        panel.run("message", &data(&online), &mut actions);
-        assert_eq!(panel.page, Page::Message("a".into(), 3));
-    }
-
-    #[test]
-    fn the_last_own_message_says_delivered_before_seen_and_groups_count_who_saw() {
-        let mut online = online();
-        let mut c = conversation("a", ConversationKind::Direct, &[(2, "Lumen")], 4, 4);
-        c.marks = vec![ReadMark {
-            account: AccountId(2),
-            seq: 2,
-            delivered: 4,
-        }];
-        list(&mut online, vec![c], vec![]);
-        online.social.ingest("a", Fetch::Newest, texts("a", 1, 4));
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::Conversation("a".into()), &data(&online));
-        let rows = panel.rows(&data(&online)).2;
-        assert_eq!(rows[4].detail.as_deref(), Some("You · 11:54 · Delivered"));
-        online.social.apply_read("a", AccountId(2), 4, AccountId(1));
-        let rows = panel.rows(&data(&online)).2;
-        assert_eq!(rows[4].detail.as_deref(), Some("You · 11:54 · Seen"));
-
-        let mut group = conversation(
-            "g",
-            ConversationKind::Group,
-            &[(2, "Lumen"), (3, "Juno"), (4, "Kit")],
-            2,
-            2,
-        );
-        group.marks = vec![
-            ReadMark {
-                account: AccountId(2),
-                seq: 2,
-                delivered: 2,
-            },
-            ReadMark {
-                account: AccountId(3),
-                seq: 1,
-                delivered: 2,
-            },
-        ];
-        online.social.upsert(group);
-        online.social.ingest("g", Fetch::Newest, texts("g", 1, 2));
-        panel.go(Page::Conversation("g".into()), &data(&online));
-        let rows = panel.rows(&data(&online)).2;
-        assert_eq!(rows[2].detail.as_deref(), Some("You · 11:52 · Seen by 1"));
-    }
-
-    #[test]
-    fn typing_shows_in_the_thread_and_in_the_list() {
-        let mut online = online();
-        let mut panel = thread(&mut online);
-        let now = u64::try_from(data(&online).now).unwrap();
-        online.social.apply_typing("a", AccountId(2), true, now);
-        let rows = panel.rows(&data(&online)).2;
-        let typing = rows.iter().find(|r| r.id == "typing").unwrap();
-        assert_eq!(typing.title, "Lumen is typing…");
-        panel.go(Page::Messages, &data(&online));
-        let rows = panel.rows(&data(&online)).2;
-        assert_eq!(rows[1].detail.as_deref(), Some("Lumen is typing…"));
-        // Six seconds later the line is gone.
-        online.social.apply_typing("a", AccountId(2), false, now);
-        assert!(
-            !ids(&panel.rows(&data(&online)).2).contains(&"typing"),
-            "stopped"
-        );
-    }
-
-    #[test]
-    fn the_list_marks_pinned_and_muted_conversations() {
-        let mut online = online();
-        let mut pinned = conversation("p", ConversationKind::Direct, &[(2, "Lumen")], 3, 3);
-        pinned.pinned = true;
-        pinned.updated = 1;
-        let mut muted = conversation("m", ConversationKind::Direct, &[(3, "Juno")], 5, 1);
-        muted.muted = true;
-        muted.updated = 900;
-        list(&mut online, vec![muted, pinned], vec![]);
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::Messages, &data(&online));
-        let rows = panel.rows(&data(&online)).2;
-        assert_eq!(rows[1].title, "Lumen", "pinned comes first, however old");
-        assert_eq!(rows[1].icon, Some(Icon::PUSH_PIN));
-        assert!(rows[1].detail.as_deref().unwrap().ends_with("Pinned"));
-        assert_eq!(rows[2].icon, Some(Icon::BELL_SLASH));
-        assert_eq!(
-            rows[2].detail.as_deref(),
-            Some("Muted"),
-            "a muted chat shows no count"
-        );
-        assert_eq!(
-            panel.rows(&data(&online)).1.as_deref(),
-            Some("Talk to your friends"),
-            "and adds nothing to the unread total"
-        );
-    }
-
-    #[test]
-    fn a_message_is_answered_reacted_to_edited_unsent_and_reported() {
+    fn a_message_is_answered_edited_unsent_and_reported() {
         let mut online = online();
         let mut panel = thread(&mut online);
         // Message 3 is the other's: answer it.
@@ -3553,21 +2404,6 @@ mod tests {
             }]
         );
         assert_eq!(panel.page, Page::Conversation("a".into()));
-        // Reactions are the fixed six, in order; choosing the one held takes it back.
-        panel.go(Page::Message("a".into(), 3), &data(&online));
-        let rows = panel.rows(&data(&online)).2;
-        let first = rows.iter().position(|r| r.id == "react").unwrap();
-        panel.side.nav.row = first + 3;
-        let mut actions = Vec::new();
-        panel.run("react", &data(&online), &mut actions);
-        assert_eq!(
-            actions,
-            [OnlineAction::ReactMessage {
-                conversation: "a".into(),
-                seq: 3,
-                reaction: Some(MessageReaction::Gg)
-            }]
-        );
         // The player's own message 4: edit and unsend are there, report is not.
         panel.go(Page::Message("a".into(), 4), &data(&online));
         let mut actions = Vec::new();
@@ -3614,36 +2450,11 @@ mod tests {
     }
 
     #[test]
-    fn a_draft_that_answers_or_edits_says_so_and_can_be_dropped() {
-        let mut online = online();
-        let mut panel = thread(&mut online);
-        online.social.start_reply("a", 3);
-        let rows = panel.rows(&data(&online)).2;
-        let note = rows.iter().find(|r| r.id == "composeNote").unwrap();
-        assert_eq!(note.title, "Replying to Lumen: Message 3");
-        assert!(ids(&rows).contains(&"cancelCompose"));
-        assert!(!ids(&rows).contains(&"quickReplies"));
-        let mut actions = Vec::new();
-        panel.run("cancelCompose", &data(&online), &mut actions);
-        assert_eq!(actions, [OnlineAction::CancelCompose("a".into())]);
-        online.social.start_edit("a", 4);
-        let rows = panel.rows(&data(&online)).2;
-        assert_eq!(
-            rows.iter().find(|r| r.id == "send").unwrap().title,
-            "Save Changes"
-        );
-        assert_eq!(
-            rows.iter().find(|r| r.id == "composeNote").unwrap().title,
-            "Editing your message"
-        );
-    }
-
-    #[test]
     fn the_conversation_options_mute_pin_report_and_block() {
         let mut online = online();
         let mut panel = thread(&mut online);
         let mut actions = Vec::new();
-        panel.run("chatOptions", &data(&online), &mut actions);
+        panel.go(Page::ChatOptions("a".into()), &data(&online));
         assert_eq!(panel.page, Page::ChatOptions("a".into()));
         assert_eq!(
             ids(&panel.rows(&data(&online)).2),
@@ -3700,7 +2511,7 @@ mod tests {
     fn quick_replies_send_without_typing() {
         let mut online = online();
         let mut panel = thread(&mut online);
-        panel.run("quickReplies", &data(&online), &mut Vec::new());
+        panel.go(Page::QuickReplies("a".into()), &data(&online));
         assert_eq!(panel.page, Page::QuickReplies("a".into()));
         let rows = panel.rows(&data(&online)).2;
         assert_eq!(rows.len(), 6);
@@ -3724,12 +2535,20 @@ mod tests {
     fn the_keyboard_types_into_the_draft_with_a_pad() {
         let mut online = online();
         let mut panel = thread(&mut online);
-        panel.run("keyboard", &data(&online), &mut Vec::new());
+        panel.go(Page::Keyboard("a".into()), &data(&online));
         assert_eq!(panel.page, Page::Keyboard("a".into()));
         let rows = panel.rows(&data(&online)).2;
         assert_eq!(
             ids(&rows),
-            ["typed", "keyA", "keyB", "keyC", "keyCtl", "keyboardDone"]
+            [
+                "typed",
+                "keyA",
+                "keyB",
+                "keyC",
+                "keyCtl",
+                "quickReplies",
+                "keyboardDone"
+            ]
         );
         assert_eq!(rows[0].title, "Nothing typed yet");
         let press = |panel: &mut OnlinePanel, online: &Online, row: &'static str, index| {
@@ -3782,56 +2601,5 @@ mod tests {
         let actions = press(&mut panel, &online, "keyCtl", 4);
         assert_eq!(actions, [OnlineAction::SendMessage("a".into())]);
         assert_eq!(panel.page, Page::Conversation("a".into()));
-    }
-
-    #[test]
-    fn a_list_or_a_thread_that_could_not_be_loaded_offers_try_again() {
-        let mut online = online();
-        online.social.fetch_failed(None);
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::Messages, &data(&online));
-        assert_eq!(ids(&panel.rows(&data(&online)).2), ["none", "retryList"]);
-        let mut actions = Vec::new();
-        panel.run("retryList", &data(&online), &mut actions);
-        assert_eq!(actions, [OnlineAction::RetryMessages(None)]);
-        // The list comes: the failure is forgotten.
-        list(
-            &mut online,
-            vec![conversation(
-                "a",
-                ConversationKind::Direct,
-                &[(2, "Lumen")],
-                3,
-                3,
-            )],
-            vec![],
-        );
-        assert!(!online.social.list_has_failed());
-        // A thread that failed says so, until it is there.
-        online.social.fetch_failed(Some("a"));
-        panel.go(Page::Conversation("a".into()), &data(&online));
-        let rows = panel.rows(&data(&online)).2;
-        assert_eq!(ids(&rows)[..2], ["loadFailed", "retryThread"]);
-        panel.run("retryThread", &data(&online), &mut actions);
-        assert_eq!(
-            actions.last(),
-            Some(&OnlineAction::RetryMessages(Some("a".into())))
-        );
-        online.social.ingest("a", Fetch::Newest, texts("a", 1, 3));
-        assert!(!ids(&panel.rows(&data(&online)).2).contains(&"loadFailed"));
-    }
-
-    #[test]
-    fn a_chat_with_somebody_the_player_blocked_says_so_and_offers_unblock() {
-        let mut online = online();
-        let mut panel = thread(&mut online);
-        online.friends.blocked = vec![account(2, "Lumen")];
-        let rows = panel.rows(&data(&online)).2;
-        assert!(!ids(&rows).contains(&"compose"));
-        let note = rows.iter().find(|r| r.id == "blockedNote").unwrap();
-        assert_eq!(note.title, "You blocked Lumen. Unblock them to write.");
-        let mut actions = Vec::new();
-        panel.run("unblockChat", &data(&online), &mut actions);
-        assert_eq!(actions, [OnlineAction::Unblock(AccountId(2))]);
     }
 }

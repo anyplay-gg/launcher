@@ -2,6 +2,7 @@
 //! One side panel on the game sheet's frame, with pages that swap in place. The panel only shows
 //! and asks; the net service acts, and the host turns the panel's actions into commands for it.
 
+mod chat;
 mod feed;
 mod local;
 mod profile;
@@ -36,6 +37,7 @@ use crate::ui::focus::RowKind;
 use crate::ui::i18n::{Arg, Key, Language};
 use crate::ui::icons::Icon;
 use crate::ui::input::InputEvent;
+use crate::ui::sound::Cue;
 
 /// What the panel asks the host to do.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -121,16 +123,12 @@ pub enum OnlineAction {
     CancelCompose(String),
     /// Ask again for the list of conversations (`None`) or for a conversation's messages.
     RetryMessages(Option<String>),
+    /// The list shows these conversations: fetch the newest message of those that have none.
+    NeedPreviews(Vec<String>),
     /// Take a message of the player's back for everyone.
     Unsend {
         conversation: String,
         seq: u64,
-    },
-    /// The player's reaction to a message; `None` takes it back.
-    ReactMessage {
-        conversation: String,
-        seq: u64,
-        reaction: Option<anyps5_core::online::api::MessageReaction>,
     },
     /// Mute or pin a conversation.
     ConversationSettings {
@@ -367,8 +365,6 @@ pub struct OnlinePanel {
     opening: Option<AccountId>,
     /// Actions that a page change asks for, handed out with the next frame's.
     queued: Vec<OnlineAction>,
-    /// The row the focus stands on, for a page whose rows change under it.
-    anchor: Option<social::Anchor>,
     /// The Discord link being written for the party.
     link_text: String,
     /// The talk key row waits for a key.
@@ -379,6 +375,8 @@ pub struct OnlinePanel {
     local: Local,
     /// Where the focus stands in the feed's cards.
     feed_focus: feed::FeedFocus,
+    /// The list of conversations and the thread: where the focus stands.
+    chat: chat::ChatState,
     /// The item the feed's focus is on, to keep it there when items come in above it.
     feed_anchor: Option<u64>,
 }
@@ -468,6 +466,9 @@ impl OnlinePanel {
         if self.feed_is_list(data) {
             return self.feed_focus.slot.is_none();
         }
+        if self.chat_is_list(data) {
+            return true;
+        }
         let rows = self.rows(data).2;
         match rows.get(self.side.nav.row).map(|r| &r.control) {
             Some(
@@ -554,22 +555,17 @@ impl OnlinePanel {
         if self.page != page && !within_chat {
             self.previous = Some(std::mem::take(&mut self.page));
         }
-        self.anchor = None;
         self.capturing = false;
+        if page == Page::Messages {
+            self.chat.opened = None;
+        }
         self.page = page;
         let rows = self.rows(data).2;
-        // A page opens on its first row that takes focus, a conversation on its field. A request
-        // opens on its first message: read before answering.
-        let wanted = match self.page {
-            Page::Conversation(_) => "compose",
-            _ => "",
-        };
-        let first = rows::position(&rows, wanted).unwrap_or_else(|| {
-            rows::kinds(&rows)
-                .iter()
-                .position(|kind| *kind != RowKind::Info)
-                .unwrap_or(0)
-        });
+        // A page opens on its first row that takes focus.
+        let first = rows::kinds(&rows)
+            .iter()
+            .position(|kind| *kind != RowKind::Info)
+            .unwrap_or(0);
         self.side.open_at(first);
     }
 
@@ -643,10 +639,6 @@ impl OnlinePanel {
         if let Some(end) = data.online.social.typing_ends(now) {
             ctx.request_repaint_after(std::time::Duration::from_secs(end.saturating_sub(now) + 1));
         }
-        if self.anchor.is_some() {
-            let rows = self.rows(data).2;
-            self.restore_anchor(data, &rows);
-        }
         if let Page::Conversation(id) = &self.page
             && data.online.social.read_target(id).is_some()
         {
@@ -662,6 +654,21 @@ impl OnlinePanel {
             }
             if self.feed_is_list(data) {
                 if self.feed_command(shell, command, data, &mut actions) {
+                    self.back(data, &mut actions);
+                    break;
+                }
+                continue;
+            }
+            if self.chat_is_list(data) {
+                if self.chat_list_command(shell, command, data, &mut actions) {
+                    self.back(data, &mut actions);
+                    break;
+                }
+                continue;
+            }
+            if self.chat_is_thread(data) {
+                if self.chat_thread_command(shell, command, data, &mut actions) {
+                    shell.play(Cue::Back);
                     self.back(data, &mut actions);
                     break;
                 }
@@ -702,6 +709,14 @@ impl OnlinePanel {
         // Each kind of page keeps its own scroll: walking the rail never lands on an old offset.
         let list_id = ("online-rows", std::mem::discriminant(&self.page));
         let events = match self.page.clone() {
+            Page::Messages if self.chat_is_list(data) => {
+                self.chat_list_draw(ui, data, open && focused, &mut actions);
+                Vec::new()
+            }
+            Page::Conversation(_) | Page::MessageRequest(_) if self.chat_is_thread(data) => {
+                self.chat_thread_draw(ui, data, open && focused, &mut actions);
+                Vec::new()
+            }
             Page::Feed if self.feed_is_list(data) => {
                 self.feed_draw(ui, data, open && focused, &mut actions);
                 Vec::new()
@@ -733,13 +748,7 @@ impl OnlinePanel {
     }
 
     /// After the draw: where the focus stands now, what a page change asked for, the key capture.
-    pub fn end_frame(&mut self, shell: &mut Shell, data: &OnlineData<'_>) -> Vec<OnlineAction> {
-        self.anchor = if self.side.is_open() {
-            let rows = self.rows(data).2;
-            self.anchor_now(data, &rows)
-        } else {
-            None
-        };
+    pub fn end_frame(&mut self, shell: &mut Shell, _data: &OnlineData<'_>) -> Vec<OnlineAction> {
         let actions = std::mem::take(&mut self.queued);
         self.sync_capture(shell);
         actions
@@ -773,21 +782,12 @@ impl OnlinePanel {
         actions.push(OnlineAction::Close);
     }
 
-    fn typed(&mut self, row: RowId, value: String, actions: &mut Vec<OnlineAction>) {
+    fn typed(&mut self, row: RowId, value: String, _actions: &mut Vec<OnlineAction>) {
         let field = match row {
             "cloud" => &mut self.cloud_text,
             "friend" => &mut self.friend_text,
             "appeal" => &mut self.appeal_text,
             "discordLink" => &mut self.link_text,
-            "compose" => {
-                if let Page::Conversation(id) = &self.page {
-                    actions.push(OnlineAction::Draft {
-                        conversation: id.clone(),
-                        text: value,
-                    });
-                }
-                return;
-            }
             _ => return,
         };
         *field = value;
@@ -829,12 +829,6 @@ impl OnlinePanel {
                 on,
             } => {
                 self.social_toggle("pickParty", *on, data);
-            }
-            Change::Submit { row: "compose" } => {
-                self.run("send", data, actions);
-                // The field stays ready for the next message.
-                ctx.data_mut(|d| d.insert_temp(egui::Id::unique("panel-text-focus"), true));
-                ctx.request_repaint();
             }
             Change::Submit { row: "friend" } => self.run("sendRequest", data, actions),
             Change::Toggle { row: "pick", on } => {

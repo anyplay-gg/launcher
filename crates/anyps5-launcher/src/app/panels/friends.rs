@@ -307,6 +307,7 @@ pub(super) fn online_action(model: &mut Model, action: OnlineAction) {
         OnlineAction::StartEdit { conversation, seq } => {
             online.social.start_edit(&conversation, seq);
         }
+        OnlineAction::NeedPreviews(ids) => online.request_previews(&ids),
         OnlineAction::RetryMessages(None) => online.refresh_conversations(),
         OnlineAction::RetryMessages(Some(conversation)) => online.open_thread(&conversation),
         OnlineAction::CancelCompose(conversation) => {
@@ -314,11 +315,6 @@ pub(super) fn online_action(model: &mut Model, action: OnlineAction) {
             online.typing(&conversation, false);
         }
         OnlineAction::Unsend { conversation, seq } => online.unsend_message(&conversation, seq),
-        OnlineAction::ReactMessage {
-            conversation,
-            seq,
-            reaction,
-        } => online.react_message(&conversation, seq, reaction),
         OnlineAction::ConversationSettings {
             conversation,
             muted,

@@ -109,6 +109,11 @@ pub struct Social {
     /// The message each conversation's draft answers, and the one it edits.
     replying: BTreeMap<String, u64>,
     editing: BTreeMap<String, u64>,
+    /// The newest message of each conversation, for the list: from a thread that was read, or
+    /// from the one-message fetch the list asks for. Never more than that one message.
+    previews: BTreeMap<String, Message>,
+    /// The conversations a preview was asked for, so that it is asked once.
+    previews_asked: std::collections::BTreeSet<String>,
     /// Conversations whose messages could not be fetched, and whether the list could not be.
     failed: std::collections::BTreeSet<String>,
     list_failed: bool,
@@ -190,6 +195,8 @@ impl Social {
             .map(|c| &c.id)
             .collect();
         self.threads.retain(|id, _| ids.contains(&id));
+        self.previews.retain(|id, _| ids.contains(&id));
+        self.previews_asked.retain(|id| ids.contains(&id));
         self.drafts.retain(|id, _| ids.contains(&id));
         self.replying.retain(|id, _| ids.contains(&id));
         self.editing.retain(|id, _| ids.contains(&id));
@@ -244,6 +251,8 @@ impl Social {
         self.conversations.retain(|c| c.id != id);
         self.requests.retain(|c| c.id != id);
         self.threads.remove(id);
+        self.previews.remove(id);
+        self.previews_asked.remove(id);
         self.drafts.remove(id);
         self.replying.remove(id);
         self.editing.remove(id);
@@ -274,6 +283,43 @@ impl Social {
     /// The message requests, newest first.
     pub fn requests(&self) -> &[Conversation] {
         &self.requests
+    }
+
+    /// The newest message of a conversation the launcher knows of, for its row in the list.
+    pub fn preview(&self, id: &str) -> Option<&Message> {
+        let held = self
+            .threads
+            .get(id)
+            .filter(|t| t.loaded)
+            .and_then(|t| t.messages.last());
+        match (held, self.previews.get(id)) {
+            (Some(a), Some(b)) => Some(if a.seq >= b.seq { a } else { b }),
+            (a, b) => a.or(b),
+        }
+    }
+
+    /// The conversations that have messages and no preview yet and were not asked for: marks them
+    /// asked, so each is asked once. A conversation whose thread is held needs none.
+    pub fn wants_previews(&mut self, ids: &[String]) -> Vec<String> {
+        let mut wanted = Vec::new();
+        for id in ids {
+            let last = self.get(id).map_or(0, |c| c.last);
+            if last > 0 && self.preview(id).is_none() && self.previews_asked.insert(id.clone()) {
+                wanted.push(id.clone());
+            }
+        }
+        wanted
+    }
+
+    /// The answer of a one-message fetch.
+    pub fn set_preview(&mut self, message: Message) {
+        let newer = self
+            .previews
+            .get(&message.conversation)
+            .is_none_or(|held| message.seq >= held.seq);
+        if newer && self.get(&message.conversation).is_some() {
+            self.previews.insert(message.conversation.clone(), message);
+        }
     }
 
     /// A fetch of the list or of a thread's newest messages was refused or lost.
@@ -438,6 +484,11 @@ impl Social {
 
     /// Puts a message as the cloud answered it in place of the one held.
     pub fn replace_message(&mut self, message: Message) {
+        if let Some(held) = self.previews.get_mut(&message.conversation)
+            && held.seq == message.seq
+        {
+            *held = message.clone();
+        }
         if let Some(thread) = self.threads.get_mut(&message.conversation)
             && let Some(held) = thread.messages.iter_mut().find(|m| m.seq == message.seq)
         {

@@ -131,6 +131,16 @@ pub fn day_label(unix: i64, now: i64, offset_seconds: i32, language: Language) -
     }
 }
 
+/// The time a conversation's newest message gets in the list: the clock for today, Yesterday,
+/// else the day.
+pub fn list_time(unix: i64, now: i64, offset_seconds: i32, language: Language) -> String {
+    if day_number(now, offset_seconds) == day_number(unix, offset_seconds) {
+        clock_text(unix, offset_seconds)
+    } else {
+        day_label(unix, now, offset_seconds, language)
+    }
+}
+
 /// The day with its year: `Oct 17, 2026` in English and `17 Eki 2026` in Turkish. `unix` is in
 /// seconds, `offset_seconds` is the local UTC offset.
 pub fn day_text(unix: i64, offset_seconds: i32, language: Language) -> String {
