@@ -399,7 +399,7 @@ mod tests {
             },
             Language::English,
         );
-        assert_eq!(head, "Online play is off on Mira\u{2019}s PC");
+        assert_eq!(head, "Mira has nothing to join yet");
         assert!(line.contains("Minecraft") && line.contains("Play Together"));
     }
 
