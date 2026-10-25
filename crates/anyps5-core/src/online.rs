@@ -1070,7 +1070,8 @@ impl Online {
             Event::Voice {
                 state, me, peers, ..
             } => self.voice_event(state, me, peers),
-            Event::Unknown => {}
+            // The feed has no launcher screen yet.
+            Event::Feed | Event::Unknown => {}
         }
         notices
     }
