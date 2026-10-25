@@ -161,7 +161,7 @@ impl Toolkit {
     /// DLLs, optionally `version.txt`, `toolkit.json` and `patches\`.
     ///
     /// With a `version.txt` the file is the version and the toolkit's files are only checked for
-    /// being there, not read: hashing about 100 MB would block the UI thread at every start. Without
+    /// being there, not read: hashing the whole toolkit (hundreds of MB) would block the UI thread at every start. Without
     /// one the folder is fingerprinted and the version is `local-<fp>`.
     pub fn open(root: &Path) -> Result<Toolkit, ToolkitError> {
         Self::open_for(Os::current(), root)
