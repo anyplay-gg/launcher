@@ -51,6 +51,12 @@ pub enum Extra {
     /// Settings row: the home screen music toggle.
     HomeMusic,
     HomeMusicDetail,
+    /// Settings row: how strongly the controller vibrates to answer an action.
+    Vibration,
+    VibrationDetail,
+    VibrationLight,
+    VibrationMedium,
+    VibrationStrong,
     /// Settings row: the running game on Discord.
     DiscordPresence,
     DiscordPresenceDetail,
@@ -282,6 +288,13 @@ impl Extra {
             Extra::HomeMusicDetail => {
                 "Plays quiet ambient music on the home screen. It fades out while a game runs."
             }
+            Extra::Vibration => "Controller Vibration",
+            Extra::VibrationDetail => {
+                "A short, soft pulse answers a press on the controller. Never while a game is in front."
+            }
+            Extra::VibrationLight => "Light",
+            Extra::VibrationMedium => "Medium",
+            Extra::VibrationStrong => "Strong",
             Extra::DiscordPresence => "Show Game on Discord",
             Extra::DiscordPresenceDetail => {
                 "With Discord open, your profile shows the game and for how long."
@@ -464,6 +477,13 @@ impl Extra {
             Extra::HomeMusicDetail => {
                 "Ana ekranda sakin bir ortam müziği çalar. Oyun çalışırken susar."
             }
+            Extra::Vibration => "Kol Titreşimi",
+            Extra::VibrationDetail => {
+                "Kolda bir tuşa basınca kısa, yumuşak bir titreşim karşılık verir. Oyun öndeyken asla."
+            }
+            Extra::VibrationLight => "Hafif",
+            Extra::VibrationMedium => "Orta",
+            Extra::VibrationStrong => "Güçlü",
             Extra::DiscordPresence => "Oyunu Discord'da Göster",
             Extra::DiscordPresenceDetail => {
                 "Discord açıksa profilinde oyunun adı ve süresi görünür."
@@ -615,7 +635,7 @@ impl Extra {
         substitute(self.text(language), args)
     }
 
-    pub const ALL: [Extra; 139] = [
+    pub const ALL: [Extra; 144] = [
         Extra::Toolkit,
         Extra::UpdateCheck,
         Extra::UpdateCheckDetail,
@@ -649,6 +669,11 @@ impl Extra {
         Extra::ToolkitFolderInvalid,
         Extra::HomeMusic,
         Extra::HomeMusicDetail,
+        Extra::Vibration,
+        Extra::VibrationDetail,
+        Extra::VibrationLight,
+        Extra::VibrationMedium,
+        Extra::VibrationStrong,
         Extra::DiscordPresence,
         Extra::DiscordPresenceDetail,
         Extra::ShowHiddenTrophies,

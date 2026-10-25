@@ -1,6 +1,6 @@
 # Signed updates
 
-How the AnyPlay Launcher decides that an update is genuine, and what the operator does to switch that on and to keep it working. The code is `crates/anyps5-core/src/selfupdate.rs` (the client) and `crates/update-manifest` (the manifest format, the checks and the `update-sign` tool). The interface side of updating (toast, About, swap on exit) is in [DESIGN.md 9.5](DESIGN.md#95-the-launcher-updates-itself) and does not change.
+How the AnyPlay Launcher decides that an update is genuine, and what the operator does to switch that on and to keep it working. The code is `crates/anyps5-core/src/selfupdate.rs` (the client) and `crates/update-manifest` (the manifest format, the checks and the `update-sign` tool). The interface side of updating (the notice, About, Restart Now, the swap on exit) is in [DESIGN.md 9.5](DESIGN.md#95-the-launcher-updates-itself); nothing in it can weaken a rule below.
 
 ## Why
 
@@ -87,7 +87,7 @@ The launcher does not check attestations itself; the manifest is what it trusts.
 
 | The file holds | The launcher |
 |---|---|
-| No key (as now) | Updates exactly as before: latest release, `SHA256SUMS.txt`. Signing is not switched on. |
+| No key (the launchers before 0.2.0) | Updates exactly as before: latest release, `SHA256SUMS.txt`. Signing is not switched on. |
 | One key or more | Requires a valid signed manifest. **There is no fallback to the unsigned path**, not for a release without a manifest, not for a failing signature, not ever. |
 | A line that is neither a comment nor a valid key | Fails the build (a test parses the file), and a launcher that somehow carries such a file refuses to update. A damaged list is never read as "no key". |
 
@@ -198,3 +198,10 @@ Rules of the client that go beyond the list under [What the launcher checks](#wh
 - **Order of refusals.** A launcher that already runs the offered version or a newer one gets "nothing to update" even when the manifest has expired; only a manifest that would offer an update is refused as expired.
 - **The key list** may start with a UTF-8 byte order mark. The build of `anyps5-core` parses `data/update-keys.txt` with the launcher's own parser (`build.rs`) and fails on an unreadable list.
 - **`update-sign keygen` on Windows.** The secret file is created with the access rules of the folder it is written to (on Unix, mode 0600). Write it into a private folder, not a shared or synced one, and move it to the password manager at once.
+
+## When the launcher checks
+
+- **At the start, then every 6 hours** while the launcher stays open; after a check that could not reach GitHub, again after 30 minutes. Only with the *Check for Updates* preference on, except for the player's own *Check Now*.
+- **The release data is asked for with an ETag** (`Cache/Feeds/launcher-latest.json` and its `.etag`), so a check that finds nothing new is one small `304` that GitHub does not count against the rate limit. The manifest and its signature (two small files on github.com) are fetched on every check that sees a release, and checked from scratch every time: the cache decides what is asked for, never what is trusted. If the network fails, the stored copy is **not** used as an answer; the check fails and the launcher says "Not reachable" instead of "Up to date".
+- **The release notes** shown in "What's New" come from the `body` of the same release data. They are unsigned display text: cut to 32 KiB, control characters removed, rendered as plain lines. Nothing is decided by them, and no address in them is opened.
+- **A refusal is quiet.** A signature, expiry, hash or size that fails is written to the log. The player sees it only on the About page ("Not installed", with *Download from GitHub*); no notice, no toast.

@@ -377,6 +377,8 @@ impl LauncherApp {
             self.shell.set_reduced_motion(ctx, reduced);
         }
         self.shell.sounds.enabled = self.model.prefs.sounds;
+        self.shell
+            .set_vibration(screens::convert::vibration(self.model.prefs.vibration));
         if !self.model.prefs.discord_presence {
             self.clear_presence();
         }
@@ -426,6 +428,13 @@ impl LauncherApp {
     }
 
     pub fn handle_event(&mut self, ctx: &Context, event: InputEvent) {
+        // The edge bump leans toward the last direction, whoever sent it (keys and pad set it
+        // too, with whether it was a repeat).
+        if let InputEvent::Command(command) = &event
+            && command.is_direction()
+        {
+            self.shell.input.last_direction = Some(*command);
+        }
         match event {
             InputEvent::Command(command) => match self.model.handle(command) {
                 Routed::Overlay(overlay) => {
@@ -982,6 +991,7 @@ impl eframe::App for App {
         self.app.step(&ctx);
         self.app.paint(ui);
         self.app.finish_frame(&ctx);
+        crate::ui::latency::frame_done();
     }
 
     fn on_exit(&mut self) {

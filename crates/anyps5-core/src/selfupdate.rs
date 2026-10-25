@@ -117,6 +117,36 @@ pub enum SelfUpdateError {
     Cancelled,
 }
 
+/// How a failed check or download reads to a player (the details go to the log).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Failure {
+    /// GitHub could not be reached, or the transfer broke off: try again later.
+    Offline,
+    /// The release was refused (signature, expiry, hash, size, missing files). Quiet unless the
+    /// player looks; the way forward is the releases page.
+    Refused,
+    /// Anything else (the disk, a cancelled transfer).
+    Other,
+}
+
+impl SelfUpdateError {
+    pub fn failure(&self) -> Failure {
+        match self {
+            SelfUpdateError::Network(_) => Failure::Offline,
+            SelfUpdateError::NoRelease
+            | SelfUpdateError::NoChecksum(_)
+            | SelfUpdateError::Digest
+            | SelfUpdateError::Size
+            | SelfUpdateError::Manifest(_)
+            | SelfUpdateError::NoManifest
+            | SelfUpdateError::NotAnExecutable => Failure::Refused,
+            SelfUpdateError::NotWritable(_)
+            | SelfUpdateError::Io(_)
+            | SelfUpdateError::Cancelled => Failure::Other,
+        }
+    }
+}
+
 impl From<ToolkitError> for SelfUpdateError {
     fn from(error: ToolkitError) -> Self {
         match error {
@@ -154,6 +184,9 @@ pub struct Release {
     pub tag: String,
     exe: Asset,
     vouch: Vouch,
+    /// The release's own notes, for display only. They come from the unsigned release data, so
+    /// nothing is decided by them.
+    notes: Option<String>,
 }
 
 impl Release {
@@ -161,6 +194,36 @@ impl Release {
     pub fn version(&self) -> &str {
         self.tag.trim_start_matches('v')
     }
+
+    /// The SHA-256 the signed manifest states for the exe (`None` in the unsigned flow). A staged
+    /// file is the same download only when it has this hash.
+    pub fn sha256(&self) -> Option<&str> {
+        self.exe.sha256.as_deref()
+    }
+
+    /// The release notes (Markdown), cut to a sane length. Text to show, never to act on.
+    pub fn notes(&self) -> Option<&str> {
+        self.notes.as_deref()
+    }
+}
+
+/// The longest release notes kept.
+const MAX_NOTES_BYTES: usize = 32 * 1024;
+
+/// `body` of the release JSON: control characters out, cut at a character boundary.
+fn notes_of(value: &serde_json::Value) -> Option<String> {
+    let body = value.get("body")?.as_str()?;
+    let clean: String = body
+        .replace("\r\n", "\n")
+        .chars()
+        .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
+        .collect();
+    let mut end = clean.len().min(MAX_NOTES_BYTES);
+    while !clean.is_char_boundary(end) {
+        end -= 1;
+    }
+    let clean = clean[..end].trim();
+    (!clean.is_empty()).then(|| clean.to_owned())
 }
 
 /// The name of the portable exe of a version.
@@ -218,6 +281,7 @@ pub(crate) fn parse_latest(json: &str, current: &str) -> Result<Option<Release>,
         tag,
         exe,
         vouch: Vouch::Checksums(sums),
+        notes: notes_of(&value),
     }))
 }
 
@@ -256,11 +320,61 @@ pub fn check_with(
     keys: &TrustedKeys,
 ) -> Result<Option<Release>, SelfUpdateError> {
     let json = toolkit::latest_release_json(api_base, repo)?;
+    evaluate(&json, current, keys)
+}
+
+/// [`check`] for the running launcher: the same rules, but the release data is asked for with the
+/// ETag of the last answer, so a check that finds nothing new costs one tiny reply that GitHub
+/// does not count against the rate limit. A failing network is an error, never the last copy: an
+/// offline launcher must not call itself up to date.
+pub fn check_cached(paths: &AppPaths, current: &str) -> Result<Option<Release>, SelfUpdateError> {
+    check_cached_with(paths, toolkit::API_BASE, current, &embedded_keys()?)
+}
+
+/// [`check_cached`] against another API host, with the trusted keys given (tests).
+fn check_cached_with(
+    paths: &AppPaths,
+    api_base: &str,
+    current: &str,
+    keys: &TrustedKeys,
+) -> Result<Option<Release>, SelfUpdateError> {
+    let url = format!("{api_base}/repos/{REPOSITORY}/releases/latest");
+    let document = crate::feed::fetch(
+        &paths.cache_dir().join("Feeds"),
+        &crate::feed::Request {
+            url: &url,
+            name: "launcher-latest.json",
+            accept: "application/vnd.github+json",
+            max_age: std::time::Duration::ZERO,
+            max_bytes: 1024 * 1024,
+        },
+    )?;
+    if document.source == crate::feed::Source::Stale {
+        return Err(SelfUpdateError::Network("cannot reach GitHub".into()));
+    }
+    // A stored copy that is not release data (damaged, or planted) would be answered "not
+    // modified" for ever: drop it, so the next check asks for a new one.
+    if serde_json::from_str::<serde_json::Value>(&document.body).is_err() {
+        let feeds = paths.cache_dir().join("Feeds");
+        let _ = fs::remove_file(feeds.join("launcher-latest.json"));
+        let _ = fs::remove_file(feeds.join("launcher-latest.json.etag"));
+        return Err(SelfUpdateError::Network("bad release data".into()));
+    }
+    evaluate(&document.body, current, keys)
+}
+
+/// The rules on the JSON of `releases/latest`: with no trusted key the unsigned flow, else the
+/// signed manifest.
+fn evaluate(
+    json: &str,
+    current: &str,
+    keys: &TrustedKeys,
+) -> Result<Option<Release>, SelfUpdateError> {
     if keys.is_empty() {
-        return parse_latest(&json, current);
+        return parse_latest(json, current);
     }
     parse_signed(
-        &json,
+        json,
         current,
         keys,
         OffsetDateTime::now_utc(),
@@ -349,6 +463,7 @@ fn parse_signed(
             manifest: manifest_bytes,
             signature,
         },
+        notes: notes_of(&value),
     }))
 }
 
@@ -1293,6 +1408,62 @@ mod tests {
         assert_eq!(left, vec![newer.path]);
         assert!(!exe.with_file_name("AnyPlay-Launcher.exe.old2").exists());
         assert!(exe.exists(), "the exe itself is never touched");
+    }
+
+    #[test]
+    fn release_notes_are_kept_as_text_and_cut() {
+        // JSON text: the escapes are the JSON's own (a bell, an escape character, CRLF).
+        let json = r#"{"tag_name": "v0.2.0", "body": "Hi\r\n- one\u0007\u001b[31m\r\n- two"}"#;
+        let value: serde_json::Value = serde_json::from_str(json).unwrap();
+        assert_eq!(notes_of(&value).as_deref(), Some("Hi\n- one[31m\n- two"));
+        let huge = format!(r#"{{"body": "{}"}}"#, "é".repeat(MAX_NOTES_BYTES));
+        let value: serde_json::Value = serde_json::from_str(&huge).unwrap();
+        assert!(notes_of(&value).unwrap().len() <= MAX_NOTES_BYTES);
+        let none: serde_json::Value = serde_json::from_str(r#"{"body": "  "}"#).unwrap();
+        assert_eq!(notes_of(&none), None);
+        assert_eq!(notes_of(&serde_json::json!({})), None);
+    }
+
+    #[test]
+    fn the_unsigned_flow_carries_the_notes_of_the_release() {
+        let json = release_json("v0.2.0", "http://x", true, true, false).replace(
+            "{\"tag_name\"",
+            "{\"body\": \"### New\\n- A thing\", \"tag_name\"",
+        );
+        let release = parse_latest(&json, "0.1.1").unwrap().unwrap();
+        assert_eq!(release.notes(), Some("### New\n- A thing"));
+    }
+
+    #[test]
+    fn the_cached_check_revalidates_and_never_calls_a_dead_network_up_to_date() {
+        let json: &'static str =
+            Box::leak(release_json("v0.2.0", "http://x", true, true, false).into_boxed_str());
+        let (base, hits) = crate::feed::testing::serve(json);
+        let (_root, paths, _) = fixture();
+        let first = check_cached_with(&paths, &base, "0.1.1", &unsigned()).unwrap();
+        assert_eq!(first.map(|r| r.tag), Some("v0.2.0".into()));
+        // The second ask carries the ETag and gets "not modified".
+        let again = check_cached_with(&paths, &base, "0.2.0", &unsigned()).unwrap();
+        assert_eq!(again, None);
+        assert_eq!(hits.load(AtomicOrdering::SeqCst), 2);
+        // With the server gone, the stored copy must not turn into a verdict.
+        let down = check_cached_with(&paths, "http://127.0.0.1:9", "0.2.0", &unsigned());
+        assert!(
+            matches!(&down, Err(e) if e.failure() == Failure::Offline),
+            "{down:?}"
+        );
+    }
+
+    #[test]
+    fn failures_are_told_apart_for_the_player() {
+        assert_eq!(
+            SelfUpdateError::Network("x".into()).failure(),
+            Failure::Offline
+        );
+        assert_eq!(SelfUpdateError::NoManifest.failure(), Failure::Refused);
+        assert_eq!(SelfUpdateError::Digest.failure(), Failure::Refused);
+        assert_eq!(SelfUpdateError::Size.failure(), Failure::Refused);
+        assert_eq!(SelfUpdateError::Cancelled.failure(), Failure::Other);
     }
 }
 

@@ -135,6 +135,8 @@ impl LibraryGrid {
                         if next != self.index {
                             self.index = next;
                             shell.play(Cue::Move);
+                        } else {
+                            shell.play(Cue::Bump);
                         }
                     }
                     Command::Select if count > 0 => {
