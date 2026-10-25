@@ -236,6 +236,8 @@ impl TrophyListPanel {
                         if next != self.index {
                             self.index = next;
                             shell.play(Cue::Move);
+                        } else {
+                            shell.play(Cue::Bump);
                         }
                     }
                     Command::Back | Command::Options => {

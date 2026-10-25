@@ -21,10 +21,12 @@ pub enum Cue {
     Boot,
     /// A call rings: two soft stacked fifths, repeated by the caller of the cue.
     Ring,
+    /// A direction had nowhere to go: the end of a row or a list. Barely there.
+    Bump,
 }
 
 impl Cue {
-    pub const ALL: [Cue; 7] = [
+    pub const ALL: [Cue; 8] = [
         Cue::Move,
         Cue::Select,
         Cue::Back,
@@ -32,6 +34,7 @@ impl Cue {
         Cue::Error,
         Cue::Boot,
         Cue::Ring,
+        Cue::Bump,
     ];
 }
 
@@ -124,6 +127,18 @@ fn recipe(cue: Cue) -> (Mix, Draw) {
                 tone(o, r, 0.0, A3, 1.0, shape(0.012, 0.09), PURE, 0.0);
                 tone(o, r, 0.0, B_FLAT3, 0.9, shape(0.012, 0.09), PURE, 0.0);
             },
+        ),
+        // A low, dull knock: F3 with almost no overtones, cut off at 1.6 kHz, gone in 80 ms. The
+        // quietest cue; it says "that is the end" without being a note.
+        Cue::Bump => (
+            Mix {
+                peak_db: -27.0,
+                send: 0.04,
+                rt60: 0.4,
+                cutoff: 1600.0,
+                length: 0.3,
+            },
+            |o, r| tone(o, r, 0.0, F3, 1.0, shape(0.010, 0.028), PURE, 0.0),
         ),
         // A call: F4 with C5 over it, then the same a step later and softer, slow attacks, a
         // little room. Warm and low, so it asks without alarming.

@@ -417,6 +417,13 @@ impl LauncherApp {
     }
 
     pub fn handle_event(&mut self, ctx: &Context, event: InputEvent) {
+        // The edge bump leans toward the last direction, whoever sent it (keys and pad set it
+        // too, with whether it was a repeat).
+        if let InputEvent::Command(command) = &event
+            && command.is_direction()
+        {
+            self.shell.input.last_direction = Some(*command);
+        }
         match event {
             InputEvent::Command(command) => match self.model.handle(command) {
                 Routed::Overlay(overlay) => {
@@ -948,6 +955,7 @@ impl eframe::App for App {
         }
         self.app.step(&ctx);
         self.app.paint(ui);
+        crate::ui::latency::frame_done();
     }
 
     fn on_exit(&mut self) {

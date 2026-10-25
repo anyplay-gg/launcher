@@ -395,6 +395,7 @@ key..." pulse, the banner pop.
 | 30 | Banner out | after 5 s: easeIn 0.3 s back up and out; next banner starts 0.35 s later | see 5.14 |
 | 31 | Scroll-to-focus in lists | `scrollTo(anchor: .center)` inside `Motion.focus` | spring focus on the scroll offset toward "focused row centred" |
 | 32 | Tile hover | none (only buttons hover: fill white 0.16) | |
+| 33 | Edge bump (6.7) | none | focus ring leans 3 dp toward the wall and returns: velocity kick 140 dp/s on `Motion::Focus`; off under reduced motion |
 
 Animations 1, 10-15 can share one helper: `focus_t: Spring` per focusable widget id stored in egui memory.
 
@@ -1484,8 +1485,9 @@ Original: `Input.swift`, `AppModel.handle`, `panelCommand`, `onboardingCommand`.
 Rules: any key with the **Command** modifier is ignored (Windows: ignore when Ctrl, Alt or the Windows key is held, except the
 shortcut below). While a native dialog is open the launcher does not handle keys. While a text field has focus (profile name) keys go
 to the text field (the original never handles them; the port additionally lets Enter and Esc blur the field, see section 9). While a
-binding waits for a key (controls panel) every key is captured by the panel. Key repeat is the OS's: a held arrow produces repeated
-commands at the OS repeat rate. **Shortcut**: `Cmd+,` opens Settings when onboarded -> `Ctrl+,`. F11 toggles fullscreen (Windows addition).
+binding waits for a key (controls panel) every key is captured by the panel. Key repeat is ours, not the OS's (2026-10-25): the OS repeat events of an arrow
+key are dropped and a held arrow runs the same repeat as a held direction on the pad (6.3), so a list moves the same under a finger
+and under a thumb. It ends when the key is up, when a dialog opens or when a binding starts to wait for a key. **Shortcut**: `Cmd+,` opens Settings when onboarded -> `Ctrl+,`. F11 toggles fullscreen (Windows addition).
 
 ### 6.2 Mouse and wheel
 
@@ -1499,15 +1501,24 @@ uses AppKit's inverted deltas; the intent above is what the user experiences.)
 
 | Control | Command |
 |---|---|
-| D-pad, left stick (axis > 0.55 on an axis, else that axis counts as 0) | direction commands; the dominant axis wins, stick up = up |
+| D-pad, left stick (axis > 0.55 on an axis, else that axis counts as 0, see hysteresis below) | direction commands; the dominant axis wins, stick up = up |
 | A / Cross (South) | select |
 | B / Circle (East) | back |
 | Y / Triangle (North) | options |
 | Menu / Start | options |
 
-**Repeat timing:** when a direction is pressed it fires immediately; if held, after **0.38 s** it repeats every **0.085 s** until released or
-the direction changes (a change cancels the timers and fires the new direction at once). Identical consecutive directions are not
-re-fired. Controller input is not blocked by text fields or panels. The hint bar text is always `✕ / ○ / △` (PlayStation
+**Repeat timing (2026-10-25, replaces 0.38 s / 0.085 s):** when a direction is pressed it fires immediately; if held, after **0.36 s** it
+repeats every **0.10 s**, and after six repeats every **0.06 s**, until released or the direction changes (a change cancels the timers
+and fires the new direction at once). That is 17 rows in a 1.6 s hold, and a long list or the library grid no longer takes ten seconds
+to cross. A slow frame never fires a burst. Identical consecutive directions are not re-fired.
+
+**Stick hysteresis:** the stick engages at 0.55 and lets go only below **0.38**, so a thumb resting near the threshold does not
+flutter between "right" and "nothing". A held direction gives way to the other axis only when that axis is at least 0.55 and **1.25
+times** the held one, so a thumb near the diagonal does not jump between "right" and "up"; a flick through the middle (right to left)
+changes direction at once. The D-pad beats the stick. The gamepad thread polls every **4 ms** (was 8) while a pad is connected.
+
+**Latency.** `ui::latency` stamps an event when the gamepad thread reads it, when the frame takes it off the channel and when that frame
+is built; with `RUST_LOG=anyplay_launcher::ui::latency=debug` it logs the average and the maximum of both intervals every 40 events. Controller input is not blocked by text fields or panels. The hint bar text is always `✕ / ○ / △` (PlayStation
 naming) regardless of the controller.
 
 ### 6.4 Focus model
@@ -1592,6 +1603,17 @@ foreground switch against a real game window. The test hook is `--demo` with `AN
 `ANYPS5_PS_TEST_WINDOW=<hwnd>`: that window becomes the running game, each line `ps` on stdin is a press, and the log prints
 the foreground window before and after (`ps-test: ...`).
 
+### 6.7 The edge bump (2026-10-25)
+
+A direction that has nowhere to go (left on the first tile, up in the top bar, down on the last row, the end of the library grid or the
+trophy list, the top or bottom category) is answered like every other press, within the same frame: the `bump` cue (7.3) and a leaning
+focus ring. The ring, and only the ring, moves toward the wall by about **3 dp** and springs back (`ui::nudge`): a velocity kick of
+140 dp/s into a spring pair on `Motion::Focus`, which peaks after 55 ms, undershoots by less than a quarter of a dp and is still
+inside a quarter of a second. Nothing but a transform changes, the layout stays put and the element does not move. Under "Animations:
+Reduced" the ring stays and only the sound is left. A held direction bumps **once per press**: the repeats of a hold at the edge
+are silent and still (`Input::repeating`). Every site that decides "nothing there" calls `Shell::play(Cue::Bump)`; the shell leans the
+ring toward `Input::last_direction`.
+
 ## 7. Sounds and media
 
 ### 7.1 Sounds (`Sounds.swift`): synthesized, nothing bundled
@@ -1670,6 +1692,7 @@ decay with time constant τ), followed by a one-pole lowpass and a Freeverb send
 | `back` | A3, E4 (0.7) | as `select` | 10 / 90 ms | -15 dBFS | 0.12 / 0.8 s |
 | `error` | A3, B♭3 (0.9) | 1; 2 at 0.25 | 12 / 90 ms | -15 dBFS | 0.06 / 0.8 s |
 | `unlocked` | F4 C5 G5 C6 (1, 0.85, 0.7, 0.55), 15 ms apart, each as two voices 5 cents apart | 1; 2 at 0.25 | 25 / 250 ms | -9 dBFS | 0.20 / 1.2 s |
+| `bump` | F3, nothing above it, lowpass 1.6 kHz | 1; 2 at 0.25 | 10 / 28 ms | -27 dBFS | 0.04 / 0.4 s |
 | `boot` | F3 C4 G4 C5 F5 (0.9 to 0.45), 70 ms apart, two voices 5 cents apart, glitter at 0.3 s | 1; 2 at 0.25 | 350 / 650 ms | -12 dBFS | 0.35 / 2.2 s |
 
 `unlocked` adds a faint glitter: six sines between 3.15 and 7.88 kHz at 0.12, gone within about 0.1 s. `error` is new and plays

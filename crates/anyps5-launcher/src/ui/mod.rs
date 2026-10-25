@@ -41,6 +41,8 @@ pub mod i18n;
 pub mod icons;
 pub mod input;
 pub mod intro;
+pub mod latency;
+pub mod nudge;
 pub mod sound;
 pub mod text;
 pub mod theme;
@@ -55,6 +57,7 @@ use self::background::Backdrop;
 use self::home_button::HomeButton;
 use self::i18n::Language;
 use self::input::{Input, InputEvent};
+use self::nudge::Nudge;
 use self::sound::{Cue, Sounds};
 use self::theme::{Accent, Theme};
 
@@ -69,6 +72,10 @@ pub struct Shell {
     /// The accent colour in use (the theme's default unless the user picked one).
     pub accent: Accent,
     scale: f32,
+    /// The edge bump of the focus ring (see [`nudge`]).
+    nudge: Nudge,
+    /// "Animations: Reduced": the ring does not lean.
+    reduced: bool,
 }
 
 /// What [`Shell::begin_frame`] hands to the screen.
@@ -101,6 +108,8 @@ impl Shell {
             language,
             accent: Theme::Cosmic.default_accent(),
             scale: 1.0,
+            nudge: Nudge::default(),
+            reduced: false,
         }
     }
 
@@ -121,6 +130,8 @@ impl Shell {
             language: Language::English,
             accent: theme.default_accent(),
             scale: 1.0,
+            nudge: Nudge::default(),
+            reduced: false,
         }
     }
 
@@ -128,6 +139,11 @@ impl Shell {
     pub fn begin_frame(&mut self, ctx: &Context) -> FrameInput {
         self.scale = theme::sync_scale(ctx);
         text::set_pixels_per_point(ctx.pixels_per_point());
+        let dt = ctx.input(|i| i.unstable_dt).min(0.05);
+        nudge::publish(ctx, self.nudge.step(dt));
+        if !self.nudge.is_settled() {
+            ctx.request_repaint();
+        }
         FrameInput {
             scale: self.scale,
             events: self.input.poll(ctx),
@@ -142,6 +158,7 @@ impl Shell {
 
     /// "Animations: Reduced": swaps springs for short eases and freezes the background.
     pub fn set_reduced_motion(&mut self, ctx: &Context, reduced: bool) {
+        self.reduced = reduced;
         ctx.set_reduced_motion(reduced);
     }
 
@@ -152,8 +169,20 @@ impl Shell {
         self.backdrop.paint(ctx, painter, rect);
     }
 
-    /// Plays a cue (no-op when sounds are off).
+    /// The one place where an action is answered: plays its cue (no-op when sounds are off).
+    /// A bump is answered once per press, not on every repeat of a held direction, and leans
+    /// the focus ring toward the wall unless motion is reduced.
     pub fn play(&mut self, cue: Cue) {
+        if cue == Cue::Bump {
+            if self.input.repeating {
+                return;
+            }
+            if !self.reduced
+                && let Some(direction) = self.input.last_direction
+            {
+                self.nudge.kick(direction);
+            }
+        }
         self.sounds.play(cue);
     }
 
@@ -243,6 +272,8 @@ impl Shell {
             language: Language::English,
             accent: theme.default_accent(),
             scale: 1.0,
+            nudge: Nudge::default(),
+            reduced: false,
         }
     }
 }

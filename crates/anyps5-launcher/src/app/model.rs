@@ -1439,7 +1439,12 @@ mod tests {
         ]);
         m.handle(Command::Left);
         assert_eq!(m.selected, 0);
-        assert!(sounds(&mut m).is_empty());
+        assert_eq!(
+            sounds(&mut m),
+            vec![Cue::Bump],
+            "the end of the row is a bump"
+        );
+        m.effects.clear();
         m.handle(Command::Right);
         assert_eq!(m.selected, 1);
         assert_eq!(sounds(&mut m), vec![Cue::Move]);
