@@ -1161,6 +1161,8 @@ impl Online {
                     self.request_feed();
                 }
             }
+            // Share screen has no launcher page yet.
+            Event::Screen { .. } => {}
             Event::Unknown => {}
         }
         notices
