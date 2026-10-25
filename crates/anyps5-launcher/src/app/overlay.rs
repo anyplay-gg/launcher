@@ -34,6 +34,8 @@ pub enum Overlay {
     WhatsNew,
     /// Sign-in, friends and invitations of the AnyPlay network (a side panel).
     Online,
+    /// A player's profile, the player's own or another's (a full-screen panel).
+    Profile,
     /// The release a game stays on is gone: download it again or follow the global toolkit
     /// (a side panel).
     ToolkitMissing,

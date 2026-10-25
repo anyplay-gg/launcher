@@ -243,6 +243,11 @@ pub struct Model {
     /// What the launcher knows of the network. Commands queue here; the host hands them to the
     /// net service and its answers back (`app::online`).
     pub online: Online,
+    /// The profile the profile screen is on and where Back leads (`app::profile`).
+    pub profile: Option<crate::app::profile::Target>,
+    /// The online panel opens on the page it was left on, not on its first one: the player comes
+    /// back from the profile screen.
+    pub online_resume: bool,
     /// A session that ended and whose "How did it run?" has not been answered ([`Model::run_question`]).
     pub run_prompt: Option<crate::app::run_question::RunPrompt>,
 
@@ -295,6 +300,8 @@ impl Model {
             phone: Default::default(),
             effects: Vec::new(),
             online: Online::default(),
+            profile: None,
+            online_resume: false,
             run_prompt: None,
             sessions: Sessions::default(),
             saves_busy: None,
@@ -522,7 +529,7 @@ impl Model {
         !self.queue.is_empty() || !self.progress.is_empty()
     }
 
-    fn sound(&mut self, cue: Cue) {
+    pub(crate) fn sound(&mut self, cue: Cue) {
         self.effects.push(Effect::Sound(cue));
     }
 
@@ -974,7 +981,9 @@ impl Model {
             HomeIntent::OpenLibrary => self.open(Overlay::Library),
             HomeIntent::OpenSettings => self.open(Overlay::Settings),
             // The online panel opens on the friends list once signed in, else on sign-in.
-            HomeIntent::OpenFriends | HomeIntent::OpenOnline => self.open(Overlay::Online),
+            HomeIntent::OpenFriends => self.open(Overlay::Online),
+            // The profile button: the own profile once signed in, the sign-in page before.
+            HomeIntent::OpenOnline => self.open_profile_button(),
             HomeIntent::ChooseFolder => self.request_folder_dialog(),
         }
     }

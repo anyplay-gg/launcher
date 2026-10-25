@@ -10,6 +10,7 @@ pub mod screen;
 mod social;
 mod voice;
 
+pub use feed::{ago_text, monogram_colour, paint_avatar, rarity_text, sentence, theme_grade};
 pub use local::{Avatar, Local, OwnedGame};
 pub use voice::talk_key;
 
@@ -113,8 +114,10 @@ pub enum OnlineAction {
     FeedOlder,
     /// Set the player's reaction to a feed item, or take it back.
     React(u64, Option<Reaction>),
-    /// A profile page opened or asks again: read the profile of this account.
+    /// Read the profile of this account (the profile screen asks again).
     Profile(AccountId),
+    /// Open the profile screen on this account.
+    OpenProfile(AccountId),
     /// Call a friend, or add the friend to the call the player leads.
     Call(AccountId),
     /// The player looked at a friend's missed calls.
@@ -177,8 +180,6 @@ pub enum Page {
     Restriction(String),
     /// What the player and their friends did.
     Feed,
-    /// The profile of an account, the player's own or another's.
-    Profile(AccountId),
 }
 
 /// What the panel shows, borrowed for one frame.
@@ -268,6 +269,14 @@ impl OnlinePanel {
         self.side.close();
     }
 
+    /// Opens again on the page it was on and the row it was on: the panel was left for the profile
+    /// screen, and Back from there leads here.
+    pub fn resume(&mut self, data: &OnlineData<'_>) {
+        let row = self.side.nav.row;
+        self.follow(data);
+        self.side.open_at(row);
+    }
+
     pub fn dismiss(&mut self) {
         self.side.dismiss();
     }
@@ -283,7 +292,7 @@ impl OnlinePanel {
     /// The page shows games, avatars or trophy names of this PC: the host builds a [`Local`] for
     /// it every frame.
     pub fn wants_local(&self) -> bool {
-        self.side.is_active() && matches!(self.page, Page::Feed | Page::Profile(_))
+        self.side.is_active() && self.page == Page::Feed
     }
 
     pub fn set_local(&mut self, local: Local) {
@@ -327,7 +336,7 @@ impl OnlinePanel {
             }
             Page::Feed => {
                 // Coming back from a profile keeps the place in the feed.
-                if !matches!(self.page, Page::Feed | Page::Profile(_)) {
+                if self.page != Page::Feed {
                     self.feed_focus = feed::FeedFocus::default();
                     self.feed_anchor = None;
                 }
@@ -336,7 +345,6 @@ impl OnlinePanel {
                     self.queued.push(OnlineAction::Profile(me.id));
                 }
             }
-            Page::Profile(id) => self.queued.push(OnlineAction::Profile(*id)),
             _ => {}
         }
         // A message and its chat are one place: going between them is no step away from where
@@ -412,12 +420,6 @@ impl OnlinePanel {
             Page::Restriction(_) => Some(self.restriction_back(data)),
             Page::Report(id) => Some(self.report_from.clone().unwrap_or(Page::Friend(id))),
             Page::Feed => Some(Page::Home),
-            Page::Profile(_) => Some(
-                self.previous
-                    .clone()
-                    .filter(|p| !matches!(p, Page::Profile(_) | Page::Start))
-                    .unwrap_or(Page::Home),
-            ),
             _ => self.social_back(data).unwrap_or(Some(Page::Home)),
         }
     }
@@ -453,13 +455,6 @@ impl OnlinePanel {
             for command in side::commands(events) {
                 if capturing {
                     break;
-                }
-                if matches!(self.page, Page::Profile(_)) {
-                    if self.profile_command(shell, command, data, &mut actions) {
-                        self.back(data, &mut actions);
-                        break;
-                    }
-                    continue;
                 }
                 if self.feed_is_list(data) {
                     if self.feed_command(shell, command, data, &mut actions) {
@@ -497,7 +492,6 @@ impl OnlinePanel {
                     events: Vec::new(),
                 }),
             Page::Feed => self.feed_state_draw(ctx, &view, &mut rows, data),
-            Page::Profile(id) => self.profile_draw(ctx, &view, &mut rows, id, data),
             _ => side::draw(ctx, self.side.is_open(), &view, &mut rows),
         };
         match drawn {
@@ -1091,7 +1085,6 @@ impl OnlinePanel {
             Page::Restriction(_) => self
                 .restriction_page_rows(data, &mut rows)
                 .unwrap_or_else(|| (String::new(), None)),
-            Page::Profile(id) => self.profile_rows(*id, data, &mut rows),
             Page::Feed => {
                 if !self.feed_is_list(data) {
                     self.feed_rows(data, &mut rows);
@@ -1886,32 +1879,17 @@ mod tests {
         }
     }
 
-    fn profile_page(about: Option<&str>, trophies: Option<Count>) -> online::api::ProfilePage {
-        online::api::ProfilePage {
-            profile: online::api::Profile {
-                account: account(1, "Alec"),
-                about: about.map(str::to_owned),
-                favourites: None,
-                avatar: None,
-                playtime: None,
-            },
-            trophies,
-            links: Vec::new(),
-        }
-    }
-
     #[test]
-    fn home_leads_to_the_own_profile_and_the_feed_and_back() {
+    fn home_leads_to_the_own_profile_screen_and_the_feed() {
         let online = signed_in();
         let mut panel = OnlinePanel::default();
         panel.open(&data(&online));
         let mut actions = Vec::new();
         panel.run("profile", &data(&online), &mut actions);
-        assert_eq!(panel.page, Page::Profile(AccountId(1)));
-        assert_eq!(panel.queued, [OnlineAction::Profile(AccountId(1))]);
-        assert_eq!(panel.back_page(&data(&online)), Some(Page::Home));
+        // The profile is a screen of its own: the panel stays where it is.
+        assert_eq!(panel.page, Page::Home);
+        assert_eq!(panel.queued, [OnlineAction::OpenProfile(AccountId(1))]);
         panel.queued.clear();
-        panel.go(Page::Home, &data(&online));
         panel.run("feed", &data(&online), &mut actions);
         assert_eq!(panel.page, Page::Feed);
         assert_eq!(
@@ -1925,17 +1903,27 @@ mod tests {
     }
 
     #[test]
-    fn a_profile_from_a_friend_goes_back_to_the_friend() {
+    fn a_friends_profile_opens_the_screen_and_the_panel_keeps_the_friend() {
         let online = signed_in();
         let mut panel = OnlinePanel::default();
         panel.go(Page::Friend(AccountId(2)), &data(&online));
         let mut actions = Vec::new();
         panel.run("viewProfile", &data(&online), &mut actions);
-        assert_eq!(panel.page, Page::Profile(AccountId(2)));
-        assert_eq!(
-            panel.back_page(&data(&online)),
-            Some(Page::Friend(AccountId(2)))
-        );
+        assert_eq!(panel.page, Page::Friend(AccountId(2)));
+        assert_eq!(panel.queued, [OnlineAction::OpenProfile(AccountId(2))]);
+    }
+
+    #[test]
+    fn the_panel_comes_back_on_the_page_it_left() {
+        let online = signed_in();
+        let mut panel = OnlinePanel::default();
+        panel.go(Page::Friend(AccountId(2)), &data(&online));
+        panel.close();
+        panel.dismiss();
+        assert!(!panel.is_active());
+        panel.resume(&data(&online));
+        assert!(panel.is_open());
+        assert_eq!(panel.page, Page::Friend(AccountId(2)));
     }
 
     #[test]
@@ -1994,94 +1982,10 @@ mod tests {
                 OnlineAction::FeedOlder,
             ]
         );
-        // A card opens its account's profile.
+        // A card opens its account's profile screen; the panel stays on the feed.
+        panel.queued.clear();
         panel.feed_press(focus(0, None), &data(&online), &mut actions);
-        assert_eq!(panel.page, Page::Profile(AccountId(2)));
-        assert_eq!(panel.back_page(&data(&online)), Some(Page::Feed));
-    }
-
-    #[test]
-    fn the_own_profile_shows_what_is_set_and_offers_to_edit_it_on_the_web() {
-        let mut online = signed_in();
-        let mut panel = OnlinePanel::default();
-        panel.go(Page::Profile(AccountId(1)), &data(&online));
-        assert_eq!(ids(&panel.rows(&data(&online)).2), ["profileState"]);
-        assert_eq!(panel.rows(&data(&online)).0, "Profile");
-        let mut page = profile_page(Some("Hi"), Some(Count::default()));
-        page.profile.playtime = Some(vec![
-            online::api::TitlePlaytime {
-                title_id: "GAME00001".into(),
-                minutes: 260,
-            },
-            online::api::TitlePlaytime {
-                title_id: "GAME00002".into(),
-                minutes: 0,
-            },
-        ]);
-        page.links = vec![online::api::ProfileLink {
-            provider: "discord".into(),
-            name: Some("alec".into()),
-        }];
-        online.profiles.insert(
-            AccountId(1),
-            online::ProfileEntry {
-                page: Some(page),
-                failed: false,
-            },
-        );
-        let (title, subtitle, rows) = panel.rows(&data(&online));
-        assert_eq!(title, "Profile");
-        assert_eq!(subtitle.as_deref(), Some("This is what other players see"));
-        assert_eq!(
-            ids(&rows),
-            [
-                "editProfile",
-                "trophies",
-                "playedCaption",
-                "played",
-                "linksCaption",
-                "link"
-            ]
-        );
-        assert_eq!(
-            rows[3].title, "GAME00001",
-            "a game the player does not have"
-        );
-        assert_eq!(rows[3].control, Control::Info(Some("4 h 20 min".into())));
-        let mut actions = Vec::new();
-        panel.run("editProfile", &data(&online), &mut actions);
-        assert_eq!(actions, [OnlineAction::ManageAccount]);
-    }
-
-    #[test]
-    fn an_empty_own_profile_says_where_to_fill_it_and_a_strangers_shows_nothing_more() {
-        let mut online = signed_in();
-        let mut panel = OnlinePanel::default();
-        let entry = |page| online::ProfileEntry {
-            page: Some(page),
-            failed: false,
-        };
-        online.profiles.insert(
-            AccountId(1),
-            entry(profile_page(None, Some(Count::default()))),
-        );
-        panel.go(Page::Profile(AccountId(1)), &data(&online));
-        assert_eq!(
-            ids(&panel.rows(&data(&online)).2),
-            ["editProfile", "ownEmpty", "trophies"]
-        );
-        // Another account, nothing visible: the line about private trophies and no more.
-        let mut other = profile_page(None, None);
-        other.profile.account = account(2, "Lumen");
-        online.profiles.insert(AccountId(2), entry(other));
-        panel.go(Page::Profile(AccountId(2)), &data(&online));
-        let (title, _, rows) = panel.rows(&data(&online));
-        assert_eq!(title, "Profile");
-        assert_eq!(ids(&rows), ["trophies"]);
-        assert_eq!(rows[0].title, "Trophies are private");
-        // The own profile opens on Edit Profile, the first row.
-        panel.go(Page::Profile(AccountId(1)), &data(&online));
-        assert_eq!(panel.side.nav.row, 0);
-        assert_eq!(panel.rows(&data(&online)).2[0].id, "editProfile");
+        assert_eq!(panel.page, Page::Feed);
+        assert_eq!(panel.queued, [OnlineAction::OpenProfile(AccountId(2))]);
     }
 }
