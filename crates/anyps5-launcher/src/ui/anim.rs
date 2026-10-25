@@ -209,6 +209,10 @@ pub enum Motion {
     /// spring would lag behind the click; an ease retargets from the current value, so a quick
     /// click-and-release reverses mid-press instead of finishing it first.
     Press,
+    /// What leaves while something else arrives (the old hero of a game change): easeOut 0.18 s,
+    /// the same under reduced motion. Quicker than the arriving spring, so the pair never shows
+    /// two full titles, yet slow enough that together they never dip below 0.6 of one title.
+    Exit,
     /// Tile row, hero swap, onboarding steps, list reflow: 0.45 / 0.86.
     Layout,
     /// Panels, splash, toast: 0.42 / 0.90.
@@ -241,6 +245,7 @@ impl Motion {
             (Motion::Focus, true) => ease_out(0.12),
             (Motion::Hover, _) => ease_out(0.12),
             (Motion::Press, _) => ease_out(0.10),
+            (Motion::Exit, _) => ease_out(0.18),
             (Motion::Layout, false) => Curve::Spring(Self::LAYOUT),
             (Motion::Layout, true) => ease_out(0.15),
             (Motion::Overlay, false) => Curve::Spring(Self::OVERLAY),
@@ -766,6 +771,60 @@ mod tests {
         assert_eq!(
             Motion::BannerPop.curve(true),
             Motion::BannerPop.curve(false)
+        );
+    }
+
+    /// Seconds until a 1 -> 0 move is within 2 % of its target, at 240 Hz.
+    fn motion_settle(motion: Motion, reduced: bool) -> f32 {
+        let curve = motion.curve(reduced);
+        let mut tracker = Tracker::new(1.0);
+        tracker.retarget(0.0, curve, 0.0);
+        let mut t = 0.0;
+        while tracker.value().abs() > 0.02 && t < 3.0 {
+            tracker.advance(curve, 1.0 / 240.0);
+            t += 1.0 / 240.0;
+        }
+        t
+    }
+
+    #[test]
+    fn settle_times_match_the_design_table() {
+        // DESIGN.md 2.1: 98 % settle of the springs, and the eases' own length.
+        let focus = motion_settle(Motion::Focus, false);
+        let layout = motion_settle(Motion::Layout, false);
+        let overlay = motion_settle(Motion::Overlay, false);
+        assert!((0.15..=0.30).contains(&focus), "focus {focus}");
+        assert!((0.20..=0.40).contains(&layout), "layout {layout}");
+        assert!((0.18..=0.36).contains(&overlay), "overlay {overlay}");
+        assert!(motion_settle(Motion::Exit, false) <= 0.185);
+        assert!(motion_settle(Motion::Press, false) <= 0.105);
+        // Reduced: 0.16 s at most, whatever the motion.
+        for motion in [Motion::Focus, Motion::Layout, Motion::Overlay, Motion::Fade] {
+            assert!(motion_settle(motion, true) <= 0.16, "{motion:?}");
+        }
+    }
+
+    #[test]
+    fn the_hero_pair_never_dips_and_the_old_one_leaves_first() {
+        let out = Motion::Exit.curve(false);
+        let inn = Motion::Layout.curve(false);
+        let (mut old, mut new) = (Tracker::new(1.0), Tracker::new(0.0));
+        old.retarget(0.0, out, 0.0);
+        new.retarget(1.0, inn, 0.0);
+        let (mut least, mut t, mut old_at_half) = (f32::MAX, 0.0, None);
+        while t < 0.4 {
+            old.advance(out, 1.0 / 240.0);
+            new.advance(inn, 1.0 / 240.0);
+            t += 1.0 / 240.0;
+            least = least.min(old.value() + new.value());
+            if old_at_half.is_none() && new.value() >= 0.5 {
+                old_at_half = Some(old.value());
+            }
+        }
+        assert!(least >= 0.6, "together they dip to {least}");
+        assert!(
+            old_at_half.unwrap() < 0.3,
+            "old is at {old_at_half:?} when the new is half in"
         );
     }
 

@@ -46,6 +46,7 @@ pub mod input;
 pub mod intro;
 pub mod latency;
 pub mod nudge;
+pub mod press;
 pub mod shade;
 pub mod sound;
 pub mod text;
@@ -179,9 +180,17 @@ impl Shell {
         if !self.nudge.is_settled() {
             ctx.request_repaint();
         }
+        let events = self.input.poll(ctx);
+        // A select from a key or the pad presses the focused control in, like a click does.
+        if events
+            .iter()
+            .any(|e| matches!(e, InputEvent::Command(input::Command::Select)))
+        {
+            press::trigger(ctx);
+        }
         FrameInput {
             scale: self.scale,
-            events: self.input.poll(ctx),
+            events,
         }
     }
 

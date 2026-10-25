@@ -674,7 +674,8 @@ impl<'a> PanelRow<'a> {
             f32::from(
                 focusable
                     && (out.response.is_pointer_button_down_on()
-                        || self.force == Some(Force::Press)),
+                        || self.force == Some(Force::Press)
+                        || (self.focused && crate::ui::press::active(&ctx))),
             ),
             Motion::Press,
         );
@@ -1185,7 +1186,9 @@ pub fn side_panel<R>(
     }
     let screen = ctx.content_rect();
     let width = size::SIDE_PANEL_WIDTH;
-    let offset = (1.0 - v) * width;
+    // Reduced motion: the panel fades where it stands instead of sliding in.
+    let reduced = ctx.reduced_motion();
+    let offset = if reduced { 0.0 } else { (1.0 - v) * width };
     let panel = Rect::from_min_max(
         pos2(screen.max.x - width + offset, screen.min.y),
         pos2(screen.max.x + offset, screen.max.y),
@@ -1210,7 +1213,11 @@ pub fn side_panel<R>(
             );
             let scrim_response = ui.interact(scrim, id.with("scrim"), Sense::click());
             scrim_clicked = scrim_response.clicked();
-            paint_glass(ctx, &painter, panel, GlassStyle::side_panel());
+            let mut glass = GlassStyle::side_panel();
+            if reduced {
+                glass.alpha = v.clamp(0.0, 1.0);
+            }
+            paint_glass(ctx, &painter, panel, glass);
             let edge = Rect::from_min_size(
                 panel.min,
                 vec2(components::hairline_width(&painter), panel.height()),
@@ -1227,6 +1234,9 @@ pub fn side_panel<R>(
                     .max_rect(inner)
                     .layout(Layout::top_down(Align::Min)),
             );
+            if reduced {
+                child.set_opacity(v.clamp(0.0, 1.0));
+            }
             let title_galley = text::layout(
                 &painter,
                 ty::SIDE_PANEL_TITLE,
@@ -1239,7 +1249,12 @@ pub fn side_panel<R>(
             let top = child.cursor().min.y;
             // Title and subtitle start on the edge of the row cards below them.
             let edge = inner.min.x + size::LIST_INSET;
-            painter.galley(pos2(edge, top), title_galley, Color32::WHITE);
+            let ink = if reduced {
+                fade(Color32::WHITE, v)
+            } else {
+                Color32::WHITE
+            };
+            painter.galley(pos2(edge, top), title_galley, ink);
             child.add_space(title_h + 8.0);
             if let Some(subtitle) = subtitle {
                 let top = child.cursor().min.y;
@@ -1265,7 +1280,8 @@ pub fn side_panel<R>(
                     inner.width(),
                 );
                 let height = galley.size().y;
-                painter.galley(pos2(edge, top), galley, ink);
+                let shown = if reduced { fade(ink, v) } else { ink };
+                painter.galley(pos2(edge, top), galley, shown);
                 child.add_space(height + 8.0);
             }
             child.add_space(18.0);
@@ -1315,7 +1331,12 @@ pub fn fullscreen_panel<R>(
                 ..style
             };
             paint_glass(ctx, &painter, screen, faded);
-            let scale = lerp(1.03, 1.0, v);
+            // Reduced motion: a plain fade, nothing grows.
+            let scale = if ctx.reduced_motion() {
+                1.0
+            } else {
+                lerp(1.03, 1.0, v)
+            };
             let area = scale_rect(screen, scale);
             let mut child = ui.new_child(UiBuilder::new().max_rect(area));
             child.set_opacity(v.clamp(0.0, 1.0));
@@ -1359,7 +1380,8 @@ pub fn toast(
             let (pad_x, pad_y, gap) = (22.0, 14.0, 10.0);
             let w = pad_x * 2.0 + glyph + gap + galley.size().x;
             let h = (pad_y * 2.0 + galley.size().y).max(radius::TOAST * 2.0);
-            let top = size::TOAST_TOP - (1.0 - v) * 80.0;
+            let travel = if ctx.reduced_motion() { 0.0 } else { 80.0 };
+            let top = size::TOAST_TOP - (1.0 - v) * travel;
             let rect = Rect::from_min_size(
                 pos2(screen.center().x - w * 0.5, screen.min.y + top),
                 vec2(w, h),
