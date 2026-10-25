@@ -409,8 +409,8 @@ Animations 1, 10-15 can share one helper: `focus_t: Spring` per focusable widget
 ## 3. Animated theme backgrounds
 
 Original: `BackgroundRenderer.swift`, one Metal fragment shader with three theme functions, compiled at start. It renders at
-**half the physical pixel size** (`drawableSize = bounds * backingScale * 0.5`) at 60 fps, is soft by design, and leaves the GPU to
-the games.
+**half the physical pixel size** (`drawableSize = bounds * backingScale * 0.5`) at 60 fps on the Mac, is soft by design, and leaves the GPU to
+the games. The launcher draws the idle backdrop and the artwork drift at a target of about 30 Hz (`IDLE_REPAINT`, 30 ms, meant to land on every second vsync of a 60 Hz display; not yet measured on a real window); the clock advances by real time, so the drift speed is the same.
 
 ### 3.1 Driver
 
@@ -663,7 +663,7 @@ The launcher keeps the port's structure but trims what read as noise next to the
   From the second game on the row moves 28 dp right (`TILE_PEEK_SHIFT`) and the game before the
   selected one stays on screen at 0.4 opacity (`TILE_PEEK_OPACITY`), partly past the window edge;
   it can be clicked to select it. On the first game the row sits at `leading` as before.
-- **Hero.** One left edge with the top bar (`HERO_X = 64`). The four boxed info cards become a
+- **Hero.** One left edge with the top bar (`HERO_X = 64`; the tile row is the exception from the second game on, see Tile row). The four boxed info cards become a
   plain facts line (Size, Title ID, Version: 13 dp tracked overline over a 17 dp value, 48 dp
   apart, no card). The status card is gone; the state stands above the title. Switching games
   cross-fades without the 14 dp slide (it happens on every arrow press). The "more" button is a
@@ -709,9 +709,9 @@ The launcher keeps the port's structure but trims what read as noise next to the
   The launch splash's explanation wraps at 460 dp, so it never ends on a lone word. The onboarding
   theme names share one baseline under the resting cards; focus grows the card, not the label.
 - **Toolkit channels, notes and recommendations.** The Toolkit page has one `Channel` choice
-  (Stable, Pinned, Local Build) and shows only the rows of that channel: stable has the update
+  (Stable, AnyPlay Engine, Pinned, Local Build: the choice steps one entry at a time and Local Build opens a folder picker, so it stays last and every other channel is reachable without it) and shows only the rows of that channel: stable has the update
   toggle and "Check Now" (its detail line carries the status or the last check), pinned has a
-  `Version` choice over the last ten releases and no update, local has the folder row. "What's New"
+  `Version` choice over the last ten releases and no update, local has the folder row, and AnyPlay Engine has the update toggle and "Check Now" like stable, with the day the build was made hanging under the version row ("Built on 2026-10-25"; gallery scenes `toolkit-engine`, `toolkit-engine-update`) and no "What's New" (a nightly build has commit messages, not notes). Choosing it downloads the nightly build when none is installed; "Install the Update" fetches a newer one, checked against the release's checksum list, and a refusal is said in a toast. "What's New"
   opens the notes of the release waiting to be installed, else of the installed one, in one
   full-screen panel: header with release, date and count, Highlights (`feat` and `perf` by area,
   the seven busiest areas folded, the rest as "Other areas"), then Everything. Rows are 44 dp, drawn
@@ -778,11 +778,11 @@ The launcher keeps the port's structure but trims what read as noise next to the
   GPU ready": 571 and 600 ms before (2200 ms on the first run), 369 to 460 ms after (530 ms first
   run). The pipelines take 130 to 170 ms, the first frame about 60 ms. A focused, idle home screen
   used 16.5 % of a core and 30 % GPU (58 threads) before, 11 % and 15 % (26 threads) after; the
-  backdrop is untouched and still draws at 60 Hz while focused. A window without focus, and a game
+  backdrop still drew at 60 Hz while focused then (it draws at about 30 Hz since the idle-rate change; the figures above come from the demo). A window without focus, and a game
   running, stop all drawing (0.2 to 2 % of a core). The gamepad thread polls every 100 ms while no
   pad is connected (4 ms with one). `ANYPS5_GPU=dx12|vulkan|both` and `ANYPS5_POWER=high` undo the
-  choice for diagnosis; the log carries `startup t=...ms <step>` lines and the demo an `idle ...
-  frames/s` line every 5 s. The demo no longer forces a repaint every frame (it idled at 40 % of a
+  choice for diagnosis; the log carries `startup t=...ms <step>` lines and the launcher an `idle ...
+  frames/s` line every 10 s (the window restarts after a gap, so the first line after a refocus is a true rate). The demo no longer forces a repaint every frame (it idled at 40 % of a
   core, unlike the launcher).
 
 ### 3.8 A toolkit for one game
@@ -2416,7 +2416,7 @@ While a game runs, the launcher can keep its last seconds and save them as a vid
 
 - **Immediate mode with retained animation state.** Keep a map `widget id -> Spring` (in `ctx.memory` or the app struct); call
   `ctx.request_repaint()` while any spring or timeline is active, `request_repaint_after(...)` for timed items (clock minute, splash
-  second tick, toast and banner timers) and nothing when idle with the background paused. While the shader animates, cap at 60 fps.
+  second tick, toast and banner timers) and nothing when idle with the background paused. While only the shader animates, repaint every 30 ms (target about 30 fps, not yet measured); springs, fades and input still draw at the display rate.
 - **One command pipeline.** Translate egui key events, wheel and `gilrs` events into the seven commands (section 6) in a single
   function that is their only consumer; do not rely on egui's keyboard focus traversal (draw focus from the model: `HomeFocus`,
   `panelRow`, ...). Text fields are the only widgets that see raw keys.
