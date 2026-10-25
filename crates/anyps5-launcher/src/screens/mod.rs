@@ -47,6 +47,7 @@ pub mod glibc_strings;
 pub mod home;
 pub mod ingame;
 pub mod library;
+pub mod location_strings;
 pub mod log;
 pub mod onboarding;
 pub mod onboarding_strings;

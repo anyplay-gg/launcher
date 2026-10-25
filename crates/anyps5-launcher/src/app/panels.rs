@@ -343,6 +343,7 @@ impl PanelHost {
                 count
             }
         };
+        cx.model.ask_location();
         let env = SettingsEnv {
             games_found: cx.model.games.len(),
             app_version: env!("CARGO_PKG_VERSION"),
@@ -370,6 +371,7 @@ impl PanelHost {
                 count: clips_count,
                 capturing: self.settings.clips_capturing(),
             },
+            location: cx.model.location_env(),
         };
         // Theme, accent, language, motion and sounds reach the shell inside the panel
         // (`apply_preferences`), so the backdrop cross-fades while the choice is made.
@@ -397,10 +399,16 @@ impl PanelHost {
         match action {
             SettingsAction::Close => model.dismiss_overlay(),
             SettingsAction::GamesFolderChosen(_) => {
+                model.games_folder_changed();
                 model.forget_known_games();
                 model.selected = 0;
                 model.rescan();
             }
+            SettingsAction::UnlockedFolderPicked(folder) => model.choose_unlocked_folder(folder),
+            SettingsAction::UseDefaultLocation => model.use_default_location(),
+            SettingsAction::CancelMove => model.cancel_move(),
+            SettingsAction::ContinueMove => model.continue_move(),
+            SettingsAction::LeaveOldCopies => model.leave_old_copies(),
             SettingsAction::Rescan => model.rescan(),
             SettingsAction::ShowScreenshots => {
                 let folder = model.prefs.screenshots_dir(&model.paths);
@@ -702,11 +710,9 @@ impl PanelHost {
             }
             GameSettingsAction::ShowInExplorer => {
                 let target = model
-                    .prefs
-                    .games_folder
-                    .as_deref()
+                    .store_root()
                     .map(|root| {
-                        anyps5_core::paths::unlocked_copy_dir(root, &game.title_id, &game.id)
+                        anyps5_core::paths::unlocked_copy_dir(&root, &game.title_id, &game.id)
                     })
                     .filter(|copy| copy.exists())
                     .unwrap_or_else(|| game.folder.clone());
@@ -752,7 +758,7 @@ impl PanelHost {
                     model.dismiss_overlay();
                     if let (Some(game), Some(root)) = (
                         model.selected_game().cloned(),
-                        model.prefs.games_folder.clone(),
+                        model.store_root(),
                     ) {
                         let backups = model.paths.game_backups_dir(&game.title_id);
                         self.start_uninstall(&game, root, backups, model.language());
@@ -919,8 +925,8 @@ impl PanelHost {
 
     /// The save data of `game`: where its copy is and where its backups go.
     fn save_data(model: &Model, game: &Game) -> Option<SaveData> {
-        let root = model.prefs.games_folder.as_deref()?;
-        let copy = anyps5_core::paths::unlocked_copy_dir(root, &game.title_id, &game.id);
+        let root = model.store_root()?;
+        let copy = anyps5_core::paths::unlocked_copy_dir(&root, &game.title_id, &game.id);
         Some(SaveData::for_title(&model.paths, &game.title_id, copy))
     }
 
