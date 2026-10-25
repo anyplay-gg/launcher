@@ -9,6 +9,7 @@
 use std::path::PathBuf;
 
 use anyps5_core::compat::{self, Feature, Fit, Since};
+use anyps5_core::fonts::CjkState;
 use anyps5_core::linkreg::Handler;
 use anyps5_core::links::SettingsPage;
 use anyps5_core::settings::{Backdrop, CpuConversion, Preferences, ToolkitChannel};
@@ -140,6 +141,8 @@ pub struct SettingsEnv<'a> {
     pub default_screenshots: &'a std::path::Path,
     /// Who answers `anyps5://` links on this PC.
     pub links: Handler,
+    /// Whether the built-in fonts have the Japanese, Chinese and Korean set.
+    pub cjk_fonts: CjkState,
 }
 
 /// What the host has to do after a frame.
@@ -160,6 +163,8 @@ pub enum SettingsAction {
     UseStableToolkit,
     /// Stay on this release (`v0.1.3`, already stored in the preferences): install it if needed.
     PinToolkit(String),
+    /// Download the Japanese, Chinese and Korean fonts of the built-in set.
+    DownloadCjkFonts,
     /// Open the notes of this release (`0.1.3`).
     OpenWhatsNew(String),
     /// Delete this installed release (`0.1.2`); nothing uses it.
@@ -224,6 +229,24 @@ fn whats_new_tag(env: &SettingsEnv<'_>) -> Option<String> {
 }
 
 /// All categories and rows for these preferences.
+/// What the fonts row says a game gets: the player's folder, else the built-in set and whether
+/// Japanese, Chinese and Korean are part of it.
+fn fonts_detail(picked: Option<String>, cjk: CjkState, language: Language) -> String {
+    if let Some(folder) = picked {
+        return folder;
+    }
+    let cjk = match cjk {
+        CjkState::Present => Extra::FontsCjkReady,
+        CjkState::Missing => Extra::FontsCjkMissing,
+        CjkState::Downloading => Extra::FontsCjkDownloading,
+    };
+    format!(
+        "{} · {}",
+        Extra::FontsBuiltIn.text(language),
+        cjk.text(language)
+    )
+}
+
 pub fn build_categories(
     prefs: &Preferences,
     env: &SettingsEnv<'_>,
@@ -550,16 +573,20 @@ pub fn build_categories(
     }
     advanced.push(
         Row::action("fonts", t(Key::FontsFolder))
-            .detail(
-                prefs
-                    .fonts_folder
-                    .as_deref()
-                    .map_or_else(|| t(Key::FontsNone), abbreviated),
-            )
+            .detail(fonts_detail(
+                prefs.fonts_folder.as_deref().map(abbreviated),
+                env.cjk_fonts,
+                language,
+            ))
             .icon(Icon::TEXT_AA),
     );
     if prefs.fonts_folder.is_some() {
         advanced.push(Row::command("fontsReset", t(Key::FontsReset)).icon(Icon::X_CIRCLE));
+    } else if env.cjk_fonts == CjkState::Missing {
+        advanced.push(
+            Row::command("fontsCjk", Extra::FontsDownloadCjk.text(language))
+                .icon(Icon::DOWNLOAD_SIMPLE),
+        );
     }
     advanced.push(Row::info("fontsHint", t(Key::FontsHint), None));
     {
@@ -902,6 +929,7 @@ impl SettingsPanel {
                     changed = true;
                 }
             }
+            Change::Run { row: "fontsCjk" } => out.actions.push(SettingsAction::DownloadCjkFonts),
             Change::Run { row: "checkNow" } => out.actions.push(SettingsAction::CheckForUpdates),
             Change::Toggle {
                 row: "updateCheck",
@@ -1149,6 +1177,7 @@ mod tests {
             launcher: LauncherUpdate::None,
             default_screenshots: std::path::Path::new("C:\\Users\\me\\Pictures\\AnyPS5"),
             links: Handler::Absent,
+            cjk_fonts: CjkState::Missing,
         }
     }
 
@@ -1273,6 +1302,48 @@ mod tests {
         assert!(read_only.contains(&("version", Some("0.1.0".into()))));
         assert!(read_only.iter().any(|(id, _)| *id == "launcherUpdate"));
         assert!(!read_only.iter().any(|(id, _)| *id == "restartNow"));
+    }
+
+    fn fonts_row(prefs: &Preferences, cjk: CjkState) -> (String, Vec<&'static str>) {
+        let mut e = env(None, UpdateState::Unknown);
+        e.cjk_fonts = cjk;
+        let cats = build_categories(prefs, &e, Language::English);
+        let advanced = cats
+            .iter()
+            .find(|c| c.category == Category::Advanced)
+            .unwrap();
+        let detail = advanced
+            .rows
+            .iter()
+            .find(|r| r.id == "fonts")
+            .and_then(|r| r.detail.clone())
+            .unwrap();
+        (detail, ids(&cats, Category::Advanced))
+    }
+
+    #[test]
+    fn the_fonts_row_names_the_set_a_game_gets() {
+        let mut prefs = Preferences::first_run();
+        let (detail, rows) = fonts_row(&prefs, CjkState::Missing);
+        assert_eq!(
+            detail,
+            "Built-in Noto (Latin, Thai, Arabic) · Japanese, Chinese and Korean not downloaded"
+        );
+        assert!(rows.contains(&"fontsCjk"));
+        let (detail, rows) = fonts_row(&prefs, CjkState::Present);
+        assert_eq!(
+            detail,
+            "Built-in Noto (Latin, Thai, Arabic) · Japanese, Chinese and Korean included"
+        );
+        assert!(!rows.contains(&"fontsCjk"));
+        let (detail, rows) = fonts_row(&prefs, CjkState::Downloading);
+        assert!(detail.ends_with("Downloading Japanese, Chinese and Korean"));
+        assert!(!rows.contains(&"fontsCjk"));
+        // A picked folder is what the game gets: no built-in text, no download offer.
+        prefs.fonts_folder = Some("/nonexistent-home-x/Fonts".into());
+        let (detail, rows) = fonts_row(&prefs, CjkState::Missing);
+        assert_eq!(detail, "/nonexistent-home-x/Fonts");
+        assert!(!rows.contains(&"fontsCjk"));
     }
 
     #[test]

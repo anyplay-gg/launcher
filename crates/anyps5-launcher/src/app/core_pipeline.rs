@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use anyps5_core::compat::{self, Feature, Fit};
 use anyps5_core::diagnosis::Diagnosis;
+use anyps5_core::fonts;
 use anyps5_core::hostcpu::{CpuConversion, HostCpu};
 use anyps5_core::launch::{LaunchEvent, LaunchRequest, Launcher, RunHandle, WindowPrefs};
 use anyps5_core::paths::{self, AppPaths, GameId};
@@ -272,11 +273,27 @@ impl CorePipeline {
             settings::Language::Turkish => 19,
             settings::Language::English => 1,
         };
+        let fonts = fonts::resolve(
+            &self.paths,
+            &crate::fonts::BUNDLE,
+            prefs.fonts_folder.as_deref(),
+        );
+        // The game starts with what is there; the Japanese, Chinese and Korean fonts follow in the
+        // background and are used from the next start.
+        if prefs.fonts_folder.is_none() && fonts.is_some() {
+            let wake = self.wake.clone();
+            fonts::download_cjk_in_background(
+                &self.paths,
+                crate::fonts::BUNDLE,
+                true,
+                Some(Arc::new(move || wake())),
+            );
+        }
         let env = settings.environment(&EnvContext {
             launcher_language,
             input_file: written.then_some(input_file),
             screenshots: screenshots.clone(),
-            fonts: prefs.fonts_folder.clone(),
+            fonts,
             shader_cache: Some(shader_cache.clone()),
         });
         let mut request = LaunchRequest::new(

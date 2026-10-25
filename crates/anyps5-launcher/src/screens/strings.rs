@@ -35,6 +35,14 @@ pub enum Extra {
     SaveReport,
     /// Toast while the toolkit downloads.
     ToolkitDownloading,
+    /// Fonts row: the set a game gets when no folder is picked.
+    FontsBuiltIn,
+    /// Fonts row, after the built-in set: Japanese, Chinese and Korean are installed.
+    FontsCjkReady,
+    FontsCjkMissing,
+    FontsCjkDownloading,
+    /// Command row that starts the download.
+    FontsDownloadCjk,
     /// Toast: `%@` = the installed version.
     ToolkitReady,
     ToolkitFailed,
@@ -261,6 +269,11 @@ impl Extra {
             }
             Extra::SaveReport => "Save Report",
             Extra::ToolkitDownloading => "Downloading the toolkit…",
+            Extra::FontsBuiltIn => "Built-in Noto (Latin, Thai, Arabic)",
+            Extra::FontsCjkReady => "Japanese, Chinese and Korean included",
+            Extra::FontsCjkMissing => "Japanese, Chinese and Korean not downloaded",
+            Extra::FontsCjkDownloading => "Downloading Japanese, Chinese and Korean",
+            Extra::FontsDownloadCjk => "Download Japanese, Chinese and Korean Fonts",
             Extra::ToolkitReady => "Toolkit %@ is ready",
             Extra::ToolkitFailed => {
                 "Could not install the toolkit. Check your connection and try again."
@@ -440,6 +453,11 @@ impl Extra {
             }
             Extra::SaveReport => "Raporu kaydet",
             Extra::ToolkitDownloading => "Araç seti indiriliyor…",
+            Extra::FontsBuiltIn => "Yerleşik Noto (Latin, Tayca, Arapça)",
+            Extra::FontsCjkReady => "Japonca, Çince ve Korece dahil",
+            Extra::FontsCjkMissing => "Japonca, Çince ve Korece indirilmedi",
+            Extra::FontsCjkDownloading => "Japonca, Çince ve Korece indiriliyor",
+            Extra::FontsDownloadCjk => "Japonca, Çince ve Korece Fontlarını İndir",
             Extra::ToolkitReady => "Araç seti %@ hazır",
             Extra::ToolkitFailed => "Araç seti kurulamadı. Bağlantını denetleyip yeniden dene.",
             Extra::HomeMusic => "Ana Ekran Müziği",
@@ -597,7 +615,7 @@ impl Extra {
         substitute(self.text(language), args)
     }
 
-    pub const ALL: [Extra; 134] = [
+    pub const ALL: [Extra; 139] = [
         Extra::Toolkit,
         Extra::UpdateCheck,
         Extra::UpdateCheckDetail,
@@ -621,6 +639,11 @@ impl Extra {
         Extra::DiagnosisNoUdmabuf,
         Extra::SaveReport,
         Extra::ToolkitDownloading,
+        Extra::FontsBuiltIn,
+        Extra::FontsCjkReady,
+        Extra::FontsCjkMissing,
+        Extra::FontsCjkDownloading,
+        Extra::FontsDownloadCjk,
         Extra::ToolkitReady,
         Extra::ToolkitFailed,
         Extra::ToolkitFolderInvalid,

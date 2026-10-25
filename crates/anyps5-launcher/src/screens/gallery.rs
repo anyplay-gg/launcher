@@ -1162,6 +1162,7 @@ impl ScreenGallery {
             } else {
                 anyps5_core::linkreg::Handler::Absent
             },
+            cjk_fonts: anyps5_core::fonts::CjkState::Missing,
         };
         let icon = Some(self.tile(1));
         self.settings

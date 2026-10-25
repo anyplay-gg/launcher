@@ -306,6 +306,7 @@ impl PanelHost {
             launcher: self.launcher.state.clone(),
             default_screenshots: &default_screenshots,
             links: self.links.clone(),
+            cjk_fonts: anyps5_core::fonts::cjk_state(&cx.model.paths, &crate::fonts::BUNDLE),
         };
         // Theme, accent, language, motion and sounds reach the shell inside the panel
         // (`apply_preferences`), so the backdrop cross-fades while the choice is made.
@@ -355,6 +356,16 @@ impl PanelHost {
                     let text = Extra::ToolkitDownloading.text(model.language());
                     model.toast(text, Icon::DOWNLOAD_SIMPLE);
                 }
+            }
+            SettingsAction::DownloadCjkFonts => {
+                let repaint = cx.ctx.clone();
+                anyps5_core::fonts::download_cjk_in_background(
+                    &model.paths,
+                    crate::fonts::BUNDLE,
+                    false,
+                    Some(std::sync::Arc::new(move || repaint.request_repaint())),
+                );
+                cx.ctx.request_repaint();
             }
             SettingsAction::AdoptToolkitFolder(folder) => self.toolkit.adopt(folder),
             SettingsAction::UseStableToolkit => {
