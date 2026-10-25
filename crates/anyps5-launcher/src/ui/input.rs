@@ -403,7 +403,9 @@ impl Input {
                     modifiers,
                 } => {
                     set_device(ctx, Device::Keyboard);
-                    if !in_text_field {
+                    // Only a key that steers the launcher hands the lighting over, not a
+                    // modifier or a letter that means nothing here.
+                    if !in_text_field && command_for_key(key, modifiers).is_some() {
                         set_keys_steer(ctx, true);
                     }
                     self.pad_in_use = false;

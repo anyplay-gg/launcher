@@ -621,10 +621,10 @@ pub fn list_with_header(
     let overflowing = output.content_size.y > output.inner_rect.height() + 1.0;
     ctx.data_mut(|d| {
         d.insert_temp(overflow_id, overflowing);
-        d.insert_temp(
-            heights_id,
-            geometry.iter().map(|(_, h)| *h).collect::<Vec<f32>>(),
-        );
+        let now: Vec<f32> = geometry.iter().map(|(_, h)| *h).collect();
+        if d.get_temp::<Vec<f32>>(heights_id).as_ref() != Some(&now) {
+            d.insert_temp(heights_id, now);
+        }
     });
     follow.end(
         &ctx,

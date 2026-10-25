@@ -2090,11 +2090,11 @@ mod tests {
     }
 
     #[test]
-    fn the_status_line_names_the_connection_and_the_friends_here() {
+    fn the_status_line_names_the_connection_and_the_friends_active() {
         let mut online = signed_in();
-        assert_eq!(status_line(&data(&online)), "Online · 1 friend here");
+        assert_eq!(status_line(&data(&online)), "Online · 1 friend active");
         online.friends.friends[0].presence.online = false;
-        assert_eq!(status_line(&data(&online)), "Online · No friends here");
+        assert_eq!(status_line(&data(&online)), "Online · No friends active");
         online.cloud = Some(Cloud::Connecting);
         assert_eq!(status_line(&data(&online)), "Connecting…");
         online.cloud = Some(Cloud::Offline);
