@@ -157,6 +157,14 @@ fn relinker() {
             .join(format!("{name}.guest.prx"));
         let _ = fs::create_dir_all(target.parent().unwrap());
         let _ = fs::write(&target, b"FAKE-GUEST-MODULE");
+        // Like the real one: the dependency and registry data beside the executable.
+        for kind in ["needed", "registry"] {
+            let _ = fs::create_dir_all(&out_dir);
+            let _ = fs::write(
+                out_dir.join(format!("eboot.{name}.guest.prx.{kind}.json")),
+                b"{}",
+            );
+        }
     }
     progress(&mut err, "Output image", "eboot.bin", 100, "");
     if mode == "nothing" {

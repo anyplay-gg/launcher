@@ -932,6 +932,93 @@ fn unlocking_again_keeps_the_relinker_output_until_something_it_reads_changes() 
     );
 }
 
+/// What a .prx next to eboot.bin must look like in the copy (Minecraft's libcohtml, and a libc.prx
+/// that the module folder has as well).
+fn assert_root_prx_layout(request: &UnlockRequest, copy: &Path, w: &World) {
+    let guest = |p: &str| fs::read(copy.join("app0").join(p)).ok();
+    // Converted in the module folder, like the others.
+    assert_eq!(
+        guest("sce_module/libcohtml.Prospero.prx.guest.prx").as_deref(),
+        Some(&b"FAKE-GUEST-MODULE"[..])
+    );
+    // The unconverted root file is not in the copy; the dump keeps it.
+    assert!(!copy.join("app0/libcohtml.Prospero.prx").exists());
+    assert!(request.folder.join("libcohtml.Prospero.prx").is_file());
+    // A name the module folder has wins: the root libc.prx is not staged, only the module
+    // folder's is converted.
+    assert!(copy.join("app0/sce_module/libc.prx.guest.prx").is_file());
+    assert!(
+        !copy
+            .join("app0/sce_module/libc.prx.guest.prx.guest.prx")
+            .exists()
+    );
+    assert!(request.folder.join("libc.prx").is_file());
+    // The relinker's JSON sits next to the executable.
+    for kind in ["needed", "registry"] {
+        assert!(
+            copy.join(format!(
+                "eboot.libcohtml.Prospero.prx.guest.prx.{kind}.json"
+            ))
+            .is_file(),
+            "{kind}"
+        );
+    }
+    no_leftovers(&w.root);
+}
+
+#[test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "the Mach-O patches change the executable: nothing is kept there"
+)]
+fn a_prx_next_to_eboot_is_staged_in_the_layout_and_survives_a_kept_relink() {
+    let w = world(&[]);
+    let request = w.dump("RootPrx", "PPSA20010", &elf_bytes());
+    write(&request.folder.join("libcohtml.Prospero.prx"), &elf_bytes());
+    write(&request.folder.join("libc.prx"), &elf_bytes());
+    write(&request.folder.join("sce_module/libc.prx"), &elf_bytes());
+    let copy = unlock::unlocked_copy("PPSA20010", &request.game, &w.root);
+
+    // First unlock: relinked, the staged module is converted in the module folder.
+    let (first, events) = run(&request);
+    let first = first.unwrap();
+    assert!(
+        logs(&events)
+            .iter()
+            .any(|l| l.contains("staged in the module folder")),
+        "{:?}",
+        logs(&events)
+    );
+    assert!(!first.sidecars.is_empty());
+    assert_root_prx_layout(&request, &copy, &w);
+
+    // Unlock again, nothing changed: the relinker is skipped and the layout is the same.
+    let (second, events) = run(&request);
+    let second = second.unwrap();
+    assert!(
+        logs(&events)
+            .iter()
+            .any(|l| l.starts_with("relinker output kept")),
+        "{:?}",
+        logs(&events)
+    );
+    assert_eq!(second.sidecars, first.sidecars);
+    assert_root_prx_layout(&request, &copy, &w);
+
+    // The staged module changed in the dump: the relinker runs again.
+    let mut bigger = elf_bytes();
+    bigger.extend_from_slice(b"more");
+    write(&request.folder.join("libcohtml.Prospero.prx"), &bigger);
+    let (third, events) = run(&request);
+    third.unwrap();
+    assert!(
+        !logs(&events)
+            .iter()
+            .any(|l| l.starts_with("relinker output kept"))
+    );
+    assert_root_prx_layout(&request, &copy, &w);
+}
+
 #[test]
 fn an_asked_for_game_runs_before_prepared_ones_and_prepared_ones_wait() {
     let w = world(&["FAKE_DELAY_MS=10"]);

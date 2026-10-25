@@ -96,6 +96,10 @@ pub struct UnlockRecord {
     /// The files the relinker made besides the executable, relative to `app0`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub generated: Vec<String>,
+    /// The relinker's `.json` files (`eboot.<module>.guest.prx.needed.json`, `.registry.json`)
+    /// that sit beside the executable, relative to the copy.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sidecars: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -445,6 +449,60 @@ pub fn module_directories(modules: &[String]) -> Vec<String> {
     directories
 }
 
+/// Where each module is staged for the relinker: `(path in the dump, path in the work folder)`,
+/// and the modules left out.
+///
+/// The relinker converts the modules of the module folders (`sce_module`, `sce_modules`, `prx`)
+/// and writes each one under its file name; two modules with one name fail it ("Conflicting guest
+/// output filename"). A `.prx` next to `eboot.bin` (except `libc.prx`) is staged inside the module
+/// folder, like AnyPS5-GUI's `move_root_prx`, so it is converted with the others and the game
+/// finds it there. Only the work folder changes, never the dump. When the module folders already
+/// hold a module with the same name (typically `libc.prx`), the copy in the root is left out and
+/// the module folder wins. Everything else is staged where it is.
+pub fn staged_modules(modules: &[String]) -> (Vec<(String, String)>, Vec<String>) {
+    const DEFAULT: [&str; 3] = ["sce_module", "sce_modules", "prx"];
+    fn default_folder(module: &str) -> Option<&str> {
+        let (dir, _) = module.split_once('/')?;
+        DEFAULT
+            .contains(&dir.to_lowercase().as_str())
+            .then_some(dir)
+    }
+    fn file_name(module: &str) -> String {
+        module
+            .rsplit_once('/')
+            .map_or(module, |(_, name)| name)
+            .to_lowercase()
+    }
+    let folder = modules
+        .iter()
+        .find_map(|m| default_folder(m))
+        .unwrap_or("sce_module")
+        .to_string();
+    let mut taken: std::collections::HashSet<String> = modules
+        .iter()
+        .filter(|m| default_folder(m).is_some())
+        .map(|m| file_name(m))
+        .collect();
+    let mut staged = Vec::new();
+    let mut left_out = Vec::new();
+    for module in modules {
+        let lower = module.to_lowercase();
+        let in_root = !module.contains('/');
+        if in_root && lower.ends_with(".prx") && lower != "libc.prx" {
+            if taken.insert(lower) {
+                staged.push((module.clone(), format!("{folder}/{module}")));
+            } else {
+                left_out.push(module.clone());
+            }
+        } else if in_root && lower == "libc.prx" && taken.contains(&lower) {
+            left_out.push(module.clone());
+        } else {
+            staged.push((module.clone(), module.clone()));
+        }
+    }
+    (staged, left_out)
+}
+
 // ---------------------------------------------------------------------------------------------
 // Relinker progress
 
@@ -783,7 +841,7 @@ impl<'a> Stopwatch<'a> {
 /// would cost seconds). `None` when it cannot be told, which never keeps anything.
 fn relink_key(
     request: &UnlockRequest,
-    inputs: &[String],
+    inputs: &[(String, String)],
     args: &[std::ffi::OsString],
 ) -> Option<String> {
     use sha2::{Digest, Sha256};
@@ -805,7 +863,7 @@ fn relink_key(
         hasher.update((text.len() as u64).to_le_bytes());
         hasher.update(text.as_bytes());
     };
-    part("relink-key-1");
+    part("relink-key-2");
     part(request.toolkit.version());
     match request.toolkit.digests() {
         Some(digests) => {
@@ -822,14 +880,15 @@ fn relink_key(
         part(&arg.to_string_lossy());
     }
     part(request.patches_toml.as_deref().unwrap_or(""));
-    for relative in inputs {
+    // Where a module is staged is part of the key: it changes what the relinker writes.
+    for (from, to) in inputs {
         let path = request
             .folder
-            .join(relative.replace('/', std::path::MAIN_SEPARATOR_STR));
+            .join(from.replace('/', std::path::MAIN_SEPARATOR_STR));
         let mut backup = path.clone().into_os_string();
         backup.push(".esbak");
         part(&format!(
-            "{relative}|{}|{}",
+            "{from}>{to}|{}|{}",
             seen(&path),
             seen(Path::new(&backup))
         ));
@@ -849,6 +908,7 @@ fn relink_key(
 struct Reusable {
     copy: PathBuf,
     generated: Vec<String>,
+    sidecars: Vec<String>,
 }
 
 fn reusable_output(request: &UnlockRequest, copy: &Path, key: Option<&str>) -> Option<Reusable> {
@@ -865,10 +925,12 @@ fn reusable_output(request: &UnlockRequest, copy: &Path, key: Option<&str>) -> O
         && record
             .generated
             .iter()
-            .all(|relative| copy.join("app0").join(relative).is_file());
+            .all(|relative| copy.join("app0").join(relative).is_file())
+        && record.sidecars.iter().all(|name| copy.join(name).is_file());
     intact.then(|| Reusable {
         copy: copy.to_path_buf(),
         generated: record.generated,
+        sidecars: record.sidecars,
     })
 }
 
@@ -1028,12 +1090,26 @@ pub fn run_unlock(
     let mut clock = Stopwatch::new(control);
 
     // 0. Enough room on the games folder's volume, before anything is written.
-    let modules = modules_in(&request.folder).map_err(io_context("read the dump"))?;
-    let dump_plan = preflight(request, &root, &modules, &reporter)?;
+    let dump_modules = modules_in(&request.folder).map_err(io_context("read the dump"))?;
+    let (staged, left_out) = staged_modules(&dump_modules);
+    for module in &left_out {
+        reporter.log(format!(
+            "{module}: a module with this name is already in the module folder, left out"
+        ));
+    }
+    let moved = staged.iter().filter(|(from, to)| from != to).count();
+    if moved > 0 {
+        reporter.log(format!(
+            "{moved} .prx next to eboot.bin staged in the module folder (the dump is not changed)"
+        ));
+    }
+    let dump_plan = preflight(request, &root, &dump_modules, &reporter)?;
 
-    // What the relinker will be asked, and so whether its last output still fits.
-    let mut inputs = vec!["eboot.bin".to_string()];
-    inputs.extend(modules.iter().cloned());
+    // What the relinker will be asked (where each file is in the dump, where in the work folder),
+    // and so whether its last output still fits.
+    let modules: Vec<String> = staged.iter().map(|(_, to)| to.clone()).collect();
+    let mut inputs = vec![("eboot.bin".to_string(), "eboot.bin".to_string())];
+    inputs.extend(staged.iter().cloned());
     let mut args: Vec<std::ffi::OsString> = Os::current()
         .relinker_args()
         .iter()
@@ -1062,6 +1138,7 @@ pub fn run_unlock(
     let source = work.join("source");
     let out = work.join("out");
     let mut generated = Vec::new();
+    let mut sidecars = Vec::new();
     if let Some(reuse) = &reuse {
         // Nothing the relinker reads has changed since it made the copy that is being replaced:
         // its output is laid into the new copy as it is.
@@ -1071,17 +1148,18 @@ pub fn run_unlock(
         clock.enter(Step::Relink);
         reporter.progress(Step::Relink, 1.0);
         generated.clone_from(&reuse.generated);
+        sidecars.clone_from(&reuse.sidecars);
     } else {
         // 1. The executable and every module as plain ELF files, in the dump's layout.
         clock.enter(Step::Unwrap);
         reporter.progress(Step::Unwrap, 0.0);
         fs::create_dir_all(&source).map_err(io_context("create work folder"))?;
-        for (index, relative) in inputs.iter().enumerate() {
+        for (index, (from, to)) in inputs.iter().enumerate() {
             control.check()?;
             let original = request
                 .folder
-                .join(relative.replace('/', std::path::MAIN_SEPARATOR_STR));
-            let target = source.join(relative.replace('/', std::path::MAIN_SEPARATOR_STR));
+                .join(from.replace('/', std::path::MAIN_SEPARATOR_STR));
+            let target = source.join(to.replace('/', std::path::MAIN_SEPARATOR_STR));
             if let Some(parent) = target.parent() {
                 fs::create_dir_all(parent).map_err(io_context("create work folder"))?;
             }
@@ -1106,6 +1184,18 @@ pub fn run_unlock(
         if !out.join(EXECUTABLE).is_file() {
             return Err(UnlockError::NoOutput);
         }
+        // The relinker writes `eboot.<module>.guest.prx.needed.json` and `.registry.json` for every
+        // converted module beside the executable; AnyPS5-GUI keeps them next to it.
+        for entry in fs::read_dir(&out)
+            .map_err(io_context("read the relinker output"))?
+            .flatten()
+        {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.to_lowercase().ends_with(".json") && entry.path().is_file() {
+                sidecars.push(name);
+            }
+        }
+        sidecars.sort();
         let guest_modules = out.join("app0");
         if guest_modules.is_dir() {
             let made = fsx::walk(&guest_modules, true, &[])
@@ -1166,6 +1256,20 @@ pub fn run_unlock(
         fsx::link_tree(&out.join("app0"), &app0, &linker, &[], &tree, &mut |_| {})
             .map_err(tree_error)?;
     }
+    // The modules staged from next to eboot.bin are converted in the module folder. Like
+    // AnyPS5-GUI (it moves them), the copy does not keep the dump's unconverted file next to
+    // eboot.bin, or the game could pick that one. `app0` holds hard links or copies, so only the
+    // copy's name is removed, never the dump's file.
+    for (from, _) in staged.iter().filter(|(from, to)| from != to) {
+        let link = app0.join(from);
+        if let Err(error) = fs::remove_file(&link)
+            && error.kind() != io::ErrorKind::NotFound
+        {
+            reporter.log(format!(
+                "{from}: could not remove it from the copy: {error}"
+            ));
+        }
+    }
     if let Some(note) = linker.take_note() {
         reporter.log(note);
     }
@@ -1179,10 +1283,11 @@ pub fn run_unlock(
     control.check()?;
     clock.enter(Step::Assemble);
     reporter.progress(Step::Assemble, 0.0);
-    let made = match &reuse {
-        Some(reuse) => reuse.copy.join(EXECUTABLE),
-        None => out.join(EXECUTABLE),
+    let output = match &reuse {
+        Some(reuse) => reuse.copy.clone(),
+        None => out.clone(),
     };
+    let made = output.join(EXECUTABLE);
     if cfg!(target_os = "macos") {
         // The Mach-O patches below change this file.
         fs::copy(&made, partial.join(EXECUTABLE)).map_err(io_context("copy the executable"))?;
@@ -1191,6 +1296,11 @@ pub fn run_unlock(
         linker
             .link_or_copy(&made, &partial.join(EXECUTABLE), control.cancel_token())
             .map_err(io_context("copy the executable"))?;
+    }
+    for name in &sidecars {
+        // Small files: copied, not linked.
+        fs::copy(output.join(name), partial.join(name))
+            .map_err(io_context(format!("copy {name}")))?;
     }
     #[cfg(target_os = "macos")]
     assemble_macos(request, &partial, &reporter)?;
@@ -1231,6 +1341,7 @@ pub fn run_unlock(
         libs_sha256: request.toolkit.digests().map(|d| d.libs.clone()),
         relink_key: key.filter(|_| !cfg!(target_os = "macos")),
         generated,
+        sidecars,
     };
     let json = serde_json::to_string_pretty(&record).map_err(|e| UnlockError::Io {
         context: "write the record".into(),
@@ -2101,6 +2212,45 @@ mod tests {
     }
 
     #[test]
+    fn staged_modules_cases() {
+        let run = |m: &[&str]| staged_modules(&m.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        let pair = |a: &str, b: &str| (a.to_string(), b.to_string());
+        // A root module goes into the module folder; libc.prx stays when nothing collides.
+        let (staged, left) = run(&["libc.prx", "libcohtml.Prospero.prx", "sce_module/a.prx"]);
+        assert_eq!(
+            staged,
+            [
+                pair("libc.prx", "libc.prx"),
+                pair(
+                    "libcohtml.Prospero.prx",
+                    "sce_module/libcohtml.Prospero.prx"
+                ),
+                pair("sce_module/a.prx", "sce_module/a.prx"),
+            ]
+        );
+        assert!(left.is_empty());
+        // Same name in the module folder: the root copy is left out (PPSA02929).
+        let (staged, left) = run(&["libc.prx", "sce_module/libc.prx"]);
+        assert_eq!(staged, [pair("sce_module/libc.prx", "sce_module/libc.prx")]);
+        assert_eq!(left, ["libc.prx"]);
+        let (_, left) = run(&["a.prx", "sce_modules/A.prx"]);
+        assert_eq!(left, ["a.prx"]);
+        // No module folder: sce_module is used. Other folders and .sprx stay put.
+        let (staged, _) = run(&["a.prx", "x.sprx", "Media/Plugins/b.prx"]);
+        assert_eq!(
+            staged,
+            [
+                pair("a.prx", "sce_module/a.prx"),
+                pair("x.sprx", "x.sprx"),
+                pair("Media/Plugins/b.prx", "Media/Plugins/b.prx"),
+            ]
+        );
+        // The existing folder's name is kept.
+        let (staged, _) = run(&["a.prx", "prx/b.prx"]);
+        assert_eq!(staged[0], pair("a.prx", "prx/a.prx"));
+    }
+
+    #[test]
     fn relink_progress_rows() {
         let mut p = RelinkProgress::new();
         let near = |a: Option<f64>, b: f64| (a.unwrap() - b).abs() < 1e-9;
@@ -2166,6 +2316,7 @@ mod tests {
             libs_sha256: None,
             relink_key: None,
             generated: Vec::new(),
+            sidecars: Vec::new(),
         };
         let json = serde_json::to_string_pretty(&record).unwrap();
         assert_eq!(
