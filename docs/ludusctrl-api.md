@@ -24,6 +24,11 @@ pub struct LudusConfig {
 }
 impl LudusConfig { pub fn new(store_file: PathBuf) -> LudusConfig }
 
+pub struct BeaconTarget {
+    pub to: SocketAddrV4,             // 255.255.255.255:45990 by default
+    pub from: Option<Vec<Ipv4Addr>>,  // None = every LAN adapter (lan_addresses), looked at every 15 s
+}
+
 pub struct LudusServer;
 impl LudusServer {
     pub fn start(config: LudusConfig, events: Arc<dyn LudusEvents>) -> Result<LudusServer, RemoteError>;
@@ -32,8 +37,9 @@ impl LudusServer {
     pub fn respond(&self, request: u64, allow: bool); // the answer to a pairing question
     pub fn paired(&self) -> Vec<LudusPhone>;
     pub fn forget(&self, id: &str);            // removes the phone; if it holds the pad the pad is released
-    pub fn set_pad(&self, pad: Option<Arc<dyn PadTarget>>); // where input goes; None = nowhere (pad live 0)
-    pub fn stop(&self);                        // also on drop; releases the pad
+    pub fn set_pad(&self, pad: Option<Arc<dyn PadTarget>>); // the slot's pad; None = nowhere (pad live 0)
+    pub fn pad_slot(&self) -> Arc<PadSlot>;    // for the browser bridge of step 2 (see "The pad slot")
+    pub fn stop(&self);                        // also on drop; unplugs the pad
 }
 ```
 
@@ -58,11 +64,12 @@ pub trait LudusEvents: Send + Sync {
 }
 
 pub enum LudusStatus {
-    /// No phone has sent an accepted packet for 1.5 s; the beacon is on.
+    /// Nobody has fed the pad for 1.5 s; the beacon is on.
     Waiting,
-    /// A paired phone holds the pad.
+    /// A phone or a browser holds the pad.
     Linked {
-        name: String,
+        /// Who holds it.
+        via: LudusVia,
         /// The layout byte of its last packet: what the controller on the phone is.
         layout: PadLayout,         // Unknown, PlayStation, Xbox, Nintendo
         /// Flags bit 0: a controller is connected to the phone. False: the pad is held at neutral.
@@ -70,6 +77,13 @@ pub enum LudusStatus {
         /// A pad target exists and its last write worked (the ack's pad-live bit).
         pad_live: bool,
     },
+}
+
+pub enum LudusVia {
+    /// A phone of the LudusCtrl app, by the name it paired with.
+    App { name: String },
+    /// A browser client (step 2; nothing claims the pad this way yet).
+    Browser { peer: IpAddr },
 }
 
 pub struct LudusPhone {
@@ -98,10 +112,44 @@ impl PadTarget for VirtualPad
 ```
 
 LudusCtrl's buttons are XInput's `wButtons` and its sticks are signed with up positive, so `PadState` is filled without
-translation (`buttons & 0xF7FF`, GUIDE `0x0400` included). Unlike the AnyPS5 Remote pad, which only plugs in while a game
-runs, the LudusCtrl pad is the player's only controller and also drives the launcher: hand the server a `VirtualPad` as soon as
-it starts. The server writes neutral when a phone has no controller or the link times out, and calls `release` (unplug) after
-10 s without a linked phone and on stop.
+translation (`buttons & 0xF7FF`, GUIDE `0x0400` included; `xbutton::GUIDE` is new and the uinput backend now maps it to
+`BTN_MODE`). Unlike the AnyPS5 Remote pad, which only plugs in while a game runs, the LudusCtrl pad is the player's only
+controller and also drives the launcher: hand the server a `VirtualPad` as soon as it starts. The slot writes neutral when the
+phone has no controller or the holder times out, and calls `release` (unplug) after 10 s without a holder and on stop.
+
+## The pad slot
+
+LudusCtrl has exactly one virtual pad, owned by one `PadSlot` inside the server. The UDP receiver (the app) and, in step 2,
+the browser bridge both feed it through the slot; neither holds a `PadTarget` of its own, so Windows never shows two controllers
+for LudusCtrl.
+
+```rust
+pub enum Owner { App([u8; 8]), Browser(u64) }  // the phone id, or the browser connection id
+pub enum Refusal { BusyApp, Busy }             // the browser's `busy:app` and `busy`
+pub struct Holding { pub owner: Owner, pub source: SocketAddr, pub layout: PadLayout, pub controller: bool, pub pad_live: bool }
+
+impl PadSlot {
+    pub fn set_target(&self, pad: Option<Arc<dyn PadTarget>>); // what LudusServer::set_pad calls
+    pub fn holding(&self) -> Option<Holding>;
+    pub fn claim_browser(&self, connection: u64, peer: SocketAddr, now: Instant) -> Result<(), Refusal>;
+    pub fn browser_input(&self, connection: u64, state: &PadState, layout: PadLayout, controller: bool, now: Instant)
+        -> Option<bool>;                        // Some(pad_live); None = not the holder any more (`evicted`)
+    pub fn release(&self, owner: Owner, now: Instant) -> bool; // a closed connection, a removed phone
+    pub fn tick(&self, now: Instant) -> bool;  // the server calls it every 0.25 s
+    // app_input is the UDP receiver's
+}
+```
+
+The rules are the protocol's: one holder; a holder silent for 1.5 s is dropped and the pad goes to neutral; between phones a new
+session takes over at once and a continued one after 0.3 s of the holder's silence; a browser claim is refused with `BusyApp`
+while the app is linked and with `Busy` while another browser sent within 1.5 s (a staler one is taken over); while a browser holds
+the pad, the app's packets are authenticated and acked with pad-live 0 but not applied. The browser bridge itself (HTTPS,
+WebSocket, the token) is step 2 and not built.
+
+**Two servers, one pad.** The AnyPS5 Remote server opens its own `VirtualPad` while a game runs (`app::phone::attach_pad`). If
+both features are on, `app::phone` must keep **one** `Arc<VirtualPad>` and hand it to LudusCtrl (`set_pad`) and to the Remote
+server (`set_pad_sink`), or Windows shows two controllers. `VirtualPad` is both a `PadSink` and a `PadTarget`, so one value serves
+both; whichever feeds it last wins, and only one phone plays at a time in practice. Not built yet; the glue is the UI branch's.
 
 ## Pairing question flow in the launcher
 
@@ -112,6 +160,6 @@ does nothing.
 
 ## Ownership while T55 is split
 
-The core branch (`feat/ludusctrl`) owns `crates/anyps5-core/src/remote/ludusctrl/`, the `PadTarget` impl in `remote/vpad`, the
-re-exports in `remote/mod.rs`, the preference in `settings.rs` and this file. The launcher crate (glue in `app::phone`, the
+The core branch (`feat/ludusctrl`) owns `crates/anyps5-core/src/remote/ludusctrl/`, the `PadTarget` impl and `GUIDE` in
+`remote/vpad`, the re-exports in `remote/mod.rs`, the preference in `settings.rs` and this file. The launcher crate (glue in `app::phone`, the
 rows, strings, About, README and DESIGN.md) is the UI branch's.
