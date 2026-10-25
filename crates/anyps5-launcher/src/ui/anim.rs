@@ -209,9 +209,9 @@ pub enum Motion {
     /// spring would lag behind the click; an ease retargets from the current value, so a quick
     /// click-and-release reverses mid-press instead of finishing it first.
     Press,
-    /// What leaves while something else arrives (the old hero of a game change): easeOut 0.12 s,
-    /// the same under reduced motion. It is out of the way before the newcomer is half in, so two
-    /// titles never stand on top of each other.
+    /// What leaves while something else arrives (the old hero of a game change): easeOut 0.18 s,
+    /// the same under reduced motion. Quicker than the arriving spring, so the pair never shows
+    /// two full titles, yet slow enough that together they never dip below 0.6 of one title.
     Exit,
     /// Tile row, hero swap, onboarding steps, list reflow: 0.45 / 0.86.
     Layout,
@@ -245,7 +245,7 @@ impl Motion {
             (Motion::Focus, true) => ease_out(0.12),
             (Motion::Hover, _) => ease_out(0.12),
             (Motion::Press, _) => ease_out(0.10),
-            (Motion::Exit, _) => ease_out(0.12),
+            (Motion::Exit, _) => ease_out(0.18),
             (Motion::Layout, false) => Curve::Spring(Self::LAYOUT),
             (Motion::Layout, true) => ease_out(0.15),
             (Motion::Overlay, false) => Curve::Spring(Self::OVERLAY),
@@ -793,36 +793,38 @@ mod tests {
         let focus = motion_settle(Motion::Focus, false);
         let layout = motion_settle(Motion::Layout, false);
         let overlay = motion_settle(Motion::Overlay, false);
-        println!("settle 98%: focus {focus:.3}, layout {layout:.3}, overlay {overlay:.3}");
         assert!((0.15..=0.30).contains(&focus), "focus {focus}");
         assert!((0.20..=0.40).contains(&layout), "layout {layout}");
         assert!((0.18..=0.36).contains(&overlay), "overlay {overlay}");
-        assert!(motion_settle(Motion::Exit, false) <= 0.125);
+        assert!(motion_settle(Motion::Exit, false) <= 0.185);
         assert!(motion_settle(Motion::Press, false) <= 0.105);
-        // Reduced: a quarter of a second at most, whatever the motion.
+        // Reduced: 0.16 s at most, whatever the motion.
         for motion in [Motion::Focus, Motion::Layout, Motion::Overlay, Motion::Fade] {
             assert!(motion_settle(motion, true) <= 0.16, "{motion:?}");
         }
     }
 
     #[test]
-    fn the_leaving_hero_is_mostly_gone_before_the_arriving_one_is_half_in() {
+    fn the_hero_pair_never_dips_and_the_old_one_leaves_first() {
         let out = Motion::Exit.curve(false);
         let inn = Motion::Layout.curve(false);
         let (mut old, mut new) = (Tracker::new(1.0), Tracker::new(0.0));
         old.retarget(0.0, out, 0.0);
         new.retarget(1.0, inn, 0.0);
-        let mut t = 0.0;
-        while new.value() < 0.5 {
+        let (mut least, mut t, mut old_at_half) = (f32::MAX, 0.0, None);
+        while t < 0.4 {
             old.advance(out, 1.0 / 240.0);
             new.advance(inn, 1.0 / 240.0);
             t += 1.0 / 240.0;
+            least = least.min(old.value() + new.value());
+            if old_at_half.is_none() && new.value() >= 0.5 {
+                old_at_half = Some(old.value());
+            }
         }
-        // Together they never show more than one title's worth of ink.
+        assert!(least >= 0.6, "together they dip to {least}");
         assert!(
-            old.value() < 0.05,
-            "the old one is at {} when the new is half in (t = {t})",
-            old.value()
+            old_at_half.unwrap() < 0.3,
+            "old is at {old_at_half:?} when the new is half in"
         );
     }
 

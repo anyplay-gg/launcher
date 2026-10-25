@@ -1228,7 +1228,12 @@ pub fn side_panel<R>(
             let top = child.cursor().min.y;
             // Title and subtitle start on the edge of the row cards below them.
             let edge = inner.min.x + size::LIST_INSET;
-            painter.galley(pos2(edge, top), title_galley, Color32::WHITE);
+            let ink = if reduced {
+                fade(Color32::WHITE, v)
+            } else {
+                Color32::WHITE
+            };
+            painter.galley(pos2(edge, top), title_galley, ink);
             child.add_space(title_h + 8.0);
             if let Some(subtitle) = subtitle {
                 let top = child.cursor().min.y;
@@ -1241,7 +1246,12 @@ pub fn side_panel<R>(
                     inner.width(),
                 );
                 let height = galley.size().y;
-                painter.galley(pos2(edge, top), galley, color::text_detail());
+                let detail = if reduced {
+                    fade(color::text_detail(), v)
+                } else {
+                    color::text_detail()
+                };
+                painter.galley(pos2(edge, top), galley, detail);
                 child.add_space(height + 8.0);
             }
             child.add_space(18.0);
