@@ -149,6 +149,14 @@ pub struct PipelineContext<'a> {
 }
 
 /// The unlock/launch pipeline as the UI sees it.
+/// The window and the processes of a running game.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct GameTarget {
+    /// A Windows `HWND` as a number, once the game has shown a window.
+    pub window: Option<i64>,
+    pub pids: Vec<u32>,
+}
+
 pub trait Pipeline {
     /// The toolkit version unlocked copies are compared against; `None` when this PC has no toolkit.
     fn toolkit_version(&self) -> Option<String>;
@@ -162,6 +170,10 @@ pub trait Pipeline {
     fn reload_toolkit(&mut self, _prefs: &Preferences) {}
     /// The toolkit's per-title patch files (the resolutions of the game settings come from them).
     fn patches_dir(&self) -> Option<std::path::PathBuf> {
+        None
+    }
+    /// Where a running game shows its picture and which processes are its (share screen).
+    fn game_target(&self, _game: &GameId) -> Option<GameTarget> {
         None
     }
     /// What a game that stays on the release `pin` finds on this PC: that release, or nothing.

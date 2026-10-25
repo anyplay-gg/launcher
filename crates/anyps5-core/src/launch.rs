@@ -239,6 +239,11 @@ impl Running {
         }
     }
 
+    #[cfg(not(windows))]
+    fn pids(&self) -> Vec<u32> {
+        vec![self.pid]
+    }
+
     fn kill(&self) {
         self.killed.store(true, Ordering::SeqCst);
         #[cfg(windows)]
@@ -264,6 +269,17 @@ impl RunHandle {
 
     pub fn pid(&self) -> u32 {
         self.running.pid
+    }
+
+    /// The game's processes: the one started and, on Windows, what it started since. Share
+    /// screen captures the window of these and no other.
+    pub fn pids(&self) -> Vec<u32> {
+        self.running.pids()
+    }
+
+    /// The game's window as an integer (a Windows `HWND`), once it has shown one.
+    pub fn window(&self) -> Option<isize> {
+        Some(self.running.window.load(Ordering::SeqCst)).filter(|&w| w != 0)
     }
 
     /// Ends the game and everything it started.

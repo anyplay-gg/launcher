@@ -389,6 +389,14 @@ impl Pipeline for CorePipeline {
         }
     }
 
+    fn game_target(&self, game: &GameId) -> Option<super::pipeline::GameTarget> {
+        let run = self.runs.get(game)?;
+        Some(super::pipeline::GameTarget {
+            window: run.window().map(|w| w as i64),
+            pids: run.pids(),
+        })
+    }
+
     fn poll(&mut self, _now: f64) -> Vec<PipelineEvent> {
         let events = std::mem::take(&mut *self.events.lock().expect("events lock"));
         for event in &events {
