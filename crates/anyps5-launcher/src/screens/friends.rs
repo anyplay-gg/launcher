@@ -197,8 +197,8 @@ impl FriendsScreen {
                                 }
                             }
                             Step::Page(command) => pass.push(InputEvent::Command(command)),
+                            // The app answers: "back" to a profile, "close" to Home (7.6).
                             Step::Leave => {
-                                shell.play(Cue::Back);
                                 actions.push(OnlineAction::Close);
                                 self.panel.close();
                             }
@@ -292,10 +292,14 @@ impl FriendsScreen {
                     pos2(page_left, top),
                     vec2(page_width, 80.0),
                 )));
+                // The title stands where the text of the rows below it starts: the list's inset plus
+                // a row's own padding, so a page has one left edge.
+                let inset =
+                    crate::ui::theme::size::LIST_INSET + crate::ui::theme::size::ROW_PADDING_X;
                 let used = paint::page_title(
                     &mut head,
-                    pos2(page_left + crate::ui::theme::size::LIST_INSET, top),
-                    page_width - 2.0 * crate::ui::theme::size::LIST_INSET,
+                    pos2(page_left + inset, top),
+                    page_width - 2.0 * inset,
                     &title,
                     note,
                 );
@@ -333,7 +337,6 @@ impl FriendsScreen {
                 }
             }
             if back_clicked {
-                shell.play(Cue::Back);
                 self.queued.push(InputEvent::Command(Command::Back));
                 ctx.request_repaint();
             }

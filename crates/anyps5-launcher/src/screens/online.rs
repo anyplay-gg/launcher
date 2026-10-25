@@ -35,7 +35,8 @@ use crate::ui::chrome::RowAvatar;
 use crate::ui::focus::RowKind;
 use crate::ui::i18n::{Arg, Key, Language};
 use crate::ui::icons::Icon;
-use crate::ui::input::InputEvent;
+use crate::ui::input::{Command, InputEvent};
+use crate::ui::sound::Cue;
 
 /// What the panel asks the host to do.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -612,10 +613,16 @@ impl OnlinePanel {
             }
             if self.feed_is_list(data) {
                 if self.feed_command(shell, command, data, &mut actions) {
-                    self.back(data, &mut actions);
+                    self.step_back(shell, data, &mut actions);
                     break;
                 }
                 continue;
+            }
+            // Back goes up one page with the "back" cue; leaving the screen is answered by the
+            // app, which knows whether it lands on Home ("close") or on another screen ("back").
+            if matches!(command, Command::Back | Command::Options) {
+                self.step_back(shell, data, &mut actions);
+                break;
             }
             let rows = self.rows(data).2;
             let driven = rows::drive(shell, &mut self.side.nav, &rows, &[command]);
@@ -706,6 +713,19 @@ impl OnlinePanel {
             shell.input.capture_keys = self.capturing;
             self.capture_synced = self.capturing;
         }
+    }
+
+    /// One step back: up a page with the "back" cue, or out of the screen without one.
+    fn step_back(
+        &mut self,
+        shell: &mut Shell,
+        data: &OnlineData<'_>,
+        actions: &mut Vec<OnlineAction>,
+    ) {
+        if self.back_page(data).is_some() {
+            shell.play(Cue::Back);
+        }
+        self.back(data, actions);
     }
 
     fn back(&mut self, data: &OnlineData<'_>, actions: &mut Vec<OnlineAction>) {
@@ -1289,8 +1309,9 @@ impl OnlinePanel {
                 if !self.feed_is_list(data) {
                     self.feed_rows(data, &mut rows);
                 }
+                // The page is named like its rail entry.
                 (
-                    F::Feed.text(language).to_owned(),
+                    FX::Activity.text(language).to_owned(),
                     Some(F::FeedSubtitle.text(language).to_owned()),
                 )
             }
@@ -1414,8 +1435,13 @@ impl OnlinePanel {
         }
         // A stream on offer in the party: one line that leads to the party page.
         screen::home_row(data, rows);
-        if let Some(session) = &online.session {
-            let me = online.account.as_ref().map(|a| a.id);
+        // Playing Together shows once someone else is in the session: alone it would list only you.
+        let me = online.account.as_ref().map(|a| a.id);
+        if let Some(session) = online
+            .session
+            .as_ref()
+            .filter(|s| s.members.iter().any(|m| Some(m.account.id) != me))
+        {
             rows.push(Row::caption("sessionCaption", t(T::Session)).group_start());
             for member in &session.members {
                 let value = if Some(member.account.id) == me {
@@ -2066,9 +2092,9 @@ mod tests {
     #[test]
     fn the_status_line_names_the_connection_and_the_friends_here() {
         let mut online = signed_in();
-        assert_eq!(status_line(&data(&online)), "Online · 1 friend online");
+        assert_eq!(status_line(&data(&online)), "Online · 1 friend here");
         online.friends.friends[0].presence.online = false;
-        assert_eq!(status_line(&data(&online)), "Online · No friends online");
+        assert_eq!(status_line(&data(&online)), "Online · No friends here");
         online.cloud = Some(Cloud::Connecting);
         assert_eq!(status_line(&data(&online)), "Connecting…");
         online.cloud = Some(Cloud::Offline);

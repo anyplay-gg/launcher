@@ -42,14 +42,19 @@ impl Model {
         }
     }
 
-    /// Back from the profile screen, to where it was opened from.
+    /// Back from the profile screen, to where it was opened from. Back to the Friends screen is
+    /// a step in a trail of screens ("back"); back to Home closes the layer ("close", 7.6).
     pub fn close_profile(&mut self) {
         match self.profile.map(|t| t.back) {
             Some(Back::Friends) => {
+                self.sound(Cue::Back);
                 self.online_resume = true;
                 self.switch_overlay(Overlay::Friends);
             }
-            _ => self.dismiss_overlay(),
+            _ => {
+                self.sound(Cue::Close);
+                self.dismiss_overlay();
+            }
         }
     }
 
@@ -64,10 +69,14 @@ impl Model {
     pub fn close_friends(&mut self) {
         match self.friends_back.take() {
             Some(target) => {
+                self.sound(Cue::Back);
                 self.profile = Some(target);
                 self.switch_overlay(Overlay::Profile);
             }
-            None => self.dismiss_overlay(),
+            None => {
+                self.sound(Cue::Close);
+                self.dismiss_overlay();
+            }
         }
     }
 }
@@ -115,6 +124,46 @@ mod tests {
                 back: Back::Home
             })
         );
+    }
+
+    fn cues(m: &mut Model) -> Vec<Cue> {
+        m.effects
+            .drain(..)
+            .filter_map(|e| match e {
+                crate::app::model::Effect::Sound(c) => Some(c),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_layer_closes_to_home_and_a_step_of_a_trail_goes_back() {
+        let mut m = model_with_games(1);
+        m.open_profile(AccountId(2), Back::Home);
+        cues(&mut m);
+        m.close_profile();
+        assert_eq!(cues(&mut m), [Cue::Close], "to Home: the layer closes");
+        m.open_profile(AccountId(2), Back::Friends);
+        cues(&mut m);
+        m.close_profile();
+        assert_eq!(
+            cues(&mut m),
+            [Cue::Back],
+            "to the Friends screen: a step back"
+        );
+        m.open_friends_from_profile();
+        cues(&mut m);
+        m.close_friends();
+        assert_eq!(
+            cues(&mut m),
+            [Cue::Back],
+            "back to the profile it came from"
+        );
+        m.dismiss_overlay();
+        m.open(Overlay::Friends);
+        cues(&mut m);
+        m.close_friends();
+        assert_eq!(cues(&mut m), [Cue::Close], "first page, opened from Home");
     }
 
     #[test]

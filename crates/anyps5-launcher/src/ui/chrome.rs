@@ -18,7 +18,9 @@ use crate::ui::i18n::{Key, Language};
 use crate::ui::icons::Icon;
 use crate::ui::input;
 use crate::ui::text;
-use crate::ui::theme::{self, black, color, fade, mix, radius, shadows, size, ty, white};
+use crate::ui::theme::{
+    self, TextStyle, Weight, black, color, fade, mix, radius, shadows, size, ty, white,
+};
 
 // ---------------------------------------------------------------------------------------------
 // Game tile (5.1)
@@ -379,22 +381,36 @@ pub fn paint_row_avatar(painter: &Painter, rect: Rect, avatar: RowAvatar) {
             painter.circle_stroke(rect.center(), r - 0.5, egui::Stroke::new(1.0, black(0.18)));
         }
         None => {
-            painter.circle_filled(rect.center(), r, avatar.colour);
-            if let Some(initial) = avatar.initial {
-                painter.text(
-                    rect.center(),
-                    Align2::CENTER_CENTER,
-                    initial.to_uppercase().to_string(),
-                    ty::BUTTON.font(),
-                    Color32::WHITE,
-                );
-            }
+            paint_monogram(&painter, rect, avatar.colour, avatar.initial);
         }
     }
     if let Some(dot) = avatar.dot {
-        let at = pos2(rect.max.x - 3.0, rect.max.y - 3.0);
-        painter.circle_filled(at, 7.0, black(0.55));
-        painter.circle_filled(at, 4.5, dot);
+        // The dot grows with the picture, but a large one keeps it a mark, not a badge.
+        let k = (rect.width() / ROW_AVATAR).clamp(0.8, 1.6);
+        let at = pos2(rect.max.x - 3.0 * k, rect.max.y - 3.0 * k);
+        painter.circle_filled(at, 7.0 * k, black(0.55));
+        painter.circle_filled(at, 4.5 * k, dot);
+    }
+}
+
+/// The share of an avatar's width that its letter takes as font size (19 dp on the 36 dp row
+/// avatar).
+const MONOGRAM_SHARE: f32 = 0.53;
+
+/// A round avatar without a picture: the first letter on a calm colour. The letter scales with
+/// the circle, so the 36 dp row avatar and the 96 dp profile avatar read alike; its ink is
+/// whichever of white and dark reads better on the colour.
+pub fn paint_monogram(painter: &Painter, rect: Rect, colour: Color32, initial: Option<char>) {
+    painter.circle_filled(rect.center(), rect.width() * 0.5, colour);
+    if let Some(initial) = initial {
+        let style = TextStyle::new(rect.width() * MONOGRAM_SHARE, Weight::SemiBold);
+        painter.text(
+            rect.center(),
+            Align2::CENTER_CENTER,
+            initial.to_uppercase().to_string(),
+            style.font(),
+            crate::ui::theme::readable_ink(colour),
+        );
     }
 }
 

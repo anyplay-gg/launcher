@@ -950,17 +950,12 @@ pub fn paint_avatar(
             painter.circle_stroke(rect.center(), r - 0.5, egui::Stroke::new(1.0, black(0.18)));
         }
         None => {
-            painter.circle_filled(rect.center(), r, monogram_colour(account));
-            let initial = handle.chars().next().map(|c| c.to_uppercase().to_string());
-            if let Some(initial) = initial {
-                painter.text(
-                    rect.center(),
-                    Align2::CENTER_CENTER,
-                    initial,
-                    ty::BUTTON.font(),
-                    crate::ui::theme::readable_ink(monogram_colour(account)),
-                );
-            }
+            crate::ui::chrome::paint_monogram(
+                painter,
+                rect,
+                monogram_colour(account),
+                handle.chars().next(),
+            );
         }
     }
 }

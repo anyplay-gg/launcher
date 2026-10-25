@@ -781,11 +781,18 @@ fn launcher_update_rows(
     use crate::screens::update_strings::UpdateText as U;
     let status = |value: String| Row::info("launcherUpdate", U::Row.text(language), Some(value));
     let note = |text: String| Row::info("launcherUpdateNote", text, None).attached();
+    // What the note says is about the status above it; the row under it is the next thing to
+    // do, a step apart, so the note does not lean on it.
     let check = || {
-        Row::command("launcherCheck", Extra::CheckNow.text(language)).icon(Icon::ARROW_CLOCKWISE)
+        Row::command("launcherCheck", Extra::CheckNow.text(language))
+            .icon(Icon::ARROW_CLOCKWISE)
+            .group_start()
     };
-    let download =
-        || Row::command("launcherDownload", U::Download.text(language)).icon(Icon::DOWNLOAD_SIMPLE);
+    let download = || {
+        Row::command("launcherDownload", U::Download.text(language))
+            .icon(Icon::DOWNLOAD_SIMPLE)
+            .group_start()
+    };
     match launcher {
         LauncherUpdate::None => Vec::new(),
         LauncherUpdate::Checking => vec![status(U::Checking.text(language).to_owned())],
@@ -815,7 +822,8 @@ fn launcher_update_rows(
                 status(U::Ready.format(language, &version(v))),
                 note(U::NoteReady.text(language).to_owned()),
                 Row::command("restartNow", Extra::RestartNow.text(language))
-                    .icon(Icon::ARROW_CLOCKWISE),
+                    .icon(Icon::ARROW_CLOCKWISE)
+                    .group_start(),
             ];
             if has_notes {
                 rows.push(whats_new_row(v, language));
@@ -826,7 +834,9 @@ fn launcher_update_rows(
             let mut rows = vec![
                 status(U::WaitingForGame.text(language).to_owned()),
                 note(U::NoteHolding.format(language, &version(v))),
-                Row::command("cancelRestart", U::CancelRestart.text(language)).icon(Icon::X),
+                Row::command("cancelRestart", U::CancelRestart.text(language))
+                    .icon(Icon::X)
+                    .group_start(),
             ];
             if has_notes {
                 rows.push(whats_new_row(v, language));

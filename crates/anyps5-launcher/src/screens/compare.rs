@@ -42,6 +42,9 @@ use crate::ui::theme::{Grade, TextStyle, Weight, color, fade, pad, radius, size,
 
 /// Room around the scrolling rows for the focused card's grow and shadow.
 const LIST_MARGIN: f32 = 8.0;
+/// Rows fade out over this distance at the edge of the list, and start to once the cut is this
+/// far over them: the padding above a row's text. A line is gone before it is cut.
+const EDGE_FADE: f32 = 20.0;
 /// The width of each player's column, and the room right of it.
 const COLUMN: f32 = 236.0;
 const ROW_PAD: f32 = 18.0;
@@ -214,8 +217,8 @@ impl CompareScreen {
     ) {
         let count = self.rows.len();
         match command {
+            // The app answers: "back" to the profile, "close" to Home (7.6).
             Command::Back | Command::Options => {
-                shell.play(Cue::Close);
                 actions.push(CompareAction::Close);
             }
             Command::Select => {
@@ -461,6 +464,10 @@ impl CompareScreen {
             area = area.vertical_scroll_offset(offset);
         }
         let mut geometry = Vec::with_capacity(ready.rows.len());
+        // The rows are as high as the last frame left them (they are all alike).
+        let height_id = id.with("row-height");
+        let row_height: f32 = ctx.data(|d| d.get_temp(height_id)).unwrap_or(80.0);
+        let clip = ui.clip_rect().intersect(ui.max_rect()).shrink(LIST_MARGIN);
         let output = area.show(ui, |ui| {
             egui::Frame::NONE
                 .inner_margin(egui::Margin::same(LIST_MARGIN as i8))
@@ -470,8 +477,16 @@ impl CompareScreen {
                     for (i, row) in ready.rows.iter().enumerate() {
                         presses.push(row.press);
                         let focused = open && i == self.index;
-                        let (rect, pill) =
-                            self.draw_row(ui, row, set, language, accent, focused, i);
+                        let top = ui.cursor().min.y;
+                        let edge = (top - clip.min.y).min(clip.max.y - (top + row_height));
+                        let visible = ((edge + EDGE_FADE) / EDGE_FADE).clamp(0.0, 1.0);
+                        let (rect, pill) = ui
+                            .scope(|ui| {
+                                ui.multiply_opacity(visible);
+                                self.draw_row(ui, row, set, language, accent, focused, i)
+                            })
+                            .inner;
+                        ctx.data_mut(|d| d.insert_temp(height_id, rect.height()));
                         geometry.push((rect.min.y - origin, rect.height()));
                         let pressable = row.press != Press::None;
                         let response =

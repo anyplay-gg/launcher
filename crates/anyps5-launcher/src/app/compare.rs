@@ -6,6 +6,7 @@ use anyps5_core::online::api::AccountId;
 
 use crate::app::model::Model;
 use crate::app::overlay::Overlay;
+use crate::ui::sound::Cue;
 
 /// The other player and the game (a title ID) the screen compares.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,9 +26,11 @@ impl Model {
     /// Back from the comparison, to the profile it was opened from.
     pub fn close_compare(&mut self) {
         if self.profile.is_some() {
+            self.sound(Cue::Back);
             self.profile_returning = true;
             self.switch_overlay(Overlay::Profile);
         } else {
+            self.sound(Cue::Close);
             self.dismiss_overlay();
         }
     }
@@ -69,6 +72,27 @@ mod tests {
         assert_eq!(m.overlay, Some(Overlay::Profile));
         assert!(m.profile_returning, "the profile keeps its focus");
         assert_eq!(m.profile.map(|t| t.account), Some(AccountId(2)));
+    }
+
+    #[test]
+    fn back_from_the_comparison_is_a_step_back_and_a_close_only_without_a_profile() {
+        let mut m = model();
+        m.open_profile(AccountId(2), Back::Friends);
+        m.open_compare(AccountId(2), "GAME00001".into());
+        m.effects.clear();
+        m.close_compare();
+        assert!(matches!(
+            m.effects.as_slice(),
+            [crate::app::model::Effect::Sound(Cue::Back)]
+        ));
+        let mut m = model();
+        m.open_compare(AccountId(2), "GAME00001".into());
+        m.effects.clear();
+        m.close_compare();
+        assert!(matches!(
+            m.effects.as_slice(),
+            [crate::app::model::Effect::Sound(Cue::Close)]
+        ));
     }
 
     #[test]
