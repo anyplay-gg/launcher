@@ -13,8 +13,8 @@ pub enum Kind {
 
 /// Gap between the two columns, in dp.
 pub const COLUMN_GAP: f32 = 64.0;
-/// Share of the width the left column takes when there are two.
-const LEFT_SHARE: f32 = 0.45;
+/// Share of the width the left column takes when there are two (the rest after the gap).
+const LEFT_SHARE: f32 = 0.5;
 /// The widest a single column grows.
 const SINGLE_MAX: f32 = 760.0;
 
@@ -98,10 +98,7 @@ mod tests {
         let (left, right, x) = columns(1420.0, true);
         assert_eq!(left + COLUMN_GAP + right, 1420.0);
         assert_eq!(x, left + COLUMN_GAP);
-        assert!(
-            left < right,
-            "the trophies and activity get the wider column"
-        );
+        assert!(left <= right, "the left column is never the wider");
         let (single, none, _) = columns(1420.0, false);
         assert_eq!((single, none), (760.0, 0.0));
         assert_eq!(columns(600.0, false).0, 600.0);

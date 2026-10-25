@@ -220,15 +220,9 @@ fn a_friend_shows_what_they_share_and_nothing_where_a_part_is_hidden() {
     assert_eq!(ready.chip.as_deref(), Some("Friend"));
     assert_eq!(ready.status.as_ref().unwrap().text, "Online");
     assert_eq!(ready.about.as_deref(), Some("Speedruns."));
-    // Hidden playtime and trophies: no hours, no trophies, no placeholder.
-    assert_eq!(
-        ready
-            .stats
-            .iter()
-            .map(|s| s.label.as_str())
-            .collect::<Vec<_>>(),
-        ["Game"]
-    );
+    // Hidden playtime and trophies: no hours, no trophies, no placeholder, and the one figure
+    // that is left would only repeat the caption.
+    assert!(ready.stats.is_empty());
     assert!(ready.trophies.rows.is_empty() && ready.trophies.empty.is_none());
     assert!(!ready.trophies.shown() && !ready.activity.shown());
     // A game the player does not have: its title ID, no art, nothing to open.
@@ -300,20 +294,39 @@ fn a_friends_trophies_come_from_their_feed_and_are_named_only_when_owned() {
     assert_eq!(
         rows,
         [
-            ("First Light", "Ember Drift · 1 h ago"),
-            ("Gold trophy", "Ember Drift · 1 h ago"),
-            ("Gold trophy", "In a game · 1 h ago"),
+            ("First Light", "Gold · Ember Drift · 1 h ago · Rare, 2.3%"),
+            ("Gold trophy", "Ember Drift · 1 h ago · Rare, 2.3%"),
+            ("Gold trophy", "In a game · 1 h ago · Rare, 2.3%"),
         ]
-    );
-    assert_eq!(
-        ready.trophies.rows[0].trailing.as_deref(),
-        Some("Rare, 2.3%")
     );
     assert_eq!(ready.trophies.rows[0].press, Press::OpenFeed(9));
     // The activity is their other items, not the trophies, and not Juno's.
     assert_eq!(ready.activity.rows.len(), 1);
     assert!(ready.activity.rows[0].text.starts_with("Lumen "));
     assert_eq!(ready.activity.rows[0].reactions, "GG 3 · Same 1");
+}
+
+#[test]
+fn a_friend_says_what_they_play_without_promising_a_join_and_what_you_share() {
+    let mut online = online();
+    let local = local();
+    online.friends.friends[0].presence.activity = Some(anyps5_core::online::api::Activity {
+        title_id: "GAME00001".into(),
+        title: "Ember Drift".into(),
+        version: "01.000".into(),
+        session: Some(anyps5_core::online::api::SessionRef {
+            id: "s".into(),
+            joinable: true,
+            members: 1,
+            max_members: 4,
+        }),
+    });
+    let mut p = page(who(2, "Lumen"));
+    p.profile.playtime = Some(vec![played("GAME00001", 90), played("GAME00002", 90)]);
+    set(&mut online, p);
+    let ready = ready(view(&inputs(&online, &local, None, 2)));
+    assert_eq!(ready.status.as_ref().unwrap().text, "Playing Ember Drift");
+    assert_eq!(ready.note.as_deref(), Some("You have 1 of their games"));
 }
 
 #[test]
@@ -410,7 +423,10 @@ fn the_own_profile_comes_from_this_pc() {
     assert_eq!(first.progress, Some(0.225));
     assert_eq!(ready.games.rows[2].detail, "Not played yet");
     assert_eq!(ready.trophies.rows[0].title, "First Light");
-    assert_eq!(ready.trophies.rows[0].detail, "Ember Drift · 10 min ago");
+    assert_eq!(
+        ready.trophies.rows[0].detail,
+        "Gold · Ember Drift · 10 min ago"
+    );
 }
 
 #[test]

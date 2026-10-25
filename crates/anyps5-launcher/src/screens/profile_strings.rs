@@ -62,6 +62,8 @@ pub enum ProfileText {
     OwnActivityEmpty,
     /// Under the header of the player's own profile while the cloud is out of reach.
     OwnOfflineNote,
+    /// On a friend's profile: `%@` = how many of their games the player has too.
+    SharedGames,
     /// `%@` = the handle.
     ScreenName,
     /// `%@` = the figure, `%@` = the label ("12 hours").
@@ -113,6 +115,7 @@ impl ProfileText {
             ProfileText::OwnOfflineNote => {
                 "You are offline. Your activity comes back when you are online again."
             }
+            ProfileText::SharedGames => "You have %@ of their games",
             ProfileText::ScreenName => "Profile of %@",
             ProfileText::StatName => "%@ %@",
         }
@@ -166,6 +169,7 @@ impl ProfileText {
             ProfileText::OwnOfflineNote => {
                 "Çevrimdışısın. Etkinliğin tekrar çevrimiçi olunca geri gelir."
             }
+            ProfileText::SharedGames => "Onların oyunlarından %@ tanesi sende de var",
             ProfileText::ScreenName => "%@ kullanıcısının profili",
             ProfileText::StatName => "%@ %@",
         }
@@ -201,6 +205,7 @@ mod tests {
             ProfileText::FriendsOnlineUnread,
             ProfileText::PrivateNote,
             ProfileText::EmptyNote,
+            ProfileText::SharedGames,
             ProfileText::ScreenName,
             ProfileText::StatName,
             ProfileText::OwnGamesEmpty,

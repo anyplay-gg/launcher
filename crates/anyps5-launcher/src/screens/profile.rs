@@ -107,18 +107,10 @@ impl ProfileScreen {
         let open = self.open;
         let language = inputs.language;
         let focus = self.focus.min(self.slots.len().saturating_sub(1));
-        // The buttons under the name do not scroll; the rows after them follow the focus.
-        let fixed = self
-            .slots
-            .iter()
-            .filter(|slot| slot.column == nav::Column::Header)
-            .count();
         let (follow, scroll_to) = Follow::begin(
             ctx,
             egui::Id::unique("profile-screen-follow"),
-            open.then_some(focus)
-                .filter(|_| !self.slots.is_empty())
-                .and_then(|slot| slot.checked_sub(fixed)),
+            open.then_some(focus).filter(|_| !self.slots.is_empty()),
         );
         let mut clicked = None;
         let mut frame = paint::Drawn::default();

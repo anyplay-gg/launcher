@@ -49,13 +49,11 @@ const BUTTON_GAP: f32 = 12.0;
 const STAT_GAP: f32 = 44.0;
 const BOTTOM: f32 = 64.0;
 const BODY_GAP: f32 = 28.0;
-/// Room above the first caption in the scrolling list, where the first row fades in.
-const TOP_MARGIN: f32 = 28.0;
 /// The height of the block of words of a state: disc, title, note.
 const STATE_BLOCK: f32 = 56.0 + 18.0 + 30.0 + 8.0 + 44.0;
 
 const NAME: TextStyle = ty::SCREEN_TITLE;
-const ABOUT: TextStyle = TextStyle::new(16.0, Weight::Regular);
+const ABOUT: TextStyle = TextStyle::new(17.0, Weight::Regular);
 const SECTION: TextStyle = TextStyle::new(20.0, Weight::SemiBold);
 const FIGURE: TextStyle = TextStyle::new(34.0, Weight::Light);
 const GRADE_COUNT: TextStyle = TextStyle::new(14.0, Weight::Medium);
@@ -365,7 +363,7 @@ fn measure_columns(painter: &Painter, ready: &Ready, width: f32) -> Columns {
 }
 
 /// A soft wash of the player's colour in the top-left corner, behind everything: the one thing on
-/// the page that is only this player's. A gradient of the avatar's colour from 30 % at the corner
+/// the page that is only this player's. A gradient of the avatar's colour from 22 % at the corner
 /// to nothing 520 dp down and 70 % across, so text on it keeps its contrast with the glass.
 fn paint_wash(painter: &Painter, screen: Rect, tint: [u8; 3]) {
     let corner_alpha = 0.22;
@@ -401,8 +399,8 @@ fn paint_wash(painter: &Painter, screen: Rect, tint: [u8; 3]) {
     painter.add(egui::Shape::mesh(mesh));
 }
 
-/// Draws the screen into the panel `ui`: the header stays where it is, the columns under it
-/// scroll, and a profile that is not there is one block of words.
+/// Draws the screen into the panel `ui`: a profile that is there is one scrolling page (header,
+/// then the columns); one that is not is a header and a block of words.
 pub fn draw(
     ui: &mut Ui,
     model: &ProfileView,
@@ -410,7 +408,6 @@ pub fn draw(
     drawn: &mut Drawn,
     clicked: &mut Option<usize>,
 ) {
-    let ctx = ui.ctx().clone();
     let screen = ui.max_rect();
     paint_wash(ui.painter(), screen, model.tint);
     let area = screen.shrink2(vec2(pad::TROPHIES.0, pad::TROPHIES.1));
@@ -426,52 +423,124 @@ pub fn draw(
     drawn.viewport_height = 0.0;
     drawn.offset = 0.0;
 
-    let painter = ui.painter().clone();
-    let origin = pos2(area.min.x, area.min.y + HINT_ROOM);
-    let header = measure_header(&painter, model, area.width(), settings.language);
-    paint_header(ui, origin, model, &header, &settings, drawn, clicked);
-    let body_top = origin.y + header.height + BODY_GAP;
+    // The page starts under the hint bar and runs to the bottom of the screen; what scrolls past
+    // either edge fades out.
+    let list = Rect::from_min_max(
+        pos2(
+            area.min.x - SCROLL_MARGIN,
+            area.min.y + HINT_ROOM - SCROLL_MARGIN,
+        ),
+        pos2(area.max.x + SCROLL_MARGIN, screen.max.y),
+    );
     match &model.body {
-        Body::Ready(ready) => {
-            let list = Rect::from_min_max(
-                pos2(area.min.x - SCROLL_MARGIN, body_top - TOP_MARGIN),
-                pos2(area.max.x + SCROLL_MARGIN, screen.max.y),
-            );
-            paint_columns(ui, &ctx, list, ready, &settings, drawn, clicked);
-        }
-        _ => {
-            let block = STATE_BLOCK
-                + if matches!(model.body, Body::Failed) {
-                    24.0 + BUTTON_HEIGHT
-                } else {
-                    0.0
-                };
-            let room = area.max.y - body_top;
-            let top = body_top + ((room - block) * 0.5 - 24.0).max(12.0);
-            let retry = matches!(model.body, Body::Failed).then(|| {
-                drawn.slots.push(Slot {
-                    column: Column::Header,
-                    y: 0.0,
-                });
-                drawn.presses.push(Press::Retry);
-                drawn.slots.len() - 1
-            });
-            paint_state(
-                ui,
-                &ctx,
-                pos2(area.center().x, top),
-                model,
-                &settings,
-                retry,
-                clicked,
-            );
-        }
+        Body::Ready(ready) => paint_page(ui, list, model, ready, &settings, drawn, clicked),
+        _ => paint_state_page(ui, list, area, model, &settings, drawn, clicked),
     }
 }
 
-/// The part of the page that does not scroll: the avatar, the name, the line under it, the text,
-/// the figures and the buttons. The buttons are the first slots of the focus.
-#[allow(clippy::too_many_arguments)]
+/// A profile that is not there: the header, and under it one block of words.
+fn paint_state_page(
+    ui: &mut Ui,
+    list: Rect,
+    area: Rect,
+    model: &ProfileView,
+    settings: &Settings,
+    drawn: &mut Drawn,
+    clicked: &mut Option<usize>,
+) {
+    let ctx = ui.ctx().clone();
+    let painter = ui.painter().clone();
+    let origin = pos2(area.min.x, list.min.y + SCROLL_MARGIN);
+    let header = measure_header(&painter, model, area.width(), settings.language);
+    paint_header(ui, origin, model, &header, settings, drawn, clicked);
+    let body_top = origin.y + header.height + BODY_GAP;
+    let failed = matches!(model.body, Body::Failed);
+    let block = STATE_BLOCK + if failed { 24.0 + BUTTON_HEIGHT } else { 0.0 };
+    let room = area.max.y - body_top;
+    let top = body_top + ((room - block) * 0.5 - 24.0).max(12.0);
+    let retry = failed.then(|| {
+        drawn.slots.push(Slot {
+            column: Column::Header,
+            y: 0.0,
+        });
+        drawn.presses.push(Press::Retry);
+        drawn.geometry.push((0.0, 0.0));
+        drawn.slots.len() - 1
+    });
+    paint_state(
+        ui,
+        &ctx,
+        pos2(area.center().x, top),
+        model,
+        settings,
+        retry,
+        clicked,
+    );
+}
+
+/// How far from the edge of the scrolling list a row starts to fade out (dp).
+const EDGE: f32 = 20.0;
+
+/// How much of a row shows at the clipped edges of the list: it fades out over its last 20 dp
+/// before the edge, as the rows of the other lists do.
+fn edge_fade(rect: Rect, clip: Rect) -> f32 {
+    let centre = rect.center().y;
+    let room = rect.height() * 0.5 + EDGE;
+    ((centre - clip.min.y).min(clip.max.y - centre) / room).clamp(0.0, 1.0)
+}
+
+/// The page: the header, then the columns, in one scroll area.
+fn paint_page(
+    ui: &mut Ui,
+    list: Rect,
+    model: &ProfileView,
+    ready: &Ready,
+    settings: &Settings,
+    drawn: &mut Drawn,
+    clicked: &mut Option<usize>,
+) {
+    let ctx = ui.ctx().clone();
+    let mut child = ui.new_child(UiBuilder::new().max_rect(list));
+    let mut scroll = ScrollArea::vertical()
+        .id_salt(Id::unique("profile-screen-scroll"))
+        .auto_shrink([false, false])
+        .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::AlwaysHidden);
+    if let Some(offset) = settings.scroll_to {
+        scroll = scroll.vertical_scroll_offset(offset);
+    }
+    let output = scroll.show(&mut child, |ui| {
+        egui::Frame::NONE
+            .inner_margin(egui::Margin::same(SCROLL_MARGIN as i8))
+            .show(ui, |ui| {
+                let painter = ui.painter().clone();
+                let width = ui.available_width();
+                let header = measure_header(&painter, model, width, settings.language);
+                let columns = measure_columns(&painter, ready, width);
+                let body = header.height + BODY_GAP;
+                let (page, _) = ui.allocate_exact_size(
+                    vec2(width, body + columns.height + BOTTOM),
+                    Sense::hover(),
+                );
+                let clip = list.shrink(SCROLL_MARGIN);
+                // The header leaves by fading, once its lower half is past the top edge.
+                let leaving = ((page.min.y + header.height - clip.min.y) / (header.height * 0.5))
+                    .clamp(0.0, 1.0);
+                ui.set_opacity(leaving);
+                paint_header(ui, page.min, model, &header, settings, drawn, clicked);
+                ui.set_opacity(1.0);
+                let columns_at = page.min + vec2(0.0, body);
+                paint_columns(
+                    ui, &ctx, columns_at, body, clip, ready, &columns, settings, drawn, clicked,
+                );
+            });
+    });
+    drawn.content_height = output.content_size.y;
+    drawn.viewport_height = output.inner_rect.height();
+    drawn.offset = output.state.clamped_offset().y;
+}
+
+/// The header: the avatar, the name, the line under it, the text, the figures and the buttons.
+/// The buttons are the first slots of the focus.
 fn paint_header(
     ui: &mut Ui,
     origin: egui::Pos2,
@@ -512,7 +581,7 @@ fn paint_header(
         painter.galley(pos, galley.clone(), color::text_subtitle());
     }
     if let Some((pos, galley)) = &header.about {
-        painter.galley(at(*pos), galley.clone(), white(0.8));
+        painter.galley(at(*pos), galley.clone(), white(0.86));
     }
     if let Some((pos, galley)) = &header.note {
         painter.galley(at(*pos), galley.clone(), color::text_detail());
@@ -530,6 +599,7 @@ fn paint_header(
         ready.chip.as_deref(),
         ready.status.as_ref().map(|s| s.text.as_str()),
         ready.about.as_deref(),
+        ready.note.as_deref(),
     ]
     .into_iter()
     .flatten()
@@ -562,9 +632,10 @@ fn paint_header(
             let slot = drawn.slots.len();
             drawn.slots.push(Slot {
                 column: Column::Header,
-                y: 0.0,
+                y: pos.y,
             });
             drawn.presses.push(action.press.clone());
+            drawn.geometry.push((pos.y + SCROLL_MARGIN, BUTTON_HEIGHT));
             let response = ConsoleButton::new(&action.label)
                 .prominent(n == 0)
                 .focused(settings.focus == Some(slot))
@@ -576,64 +647,14 @@ fn paint_header(
     }
 }
 
-/// How far from the edge of the scrolling list a row starts to fade out (dp).
-const EDGE: f32 = 20.0;
-
-/// How much of a row shows at the clipped edges of the list: it fades out over its last 20 dp
-/// before the edge, as the rows of the other lists do.
-fn edge_fade(rect: Rect, clip: Rect) -> f32 {
-    let centre = rect.center().y;
-    let room = rect.height() * 0.5 + EDGE;
-    ((centre - clip.min.y).min(clip.max.y - centre) / room).clamp(0.0, 1.0)
-}
-
-/// The columns, in a scroll area under the header.
+/// The captions and rows of the columns, from `origin` down. A row that does something is a
+/// stop of the focus; one that does not is just text.
+#[allow(clippy::too_many_arguments)]
 fn paint_columns(
     ui: &mut Ui,
     ctx: &egui::Context,
-    list: Rect,
-    ready: &Ready,
-    settings: &Settings,
-    drawn: &mut Drawn,
-    clicked: &mut Option<usize>,
-) {
-    let mut child = ui.new_child(UiBuilder::new().max_rect(list));
-    let mut scroll = ScrollArea::vertical()
-        .id_salt(Id::unique("profile-screen-scroll"))
-        .auto_shrink([false, false])
-        .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::AlwaysHidden);
-    if let Some(offset) = settings.scroll_to {
-        scroll = scroll.vertical_scroll_offset(offset);
-    }
-    let output = scroll.show(&mut child, |ui| {
-        egui::Frame::NONE
-            .inner_margin(egui::Margin {
-                left: SCROLL_MARGIN as i8,
-                right: SCROLL_MARGIN as i8,
-                top: TOP_MARGIN as i8,
-                bottom: 0,
-            })
-            .show(ui, |ui| {
-                let painter = ui.painter().clone();
-                let width = ui.available_width();
-                let columns = measure_columns(&painter, ready, width);
-                let (page, _) =
-                    ui.allocate_exact_size(vec2(width, columns.height + BOTTOM), Sense::hover());
-                paint_content(
-                    ui, ctx, page, list, ready, &columns, settings, drawn, clicked,
-                );
-            });
-    });
-    drawn.content_height = output.content_size.y;
-    drawn.viewport_height = output.inner_rect.height();
-    drawn.offset = output.state.clamped_offset().y;
-}
-
-#[allow(clippy::too_many_arguments)]
-fn paint_content(
-    ui: &mut Ui,
-    ctx: &egui::Context,
-    page: Rect,
+    origin: egui::Pos2,
+    body: f32,
     clip: Rect,
     ready: &Ready,
     columns: &Columns,
@@ -642,8 +663,8 @@ fn paint_content(
     clicked: &mut Option<usize>,
 ) {
     let language = settings.language;
-    let origin = page.min.to_vec2();
-    let at = |p: egui::Pos2| p + origin;
+    let shift = origin.to_vec2();
+    let at = |p: egui::Pos2| p + shift;
 
     // Captions and the empty words under them.
     for caption in &columns.captions {
@@ -674,44 +695,59 @@ fn paint_content(
             );
         }
         if let Some((pos, galley)) = &caption.note {
-            painter.galley(at(*pos), galley.clone(), white(0.62));
+            painter.galley(at(*pos), galley.clone(), white(0.66));
         }
     }
 
     // The rows, in the order the focus walks them.
     for item in &columns.items {
+        let rect = item.rect.translate(shift);
+        let press = match item.kind {
+            ItemKind::Game(n) => ready.games.rows[n].press.clone(),
+            ItemKind::Trophy(n) => ready.trophies.rows[n].press.clone(),
+            ItemKind::Activity(n) => ready.activity.rows[n].press.clone(),
+        };
+        let stop = !matches!(press, Press::None);
         let slot = drawn.slots.len();
-        let rect = item.rect.translate(origin);
-        let focused = settings.focus == Some(slot);
-        drawn.slots.push(Slot {
-            column: item.column,
-            y: item.rect.center().y,
-        });
-        drawn
-            .geometry
-            .push((item.rect.min.y + TOP_MARGIN, item.rect.height()));
+        let focused = stop && settings.focus == Some(slot);
+        if stop {
+            drawn.slots.push(Slot {
+                column: item.column,
+                y: item.rect.center().y,
+            });
+            drawn.presses.push(press);
+            drawn
+                .geometry
+                .push((item.rect.min.y + body + SCROLL_MARGIN, item.rect.height()));
+        }
         // A focused row stays whole: the focus scrolls it into the middle.
         let fade = if focused { 1.0 } else { edge_fade(rect, clip) };
         ui.set_opacity(fade);
         let response = match item.kind {
             ItemKind::Game(n) => {
-                let row = &ready.games.rows[n];
-                drawn.presses.push(row.press.clone());
-                paint_game(ui, ctx, rect, slot, row, focused, settings)
+                paint_game(ui, ctx, rect, slot, &ready.games.rows[n], focused, settings)
             }
-            ItemKind::Trophy(n) => {
-                let row = &ready.trophies.rows[n];
-                drawn.presses.push(row.press.clone());
-                paint_trophy(ui, ctx, rect, slot, row, focused, language)
-            }
-            ItemKind::Activity(n) => {
-                let row = &ready.activity.rows[n];
-                drawn.presses.push(row.press.clone());
-                paint_activity(ui, ctx, rect, slot, row, focused, language)
-            }
+            ItemKind::Trophy(n) => paint_trophy(
+                ui,
+                ctx,
+                rect,
+                slot,
+                &ready.trophies.rows[n],
+                focused,
+                language,
+            ),
+            ItemKind::Activity(n) => paint_activity(
+                ui,
+                ctx,
+                rect,
+                slot,
+                &ready.activity.rows[n],
+                focused,
+                language,
+            ),
         };
         ui.set_opacity(1.0);
-        if response.clicked() {
+        if stop && response.clicked() {
             *clicked = Some(slot);
         }
     }
@@ -883,7 +919,7 @@ fn paint_game(
     let ink = if row.owned { s.ink } else { s.dim(0.78) };
     painter.galley(pos2(text_x, top), name, ink);
     if has_detail {
-        painter.galley(pos2(text_x, top + name_h + 3.0), detail, s.dim(0.62));
+        painter.galley(pos2(text_x, top + name_h + 3.0), detail, s.dim(0.68));
     }
     if let Some((label, width)) = trailing {
         let x = rect.max.x - ROW_PAD - width;
@@ -992,7 +1028,7 @@ fn paint_trophy(
     let top = rect.center().y - block * 0.5;
     let title_h = title.size().y;
     painter.galley(pos2(text_x, top), title, s.ink);
-    painter.galley(pos2(text_x, top + title_h + 3.0), detail, s.dim(0.62));
+    painter.galley(pos2(text_x, top + title_h + 3.0), detail, s.dim(0.68));
     if let Some(galley) = trailing_galley {
         let h = galley.size().y;
         painter.galley(
@@ -1001,7 +1037,7 @@ fn paint_trophy(
                 rect.center().y - h * 0.5,
             ),
             galley,
-            s.dim(0.62),
+            s.dim(0.68),
         );
     }
     s.response
@@ -1058,7 +1094,7 @@ fn paint_activity(
     painter.galley(
         pos2(text_x, rect.min.y + ROW_PAD + sentence_h + 4.0),
         meta,
-        s.dim(0.6),
+        s.dim(0.66),
     );
     s.response
 }

@@ -360,6 +360,10 @@ pub fn view(inputs: &Inputs<'_>) -> ProfileView {
         other_parts(inputs, page, &mut ready);
     }
     activity(inputs, &mut ready);
+    // One figure alone only repeats a caption: the strip needs two to be a strip.
+    if ready.stats.len() < 2 {
+        ready.stats.clear();
+    }
 
     // Another player's profile with nothing to see.
     if !own && nothing_to_show(&ready) {
@@ -453,9 +457,15 @@ fn header(inputs: &Inputs<'_>, handle: &str, ready: &mut Ready) {
     }
 }
 
+/// What they do now. The profile has no Join button (that is on their page in the panel), so it
+/// does not say that the game can be joined.
 fn status_of(friend: &Friend, language: Language) -> Status {
+    let text = match &friend.presence.activity {
+        Some(activity) => T::Playing.format(language, &[Arg::Str(&activity.title)]),
+        None => presence_text(friend, language),
+    };
     Status {
-        text: presence_text(friend, language),
+        text,
         online: friend.presence.online,
     }
 }
@@ -566,7 +576,12 @@ fn own_parts(inputs: &Inputs<'_>, ready: &mut Ready) {
         .map(|trophy| TrophyRow {
             grade: trophy.grade,
             title: trophy.name.clone(),
-            detail: format!("{} · {}", trophy.game, when(inputs, trophy.at)),
+            detail: format!(
+                "{} · {} · {}",
+                trophy.grade.title(language),
+                trophy.game,
+                when(inputs, trophy.at)
+            ),
             trailing: None,
             press: Press::OpenGame(trophy.title_id.clone()),
         })
@@ -659,6 +674,14 @@ fn other_parts(inputs: &Inputs<'_>, page: &online::api::ProfilePage, ready: &mut
         ready.stats.extend(trophy_stat(grades_of(count), language));
     }
 
+    // What only a friend's page can say: how much of their library is yours.
+    let shared = ordered
+        .iter()
+        .filter(|(id, _, _)| local.games.contains_key(*id))
+        .count();
+    if shared > 0 {
+        ready.note = Some(P::SharedGames.format(language, &[Arg::Int(shared as i64)]));
+    }
     ready.games.total = ordered.len();
     ready.games.rows = ordered
         .into_iter()
@@ -744,7 +767,8 @@ fn other_trophy_row(inputs: &Inputs<'_>, item: &FeedItem) -> Option<TrophyRow> {
     let language = inputs.language;
     let grade = theme_grade(*grade);
     // A trophy is named only from the player's own copy of the game.
-    let title = match inputs.local.trophy_name(title_id, *number) {
+    let named = inputs.local.trophy_name(title_id, *number);
+    let title = match named {
         Some(name) => name.to_owned(),
         None => P::GradeTrophy.format(language, &[Arg::Str(grade.title(language))]),
     };
@@ -752,14 +776,20 @@ fn other_trophy_row(inputs: &Inputs<'_>, item: &FeedItem) -> Option<TrophyRow> {
         .local
         .game_name(title_id)
         .unwrap_or_else(|| P::InAGame.text(language));
+    // The grade is in the words too, never only in the colour of the tile: in the title when the
+    // trophy is unnamed, in the line under it when it has a name.
+    let mut parts: Vec<String> = Vec::new();
+    if named.is_some() {
+        parts.push(grade.title(language).to_owned());
+    }
+    parts.push(game.to_owned());
+    parts.push(when(inputs, i64::try_from(item.at).unwrap_or(0)));
+    parts.extend(rarity.map(|percent| rarity_text(percent, language)));
     Some(TrophyRow {
         grade,
         title,
-        detail: format!(
-            "{game} · {}",
-            when(inputs, i64::try_from(item.at).unwrap_or(0))
-        ),
-        trailing: rarity.map(|percent| rarity_text(percent, language)),
+        detail: parts.join(" · "),
+        trailing: None,
         press: Press::OpenFeed(item.id),
     })
 }
