@@ -5,11 +5,14 @@
 //! [`RemoteServer`] is the whole interface: start it, hand it the library with [`RemoteServer::publish`],
 //! and listen through [`RemoteEvents`]. Ported from utkuhalis/AnyPS5-ARM (macOS), with the security
 //! rules in `docs/DESIGN.md`. Nothing here starts unless the player switched the feature on.
+//!
+//! [`LudusServer`] is a second, independent server for the LudusCtrl app, which only sends a pad.
 
 mod control;
 mod devices;
 mod discovery;
 mod layouts;
+mod ludusctrl;
 mod protocol;
 mod relay;
 mod security;
@@ -31,6 +34,10 @@ use std::{
 pub use devices::{PairedDevice, PairedDevices};
 pub use discovery::{choose_addresses, lan_addresses};
 pub use layouts::Layouts;
+pub use ludusctrl::{
+    BeaconTarget, Holding, LUDUS_BEACON_PORT, LUDUS_PORT, LudusConfig, LudusEvents, LudusPhone,
+    LudusServer, LudusStatus, LudusStore, LudusVia, Owner, PadLayout, PadSlot, PadTarget, Refusal,
+};
 pub use protocol::{
     HELLO_SIZE, INPUT_SIZE, InputPacket, Message, OUTPUT_SIZE, OutputPacket, PROTOCOL_VERSION,
     RemoteGame, TouchPoint, button, game_hello, is_game_hello,

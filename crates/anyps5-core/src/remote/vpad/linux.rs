@@ -199,6 +199,7 @@ fn events_for(state: &PadState) -> Vec<(u16, u16, i32)> {
         key(BTN_TR, xbutton::RB),
         key(BTN_SELECT, xbutton::BACK),
         key(BTN_START, xbutton::START),
+        key(BTN_MODE, xbutton::GUIDE),
         key(BTN_THUMBL, xbutton::L3),
         key(BTN_THUMBR, xbutton::R3),
         (EV_ABS, ABS_X, state.lx.into()),
@@ -285,6 +286,7 @@ mod tests {
         assert_eq!(get(EV_KEY, BTN_SOUTH), 1);
         assert_eq!(get(EV_KEY, BTN_TL), 1);
         assert_eq!(get(EV_KEY, BTN_EAST), 0);
+        assert_eq!(get(EV_KEY, BTN_MODE), 0);
         assert_eq!(get(EV_ABS, ABS_X), -5);
         assert_eq!(get(EV_ABS, ABS_Y), -32767);
         assert_eq!(get(EV_ABS, ABS_RY), 32767);
@@ -292,7 +294,7 @@ mod tests {
         assert_eq!(get(EV_ABS, ABS_RZ), 255);
         assert_eq!(get(EV_ABS, ABS_HAT0X), 1);
         assert_eq!(get(EV_ABS, ABS_HAT0Y), -1);
-        assert_eq!(events.len(), 18);
+        assert_eq!(events.len(), 19);
     }
 
     #[test]

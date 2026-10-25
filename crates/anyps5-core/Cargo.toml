@@ -33,6 +33,13 @@ socket2 = "0.6"
 getrandom = "0.4"
 base64 = "0.22"
 if-addrs = "0.15"
+# LudusCtrl pairing and input signatures (RustCrypto, MIT or Apache-2.0): ECDH on P-256, HKDF and
+# HMAC. The 0.14 line of p256 carries the constant-time fixes of crypto-bigint 0.7 (RUSTSEC-2026-0387
+# is about 0.5); it goes with the 0.11 line of sha2, beside the workspace's 0.10.
+p256 = { version = "0.14", default-features = false, features = ["ecdh"] }
+hkdf = "0.13"
+hmac = "0.13"
+sha2-v11 = { package = "sha2", version = "0.11" }
 
 [build-dependencies]
 # build.rs parses data/update-keys.txt with the same parser the launcher uses at run time.

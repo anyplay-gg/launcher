@@ -60,7 +60,7 @@ pub struct Relay {
     bridge_port: u16,
 }
 
-fn bind_phone_socket(preferred: u16) -> io::Result<UdpSocket> {
+pub(super) fn bind_phone_socket(preferred: u16) -> io::Result<UdpSocket> {
     for port in [preferred, 0] {
         if let Ok(socket) = Socket::new(Domain::IPV6, Type::DGRAM, Some(Protocol::UDP))
             && socket.set_only_v6(false).is_ok()
@@ -173,7 +173,7 @@ impl Drop for Relay {
     }
 }
 
-fn recoverable(error: &io::Error) -> bool {
+pub(super) fn recoverable(error: &io::Error) -> bool {
     // On Windows a datagram sent to a closed port (a game that exited) makes the next receive on
     // the same socket fail with WSAECONNRESET; that says nothing about the socket.
     matches!(

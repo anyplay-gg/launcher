@@ -15,6 +15,8 @@ pub mod xbutton {
     pub const R3: u16 = 0x0080;
     pub const LB: u16 = 0x0100;
     pub const RB: u16 = 0x0200;
+    /// The Guide (PS) button. The phone app of AnyPS5 Remote has no bit for it; LudusCtrl does.
+    pub const GUIDE: u16 = 0x0400;
     pub const A: u16 = 0x1000;
     pub const B: u16 = 0x2000;
     pub const X: u16 = 0x4000;
