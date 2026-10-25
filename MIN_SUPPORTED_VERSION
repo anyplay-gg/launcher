@@ -1,0 +1,7 @@
+# The oldest launcher version that may still go online (docs/UPDATES.md, "Retiring a version").
+#
+# Empty, as it is now: every version may. To retire versions, put one plain version on the next
+# line (for example 0.3.0), after that release is out, and merge it. Releases and the weekly
+# renewal copy it into the signed latest.json as min_supported_version; a launcher below it then
+# shows "Update required" and keeps only offline play. A version above the latest release stops
+# the release and the renewal, on purpose.

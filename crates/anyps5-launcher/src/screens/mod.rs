@@ -64,6 +64,7 @@ pub mod prepare_strings;
 pub mod profile;
 pub mod profile_strings;
 pub mod recommended;
+pub mod required;
 pub mod rows;
 pub mod run_strings;
 pub mod saves;

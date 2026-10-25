@@ -185,6 +185,13 @@ pub enum SelfUpdateError {
     Manifest(#[from] ManifestError),
     #[error("the release has no signed update manifest")]
     NoManifest,
+    /// The signed manifest requires this launcher to update ([`Manifest::min_supported_version`])
+    /// but it is too old to take that update by itself (`minimum_version`): the player installs
+    /// the version from the releases page. The version offered.
+    #[error(
+        "this launcher is too old to update itself; version {0} must be installed from the releases page"
+    )]
+    RequiredByHand(String),
     #[error("the download is not a program for this system")]
     NotAnExecutable,
     /// The folder of the running exe refuses new files (a read-only or protected location).
@@ -218,10 +225,21 @@ impl SelfUpdateError {
             | SelfUpdateError::Size
             | SelfUpdateError::Manifest(_)
             | SelfUpdateError::NoManifest
+            | SelfUpdateError::RequiredByHand(_)
             | SelfUpdateError::NotAnExecutable => Failure::Refused,
             SelfUpdateError::NotWritable(_)
             | SelfUpdateError::Io(_)
             | SelfUpdateError::Cancelled => Failure::Other,
+        }
+    }
+}
+
+impl SelfUpdateError {
+    /// The version the player must install by hand, when this is the refusal that says so.
+    pub fn required_by_hand(&self) -> Option<&str> {
+        match self {
+            SelfUpdateError::RequiredByHand(version) => Some(version),
+            _ => None,
         }
     }
 }
@@ -267,9 +285,17 @@ pub struct Release {
     /// The release's own notes, for display only. They come from the unsigned release data, so
     /// nothing is decided by them.
     notes: Option<String>,
+    /// The signed manifest says the running version is below the oldest one that may keep
+    /// running, so this update is not optional. Always false in the unsigned flow.
+    required: bool,
 }
 
 impl Release {
+    /// This update is required: the launcher below it must take it before it goes online.
+    pub fn required(&self) -> bool {
+        self.required
+    }
+
     /// The version without the leading `v`: what the player reads.
     pub fn version(&self) -> &str {
         self.tag.trim_start_matches('v')
@@ -368,6 +394,7 @@ pub(crate) fn parse_latest(json: &str, current: &str) -> Result<Option<Release>,
         exe,
         vouch: Vouch::Checksums(sums),
         notes: notes_of(&value),
+        required: false,
     }))
 }
 
@@ -550,9 +577,17 @@ fn parse_signed(
     let signature = String::from_utf8_lossy(&signature).into_owned();
     let manifest = verify_signed(&manifest_bytes, &signature, keys)?;
     // Newer first: a launcher that is up to date must not call a stale manifest an error.
+    let required = manifest.requires_update_from(current);
     match manifest.allows_update_from(current) {
         Ok(()) => {}
         Err(ManifestError::NotNewer { .. }) => return Ok(None),
+        // Too old to update itself, and the manifest says it must: the player is told to
+        // install by hand instead of being shown a quiet refusal. An expired or unsigned
+        // manifest never reaches this point, so nothing is ever required on a stale answer.
+        Err(ManifestError::RunningTooOld { .. }) if required => {
+            manifest.check_time(now)?;
+            return Err(SelfUpdateError::RequiredByHand(manifest.version.clone()));
+        }
         Err(other) => return Err(other.into()),
     }
     manifest.check_time(now)?;
@@ -574,6 +609,7 @@ fn parse_signed(
             signature,
         },
         notes: notes_of(&value),
+        required,
     }))
 }
 

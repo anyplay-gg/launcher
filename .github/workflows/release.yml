@@ -449,6 +449,7 @@ jobs:
           tool="$PWD/launcher/target/release/update-sign"
           "$tool" keygen --secret-out "$RUNNER_TEMP/dry-run.key" --public-out "$RUNNER_TEMP/dry-run.line" --label dry-run
           "$tool" manifest --version "$VERSION" --days 30 \
+            --supported-file launcher/MIN_SUPPORTED_VERSION \
             --exe "dist/AnyPlay-Launcher-$VERSION-x64.exe" \
             --appimage "dist/AnyPlay-Launcher-$VERSION-x86_64.AppImage" --out dist/latest.json
           "$tool" sign --manifest dist/latest.json --out dist/latest.json.sig --key-file "$RUNNER_TEMP/dry-run.key"
@@ -505,7 +506,10 @@ jobs:
           set -euo pipefail
           chmod +x tool/update-sign
           # One signed manifest for both platforms: the Windows exe and the Linux AppImage.
+          # MIN_SUPPORTED_VERSION (a file of the tagged commit) retires launchers below it; an empty
+          # one leaves the field out. A typo, or a version above this release, fails the release.
           tool/update-sign manifest --version "$VERSION" --minimum "$MINIMUM_VERSION" --days 30 \
+            --supported-file launcher/MIN_SUPPORTED_VERSION \
             --exe "dist/AnyPlay-Launcher-$VERSION-x64.exe" \
             --appimage "dist/AnyPlay-Launcher-$VERSION-x86_64.AppImage" --out dist/latest.json
       # Without the secret there is no signature, which is right only while data/update-keys.txt

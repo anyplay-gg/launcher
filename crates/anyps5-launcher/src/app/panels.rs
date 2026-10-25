@@ -157,6 +157,8 @@ pub struct PanelHost {
     /// The backup to land on when the list opens again after the question.
     saves_return: Option<usize>,
     whats_new: WhatsNewPanel,
+    /// "Update required" (docs/DESIGN.md 9.5.1).
+    required: crate::screens::required::RequiredScreen,
     /// The release the notes panel is about, without a leading `v`.
     whats_new_tag: String,
     /// The settings category to open on when coming back from the notes.
@@ -244,6 +246,7 @@ impl PanelHost {
             restore_stamp: String::new(),
             saves_return: None,
             whats_new: WhatsNewPanel::default(),
+            required: crate::screens::required::RequiredScreen::default(),
             whats_new_tag: String::new(),
             settings_return: None,
             clips_counted: None,
@@ -1353,6 +1356,44 @@ impl PanelHost {
         }
     }
 
+    /// "Update required": the update is the launcher's ordinary one, shown here and restarted
+    /// from here; Play Offline leaves and keeps the online area closed.
+    fn required_ui(&mut self, cx: &mut OverlayCx<'_>, wanted: bool) {
+        use crate::screens::required::{self as screen, Reason, RequiredAction, RequiredData};
+        let events = self.take_events(wanted);
+        if wanted && !self.required.is_open() {
+            self.required.open();
+        } else if !wanted && self.required.is_open() {
+            self.required.close();
+        }
+        let notes = self
+            .launcher
+            .notes()
+            .map(|notes| screen::note_lines(&notes))
+            .unwrap_or_default();
+        let data = RequiredData {
+            language: cx.model.language(),
+            update: &self.launcher.state,
+            reason: if cx.model.required_online {
+                Reason::OnlineClosed
+            } else {
+                Reason::Retired
+            },
+            notes: &notes,
+        };
+        let actions = self.required.show(cx.shell, cx.ctx, &events, &data);
+        for action in actions {
+            match action {
+                RequiredAction::UpdateNow => self.restart_launcher(cx.model, cx.ctx),
+                RequiredAction::TryAgain => self.launcher.check_now(),
+                RequiredAction::Download => {
+                    open_known_url(crate::screens::update_strings::RELEASES);
+                }
+                RequiredAction::PlayOffline => cx.model.play_offline(),
+            }
+        }
+    }
+
     // --- full-screen panels --------------------------------------------------------------------
 
     fn trophies_ui(&mut self, cx: &mut OverlayCx<'_>, wanted: bool) {
@@ -1798,6 +1839,18 @@ impl PanelHost {
         if model.update != self.launcher.state {
             model.update.clone_from(&self.launcher.state);
         }
+        // The cloud turned this launcher away: the update is required, whatever the manifest said.
+        if std::mem::take(&mut model.cloud_too_old) && !self.launcher.required() {
+            self.launcher.require_from_cloud();
+        }
+        let required = self.launcher.required();
+        if model.update_required != required {
+            model.update_required = required;
+            if required {
+                // The online area closes at once: the net service stops talking to the cloud.
+                model.effects.push(Effect::StopOnline);
+            }
+        }
         match model.update_request.take() {
             Some(UpdateRequest::Restart) => self.restart_launcher(model, cx.ctx),
             Some(UpdateRequest::CancelRestart) => self.launcher.cancel_hold(),
@@ -1882,6 +1935,7 @@ impl OverlayHost for PanelHost {
             Overlay::Log => self.log_ui(cx, wanted),
             Overlay::Recommended => self.recommended_ui(cx, wanted),
             Overlay::WhatsNew => self.whats_new_ui(cx, wanted),
+            Overlay::Required => self.required_ui(cx, wanted),
             Overlay::Friends => self.friends_ui(cx, wanted),
             Overlay::Profile => self.profile_ui(cx, wanted),
             Overlay::Compare => self.compare_ui(cx, wanted),
@@ -1919,6 +1973,10 @@ impl OverlayHost for PanelHost {
         let paths = cx.model.paths.clone();
         self.launcher.tick(&paths, cx.model.prefs.check_for_updates);
         self.poll_launcher(cx);
+        // A retired version meets "Update required" once, as soon as nothing else is going on.
+        if cx.model.required_screen_due() {
+            cx.model.show_required();
+        }
         // No toolkit on this PC: fetch it now, already during the onboarding, so the first unlock
         // needs no visit to the settings. The result shows as a toast (see `poll_toolkit`).
         if !self.toolkit_auto_tried && cx.model.toolkit.is_none() {
@@ -2221,6 +2279,7 @@ mod tests {
             Overlay::ConfirmRestore,
             Overlay::Recommended,
             Overlay::WhatsNew,
+            Overlay::Required,
         ] {
             rig.app.model.open(overlay);
             rig.frames(3);

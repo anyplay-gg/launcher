@@ -48,6 +48,7 @@ fn manifest(base: &str, image: &[u8], windows: bool) -> Manifest {
         published: format_time(now - Span::days(1)),
         expires: format_time(now + Span::days(29)),
         minimum_version: "0.1.0".into(),
+        min_supported_version: None,
         platforms,
     }
 }
