@@ -1,3 +1,4 @@
+//! Ported from utkuhalis/AnyPS5-ARM (Localization.swift, GPL-2.0-only) and changed since; see README "Credits".
 //! Localisation (docs/DESIGN.md section 8): English and Turkish, 212 keys generated from the
 //! macOS launcher's `Localization.swift` by `tools/gen-i18n.mjs`, with the Windows replacements
 //! of section 9.3 already applied.

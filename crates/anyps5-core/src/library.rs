@@ -1,3 +1,4 @@
+//! Ported from utkuhalis/AnyPS5-ARM (GameLibrary.swift, GPL-2.0-only) and changed since; see README "Credits".
 //! Game library: scanning the games folder for dumps, their metadata, and a watcher that tells the
 //! app when the folder changed (PORT.md 6.2, GameLibrary.swift).
 

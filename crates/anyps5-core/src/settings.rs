@@ -1,3 +1,4 @@
+//! Ported from utkuhalis/AnyPS5-ARM (GameSettings.swift, GPL-2.0-only) and changed since; see README "Credits".
 //! Persistent launcher preferences and per-game settings, stored as JSON in the locations of
 //! [`AppPaths`] (PORT.md 6.6, GameSettings.swift).
 //!

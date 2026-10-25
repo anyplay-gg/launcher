@@ -1,3 +1,4 @@
+//! Ported from utkuhalis/AnyPS5-ARM (Installer.swift, GPL-2.0-only) and changed since; see README "Credits".
 //! The AnyPS5 toolkit on this PC: finding it, checking it, getting a new release, and the
 //! version string unlocked copies are compared against (PORT.md 6.3).
 //!
