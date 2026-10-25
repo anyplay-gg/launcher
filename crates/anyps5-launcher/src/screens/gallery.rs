@@ -14,7 +14,10 @@
 //!                           online-party|online-party-picker|online-messages|online-conversation|
 //!                           online-message|online-request|
 //!                           online-party-voice|online-party-member|online-voice|online-voice-key|
-//!                           online-voice-devices|online-voice-denied
+//!                           online-voice-devices|online-voice-denied|
+//!                           online-screen-ready|online-screen-hosting|online-screen-offer|
+//!                           online-screen-cannot|online-screen-watching|online-screen-stalled|
+//!                           online-screen-home
 //!                           online-muted|online-restriction|online-paused|online-banned
 //!                 [--screenshot=out.png] [--size=WxH] [--tr]
 //! ```
@@ -154,6 +157,20 @@ pub enum OnlineLook {
     VoiceDevices,
     /// The net service switched voice off: the system refused the microphone.
     VoiceDenied,
+    /// Share screen, party page: a game runs and the player may share it.
+    ScreenReady,
+    /// The player shares: Lumen watches directly, Kit through a relay and loses some picture.
+    ScreenHosting,
+    /// Lumen shares a game; the player may watch.
+    ScreenOffer,
+    /// Lumen shares, but this build cannot show a stream.
+    ScreenCannot,
+    /// The player watches Lumen's stream.
+    ScreenWatching,
+    /// The player watches, and no picture has come for a while.
+    ScreenStalled,
+    /// Home while a stream is on offer.
+    ScreenHome,
     /// Home while a moderator's mute runs.
     Muted,
     /// The page of that mute: what, why, until when, how to appeal.
@@ -232,6 +249,13 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "online-voice-key" => ScreenPage::Online(OnlineLook::VoiceKey),
         "online-voice-devices" => ScreenPage::Online(OnlineLook::VoiceDevices),
         "online-voice-denied" => ScreenPage::Online(OnlineLook::VoiceDenied),
+        "online-screen-ready" => ScreenPage::Online(OnlineLook::ScreenReady),
+        "online-screen-hosting" => ScreenPage::Online(OnlineLook::ScreenHosting),
+        "online-screen-offer" => ScreenPage::Online(OnlineLook::ScreenOffer),
+        "online-screen-cannot" => ScreenPage::Online(OnlineLook::ScreenCannot),
+        "online-screen-watching" => ScreenPage::Online(OnlineLook::ScreenWatching),
+        "online-screen-stalled" => ScreenPage::Online(OnlineLook::ScreenStalled),
+        "online-screen-home" => ScreenPage::Online(OnlineLook::ScreenHome),
         "online-muted" => ScreenPage::Online(OnlineLook::Muted),
         "online-restriction" => ScreenPage::Online(OnlineLook::Restriction),
         "online-paused" => ScreenPage::Online(OnlineLook::Paused),
@@ -394,6 +418,7 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         sample_social(&mut state);
     }
     sample_voice(&mut state, look);
+    sample_screen(&mut state, look);
     if matches!(
         look,
         OnlineLook::Muted | OnlineLook::Restriction | OnlineLook::Paused
@@ -499,6 +524,85 @@ fn sample_voice(state: &mut anyps5_core::online::Online, look: OnlineLook) {
             link: Some(anyps5_core::online::Link::Relay),
         },
     ];
+}
+
+/// Share screen over the invented party: Lumen and Kit are the other two members.
+fn sample_screen(state: &mut anyps5_core::online::Online, look: OnlineLook) {
+    use anyps5_core::online::api::AccountId;
+    use anyps5_core::online::control::{
+        Link, ScreenHosting, ScreenOffer, ScreenPhase, ScreenStats, ScreenViewer, ScreenWatching,
+    };
+    let stats = ScreenStats {
+        width: 1920,
+        height: 1080,
+        fps: 60,
+        kbps: 8000,
+    };
+    let offer = vec![ScreenOffer {
+        account: AccountId(2),
+        title: NAMES[1].into(),
+        link: Some(Link::Direct),
+    }];
+    let watching = |phase| ScreenWatching {
+        account: AccountId(2),
+        title: NAMES[1].into(),
+        phase,
+        link: Some(Link::Direct),
+        rtt_ms: Some(24),
+        stats,
+        shown_fps: 60,
+    };
+    let (can_share, can_watch, hosting, offers, watching) = match look {
+        OnlineLook::ScreenReady => (true, true, None, vec![], None),
+        OnlineLook::ScreenHosting => (
+            true,
+            true,
+            Some(ScreenHosting {
+                phase: ScreenPhase::Live,
+                title: NAMES[1].into(),
+                codec: None,
+                stats,
+                viewers: vec![
+                    ScreenViewer {
+                        account: AccountId(2),
+                        watching: true,
+                        link: Some(Link::Direct),
+                        rtt_ms: Some(24),
+                        loss_percent: 0,
+                    },
+                    ScreenViewer {
+                        account: AccountId(4),
+                        watching: true,
+                        link: Some(Link::Relay),
+                        rtt_ms: Some(80),
+                        loss_percent: 8,
+                    },
+                ],
+            }),
+            vec![],
+            None,
+        ),
+        OnlineLook::ScreenOffer | OnlineLook::ScreenHome => (false, true, None, offer, None),
+        OnlineLook::ScreenCannot => (false, false, None, offer, None),
+        OnlineLook::ScreenWatching => (false, true, None, offer, Some(watching(ScreenPhase::Live))),
+        OnlineLook::ScreenStalled => (
+            false,
+            true,
+            None,
+            offer,
+            Some(watching(ScreenPhase::Stalled)),
+        ),
+        _ => return,
+    };
+    state.apply(anyps5_core::online::Line::Output(
+        anyps5_core::online::Output::Event(anyps5_core::online::Event::Screen {
+            can_share,
+            can_watch,
+            hosting,
+            offers,
+            watching,
+        }),
+    ));
 }
 
 /// An invented party of three, a session, four conversations and a stranger who wrote first.
@@ -1341,7 +1445,14 @@ impl ScreenGallery {
                     OnlineLook::PartyPicker => {
                         self.online_panel.show_page(Page::PartyPicker, &data);
                     }
-                    OnlineLook::PartyVoice => self.online_panel.show_page(Page::Party, &data),
+                    OnlineLook::PartyVoice
+                    | OnlineLook::ScreenReady
+                    | OnlineLook::ScreenHosting
+                    | OnlineLook::ScreenOffer
+                    | OnlineLook::ScreenCannot
+                    | OnlineLook::ScreenWatching
+                    | OnlineLook::ScreenStalled => self.online_panel.show_page(Page::Party, &data),
+                    OnlineLook::ScreenHome => self.online_panel.show_page(Page::Home, &data),
                     OnlineLook::PartyMember => self.online_panel.show_page(
                         Page::PartyMember(anyps5_core::online::api::AccountId(2)),
                         &data,

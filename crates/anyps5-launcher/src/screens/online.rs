@@ -3,6 +3,7 @@
 //! and asks; the net service acts, and the host turns the panel's actions into commands for it.
 
 mod restriction;
+pub mod screen;
 mod social;
 mod voice;
 
@@ -11,7 +12,9 @@ pub use voice::talk_key;
 use std::collections::BTreeSet;
 
 use anyps5_core::online::api::{AccountId, Audience, Count, ReportReason};
-use anyps5_core::online::{self, Cloud, DeviceKind, Link, Online, Pending, Purpose, VoiceMode};
+use anyps5_core::online::{
+    self, Cloud, DeviceKind, Link, Online, Pending, Purpose, ScreenCommand, VoiceMode,
+};
 use egui::{Color32, Context};
 
 use crate::screens::online_strings::OnlineText as T;
@@ -107,6 +110,8 @@ pub enum OnlineAction {
     RefreshVoiceDevices,
     PeerVolume(AccountId, u16),
     PeerMute(AccountId, bool),
+    /// Share screen: start, stop, watch a member's stream, leave it.
+    Screen(ScreenCommand),
     Close,
 }
 
@@ -557,6 +562,7 @@ impl OnlinePanel {
         if self.social_run(row, data, actions)
             || self.restriction_run(row, data, actions)
             || self.voice_run(row, data, actions)
+            || self.screen_run(row, data, actions)
         {
             return;
         }

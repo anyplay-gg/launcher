@@ -16,6 +16,7 @@
 
 mod restrictions;
 mod runs;
+mod screen;
 mod social;
 mod voice;
 
@@ -34,6 +35,7 @@ pub use anyplay_control::{
 use api::{Account, AccountId, Conversation, FriendLists, Invitation, Message, PartyInvitation};
 pub use restrictions::{Blocked, Restrictions, in_force};
 pub use runs::Runs;
+pub use screen::{Screen, ScreenCommand, ScreenNotice};
 pub use social::{Fetch, Ingested, KEPT, Listed, Social, others, plain, read_by_other, snippet};
 pub use voice::{
     DEFAULT_KEY, DEFAULT_PERCENT, Devices, Hardware, MAX_PERCENT, Mic, PERCENT_STEP, PeerPrefs,
@@ -332,6 +334,11 @@ pub enum Purpose {
     PushToTalk,
     VoiceDevices,
     SetVoiceDevice(DeviceKind),
+    // Share screen
+    ScreenStart,
+    ScreenStop,
+    ScreenWatch(AccountId),
+    ScreenLeave,
 }
 
 /// The game's invitation dialog, waiting for the player to pick friends.
@@ -370,6 +377,8 @@ pub enum Notice {
     MessageRequest(Conversation),
     /// The net service could not open the sound devices and switched voice off.
     VoiceFailed(Problem),
+    /// A party member started or ended a shared screen, or the player's own ended.
+    Screen(ScreenNotice),
     /// A moderator limited the account while the launcher ran.
     Restricted(control::Restriction),
     /// The account was banned and is signed out.
@@ -393,6 +402,8 @@ pub struct Online {
     pub social: Social,
     /// Party voice: what the player chose and what the service reports.
     pub voice: Voice,
+    /// Share screen: what the player shares, what is offered to them and what they watch.
+    pub screen: Screen,
     /// What limits the account: mutes, a new account's limits, a ban.
     pub restrictions: Restrictions,
     /// Friends' trophy counts by grade; `None` when they hide them from the player.
@@ -927,6 +938,7 @@ impl Online {
                     self.invitations.clear();
                     self.social = Social::default();
                     self.voice.reset();
+                    self.screen.reset();
                     self.session = None;
                     self.cards.clear();
                     self.privacy = None;
@@ -1022,6 +1034,13 @@ impl Online {
             Event::Voice {
                 state, me, peers, ..
             } => self.voice_event(state, me, peers),
+            Event::Screen {
+                can_share,
+                can_watch,
+                hosting,
+                offers,
+                watching,
+            } => notices.extend(self.screen_event(can_share, can_watch, hosting, offers, watching)),
             Event::Unknown => {}
         }
         notices

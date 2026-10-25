@@ -38,6 +38,7 @@ pub mod log;
 pub mod onboarding;
 pub mod online;
 pub mod online_restriction_strings;
+pub mod online_screen_strings;
 pub mod online_social_strings;
 pub mod online_strings;
 pub mod online_voice_strings;

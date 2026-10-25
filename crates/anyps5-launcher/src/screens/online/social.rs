@@ -107,6 +107,7 @@ impl OnlinePanel {
                 ),
             ));
         }
+        super::screen::home_row(data, rows);
         // One number for the button, this row and the page: every message not read yet.
         let unread = social.unread_total();
         let requests = social.requests().len();
@@ -258,6 +259,7 @@ impl OnlinePanel {
                     Row::action("voiceSettings", V::VoiceSettings.text(language))
                         .icon(Icon::GEAR_SIX),
                 );
+                super::screen::rows(data, rows);
                 rows.push(Row::caption("membersCaption", t(S::PartyMembers)).group_start());
                 let voice = &online.voice;
                 let voice_on = voice.enabled();
