@@ -267,3 +267,7 @@ pub fn pc_name() -> String {
 
 #[cfg(test)]
 mod tests;
+
+/// The LudusCtrl test phone and its conformance checks (test support only).
+#[cfg(test)]
+pub(crate) mod ludusctrl_testphone;

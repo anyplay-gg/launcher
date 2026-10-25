@@ -72,3 +72,9 @@ windows = { workspace = true, features = [
 tempfile.workspace = true
 tiny_http = "0.12"
 ed25519-dalek = "3"
+# The LudusCtrl test phone (src/remote/ludusctrl_testphone): P-256 ECDH, HKDF and HMAC. p256 0.14,
+# because 0.13 pulls crypto-bigint 0.5 (RUSTSEC-2026-0387); its digest 0.11 needs sha2 0.11.
+p256 = { version = "0.14", default-features = false, features = ["ecdh"] }
+hkdf = "0.13"
+hmac = "0.13"
+sha2-0-11 = { package = "sha2", version = "0.11" }
