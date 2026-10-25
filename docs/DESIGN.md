@@ -194,7 +194,7 @@ Screen paddings:
 | Screen | Padding |
 |---|---|
 | Home top bar | horizontal 64, top 34 |
-| Home tile row | top 34 below the top bar; leading 64 |
+| Home tile row | top 34 below the top bar; leading 64 (92 from the second game on, see Tile row in 3.7) |
 | Home hero info | horizontal 72 |
 | Home hint bar | horizontal 64, vertical 28 |
 | Onboarding | horizontal 110, vertical 80 |
@@ -367,7 +367,7 @@ key..." pulse, the banner pop.
 | # | What | Original spec | Port |
 |---|---|---|---|
 | 1 | Tile focus: scale/ring/shadow of the selected tile | `Motion.focus` on `focused` | spring focus; ring alpha 0 -> 0.95, glow 0 -> 0.45, shadow r10 -> 22 |
-| 2 | Tile row move on selection change | `Motion.layout` on `selected` | per tile spring layout on x, y offset, size (see 5.3); previous tiles fade to 0 opacity as they leave left |
+| 2 | Tile row move on selection change | `Motion.layout` on `selected` | per tile spring layout on x, y offset, size (see 5.3); the game before the selected one stays at 0.4 opacity, the ones before it fade to 0 as they leave left |
 | 3 | Tile size 118 <-> 176 | `Motion.layout` on `size` | spring layout on a `size` scalar (animate size, not scale; text is outside the tile) |
 | 4 | Hero info swap on game change | `.id(game.id)`, insertion opacity + y offset 14, removal opacity, `Motion.layout` | new hero: spring layout 0 -> 1 on opacity (no travel: the hero changes on every arrow press); old hero (2026-10-25): opacity 1 -> 0 on `Motion.exit` (easeOut 0.18 s), quicker than the arriving spring: it is under 0.3 when the new one is half in and the two together never dip below 0.6 of one title (test `the_hero_pair_never_dips_and_the_old_one_leaves_first`) |
 | 5 | Tile-row name label | opacity transition, `Motion.layout` | opacity spring layout |
@@ -409,8 +409,8 @@ Animations 1, 10-15 can share one helper: `focus_t: Spring` per focusable widget
 ## 3. Animated theme backgrounds
 
 Original: `BackgroundRenderer.swift`, one Metal fragment shader with three theme functions, compiled at start. It renders at
-**half the physical pixel size** (`drawableSize = bounds * backingScale * 0.5`) at 60 fps on the Mac, is soft by design, and leaves the GPU to
-the games. The launcher draws the idle backdrop and the artwork drift at a target of about 30 Hz (`IDLE_REPAINT`, 30 ms, meant to land on every second vsync of a 60 Hz display; not yet measured on a real window); the clock advances by real time, so the drift speed is the same.
+**half the physical pixel size** (`drawableSize = bounds * backingScale * 0.5`) at 60 fps, is soft by design, and leaves the GPU to
+the games.
 
 ### 3.1 Driver
 
@@ -660,6 +660,9 @@ The launcher keeps the port's structure but trims what read as noise next to the
 - **Tile row.** The selected tile no longer carries its name beside it (the hero title shows it,
   the state line moves above the title), so the row closes up (`TILE_LABEL_COLUMN = 0`). Small
   tiles share the large tile's centre line. Only the selected tile shows the locked badge and dim.
+  From the second game on the row moves 28 dp right (`TILE_PEEK_SHIFT`) and the game before the
+  selected one stays on screen at 0.4 opacity (`TILE_PEEK_OPACITY`), partly past the window edge;
+  it can be clicked to select it. On the first game the row sits at `leading` as before.
 - **Hero.** One left edge with the top bar (`HERO_X = 64`). The four boxed info cards become a
   plain facts line (Size, Title ID, Version: 13 dp tracked overline over a 17 dp value, 48 dp
   apart, no card). The status card is gone; the state stands above the title. Switching games
@@ -706,9 +709,9 @@ The launcher keeps the port's structure but trims what read as noise next to the
   The launch splash's explanation wraps at 460 dp, so it never ends on a lone word. The onboarding
   theme names share one baseline under the resting cards; focus grows the card, not the label.
 - **Toolkit channels, notes and recommendations.** The Toolkit page has one `Channel` choice
-  (Stable, AnyPlay Engine, Pinned, Local Build: the choice steps one entry at a time and Local Build opens a folder picker, so it stays last and every other channel is reachable without it) and shows only the rows of that channel: stable has the update
+  (Stable, Pinned, Local Build) and shows only the rows of that channel: stable has the update
   toggle and "Check Now" (its detail line carries the status or the last check), pinned has a
-  `Version` choice over the last ten releases and no update, local has the folder row, and AnyPlay Engine has the update toggle and "Check Now" like stable, with the day the build was made hanging under the version row ("Built on 2026-10-25"; gallery scenes `toolkit-engine`, `toolkit-engine-update`) and no "What's New" (a nightly build has commit messages, not notes). Choosing it downloads the nightly build when none is installed; "Install the Update" fetches a newer one, checked against the release's checksum list, and a refusal is said in a toast. "What's New"
+  `Version` choice over the last ten releases and no update, local has the folder row. "What's New"
   opens the notes of the release waiting to be installed, else of the installed one, in one
   full-screen panel: header with release, date and count, Highlights (`feat` and `perf` by area,
   the seven busiest areas folded, the rest as "Other areas"), then Everything. Rows are 44 dp, drawn
@@ -775,11 +778,11 @@ The launcher keeps the port's structure but trims what read as noise next to the
   GPU ready": 571 and 600 ms before (2200 ms on the first run), 369 to 460 ms after (530 ms first
   run). The pipelines take 130 to 170 ms, the first frame about 60 ms. A focused, idle home screen
   used 16.5 % of a core and 30 % GPU (58 threads) before, 11 % and 15 % (26 threads) after; the
-  backdrop still drew at 60 Hz while focused then (it draws at about 30 Hz since the idle-rate change; the figures above come from the demo). A window without focus, and a game
+  backdrop is untouched and still draws at 60 Hz while focused. A window without focus, and a game
   running, stop all drawing (0.2 to 2 % of a core). The gamepad thread polls every 100 ms while no
   pad is connected (4 ms with one). `ANYPS5_GPU=dx12|vulkan|both` and `ANYPS5_POWER=high` undo the
-  choice for diagnosis; the log carries `startup t=...ms <step>` lines and the launcher an `idle ...
-  frames/s` line every 10 s (the window restarts after a gap, so the first line after a refocus is a true rate). The demo no longer forces a repaint every frame (it idled at 40 % of a
+  choice for diagnosis; the log carries `startup t=...ms <step>` lines and the demo an `idle ...
+  frames/s` line every 5 s. The demo no longer forces a repaint every frame (it idled at 40 % of a
   core, unlike the launcher).
 
 ### 3.8 A toolkit for one game
@@ -1059,12 +1062,13 @@ one centre line, the clock's digits included. (S-home.)
 **Tile row** (height `176 + 10`, leading 64). All tiles are in one layer; for tile `i` with `offset = i - selected`:
 
 ```
-x = offset < 0 : 64 + offset * (118 + 16)            // tiles left of the selection sit off to the left (opacity 0)
-    offset == 0: 64
-    offset  > 0: 64 + 176 + 16 + 300 + (offset - 1) * (118 + 16)     // after the 300-wide label column
+leading = 64 + (selected > 0 ? 28 : 0)               // TILE_PEEK_SHIFT: the row moves right past the first game
+x = offset < 0 : leading + offset * (118 + 16)       // the game before the selection stays visible, partly past the window edge
+    offset == 0: leading
+    offset  > 0: leading + 176 + 16 + 300 + (offset - 1) * (118 + 16)     // after the 300-wide label column
 y = selected ? 0 : (176 - 118) * 0.18               // small tiles hang 10.44 lower
 size = selected ? 176 : 118
-opacity = offset < 0 ? 0 : 1
+opacity = offset == -1 ? 0.4 : offset < -1 ? 0 : 1   // TILE_PEEK_OPACITY for the previous game
 ```
 
 Selected tile has the focus ring only while focus is on the tiles and no overlay is open. Next to the selected tile: label column
@@ -2381,7 +2385,7 @@ While a game runs, the launcher can keep its last seconds and save them as a vid
 
 - **Immediate mode with retained animation state.** Keep a map `widget id -> Spring` (in `ctx.memory` or the app struct); call
   `ctx.request_repaint()` while any spring or timeline is active, `request_repaint_after(...)` for timed items (clock minute, splash
-  second tick, toast and banner timers) and nothing when idle with the background paused. While only the shader animates, repaint every 30 ms (target about 30 fps, not yet measured); springs, fades and input still draw at the display rate.
+  second tick, toast and banner timers) and nothing when idle with the background paused. While the shader animates, cap at 60 fps.
 - **One command pipeline.** Translate egui key events, wheel and `gilrs` events into the seven commands (section 6) in a single
   function that is their only consumer; do not rely on egui's keyboard focus traversal (draw focus from the model: `HomeFocus`,
   `panelRow`, ...). Text fields are the only widgets that see raw keys.
