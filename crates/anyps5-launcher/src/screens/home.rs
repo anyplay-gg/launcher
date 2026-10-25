@@ -486,7 +486,7 @@ fn profile_button(
         painter.circle_filled(dot, 6.0 * s, ring);
         if profile.appearing.is_some() {
             // Online for the player, offline for the others: a ring, not the accent's dot.
-            painter.circle_stroke(dot, 3.0 * s, egui::Stroke::new(1.5 * s, white(0.78)));
+            painter.circle_stroke(dot, 3.4 * s, egui::Stroke::new(1.5 * s, white(0.9)));
         } else {
             painter.circle_filled(dot, 4.0 * s, accent);
         }

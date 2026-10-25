@@ -247,6 +247,10 @@ fn the_sides_carry_the_clouds_numbers_and_nothing_else() {
     assert_eq!(ready.you.points_text, "70 points");
     assert_eq!(ready.you.game_points_text, "70 points in this game");
     assert_eq!(ready.you.level_text, "Level 1");
+    assert_eq!(
+        ready.you.label,
+        "You: level 1, 70 points, 1 Gold, 1 Bronze, 70 points in this game"
+    );
     assert_eq!(ready.them.name, "Lumen");
     assert_eq!(ready.them.grades, [0, 0, 0, 1]);
     assert_eq!(ready.them.points_text, "10 points");

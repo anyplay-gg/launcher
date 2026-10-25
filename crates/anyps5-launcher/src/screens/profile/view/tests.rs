@@ -404,7 +404,11 @@ fn the_own_profile_comes_from_this_pc() {
             .iter()
             .map(|a| a.press.clone())
             .collect::<Vec<_>>(),
-        [Press::EditProfile, Press::FriendsOnline]
+        [
+            Press::EditProfile,
+            Press::FriendsOnline,
+            Press::AppearOffline(true)
+        ]
     );
     let figures: Vec<(&str, &str)> = ready
         .stats

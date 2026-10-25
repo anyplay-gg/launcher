@@ -34,8 +34,8 @@ pub enum CompareText {
     HiddenNote,
     EmptyTitle,
     EmptyNote,
-    /// The accessible name of a column: `%@` handle, `%@` level, `%@` points in all, `%@` points in
-    /// this game.
+    /// The accessible name of a column: `%@` handle, `%@` level, `%@` points in all, `%@` the
+    /// game's trophies by grade, `%@` points in this game.
     SideName,
     /// The accessible name of a row: `%@` trophy, `%@` your state, `%@` handle, `%@` their state.
     RowName,
@@ -68,7 +68,7 @@ impl CompareText {
             CompareText::HiddenNote => "%@ does not share trophies with you.",
             CompareText::EmptyTitle => "Nothing to compare yet",
             CompareText::EmptyNote => "Neither of you has earned a trophy in this game.",
-            CompareText::SideName => "%@: level %@, %@ points, %@ points in this game",
+            CompareText::SideName => "%@: level %@, %@ points, %@, %@ points in this game",
             CompareText::RowName => "%@. %@: %@. %@: %@",
             CompareText::EarnedOn => "Earned %@",
             CompareText::ScreenName => "Trophies of %@ compared with %@",
@@ -93,11 +93,11 @@ impl CompareText {
             CompareText::OfflineNote => "Kupalar tekrar çevrimiçi olunca karşılaştırılır.",
             CompareText::FailedTitle => "Karşılaştırma yüklenemedi",
             CompareText::FailedNote => "Bağlantını kontrol edip tekrar dene.",
-            CompareText::HiddenTitle => "Kupaları gizli",
+            CompareText::HiddenTitle => "Onun kupaları gizli",
             CompareText::HiddenNote => "%@ kupalarını seninle paylaşmıyor.",
             CompareText::EmptyTitle => "Henüz karşılaştıracak bir şey yok",
             CompareText::EmptyNote => "İkinizin de bu oyunda kazandığı bir kupa yok.",
-            CompareText::SideName => "%@: seviye %@, %@ puan, bu oyunda %@ puan",
+            CompareText::SideName => "%@: seviye %@, %@ puan, %@, bu oyunda %@ puan",
             CompareText::RowName => "%@. %@: %@. %@: %@",
             CompareText::EarnedOn => "%@ tarihinde kazanıldı",
             CompareText::ScreenName => "%@ kupaları, %@ ile karşılaştırma",

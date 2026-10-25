@@ -525,7 +525,7 @@ impl CompareScreen {
         row: &Row,
         set: Option<&TrophySet>,
         language: Language,
-        accent: Color32,
+        _accent: Color32,
         focused: bool,
         index: usize,
     ) -> (Rect, Option<Rect>) {
@@ -641,7 +641,7 @@ impl CompareScreen {
                         Align2::CENTER_CENTER,
                         Icon::CHECK_CIRCLE.glyph(),
                         Icon::CHECK_CIRCLE.font(17.0, true),
-                        accent,
+                        white(0.88),
                     );
                     text::paint(
                         &painter,
@@ -738,6 +738,18 @@ impl CompareScreen {
             ),
             Body::Ready(_) => return,
         };
+        // A screen reader hears the words of the state, which are only painted.
+        let block_rect = Rect::from_center_size(
+            pos2(area.center().x, header.max.y + 120.0),
+            vec2(560.0, 240.0),
+        );
+        let said = if note.is_empty() {
+            title.clone()
+        } else {
+            format!("{title}. {note}")
+        };
+        ui.interact(block_rect, Id::unique("compare-state"), Sense::hover())
+            .widget_info(|| WidgetInfo::labeled(Role::Label, true, said.as_str()));
         let failed = matches!(model.body, Body::Failed);
         let block =
             56.0 + 18.0 + 30.0 + 8.0 + 44.0 + if failed { 24.0 + BUTTON_HEIGHT } else { 0.0 };

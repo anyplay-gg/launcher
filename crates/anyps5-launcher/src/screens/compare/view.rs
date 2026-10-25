@@ -248,6 +248,15 @@ fn side(inputs: &Inputs<'_>, side: &CompareSide, own: bool) -> Side {
     let game_points = format::grouped(u64::from(side.title.points), language);
     let game_points_text = C::GamePoints.format(language, &[Arg::Str(&game_points)]);
     let counts = side.title.counts;
+    let grades = [counts.platinum, counts.gold, counts.silver, counts.bronze];
+    // The grades in words, for a screen reader: the glyphs alone say them by colour.
+    let by_grade: Vec<String> = Grade::ALL
+        .into_iter()
+        .zip(grades)
+        .filter(|(_, n)| *n > 0)
+        .map(|(grade, n)| format!("{n} {}", grade.title(language)))
+        .collect();
+    let by_grade = by_grade.join(", ");
     Side {
         account,
         label: C::SideName.format(
@@ -256,6 +265,7 @@ fn side(inputs: &Inputs<'_>, side: &CompareSide, own: bool) -> Side {
                 Arg::Str(&name),
                 Arg::Str(&level.level.to_string()),
                 Arg::Str(&points),
+                Arg::Str(&by_grade),
                 Arg::Str(&game_points),
             ],
         ),
@@ -266,7 +276,7 @@ fn side(inputs: &Inputs<'_>, side: &CompareSide, own: bool) -> Side {
         fraction: online::level_progress(level),
         level_text,
         points_text,
-        grades: [counts.platinum, counts.gold, counts.silver, counts.bronze],
+        grades,
         game_points_text,
     }
 }
