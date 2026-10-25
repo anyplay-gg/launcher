@@ -34,6 +34,19 @@ pub fn fake_binary() -> &'static Path {
     })
 }
 
+/// Install the immutable test executable without reopening its inode for writing on Linux.
+/// Concurrent copy-then-spawn fixtures can otherwise fail with ETXTBSY ("Text file busy").
+/// Sidecar settings remain private to each test directory; no test writes into this binary.
+pub fn install_fake_binary(destination: &Path) {
+    let source = fake_binary();
+    #[cfg(target_os = "linux")]
+    if fs::hard_link(source, destination).is_ok() {
+        return;
+    }
+    // Other hosts and temporary folders on another volume retain the copy path.
+    fs::copy(source, destination).expect("install fixture executable");
+}
+
 pub const MINGW: &[&str] = anyps5_core::platform::Os::current().runtime_libs();
 
 pub fn write(path: &Path, bytes: &[u8]) {
@@ -49,11 +62,7 @@ pub fn configure_fake(dir: &Path, lines: &[&str]) {
 /// A toolkit folder whose relinker is the fake.
 pub fn make_toolkit(root: &Path, relinker_settings: &[&str]) -> anyps5_core::toolkit::Toolkit {
     fs::create_dir_all(root.join("libs")).unwrap();
-    fs::copy(
-        fake_binary(),
-        root.join(anyps5_core::platform::Os::current().relinker_file()),
-    )
-    .unwrap();
+    install_fake_binary(&root.join(anyps5_core::platform::Os::current().relinker_file()));
     configure_fake(root, relinker_settings);
     if cfg!(target_os = "macos") {
         write(&root.join("vulkan/libMoltenVK.dylib"), b"fixture runtime");

@@ -24,7 +24,7 @@ fn setup(settings: &[&str]) -> Setup {
     let dir = tempfile::tempdir().unwrap();
     let copy = dir.path().join("PPSA00001-abc");
     fs::create_dir_all(&copy).unwrap();
-    fs::copy(fake_binary(), copy.join(EXECUTABLE)).unwrap();
+    install_fake_binary(&copy.join(EXECUTABLE));
     configure_fake(&copy, settings);
     Setup {
         log: dir.path().join("logs/PPSA00001.log"),
