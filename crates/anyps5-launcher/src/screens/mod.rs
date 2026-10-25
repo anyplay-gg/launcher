@@ -29,6 +29,7 @@ pub mod banner;
 pub mod controls;
 pub mod convert;
 pub mod dialogs;
+pub mod discord_strings;
 pub mod format;
 pub mod gallery;
 pub mod gallery_feed;

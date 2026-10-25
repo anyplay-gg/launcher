@@ -19,6 +19,7 @@
 pub mod avatars;
 pub mod clock;
 pub mod core_pipeline;
+mod discord;
 pub mod links;
 pub mod model;
 pub mod online;
@@ -37,7 +38,7 @@ pub mod toolkit;
 pub mod window_chrome;
 
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use anyps5_core::discord::Presence;
 use anyps5_core::paths::{AppPaths, GameId};
@@ -144,8 +145,10 @@ pub struct LauncherApp {
     /// Show the running game on Discord (real launches only; previews and tests never touch it).
     discord: bool,
     presence: Option<Presence>,
-    /// A game is on Discord right now.
-    presence_shown: bool,
+    /// The game that runs, as far as Discord is told of it (see `discord.rs`).
+    playing: Option<discord::Played>,
+    /// What Discord shows right now.
+    shown: Option<anyps5_core::discord::Playing>,
     start_screen: screens::start::StartScreen,
     links: links::LinkState,
     scan_on_start: bool,
@@ -189,7 +192,8 @@ impl LauncherApp {
             intro: false,
             discord: false,
             presence: None,
-            presence_shown: false,
+            playing: None,
+            shown: None,
             start_screen: screens::start::StartScreen::default(),
             links: links::LinkState::default(),
             scan_on_start: config.scan_on_start,
@@ -282,6 +286,7 @@ impl LauncherApp {
         }
         self.poll_links();
         self.run_effects(ctx);
+        self.sync_discord();
         self.watch_trophies();
 
         self.services.set_busy(self.model.busy());
@@ -360,7 +365,7 @@ impl LauncherApp {
 
     /// Takes the game off Discord if it is shown there.
     fn clear_presence(&mut self) {
-        if std::mem::take(&mut self.presence_shown)
+        if self.shown.take().is_some()
             && let Some(presence) = &self.presence
         {
             presence.clear();
@@ -492,13 +497,12 @@ impl LauncherApp {
                 }
             }
             Effect::Presence(Some(game)) if self.discord => {
-                let cache = self.model.paths.cache_dir().join("discord-games.json");
-                self.presence
-                    .get_or_insert_with(|| Presence::spawn(cache))
-                    .playing(&game, SystemTime::now());
-                self.presence_shown = true;
+                self.playing = Some(discord::Played::now(game));
             }
-            Effect::Presence(_) => self.clear_presence(),
+            Effect::Presence(_) => {
+                self.playing = None;
+                self.clear_presence();
+            }
             Effect::MinimizeWindow => ctx.send_viewport_cmd(ViewportCommand::Minimized(true)),
             Effect::RestoreWindow => {
                 ctx.send_viewport_cmd(ViewportCommand::Minimized(false));

@@ -18,6 +18,7 @@ use egui::{Align2, Color32, Context, Rect, Sense, Ui, UiBuilder, pos2, vec2};
 
 use crate::screens::convert;
 use crate::screens::dialogs;
+use crate::screens::discord_strings::DiscordText;
 use crate::screens::format::{abbreviate_path, home_dir};
 use crate::screens::rows::{self, Change, ListOptions, Row};
 use crate::screens::side::{Output, commands};
@@ -360,8 +361,24 @@ pub fn build_categories(
         )
         .detail(Extra::DiscordPresenceDetail.text(language))
         .icon(Icon::DISCORD_LOGO),
+    ];
+    // The button belongs to the status: without the status there is nothing to put it on.
+    if prefs.discord_presence {
+        behaviour.push(
+            Row::toggle(
+                "discordJoin",
+                DiscordText::Button.text(language),
+                prefs.discord_join_button,
+            )
+            .detail(DiscordText::ButtonDetail.text(language))
+            .icon(Icon::USER_PLUS),
+        );
+    }
+    behaviour.push(
         Row::toggle("hide", t(Key::HideWhilePlaying), prefs.hide_while_playing)
             .icon(Icon::EYE_SLASH),
+    );
+    behaviour.push(
         Row::toggle(
             "hiddenTrophies",
             Extra::ShowHiddenTrophies.text(language),
@@ -369,7 +386,7 @@ pub fn build_categories(
         )
         .detail(Extra::ShowHiddenTrophiesDetail.text(language))
         .icon(Icon::TROPHY),
-    ];
+    );
     // The registration lives in the registry, so only Windows has the row.
     if cfg!(windows) {
         let detail = match env.links {
@@ -689,6 +706,10 @@ pub fn apply_value(prefs: &mut Preferences, change: &Change) -> bool {
         Change::Toggle { row: "sounds", on } => prefs.sounds = *on,
         Change::Toggle { row: "music", on } => prefs.music = *on,
         Change::Toggle { row: "discord", on } => prefs.discord_presence = *on,
+        Change::Toggle {
+            row: "discordJoin",
+            on,
+        } => prefs.discord_join_button = *on,
         Change::Toggle { row: "hide", on } => prefs.hide_while_playing = *on,
         Change::Toggle {
             row: "hiddenTrophies",
@@ -1368,6 +1389,29 @@ mod tests {
     }
 
     #[test]
+    fn the_join_button_row_sits_under_the_status_and_follows_it() {
+        let mut prefs = Preferences::first_run();
+        assert!(
+            prefs.discord_presence && prefs.discord_join_button,
+            "on by default"
+        );
+        let shown = build_categories(&prefs, &env(None, UpdateState::Unknown), Language::English);
+        let rows = ids(&shown, Category::Behaviour);
+        let status = rows.iter().position(|id| *id == "discord").unwrap();
+        assert_eq!(
+            rows[status + 1],
+            "discordJoin",
+            "right under the status row"
+        );
+        prefs.discord_presence = false;
+        let hidden = build_categories(&prefs, &env(None, UpdateState::Unknown), Language::English);
+        assert!(
+            !ids(&hidden, Category::Behaviour).contains(&"discordJoin"),
+            "no status, nothing to put a button on"
+        );
+    }
+
+    #[test]
     fn values_land_in_the_preferences() {
         let mut prefs = Preferences::first_run();
         assert!(apply_value(
@@ -1419,6 +1463,14 @@ mod tests {
             }
         ));
         assert!(prefs.show_hidden_trophies);
+        assert!(apply_value(
+            &mut prefs,
+            &Change::Toggle {
+                row: "discordJoin",
+                on: false
+            }
+        ));
+        assert!(!prefs.discord_join_button);
         assert!(apply_value(
             &mut prefs,
             &Change::Choice {

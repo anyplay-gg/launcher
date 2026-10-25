@@ -4,14 +4,18 @@
 //! A link only moves the player to a place: it selects a game, focuses a button, opens a page of
 //! the settings. It never starts a game or an unlock; the player presses the button.
 
+use std::time::{Duration, Instant};
+
 use anyps5_core::library::{self, Game};
 use anyps5_core::links::{self, Link, SettingsPage};
+use anyps5_core::online::{Command, Purpose, Status};
 use anyps5_core::paths::GameId;
 
 use crate::app::LauncherApp;
 use crate::app::model::{Effect, Model};
 use crate::app::overlay::Overlay;
 use crate::instance::Inbox;
+use crate::screens::discord_strings::DiscordText;
 use crate::screens::strings::Extra;
 use crate::ui::focus::HomeFocus;
 use crate::ui::i18n::Arg;
@@ -21,11 +25,23 @@ use crate::ui::sound::Cue;
 /// How many links may wait for the library; a flood of launches does not pile up.
 const MAX_PENDING: usize = 8;
 
+/// How long a join link waits for the player to be online, signed in or not.
+const JOIN_PATIENCE: Duration = Duration::from_secs(30 * 60);
+
+/// A join code that waits for the net service. Neither the code nor the link is ever logged.
+pub struct JoinLink {
+    code: String,
+    since: Instant,
+    /// The player was asked to sign in.
+    told: bool,
+}
+
 /// The links of a launcher: where they come from and which wait.
 pub struct LinkState {
     inbox: Option<Inbox>,
     pending: Vec<Link>,
     scheme: String,
+    join: Option<JoinLink>,
 }
 
 impl Default for LinkState {
@@ -34,6 +50,7 @@ impl Default for LinkState {
             inbox: None,
             pending: Vec::new(),
             scheme: scheme(),
+            join: None,
         }
     }
 }
@@ -73,7 +90,7 @@ impl LauncherApp {
         };
         match links::parse_argument(argument, &self.links.scheme) {
             Ok(link) => {
-                tracing::info!("link: {link:?}");
+                tracing::info!("link: {}", loggable(&link));
                 if self.links.pending.len() < MAX_PENDING {
                     self.links.pending.push(link);
                 }
@@ -104,6 +121,7 @@ impl LauncherApp {
             let link = self.links.pending.remove(0);
             self.show_link(link);
         }
+        poll_join(&mut self.links.join, &mut self.model);
     }
 
     /// Settings need the first-run setup done; the others also need the library to be read.
@@ -111,7 +129,7 @@ impl LauncherApp {
         if !self.model.onboarded() {
             return false;
         }
-        matches!(link, Link::Settings(_))
+        matches!(link, Link::Settings(_) | Link::Join { .. })
             || self.model.prefs.games_folder.is_none()
             || (!self.model.scanning && (self.offline || self.model.library_loaded))
     }
@@ -121,6 +139,14 @@ impl LauncherApp {
             Link::Game { title_id } => self.model.show_game(&title_id),
             Link::Unlock { title_id } => self.model.show_unlock(&title_id),
             Link::Settings(page) => self.model.show_settings(page),
+            // A later link replaces an earlier one that still waits.
+            Link::Join { code } => {
+                self.links.join = Some(JoinLink {
+                    code,
+                    since: Instant::now(),
+                    told: false,
+                });
+            }
             Link::Open { path } => match library::inspect(&path) {
                 Some(game) => self.model.show_dump(&game),
                 None => {
@@ -128,6 +154,46 @@ impl LauncherApp {
                     self.model.toast(text, Icon::WARNING);
                 }
             },
+        }
+    }
+}
+
+/// A link as the log may show it: a join code is a secret of a sort and stays out.
+fn loggable(link: &Link) -> String {
+    match link {
+        Link::Join { .. } => "Join { .. }".to_owned(),
+        other => format!("{other:?}"),
+    }
+}
+
+/// Once per frame: redeems a waiting join code as soon as the player is online. Redeeming only
+/// asks the network for an invitation; the answer arrives like any other invitation and the
+/// player accepts or declines it (`OnlineService::answered`). Nobody joins by a link.
+///
+/// Not signed in, the player is taken to the sign-in page once, with a toast, and the code waits.
+pub fn poll_join(pending: &mut Option<JoinLink>, model: &mut Model) {
+    let Some(join) = pending else {
+        return;
+    };
+    if join.since.elapsed() > JOIN_PATIENCE {
+        *pending = None;
+        return;
+    }
+    if model.online.is_online() {
+        let join = pending.take().expect("checked above");
+        model
+            .online
+            .send(Purpose::JoinRedeem, Command::JoinRedeem { code: join.code });
+        return;
+    }
+    // A service that was told to resume the sign-in has not answered hello yet: wait for it.
+    let starting = model.online.status == Status::Running && model.online.cloud.is_none();
+    if !join.told && !model.online.is_signed_in() && !starting {
+        join.told = true;
+        let text = DiscordText::SignIn.text(model.language()).to_owned();
+        model.toast(text, Icon::USER_CIRCLE);
+        if model.overlay != Some(Overlay::Online) {
+            model.open(Overlay::Online);
         }
     }
 }
@@ -310,6 +376,106 @@ mod tests {
         assert_eq!(m.focus, HomeFocus::Tiles);
         assert!(m.toast.as_ref().is_some_and(|t| t.text.contains("already")));
         assert!(!starts_something(&m));
+    }
+
+    fn waiting(code: &str) -> Option<JoinLink> {
+        Some(JoinLink {
+            code: code.to_owned(),
+            since: Instant::now(),
+            told: false,
+        })
+    }
+
+    fn sign_in(m: &mut Model) {
+        use anyps5_core::online::api::AccountId;
+        use anyps5_core::online::{Cloud, Event, Line, Output, SignedIn};
+        m.online.apply(Line::Output(Output::Event(Event::State {
+            cloud: Cloud::Online,
+            account: Some(SignedIn {
+                id: AccountId(1),
+                handle: "Alec".into(),
+                email: "a@example.org".into(),
+            }),
+            pending: None,
+        })));
+        m.online.take_outbox();
+    }
+
+    #[test]
+    fn a_join_link_without_a_sign_in_opens_the_sign_in_and_keeps_the_code() {
+        let mut m = model();
+        let mut join = waiting("k3x9m2pqra");
+        poll_join(&mut join, &mut m);
+        assert_eq!(m.overlay, Some(Overlay::Online), "the sign-in page");
+        assert!(
+            m.toast
+                .as_ref()
+                .is_some_and(|t| t.text.contains("Sign in to AnyPlay"))
+        );
+        assert!(join.is_some(), "the code waits");
+        m.toast = None;
+        poll_join(&mut join, &mut m);
+        assert!(m.toast.is_none(), "the player is told once");
+        assert!(m.online.take_outbox().is_empty(), "nothing is sent offline");
+        assert!(!starts_something(&m));
+    }
+
+    #[test]
+    fn the_code_is_redeemed_after_the_sign_in_and_nothing_else_happens() {
+        let mut m = model();
+        let mut join = waiting("k3x9m2pqra");
+        poll_join(&mut join, &mut m);
+        sign_in(&mut m);
+        poll_join(&mut join, &mut m);
+        assert!(join.is_none());
+        let lines = m.online.take_outbox();
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("join_redeem"), "{lines:?}");
+        assert!(m.online.is_waiting(|p| *p == Purpose::JoinRedeem));
+        assert!(!starts_something(&m), "redeeming starts no game");
+    }
+
+    #[test]
+    fn a_signed_in_player_is_redeemed_at_once_without_a_detour() {
+        let mut m = model();
+        sign_in(&mut m);
+        let mut join = waiting("k3x9m2pqra");
+        poll_join(&mut join, &mut m);
+        assert!(join.is_none());
+        assert_eq!(m.overlay, None);
+        assert_eq!(m.online.take_outbox().len(), 1);
+    }
+
+    #[test]
+    fn a_resuming_net_service_is_waited_for() {
+        let mut m = model();
+        m.online.status = Status::Running;
+        let mut join = waiting("k3x9m2pqra");
+        poll_join(&mut join, &mut m);
+        assert_eq!(m.overlay, None, "no hello answered yet: no sign-in page");
+        assert!(m.toast.is_none() && join.is_some());
+    }
+
+    #[test]
+    fn an_old_join_link_is_dropped() {
+        let mut m = model();
+        let mut join = Some(JoinLink {
+            code: "k3x9m2pqra".into(),
+            since: Instant::now() - JOIN_PATIENCE - Duration::from_secs(1),
+            told: false,
+        });
+        poll_join(&mut join, &mut m);
+        assert!(join.is_none());
+        assert!(m.toast.is_none());
+    }
+
+    #[test]
+    fn the_log_never_shows_a_join_code() {
+        let link = Link::Join {
+            code: "k3x9m2pqra".into(),
+        };
+        assert!(!loggable(&link).contains("k3x9m2pqra"));
+        assert!(loggable(&Link::Settings(None)).contains("Settings"));
     }
 
     #[test]

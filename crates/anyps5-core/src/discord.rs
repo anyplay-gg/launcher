@@ -4,7 +4,9 @@
 //! started later is found on the next game.
 //!
 //! A game Discord knows (its public list of detectable applications) shows as itself, with
-//! AnyPS5 under it; any other game shows under the AnyPS5 application.
+//! AnyPlay under it; any other game shows under the AnyPlay application. A player who plays
+//! online gets "on AnyPlay", the size of the party and, when the network issued a join code, a
+//! "Join on AnyPlay" button (docs/DESIGN.md 7.4).
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -12,10 +14,30 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+/// Seconds since the epoch, as Discord's timestamps want them.
+pub fn unix_seconds(time: SystemTime) -> i64 {
+    time.duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
+}
+
 use serde_json::{Value, json};
 
-/// The AnyPS5 application in the Discord Developer Portal (shared with the macOS launcher).
-pub const ANYPS5_APPLICATION_ID: &str = "1562749843724566549";
+/// AnyPlay's own application in the Discord Developer Portal. (Until this switch the launcher
+/// shared the AnyPS5 application, `1562749843724566549`, with the macOS launcher.)
+pub const ANYPLAY_APPLICATION_ID: &str = "1563714917998133288";
+/// The large image of an activity shown under AnyPlay's application: an asset of that
+/// application, named by its key.
+const IMAGE_KEY: &str = "anyplay";
+const IMAGE_TEXT: &str = "AnyPlay";
+/// The buttons of an activity: the first opens the join link, the second tells a friend without
+/// the launcher where to get it. Discord shows two at most, each label up to 32 characters and
+/// each address up to 512, both over https.
+pub const JOIN_LABEL: &str = "Join on AnyPlay";
+pub const GET_LABEL: &str = "Get AnyPlay";
+pub const GET_URL: &str = "https://github.com/anyplay-gg/launcher/releases/latest";
+const MAX_LABEL: usize = 32;
+const MAX_BUTTON_URL: usize = 512;
+const _: () = assert!(JOIN_LABEL.len() <= MAX_LABEL && GET_LABEL.len() <= MAX_LABEL);
 /// Discord's public list of the games it detects.
 const DETECTABLE_URL: &str = "https://discord.com/api/v9/applications/detectable";
 /// The cached list is fetched again once it is a week old.
@@ -137,27 +159,105 @@ fn normalized(name: &str) -> String {
         .join(" ")
 }
 
+/// What the player plays, for the profile.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Playing {
+    pub game: String,
+    pub since_unix: i64,
+    /// Set while the player plays through AnyPlay's network (signed in, in a session or party).
+    pub online: Option<Online>,
+}
+
+/// The network side of what is shown.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct Online {
+    /// Members and room of the player's party, when in one.
+    pub party: Option<(usize, u16)>,
+    /// The join link (it holds the join code), when the network issued one and the player allows
+    /// the button.
+    pub join_url: Option<String>,
+}
+
+// The link is a secret of a sort and is never printed.
+impl std::fmt::Debug for Online {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Online")
+            .field("party", &self.party)
+            .field("join", &self.join_url.is_some())
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for Playing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Playing")
+            .field("game", &self.game)
+            .field("online", &self.online)
+            .finish_non_exhaustive()
+    }
+}
+
+/// The second line of an online activity: "on AnyPlay", then the party as "Party 2 of 4".
+fn online_state(online: &Online) -> String {
+    match online.party {
+        Some((members, room)) => format!("on AnyPlay · Party {members} of {room}"),
+        None => "on AnyPlay".to_owned(),
+    }
+}
+
+/// The two buttons for a join link, or none when the link is not one Discord would accept.
+fn buttons(join_url: &str) -> Option<Value> {
+    let acceptable = join_url.starts_with("https://")
+        && join_url.len() <= MAX_BUTTON_URL
+        && !join_url
+            .chars()
+            .any(|c| c.is_control() || c.is_whitespace());
+    acceptable.then(|| {
+        json!([
+            {"label": JOIN_LABEL, "url": join_url},
+            {"label": GET_LABEL, "url": GET_URL},
+        ])
+    })
+}
+
 /// The activity for a game, and the application to show it as: the game's own when Discord
-/// knows it, AnyPS5's otherwise. No image is named, so Discord shows the application's icon.
-pub fn activity(game: &str, since_unix: i64, games: &DiscordGames) -> (Value, String) {
-    let base = json!({"timestamps": {"start": since_unix}, "type": 0});
-    match games.application_id(game) {
-        Some(id) => {
-            let mut activity = base;
-            activity["details"] = json!("AnyPlay Launcher · Windows");
-            (activity, id.to_owned())
-        }
-        None => {
-            let mut activity = base;
-            activity["details"] = json!(game);
+/// knows it, AnyPlay's otherwise.
+///
+/// - Offline, a known game has the launcher as details; an unknown one has its name as details
+///   and the launcher as state.
+/// - Online, both have the name as details and "on AnyPlay" (with the party) as state. A known
+///   game keeps Discord's own header and image; one under AnyPlay's application gets AnyPlay's
+///   image.
+/// - The buttons come only with a join link. The activity never carries a party or secrets, as
+///   Discord would then ignore the buttons; the party size is part of the text.
+pub fn activity(playing: &Playing, games: &DiscordGames) -> (Value, String) {
+    let mut activity = json!({"timestamps": {"start": playing.since_unix}, "type": 0});
+    let known = games.application_id(&playing.game);
+    match (&playing.online, known) {
+        (None, Some(_)) => activity["details"] = json!("AnyPlay Launcher · Windows"),
+        (None, None) => {
+            activity["details"] = json!(playing.game);
             activity["state"] = json!("AnyPlay Launcher · Windows");
-            (activity, ANYPS5_APPLICATION_ID.to_owned())
+        }
+        (Some(online), _) => {
+            activity["details"] = json!(playing.game);
+            activity["state"] = json!(online_state(online));
+            if let Some(buttons) = online.join_url.as_deref().and_then(buttons) {
+                activity["buttons"] = buttons;
+            }
+        }
+    }
+    match known {
+        Some(id) => (activity, id.to_owned()),
+        None => {
+            activity["assets"] = json!({"large_image": IMAGE_KEY, "large_text": IMAGE_TEXT});
+            (activity, ANYPLAY_APPLICATION_ID.to_owned())
         }
     }
 }
 
 enum Message {
-    Playing { game: String, since_unix: i64 },
+    Playing(Playing),
     Clear,
 }
 
@@ -180,15 +280,9 @@ impl Presence {
         Self { tx }
     }
 
-    /// Shows `game`, played since `since`.
-    pub fn playing(&self, game: &str, since: SystemTime) {
-        let since_unix = since
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs() as i64);
-        let _ = self.tx.send(Message::Playing {
-            game: game.to_owned(),
-            since_unix,
-        });
+    /// Shows what the player plays; sent again, it replaces what was shown.
+    pub fn playing(&self, playing: Playing) {
+        let _ = self.tx.send(Message::Playing(playing));
     }
 
     pub fn clear(&self) {
@@ -225,11 +319,11 @@ impl Worker {
     fn run(mut self, rx: Receiver<Message>) {
         while let Ok(message) = rx.recv() {
             match message {
-                Message::Playing { game, since_unix } => {
+                Message::Playing(playing) => {
                     let games = self
                         .games
                         .get_or_insert_with(|| DiscordGames::load(&self.cache));
-                    let (activity, application) = activity(&game, since_unix, games);
+                    let (activity, application) = activity(&playing, games);
                     self.set_activity(activity, &application);
                 }
                 Message::Clear => {
@@ -378,18 +472,134 @@ mod tests {
     }
 
     #[test]
-    fn known_games_show_as_themselves_others_under_anyps5() {
+    fn known_games_show_as_themselves_others_under_anyplay() {
         let games = DiscordGames::from_json(br#"[{"id": "42", "name": "Stray", "aliases": []}]"#);
-        let (known, as_known) = activity("Stray", 100, &games);
+        let (known, as_known) = activity(&offline("Stray"), &games);
         assert_eq!(as_known, "42");
         assert_eq!(known["details"], "AnyPlay Launcher · Windows");
         assert!(known.get("state").is_none());
+        assert!(
+            known.get("assets").is_none(),
+            "the game keeps its own image"
+        );
         assert_eq!(known["timestamps"]["start"], 100);
-        let (other, as_other) = activity("Hollow Orchard", 100, &games);
-        assert_eq!(as_other, ANYPS5_APPLICATION_ID);
+        let (other, as_other) = activity(&offline("Hollow Orchard"), &games);
+        assert_eq!(as_other, ANYPLAY_APPLICATION_ID);
         assert_eq!(other["details"], "Hollow Orchard");
         assert_eq!(other["state"], "AnyPlay Launcher · Windows");
         assert_eq!(other["type"], 0);
+        assert!(other.get("buttons").is_none() && other.get("party").is_none());
+    }
+
+    fn offline(game: &str) -> Playing {
+        Playing {
+            game: game.to_owned(),
+            since_unix: 100,
+            online: None,
+        }
+    }
+
+    fn online(game: &str, party: Option<(usize, u16)>, join: Option<&str>) -> Playing {
+        Playing {
+            online: Some(Online {
+                party,
+                join_url: join.map(str::to_owned),
+            }),
+            ..offline(game)
+        }
+    }
+
+    const JOIN: &str = "https://anyplaynet.com/join/k3x9m2pqra";
+
+    #[test]
+    fn anyplay_has_its_own_application_and_image() {
+        assert_eq!(ANYPLAY_APPLICATION_ID, "1563714917998133288");
+        let (other, application) = activity(&offline("Hollow Orchard"), &DiscordGames::default());
+        assert_eq!(application, "1563714917998133288");
+        assert_eq!(other["assets"]["large_image"], "anyplay");
+        assert_eq!(other["assets"]["large_text"], "AnyPlay");
+    }
+
+    #[test]
+    fn playing_online_says_so_with_the_party() {
+        let games = DiscordGames::from_json(br#"[{"id": "42", "name": "Stray", "aliases": []}]"#);
+        let (alone, _) = activity(&online("Hollow Orchard", None, None), &games);
+        assert_eq!(alone["details"], "Hollow Orchard");
+        assert_eq!(alone["state"], "on AnyPlay");
+        assert!(alone.get("buttons").is_none(), "no link, no buttons");
+        let (party, application) = activity(&online("Hollow Orchard", Some((2, 4)), None), &games);
+        assert_eq!(party["state"], "on AnyPlay · Party 2 of 4");
+        assert_eq!(application, ANYPLAY_APPLICATION_ID);
+        assert_eq!(party["assets"]["large_image"], "anyplay");
+        assert_eq!(party["timestamps"]["start"], 100);
+    }
+
+    #[test]
+    fn a_known_game_online_keeps_its_header_and_gets_the_same_lines() {
+        let games = DiscordGames::from_json(br#"[{"id": "42", "name": "Stray", "aliases": []}]"#);
+        let (known, application) = activity(&online("Stray", Some((3, 8)), None), &games);
+        assert_eq!(application, "42");
+        assert_eq!(known["details"], "Stray");
+        assert_eq!(known["state"], "on AnyPlay · Party 3 of 8");
+        assert!(known.get("assets").is_none());
+    }
+
+    #[test]
+    fn the_buttons_join_and_get() {
+        let (activity, _) = activity(
+            &online("Hollow Orchard", Some((1, 4)), Some(JOIN)),
+            &DiscordGames::default(),
+        );
+        assert_eq!(
+            activity["buttons"],
+            json!([
+                {"label": "Join on AnyPlay", "url": JOIN},
+                {"label": "Get AnyPlay", "url": GET_URL},
+            ])
+        );
+        // Discord ignores buttons next to a party or secrets, so the activity has neither.
+        assert!(activity.get("party").is_none() && activity.get("secrets").is_none());
+    }
+
+    #[test]
+    fn buttons_keep_to_discords_limits() {
+        assert!(JOIN_LABEL.chars().count() <= MAX_LABEL);
+        assert!(GET_LABEL.chars().count() <= MAX_LABEL);
+        assert!(GET_URL.starts_with("https://") && GET_URL.len() <= MAX_BUTTON_URL);
+        let long = format!("https://anyplaynet.com/join/{}", "a".repeat(MAX_BUTTON_URL));
+        for refused in [
+            "http://anyplaynet.com/join/k3x9m2pqra",
+            "ftp://anyplaynet.com/join/k3x9m2pqra",
+            "javascript:alert(1)",
+            "https://anyplaynet.com/join/k3x9m2pqra extra",
+            "https://anyplaynet.com/join/k3x9m2pqra\n",
+            "",
+            long.as_str(),
+        ] {
+            assert!(buttons(refused).is_none(), "{refused:?}");
+            let (activity, _) = activity(
+                &online("Hollow Orchard", None, Some(refused)),
+                &DiscordGames::default(),
+            );
+            assert!(activity.get("buttons").is_none(), "{refused:?}");
+        }
+        let at_the_limit = format!(
+            "https://a.b/{}",
+            "x".repeat(MAX_BUTTON_URL - "https://a.b/".len())
+        );
+        assert_eq!(at_the_limit.len(), MAX_BUTTON_URL);
+        assert!(buttons(&at_the_limit).is_some());
+        let two = buttons(JOIN).unwrap();
+        assert_eq!(two.as_array().map(Vec::len), Some(2), "two buttons at most");
+    }
+
+    #[test]
+    fn debug_output_never_holds_the_link() {
+        let text = format!("{:?}", online("Hollow Orchard", Some((1, 4)), Some(JOIN)));
+        assert!(
+            !text.contains("k3x9m2pqra") && !text.contains("anyplaynet"),
+            "{text}"
+        );
     }
 
     /// A Discord stand-in: records what is written and answers every frame once.
@@ -424,9 +634,10 @@ mod tests {
                 written: written.clone(),
                 replies: std::io::Cursor::new(answer),
             }),
-            application: ANYPS5_APPLICATION_ID.to_owned(),
+            application: ANYPLAY_APPLICATION_ID.to_owned(),
         });
-        let (activity, application) = activity("Hollow Orchard", 5, &DiscordGames::default());
+        let (activity, application) =
+            activity(&offline("Hollow Orchard"), &DiscordGames::default());
         worker.set_activity(activity, &application);
         let bytes = written.lock().unwrap().clone();
         let (op, json) = decode(&bytes).expect("one complete frame");
@@ -438,6 +649,32 @@ mod tests {
         assert!(worker.connection.is_some(), "the connection stays open");
     }
 
+    #[test]
+    fn the_set_activity_frame_carries_the_buttons() {
+        let written = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut worker = Worker::new(PathBuf::new());
+        worker.connection = Some(Connection {
+            pipe: Box::new(FakeDiscord {
+                written: written.clone(),
+                replies: std::io::Cursor::new(encode(OP_FRAME, br#"{"cmd":"SET_ACTIVITY"}"#)),
+            }),
+            application: ANYPLAY_APPLICATION_ID.to_owned(),
+        });
+        let playing = online("Hollow Orchard", Some((2, 4)), Some(JOIN));
+        let (activity, application) = activity(&playing, &DiscordGames::default());
+        assert_eq!(application, ANYPLAY_APPLICATION_ID);
+        worker.set_activity(activity, &application);
+        let bytes = written.lock().unwrap().clone();
+        let (_, json) = decode(&bytes).expect("one complete frame");
+        let command: Value = serde_json::from_slice(json).unwrap();
+        let sent = &command["args"]["activity"];
+        assert_eq!(sent["state"], "on AnyPlay · Party 2 of 4");
+        assert_eq!(sent["buttons"][0]["label"], "Join on AnyPlay");
+        assert_eq!(sent["buttons"][0]["url"], JOIN);
+        assert_eq!(sent["buttons"][1]["label"], "Get AnyPlay");
+        assert_eq!(sent["assets"]["large_image"], "anyplay");
+    }
+
     /// Against a running Discord: only the handshake, which shows nothing on the profile.
     /// `cargo test -p anyps5-core -- --ignored discord_handshake`
     #[test]
@@ -445,7 +682,7 @@ mod tests {
     fn discord_handshake() {
         let mut worker = Worker::new(PathBuf::new());
         assert!(
-            worker.connected(ANYPS5_APPLICATION_ID).is_some(),
+            worker.connected(ANYPLAY_APPLICATION_ID).is_some(),
             "no Discord pipe answered the handshake"
         );
     }

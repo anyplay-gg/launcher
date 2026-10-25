@@ -1591,7 +1591,8 @@ in `docs/user/INPUT_MAPPING.md` of AnyPS5-ARM.
 ### 7.4 Discord presence (AnyPS5-ARM `4a29777` to `14ef671`, after the pinned commit)
 
 The running game shows on the player's Discord profile ("Playing ..." with the time since it
-started), ported from `DiscordPresence.swift` into `anyps5_core::discord`.
+started), ported from `DiscordPresence.swift` into `anyps5_core::discord`. A player who plays
+through the AnyPlay network also gets "on AnyPlay", the size of the party and a Join button.
 
 - **Transport.** Discord's local IPC: `\.\pipe\discord-ipc-0` to `-9` on Windows (a Unix socket
   elsewhere). A frame is a little-endian `u32` opcode and length, then JSON. Handshake opcode 0
@@ -1602,15 +1603,46 @@ started), ported from `DiscordPresence.swift` into `anyps5_core::discord`.
   (`https://discord.com/api/v9/applications/detectable`, cut to id, name and aliases, cached in
   `Cache/discord-games.json` for a week) is matched by lowercase words of the name or an alias.
   A known game is shown as itself with details "AnyPlay Launcher · Windows"; any other game shows
-  under the AnyPS5 application (`1562749843724566549`, shared with the macOS launcher) with the
-  game's name as details and "AnyPlay Launcher · Windows" as state. No image is named, so Discord shows the
-  application's icon.
+  under **AnyPlay's own application** (`1563714917998133288`, `ANYPLAY_APPLICATION_ID`; until the switch the
+  launcher shared the AnyPS5 application `1562749843724566549` with the macOS launcher) with the
+  game's name as details and "AnyPlay Launcher · Windows" as state. An activity under AnyPlay's
+  application names the large image `anyplay` (an asset of that application) with the text "AnyPlay";
+  a game shown as itself keeps Discord's own image.
+- **Playing online.** Signed in, with the cloud reached and a session or a party, the activity says so
+  (the offline lines above stay for everything else):
+
+  | | details | state |
+  |---|---|---|
+  | game Discord does not know | the game's title | `on AnyPlay`, or `on AnyPlay · Party 2 of 4` (members of the party, its room) |
+  | game Discord knows | the game's title (Discord's header already names it) | the same |
+
+  The start timestamp is the game's. The party size is text, not Discord's `party` field, because
+  Discord ignores buttons next to a party or secrets; the activity carries neither. It is sent again
+  when the session, the party or the join link changes (`app/discord.rs`, once per frame, only when
+  the activity differs from the one shown).
+- **The Join button.** With presence on, the join button on, signed in and a session or party, the
+  launcher asks the net service for a [join code](https://github.com/anyplay-gg/network/blob/main/spec/cloud-api.md#join-codes)
+  (`join_code`) and adds two buttons: `Join on AnyPlay` (the code's link, `<web>/join/<code>`) and
+  `Get AnyPlay` (`https://github.com/anyplay-gg/launcher/releases/latest`). Discord allows two buttons,
+  a label up to 32 characters and an address up to 512 over https; an address that fails these gets
+  no buttons. A cloud that answers `not_found` has nothing joinable: no code, no buttons, and no new
+  question until the session or party is another one. A code is asked for again 10 minutes before it
+  ends, with 30 seconds between two questions and 15 minutes after `rate_limited`. It is revoked
+  (`join_code_revoke`) when the game ends, the player signs out (the revoke goes out before the
+  sign-out) or the setting goes off; losing the connection keeps a held code. Neither the code nor its
+  link is ever logged (`Debug` of the offer, the activity and the link all leave it out). The logic
+  is `anyps5_core::online::JoinOffer`; the profile is `app/discord.rs`. What the button opens never
+  joins by itself: see 9.6.
 - **When.** Set when the game's window appears (`PipelineEvent::WindowShown`), cleared when it
   exits or when the setting is turned off. Everything runs on a `discord` thread; the UI only
   sends messages. Previews and tests never connect.
-- **Setting.** Behaviour, "Show Game on Discord" (`discordPresence`, on by default), with the
+- **Settings.** Behaviour, "Show Game on Discord" (`discordPresence`, on by default), with the
   detail "With Discord open, your profile shows the game and for how long." and the `discord-logo`
-  icon.
+  icon. Right under it, only while it is on, "Show a Join Button on Discord" (`discordJoinButton`,
+  on by default; row `discordJoin`, icon `user-plus`): "While you play online, people who see your
+  Discord status can get an invitation. They choose whether to join." (the joiner is
+  asked, not the player; the text says who can use the button). Presence off sends nothing at all,
+  buttons included, and hides the join row. Texts: `screens/discord_strings.rs`.
 
 ## 8. Localization
 
@@ -1937,13 +1969,15 @@ The launcher answers `anyps5://` links and runs once per user. The grammar (`cra
 | `anyps5://game/<TITLEID>/unlock` | the game, with its Unlock button focused and a hint; the unlock starts only when the player presses it |
 | `anyps5://settings[/<page>]` | the settings, on `appearance`, `library`, `language`, `behavior`, `toolkit`, `advanced` or `about` |
 | `anyps5://open?path=<folder>` | a dump folder: selected when it is in the games folder, otherwise the launcher says it is outside and opens the library page |
+| `anyps5://join/<code>` | the invitation a join code stands for (the Join button on a friend's Discord, 7.4): signed in, the launcher redeems the code and opens the Online panel, whose Home page lists the invitation with Join Game and Decline (or Join Party); signed out, a toast and the sign-in page, and the code waits to be redeemed after the sign-in |
 
 `<TITLEID>` is `PPSA` or `CUSA` and five digits. Websites should write the version as the first segment, `anyps5://v1/game/PPSA16064`; the short form is the same link, any other version is refused. A folder path alone (as Explorer passes it for the folder entry) is the same as `open?path=`.
 
 Safety rules, all in the one parser:
 
-- A link never starts a game, never unlocks, never deletes and never writes. It selects, focuses and opens. There is no `play`, `uninstall` or `env` action.
+- A link never starts a game, never unlocks, never deletes and never writes. A join link only asks the network for an invitation (`join_redeem`, which joins nothing); accepting it is the player's, and accepting a game still runs the version check. It selects, focuses and opens. There is no `play`, `uninstall` or `env` action.
 - The closed vocabulary above; unknown actions, unknown query keys, extra segments and a second `path` are errors. An error shows "This is not a valid AnyPlay link" and does nothing else.
+- `<code>` is exactly 10 characters of the network's join alphabet (lower case letters and digits without `0`, `1`, `l`, `o`, from `anyplay_api`), in either case; a longer text, a shorter one, extra segments or a query are errors. A waiting code is dropped after 30 minutes, a second join link replaces it, and a join code is never written to the log.
 - At most 2048 bytes. No control characters, quotes, backticks or carets (a quote could add arguments to the registered command line). Of all arguments only the first counts.
 - A folder path must be an absolute drive path: no `..` or `.`, no network or device paths (`\`, `\?\`), no stream names, no empty parts, no names that end in a dot or space, no `CON`/`NUL`/`COM1`, at most 1024 bytes. It must then be a dump (`library::inspect`), and a dump outside the games folder is not added.
 - A link that arrives before the first-run setup or the first scan waits (at most eight) and is shown when the library is ready.
@@ -1957,7 +1991,7 @@ Registration (`anyps5_core::linkreg`): `HKCU\Software\Classes\anyps5` with `URL 
 Up to v0.1.3 the launcher was called AnyPS5 Launcher. It is AnyPlay Launcher now: a platform trademark has no place in our names ([the line is drawn at the law](https://github.com/anyplay-gg/network/blob/main/docs/adr/0021-the-line-is-drawn-at-the-law.md)). AnyPS5 still names the engine the games run on, and the About text says so.
 
 - **Renamed:** every visible name of the product (window titles, texts in both languages, Discord, reports, the controls file header), the exe and the release files (`AnyPlay-Launcher-<v>-*`), the installer's name, folder and shortcuts, the Linux binary, desktop entry and icon, and the app id.
-- **Kept, because installs and links already use them:** the data folders (`%APPDATA%\AnyPS5`, `%LOCALAPPDATA%\AnyPS5`, `~/.config/anyps5`, `~/.local/share/anyps5`, `Pictures\AnyPS5`), the `.AnyPS5` store in games folders, `org.anyps5.<titleid>`, the `anyps5://` scheme and the registry key names, the `ANYPS5_*` variables, the single-instance mutex and pipe names, the log-start marker, the settings format tag, the installer's AppId, the Discord application and the crate names.
+- **Kept, because installs and links already use them:** the data folders (`%APPDATA%\AnyPS5`, `%LOCALAPPDATA%\AnyPS5`, `~/.config/anyps5`, `~/.local/share/anyps5`, `Pictures\AnyPS5`), the `.AnyPS5` store in games folders, `org.anyps5.<titleid>`, the `anyps5://` scheme and the registry key names, the `ANYPS5_*` variables, the single-instance mutex and pipe names, the log-start marker, the settings format tag, the installer's AppId, the crate names. (The Discord application was kept until it got AnyPlay's own, 7.4.)
 - **Self-update across the rename:** v0.1.2 and v0.1.3 update only from `AnyPS5-Launcher-<v>-x64.exe`. Every release therefore also carries the portable exe under that name, byte for byte the same and listed in `SHA256SUMS.txt`; the release workflow checks both. Those launchers check no signature, so the signed manifest is added beside these files and never replaces them. This launcher prefers the new name and falls back to the old one.
 - **Installer upgrade:** the same AppId upgrades an old install in place and keeps its folder (`...\AnyPS5 Launcher`). It closes a running old launcher, removes `AnyPS5-Launcher.exe`, its `.new`/`.old` leftovers and the old shortcuts. Taskbar and Start pins of the old exe do not carry over.
 - **Linux:** the app id is `anyplay-launcher`, the same as the desktop entry's file name, `Icon` and `StartupWMClass` (a test holds them together). A desktop entry copied from an older tarball no longer matches the window: replace it and pin the launcher again.
@@ -2201,6 +2235,7 @@ Hints that explain a text field or a toggle stand under it with the normal 8 dp 
 - *Hide Your IP Address* (Account page, off by default; `Preferences::online_relay_only`) keeps every tunnel on a relay, so other players never learn the PC's address. The net service starts with `--relay-only`; a change while it runs goes out as `relay_only`, which starts its tunnels again, so during a game it waits for the game's end.
 
 - **Parties and messages** (network `docs/SOCIAL.md` S2, `spec/control-protocol.md`, ADR 0013). `anyps5_core::online::Social` is the pure state; the panel only reads it.
+  - *Join codes.* `join_code`, `join_code_revoke` and `join_redeem` are the three commands of the Discord join feature. The first two keep the Join button of the player's Discord status (7.4); `Online::join` holds the code and never prints it, and a sign-out or the end of the service forgets it. `join_redeem` answers the invitation the usual `invitation` or `party_invitation` event brings too; the launcher opens the panel and joins nothing (9.6).
   - *Party.* Kept by `revision`: an older copy of the same party is dropped. `party_answer` with a refusal changes nothing. The invitations of a party list with a game's on Home and toast when they arrive, whatever the panel shows. Taking the party into a game sends `party_move` with the session the player is in; the members get ordinary invitations, so a game's session has to exist first, which the page checks (not closed, the player in it, somebody to take).
   - *Messages.* The launcher keeps the highest number it holds for each conversation. A `message` event raises the conversation's last number at once (the unread mark follows) and fetches `messages` `after` that number; the first look at a conversation fetches the newest 50, and a conversation that is behind its last number follows by 100 until it has caught up. After a reconnect the `conversations` event is compared with each loaded thread and what is missing is fetched; threads never opened need no fetch, since unread is `last - read`. A short page ends a catch-up, and numbers a block hid do not loop. 200 messages stay per conversation; "Show Earlier Messages" shows 40 more and reads back with `before` until the memory is full. An own message joins the thread when it is the next number, else the answer is a fetch.
   - *Read.* Looking at a conversation page marks its newest held number read, in the launcher at once and in the cloud with `mark_read`. Writing reads up to the message written. A message request is not marked. The unread mark counts `last - read` of each conversation and each request; the Messages row, the Messages page and the button show that one number.
