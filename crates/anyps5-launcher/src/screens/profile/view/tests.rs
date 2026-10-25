@@ -26,6 +26,7 @@ fn online() -> Online {
         id: AccountId(1),
         handle: "Mira".into(),
         email: String::new(),
+        appear_offline: false,
     });
     online.friends = FriendLists {
         friends: vec![anyps5_core::online::api::Friend {
@@ -60,6 +61,7 @@ fn page(account: Account) -> ProfilePage {
             playtime: None,
         },
         trophies: None,
+        level: None,
         links: Vec::new(),
     }
 }
@@ -402,7 +404,11 @@ fn the_own_profile_comes_from_this_pc() {
             .iter()
             .map(|a| a.press.clone())
             .collect::<Vec<_>>(),
-        [Press::EditProfile, Press::FriendsOnline]
+        [
+            Press::EditProfile,
+            Press::FriendsOnline,
+            Press::AppearOffline(true)
+        ]
     );
     let figures: Vec<(&str, &str)> = ready
         .stats
@@ -475,4 +481,168 @@ fn stamps_and_times_read_as_the_launcher_writes_them() {
     assert_eq!(playtime_text(240, en), "4 h");
     assert_eq!(playtime_text(60 * 12 + 30, en), "12 h");
     assert_eq!(playtime_text(60 * 12 + 30, Language::Turkish), "12 sa");
+}
+
+fn friend_with_trophies() -> ProfilePage {
+    let mut p = page(who(2, "Lumen"));
+    p.profile.playtime = Some(vec![played("GAME00001", 125), played("GAME00009", 30)]);
+    p.trophies = Some(anyps5_core::online::api::Count {
+        bronze: 30,
+        silver: 9,
+        gold: 4,
+        platinum: 1,
+    });
+    // 915 points: level 9, which began at 912 and ends at 1,080.
+    p.level = Some(anyps5_core::online::api::TrophyLevel::of(915));
+    p
+}
+
+#[test]
+fn the_level_is_the_clouds_with_its_points_and_the_way_to_the_next() {
+    let mut online = online();
+    let local = local();
+    set(&mut online, friend_with_trophies());
+    let ready = ready(view(&inputs(&online, &local, None, 2)));
+    let level = ready.stats.last().unwrap();
+    assert_eq!(level.figure, "9");
+    assert_eq!(level.label, "Level");
+    let fill = level.level.as_ref().unwrap();
+    assert_eq!(fill.points, "915 points");
+    assert!(
+        (fill.fraction - 3.0 / 168.0).abs() < 1e-6,
+        "{}",
+        fill.fraction
+    );
+    assert_eq!(level.name, "Level 9, 915 points");
+    // It follows the trophies in the strip.
+    let labels: Vec<&str> = ready.stats.iter().map(|s| s.label.as_str()).collect();
+    assert_eq!(labels.last(), Some(&"Level"));
+    assert_eq!(labels[labels.len() - 2], "Trophies");
+}
+
+#[test]
+fn a_level_the_cloud_left_out_is_not_made_up() {
+    let mut online = online();
+    let local = local();
+    let mut hidden = friend_with_trophies();
+    hidden.trophies = None;
+    hidden.level = None;
+    set(&mut online, hidden);
+    let ready = ready(view(&inputs(&online, &local, None, 2)));
+    assert!(
+        ready
+            .stats
+            .iter()
+            .all(|s| s.level.is_none() && s.label != "Level")
+    );
+}
+
+#[test]
+fn points_over_a_thousand_are_grouped_in_the_language() {
+    let mut online = online();
+    let local = local();
+    let mut p = friend_with_trophies();
+    p.level = Some(anyps5_core::online::api::TrophyLevel::of(1_240));
+    set(&mut online, p);
+    let english = ready(view(&inputs(&online, &local, None, 2)));
+    assert_eq!(
+        english.stats.last().unwrap().level.as_ref().unwrap().points,
+        "1,240 points"
+    );
+    let mut turkish = inputs(&online, &local, None, 2);
+    turkish.language = Language::Turkish;
+    let turkish = ready(view(&turkish));
+    assert_eq!(
+        turkish.stats.last().unwrap().level.as_ref().unwrap().points,
+        "1.240 puan"
+    );
+}
+
+#[test]
+fn the_own_level_waits_for_the_clouds_answer() {
+    let mut online = online();
+    let local = local();
+    let library = OwnLibrary {
+        games: vec![own_game("GAME00001", "Ember Drift", 3_600 * 3, None)],
+        grades: [0, 1, 0, 2],
+        ..OwnLibrary::default()
+    };
+    let before = ready(view(&inputs(&online, &local, Some(&library), 1)));
+    assert!(before.stats.iter().all(|s| s.label != "Level"));
+    let mut own = page(who(1, "Mira"));
+    own.trophies = Some(anyps5_core::online::api::Count::default());
+    own.level = Some(anyps5_core::online::api::TrophyLevel::of(80));
+    set(&mut online, own);
+    let after = ready(view(&inputs(&online, &local, Some(&library), 1)));
+    assert_eq!(after.stats.last().unwrap().figure, "2");
+}
+
+#[test]
+fn a_game_both_players_have_opens_the_comparison() {
+    let mut online = online();
+    let local = local();
+    set(&mut online, friend_with_trophies());
+    let ready = ready(view(&inputs(&online, &local, None, 2)));
+    let owned = ready.games.rows.iter().find(|g| g.owned).unwrap();
+    assert_eq!(
+        owned.press,
+        Press::Compare(AccountId(2), "GAME00001".into())
+    );
+    assert!(owned.detail.contains("Compare trophies"));
+    assert!(owned.name_a11y.contains("Compare trophies"));
+    // A game the player does not have has nothing to compare.
+    let other = ready.games.rows.iter().find(|g| !g.owned).unwrap();
+    assert_eq!(other.press, Press::None);
+    assert!(!other.detail.contains("Compare"));
+}
+
+#[test]
+fn a_friend_who_hides_their_trophies_has_nothing_to_compare() {
+    let mut online = online();
+    let local = local();
+    let mut p = friend_with_trophies();
+    p.trophies = None;
+    p.level = None;
+    set(&mut online, p);
+    let ready = ready(view(&inputs(&online, &local, None, 2)));
+    let owned = ready.games.rows.iter().find(|g| g.owned).unwrap();
+    assert_eq!(owned.press, Press::OpenGame("GAME00001".into()));
+}
+
+#[test]
+fn appearing_offline_is_said_quietly_on_the_own_profile() {
+    let mut online = online();
+    let local = local();
+    let library = OwnLibrary::default();
+    let plain = ready(view(&inputs(&online, &local, Some(&library), 1)));
+    assert_eq!(
+        plain.status.as_ref().unwrap().text,
+        "This is what other players see"
+    );
+    online.set_appear_offline(true);
+    let appearing = ready(view(&inputs(&online, &local, Some(&library), 1)));
+    let status = appearing.status.clone().unwrap();
+    assert_eq!(
+        status.text,
+        "Appearing offline · This is what other players see"
+    );
+    assert!(!status.online, "no dot of being online");
+    // The way back is a button under the name, and the way there is the same button.
+    let button = |ready: &Ready| {
+        ready
+            .actions
+            .last()
+            .map(|a| (a.press.clone(), a.label.clone()))
+    };
+    assert_eq!(
+        button(&plain),
+        Some((Press::AppearOffline(true), "Appear Offline".to_owned()))
+    );
+    assert_eq!(
+        appearing
+            .actions
+            .last()
+            .map(|a| (a.press.clone(), a.label.clone())),
+        Some((Press::AppearOffline(false), "Appear Online".to_owned()))
+    );
 }

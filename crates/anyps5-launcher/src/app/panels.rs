@@ -20,6 +20,7 @@
 //! the panel reports `changed`. Work with I/O (reports, uninstall, toolkit) runs on worker threads
 //! and answers through channels polled in [`OverlayHost::frame`].
 
+mod compare;
 mod friends;
 mod profile;
 
@@ -140,6 +141,8 @@ pub struct PanelHost {
     friends: crate::screens::friends::FriendsScreen,
     /// The profile screen (`Overlay::Profile`).
     profile: crate::screens::profile::ProfileScreen,
+    /// The trophy comparison (`Overlay::Compare`).
+    compare: crate::screens::compare::CompareScreen,
     /// The page the Friends screen opens on when the profile screen sent the player there: the
     /// page, and a feed item to put the focus on.
     online_start: Option<(crate::screens::online::Page, Option<u64>)>,
@@ -216,6 +219,7 @@ impl PanelHost {
             saves: SavesPanel::default(),
             friends: crate::screens::friends::FriendsScreen::default(),
             profile: crate::screens::profile::ProfileScreen::default(),
+            compare: crate::screens::compare::CompareScreen::default(),
             online_start: None,
             restore: RestorePanel::default(),
             save_view: None,
@@ -1261,7 +1265,22 @@ impl PanelHost {
             show_hidden: cx.model.prefs.show_hidden_trophies,
         };
         let actions = self.trophies.show(cx.shell, cx.ctx, &events, &data);
-        for TrophyAction::Close in actions {
+        // The player read a secret: everyone who may see their trophies may, too. Only the first
+        // set is the network's.
+        let title_id = game.title_id.clone();
+        let revealed: Vec<u32> = actions
+            .iter()
+            .filter_map(|action| match action {
+                TrophyAction::Revealed(index) => set.trophies.get(*index),
+                TrophyAction::Close => None,
+            })
+            .filter(|t| t.service_label == 0)
+            .map(|t| t.number)
+            .collect();
+        for number in revealed {
+            cx.model.online.reveal_secret(&title_id, number);
+        }
+        if actions.contains(&TrophyAction::Close) {
             cx.model.dismiss_overlay();
         }
     }
@@ -1694,6 +1713,7 @@ impl OverlayHost for PanelHost {
             Overlay::WhatsNew => self.whats_new_ui(cx, wanted),
             Overlay::Friends => self.friends_ui(cx, wanted),
             Overlay::Profile => self.profile_ui(cx, wanted),
+            Overlay::Compare => self.compare_ui(cx, wanted),
         }
     }
 

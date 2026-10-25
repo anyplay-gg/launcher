@@ -229,12 +229,14 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
     // network name and, while the cloud answers, a dot in the accent: the player is online.
     let unread = online.social.unread_total();
     let handle = online.account.as_ref().map(|a| a.handle.as_str());
+    let appearing = online.is_online() && online.appears_offline();
     let profile = Profile {
         name: handle.unwrap_or_else(|| OnlineText::SignIn.text(language)),
         signed_in: handle.is_some(),
         online: online.is_online(),
+        appearing: appearing.then(|| OnlineText::AppearingOffline.text(language)),
         unread,
-        label: profile_label(handle, online.is_online(), unread, language),
+        label: profile_label(handle, online.is_online(), appearing, unread, language),
     };
     if profile_button(&mut row, &profile, accent, focused(HomeFocus::PROFILE)).clicked() {
         presses.push(Press::Focus(HomeFocus::PROFILE));
@@ -356,18 +358,28 @@ struct Profile<'a> {
     signed_in: bool,
     /// The cloud answers: a dot at the avatar.
     online: bool,
+    /// The player appears offline to others: the dot is a ring and the words follow the name.
+    appearing: Option<&'a str>,
     unread: u64,
     /// The accessible name.
     label: String,
 }
 
 /// The profile's accessible name: the handle (what is on screen), then what it tells besides.
-fn profile_label(handle: Option<&str>, online: bool, unread: u64, language: Language) -> String {
+fn profile_label(
+    handle: Option<&str>,
+    online: bool,
+    appearing: bool,
+    unread: u64,
+    language: Language,
+) -> String {
     let Some(handle) = handle else {
         return OnlineText::SignIn.text(language).to_owned();
     };
     let mut label = handle.to_owned();
-    if online {
+    if online && appearing {
+        label = format!("{label}, {}", OnlineText::AppearingOffline.text(language));
+    } else if online {
         label = format!("{label}, {}", OnlineText::Online.text(language));
     }
     if unread > 0 {
@@ -420,7 +432,11 @@ fn profile_button(
     } else {
         (text::width(&painter, BADGE, &count) + 12.0).max(BADGE_HEIGHT) + 8.0
     };
-    let width = inset + size::AVATAR + 10.0 + name_width + 16.0 + badge_width;
+    // Appearing offline: the words in quiet ink after the name.
+    let quiet_width = profile
+        .appearing
+        .map_or(0.0, |words| text::width(&painter, ty::CHIP, words) + 10.0);
+    let width = inset + size::AVATAR + 10.0 + name_width + 16.0 + quiet_width + badge_width;
     let it = components::interact(ui, vec2(width, size::ICON_BUTTON), focused, true, None);
     it.response
         .widget_info(|| WidgetInfo::labeled(Role::Button, true, &profile.label));
@@ -468,7 +484,12 @@ fn profile_button(
         let dot = avatar + vec2(avatar_r, avatar_r) * 0.72;
         let ring = theme::black(0.62);
         painter.circle_filled(dot, 6.0 * s, ring);
-        painter.circle_filled(dot, 4.0 * s, accent);
+        if profile.appearing.is_some() {
+            // Online for the player, offline for the others: a ring, not the accent's dot.
+            painter.circle_stroke(dot, 3.4 * s, egui::Stroke::new(1.5 * s, white(0.9)));
+        } else {
+            painter.circle_filled(dot, 4.0 * s, accent);
+        }
     }
     let shown = text::paint(
         &painter,
@@ -478,14 +499,25 @@ fn profile_button(
         &name,
         ink,
     );
+    let mut after = shown.max.x;
+    if let Some(words) = profile.appearing {
+        after = text::paint(
+            &painter,
+            pos2(after + 10.0 * s, rect.center().y),
+            Align2::LEFT_CENTER,
+            ty::CHIP,
+            words,
+            white(0.72),
+        )
+        .max
+        .x;
+    }
     if !count.is_empty() {
         // Light, with dark type: the one place a pill carries ink as a fill.
         let w = (text::width(&painter, BADGE, &count) + 12.0).max(BADGE_HEIGHT) * s;
         let h = BADGE_HEIGHT * s;
-        let badge = Rect::from_min_size(
-            pos2(shown.max.x + 8.0 * s, rect.center().y - h * 0.5),
-            vec2(w, h),
-        );
+        let badge =
+            Rect::from_min_size(pos2(after + 8.0 * s, rect.center().y - h * 0.5), vec2(w, h));
         components::paint_capsule(&painter, badge, white(0.92));
         text::paint(
             &painter,
@@ -1386,15 +1418,22 @@ mod tests {
     fn the_profile_is_named_by_what_it_shows() {
         let english = Language::English;
         // Signed out there is no name to show, only the way in.
-        assert_eq!(profile_label(None, false, 0, english), "Sign In");
+        assert_eq!(profile_label(None, false, false, 0, english), "Sign In");
         assert_eq!(
-            profile_label(None, false, 0, Language::Turkish),
+            profile_label(None, false, false, 0, Language::Turkish),
             "Giriş Yap"
         );
-        assert_eq!(profile_label(Some("Mira"), false, 0, english), "Mira");
         assert_eq!(
-            profile_label(Some("Mira"), true, 3, english),
+            profile_label(Some("Mira"), false, false, 0, english),
+            "Mira"
+        );
+        assert_eq!(
+            profile_label(Some("Mira"), true, false, 3, english),
             "Mira, Online, 3 unread"
+        );
+        assert_eq!(
+            profile_label(Some("Mira"), true, true, 3, english),
+            "Mira, Appearing offline, 3 unread"
         );
     }
 

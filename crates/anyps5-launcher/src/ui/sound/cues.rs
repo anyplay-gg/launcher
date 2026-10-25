@@ -9,6 +9,8 @@ use super::synth::{Lowpass, Reverb, Shape, db_to_gain, shimmer, tone};
 pub enum Cue {
     /// Any selection or focus change, value change, binding captured.
     Move,
+    /// The pointer entered a new control, tile or row: the Move tick, a touch quieter.
+    Hover,
     /// Something opened, an action ran, advance in onboarding.
     Select,
     /// Closing, leaving, cancelling.
@@ -24,8 +26,9 @@ pub enum Cue {
 }
 
 impl Cue {
-    pub const ALL: [Cue; 7] = [
+    pub const ALL: [Cue; 8] = [
         Cue::Move,
+        Cue::Hover,
         Cue::Select,
         Cue::Back,
         Cue::Unlocked,
@@ -51,8 +54,8 @@ const fn shape(attack: f32, decay: f32) -> Shape {
     Shape { attack, decay }
 }
 
-/// A sine with an almost equally loud octave and a faint fifth: round and soft.
-const SOFT: &[(f32, f32)] = &[(1.0, 1.0), (2.0, 0.8), (1.5, 0.09)];
+/// The navigation tick: the same warmth with a quieter octave, so a run of ticks stays round.
+const TICK: &[(f32, f32)] = &[(1.0, 1.0), (2.0, 0.55), (1.5, 0.06)];
 /// A little fuller: octave and a trace of the third harmonic.
 const ROUND: &[(f32, f32)] = &[(1.0, 1.0), (2.0, 0.45), (3.0, 0.08)];
 /// Nearly a pure sine.
@@ -70,19 +73,27 @@ const F5: f32 = 698.46;
 const G5: f32 = 783.99;
 const C6: f32 = 1046.5;
 
+/// The shared navigation tick at `peak_db`: see [`Cue::Move`].
+fn tick(peak_db: f32) -> (Mix, Draw) {
+    (
+        Mix {
+            peak_db,
+            send: 0.04,
+            rt60: 0.3,
+            cutoff: 5000.0,
+            length: 0.25,
+        },
+        |o, r| tone(o, r, 0.0, F4, 1.0, shape(0.007, 0.026), TICK, 0.0),
+    )
+}
+
 fn recipe(cue: Cue) -> (Mix, Draw) {
     match cue {
-        // One soft tone at F4, gone after about 150 ms; the quietest cue.
-        Cue::Move => (
-            Mix {
-                peak_db: -22.0,
-                send: 0.10,
-                rt60: 0.7,
-                cutoff: 8000.0,
-                length: 0.4,
-            },
-            |o, r| tone(o, r, 0.0, F4, 1.0, shape(0.012, 0.038), SOFT, 0.0),
-        ),
+        // The navigation tick: one soft tone at F4 with a quieter octave, a 7 ms rounded attack,
+        // gone within about 120 ms and nearly dry, so a run of them stays clean. Focus moves
+        // use it as is; the pointer's `Hover` is the same tick 3 dB lower.
+        Cue::Move => tick(-22.0),
+        Cue::Hover => tick(-25.0),
         // An open fifth, C5 and G5, the G a moment later.
         Cue::Select => (
             Mix {
@@ -251,6 +262,8 @@ fn trim(out: &mut Vec<f32>, rate: f32) {
 mod tests {
     use super::*;
 
+    const TICKS: [(&str, Cue); 2] = [("move", Cue::Move), ("hover", Cue::Hover)];
+
     #[test]
     fn every_cue_is_soft_bounded_and_ends_silent() {
         for cue in Cue::ALL {
@@ -269,5 +282,117 @@ mod tests {
                 .fold(0.0f32, f32::max);
             assert!(jump < peak * 0.5, "{cue:?} jump {jump} peak {peak}");
         }
+    }
+
+    /// Mono mix of a rendered cue.
+    fn mono(out: &[f32]) -> Vec<f32> {
+        out.chunks(2).map(|f| 0.5 * (f[0] + f[1])).collect()
+    }
+
+    /// Writes 16-bit stereo PCM; a listening aid for `ANYPLAY_WRITE_TICK`.
+    fn wav(path: &std::path::Path, out: &[f32], rate: u32) {
+        let data: Vec<u8> = out
+            .iter()
+            .flat_map(|s| ((s.clamp(-1.0, 1.0) * 32767.0).round() as i16).to_le_bytes())
+            .collect();
+        let mut file = Vec::new();
+        file.extend(b"RIFF");
+        file.extend((36 + data.len() as u32).to_le_bytes());
+        file.extend(b"WAVEfmt ");
+        file.extend(16u32.to_le_bytes());
+        file.extend(1u16.to_le_bytes());
+        file.extend(2u16.to_le_bytes());
+        file.extend(rate.to_le_bytes());
+        file.extend((rate * 4).to_le_bytes());
+        file.extend(4u16.to_le_bytes());
+        file.extend(16u16.to_le_bytes());
+        file.extend(b"data");
+        file.extend((data.len() as u32).to_le_bytes());
+        file.extend(data);
+        std::fs::write(path, file).expect("write wav");
+    }
+
+    struct Metrics {
+        peak_db: f32,
+        /// Milliseconds until the last sample above -60 dBFS.
+        length_ms: f32,
+        /// |mean| relative to the peak.
+        dc: f32,
+        /// RMS frequency from the first difference: a brightness measure.
+        rms_hz: f32,
+    }
+
+    fn metrics(out: &[f32], rate: u32) -> Metrics {
+        let m = mono(out);
+        let peak = m.iter().fold(0.0f32, |a, s| a.max(s.abs()));
+        let floor = db_to_gain(-60.0);
+        let last = m.iter().rposition(|s| s.abs() > floor).unwrap_or(0);
+        let mean = m.iter().sum::<f32>() / m.len() as f32;
+        let energy: f32 = m.iter().map(|s| s * s).sum();
+        let diff: f32 = m.windows(2).map(|w| (w[1] - w[0]).powi(2)).sum();
+        let ratio = (diff / energy).sqrt();
+        Metrics {
+            peak_db: 20.0 * peak.log10(),
+            length_ms: last as f32 * 1000.0 / rate as f32,
+            dc: mean.abs() / peak,
+            rms_hz: 2.0 * (ratio / 2.0).asin() * rate as f32 / std::f32::consts::TAU,
+        }
+    }
+
+    #[test]
+    #[ignore = "a listening aid: ANYPLAY_WRITE_TICK=<dir> cargo test write_the_tick -- --ignored --nocapture"]
+    fn write_the_tick() {
+        let Ok(dir) = std::env::var("ANYPLAY_WRITE_TICK") else {
+            return;
+        };
+        let dir = std::path::PathBuf::from(dir);
+        for (name, cue) in TICKS {
+            let out = render(cue, 48_000);
+            let m = metrics(&out, 48_000);
+            println!(
+                "{name}: peak {:.1} dBFS, {:.0} ms to -60 dBFS, dc {:.5}, rms {:.0} Hz",
+                m.peak_db, m.length_ms, m.dc, m.rms_hz
+            );
+            wav(&dir.join(format!("{name}.wav")), &out, 48_000);
+        }
+    }
+
+    #[test]
+    fn the_hover_tick_is_short_quiet_clean_and_the_focus_tick_alike() {
+        const RATE: u32 = 48_000;
+        let hover = render(Cue::Hover, RATE);
+        let focus = render(Cue::Move, RATE);
+        let (h, f) = (metrics(&hover, RATE), metrics(&focus, RATE));
+        // The same voice, a touch quieter.
+        assert!(
+            (f.peak_db - h.peak_db - 3.0).abs() < 0.1,
+            "{} {}",
+            f.peak_db,
+            h.peak_db
+        );
+        assert!((h.peak_db + 25.0).abs() < 0.1, "peak {}", h.peak_db);
+        assert!((f.rms_hz - h.rms_hz).abs() < 1.0);
+        // Short: over (below -60 dBFS) within 140 ms, but a real tick of at least 60 ms.
+        assert!((60.0..140.0).contains(&h.length_ms), "{} ms", h.length_ms);
+        assert!(f.length_ms < 140.0, "{} ms", f.length_ms);
+        // Warm, not bright: the rms frequency stays in the low middle register.
+        assert!((300.0..600.0).contains(&h.rms_hz), "{} Hz", h.rms_hz);
+        // No DC offset, no clipping, a silent first and last sample.
+        assert!(h.dc < 1e-3 && f.dc < 1e-3, "dc {} {}", h.dc, f.dc);
+        for out in [&hover, &focus] {
+            assert!(out.iter().all(|s| s.abs() < db_to_gain(-20.0)));
+            assert_eq!((out[0], out[out.len() - 1]), (0.0, 0.0));
+        }
+        // The attack is rounded: the first 3 ms stay under a third of the peak (no click), the
+        // peak comes within 12 ms.
+        let m = mono(&hover);
+        let peak = m.iter().fold(0.0f32, |a, s| a.max(s.abs()));
+        assert!(
+            m[..(0.003 * RATE as f32) as usize]
+                .iter()
+                .all(|s| s.abs() < peak / 3.0)
+        );
+        let at = m.iter().position(|s| s.abs() > peak * 0.98).unwrap();
+        assert!(at < (0.012 * RATE as f32) as usize, "peak at sample {at}");
     }
 }

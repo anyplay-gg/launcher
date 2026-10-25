@@ -94,6 +94,17 @@ pub fn message_time(unix: i64, now: i64, offset_seconds: i32, language: Language
     }
 }
 
+/// The day with its year: `Oct 17, 2026` in English and `17 Eki 2026` in Turkish. `unix` is in
+/// seconds, `offset_seconds` is the local UTC offset.
+pub fn day_text(unix: i64, offset_seconds: i32, language: Language) -> String {
+    let local = unix + i64::from(offset_seconds);
+    let (year, month, day) = civil_from_days(local.div_euclid(86_400));
+    match language {
+        Language::English => format!("{} {day}, {year}", MONTHS_EN[month as usize - 1]),
+        Language::Turkish => format!("{day} {} {year}", MONTHS_TR[month as usize - 1]),
+    }
+}
+
 /// The day without a year, for times too old to tell in hours: `Oct 21` in English and `21 Eki` in
 /// Turkish. `unix` is in seconds, `offset_seconds` is the local UTC offset.
 pub fn short_date(unix: i64, offset_seconds: i32, language: Language) -> String {
@@ -103,6 +114,23 @@ pub fn short_date(unix: i64, offset_seconds: i32, language: Language) -> String 
         Language::English => format!("{} {day}", MONTHS_EN[month as usize - 1]),
         Language::Turkish => format!("{day} {}", MONTHS_TR[month as usize - 1]),
     }
+}
+
+/// A count with the language's thousands separator: `65,340` in English, `65.340` in Turkish.
+pub fn grouped(n: u64, language: Language) -> String {
+    let digits = n.to_string();
+    let separator = match language {
+        Language::English => ',',
+        Language::Turkish => '.',
+    };
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(separator);
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// `m:ss` of the start timer.
@@ -159,6 +187,31 @@ pub fn home_dir() -> Option<std::path::PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_day_is_written_with_its_year() {
+        use super::day_text;
+        use crate::ui::i18n::Language::{English, Turkish};
+        // 2026-10-17 12:00 UTC.
+        assert_eq!(day_text(1_792_238_400, 0, English), "Oct 17, 2026");
+        assert_eq!(day_text(1_792_238_400, 0, Turkish), "17 Eki 2026");
+        // Late in the evening UTC it is already the next day at +3.
+        assert_eq!(
+            day_text(1_792_238_400 + 11 * 3600, 3 * 3600, English),
+            "Oct 18, 2026"
+        );
+    }
+
+    #[test]
+    fn counts_are_grouped_by_thousands() {
+        use super::grouped;
+        use crate::ui::i18n::Language::{English, Turkish};
+        assert_eq!(grouped(0, English), "0");
+        assert_eq!(grouped(999, English), "999");
+        assert_eq!(grouped(1_240, English), "1,240");
+        assert_eq!(grouped(65_340, Turkish), "65.340");
+        assert_eq!(grouped(1_000_000, English), "1,000,000");
+    }
+
     use super::*;
 
     // 2026-10-17 21:14:00 UTC

@@ -142,6 +142,15 @@ impl TrophySet {
             .collect()
     }
 
+    /// The numbers of the first set's hidden trophies, the ones the network is told are secret.
+    pub fn hidden(&self) -> Vec<u32> {
+        self.trophies
+            .iter()
+            .filter(|t| t.service_label == 0 && t.hidden)
+            .map(|t| t.number)
+            .collect()
+    }
+
     /// Unlocked points over all points, 0 to 100 (integer division).
     pub fn percent(&self) -> u32 {
         let total: u32 = self.trophies.iter().map(|t| t.grade.points()).sum();

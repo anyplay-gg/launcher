@@ -24,6 +24,7 @@ fn online() -> Online {
         id: AccountId(1),
         handle: "Mira".into(),
         email: "mira@example.org".into(),
+        appear_offline: false,
     });
     online.social.apply_party(Some(Party {
         id: "p".into(),

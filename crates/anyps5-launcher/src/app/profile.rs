@@ -104,6 +104,7 @@ mod tests {
             id: AccountId(7),
             handle: "Mira".into(),
             email: String::new(),
+            appear_offline: false,
         });
         m.open_profile_button();
         assert_eq!(m.overlay, Some(Overlay::Profile));

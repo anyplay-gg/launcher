@@ -269,7 +269,7 @@ impl FriendsScreen {
                         &paint::Header {
                             handle,
                             status: &status,
-                            connected: data.online.is_online(),
+                            connected: data.online.is_online() && !data.online.appears_offline(),
                             avatar,
                             accent: data.accent,
                             name: &name,

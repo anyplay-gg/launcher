@@ -253,6 +253,10 @@ pub struct Model {
     pub online: Online,
     /// The profile the profile screen is on and where Back leads (`app::profile`).
     pub profile: Option<crate::app::profile::Target>,
+    /// The comparison the trophy compare screen is on (`app::compare`).
+    pub compare: Option<crate::app::compare::Target>,
+    /// The profile screen opens again from the comparison: its focus stays where it was.
+    pub profile_returning: bool,
     /// The Friends screen opens on the page it was left on, not on its first one: the player
     /// comes back from the profile screen.
     pub online_resume: bool,
@@ -315,6 +319,8 @@ impl Model {
             effects: Vec::new(),
             online: Online::default(),
             profile: None,
+            compare: None,
+            profile_returning: false,
             online_resume: false,
             friends_back: None,
             run_prompt: None,
@@ -673,6 +679,7 @@ impl Model {
                 Some(set) => {
                     if let Some(title_id) = self.game(&game).map(|g| g.title_id.clone()) {
                         self.online.upload_trophies(&title_id, &set.earned());
+                        self.online.mark_secrets(&title_id, &set.hidden());
                     }
                     self.trophies.insert(game, set);
                 }
