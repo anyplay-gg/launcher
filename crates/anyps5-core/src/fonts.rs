@@ -13,8 +13,8 @@
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crate::error::CancelToken;
 use crate::paths::AppPaths;
@@ -175,7 +175,10 @@ fn prune_old_sets(dir: &Path) {
             && entry.path().is_dir()
             && let Err(error) = fs::remove_dir_all(entry.path())
         {
-            tracing::warn!("cannot remove the old fonts {}: {error}", entry.path().display());
+            tracing::warn!(
+                "cannot remove the old fonts {}: {error}",
+                entry.path().display()
+            );
         }
     }
 }
@@ -587,7 +590,11 @@ mod tests {
         });
         let dir = managed_dir(&paths, &bundle);
         for name in BUNDLED_FILES {
-            assert_eq!(fs::metadata(dir.join(name)).unwrap().len(), 2 << 20, "{name}");
+            assert_eq!(
+                fs::metadata(dir.join(name)).unwrap().len(),
+                2 << 20,
+                "{name}"
+            );
         }
     }
 
