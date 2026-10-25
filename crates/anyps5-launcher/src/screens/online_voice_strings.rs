@@ -37,6 +37,7 @@ pub enum VoiceText {
     /// A game is running and push to talk would not reach the launcher.
     PttInGameNote,
     ActivityNote,
+    CallModeNote,
     // The key
     TalkKey,
     /// The detail while the key row waits for a key.
@@ -104,6 +105,9 @@ impl VoiceText {
             VoiceText::ActivityNote => {
                 "The microphone opens whenever you speak. Without headphones, others hear themselves back."
             }
+            VoiceText::CallModeNote => {
+                "On a call, the microphone opens whenever you speak. Push to Talk is back when the call ends."
+            }
             VoiceText::TalkKey => "Talk Key",
             VoiceText::TalkKeyNote => "Press a key. Esc keeps the current one.",
             VoiceText::Speakers => "Speakers",
@@ -166,6 +170,9 @@ impl VoiceText {
             }
             VoiceText::ActivityNote => {
                 "Mikrofon, konuştuğunda açılır. Kulaklık yoksa diğerleri kendi seslerini geri duyar."
+            }
+            VoiceText::CallModeNote => {
+                "Aramada mikrofon, konuştuğunda açılır. Arama bitince Bas ve Konuş geri gelir."
             }
             VoiceText::TalkKey => "Konuşma Tuşu",
             VoiceText::TalkKeyNote => "Bir tuşa bas. Esc mevcut tuşu korur.",

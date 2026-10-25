@@ -104,4 +104,5 @@ impl Icon {
     pub const MICROPHONE_SLASH: Icon = Icon('\u{e328}');
     pub const SPEAKER_SLASH: Icon = Icon('\u{e45a}');
     pub const HEADPHONES: Icon = Icon('\u{e2a6}');
+    pub const STEAM_LOGO: Icon = Icon('\u{ead4}');
 }
