@@ -79,6 +79,8 @@ pub enum Extra {
     RestartNow,
     /// About row value: `%@` = the new version, but the folder cannot be written to.
     LauncherReadOnly,
+    /// About row value: `%@` = the new version; this launcher cannot install it, the player downloads it.
+    LauncherManual,
     /// Toast when "Restart Now" or the swap on exit fails.
     LauncherUpdateFailed,
     /// Settings row: the launcher answers anyps5:// links and folders.
@@ -308,6 +310,7 @@ impl Extra {
             }
             Extra::RestartNow => "Restart Now",
             Extra::LauncherReadOnly => "%@ available, but this folder is read-only",
+            Extra::LauncherManual => "%@ available. Download it from the releases page",
             Extra::LauncherUpdateFailed => {
                 "Could not install the launcher update. Download it from GitHub instead."
             }
@@ -488,6 +491,7 @@ impl Extra {
             Extra::LauncherToast => "Başlatıcı %@ hazır. Başlatıcıyı kapattığında kurulur.",
             Extra::RestartNow => "Şimdi yeniden başlat",
             Extra::LauncherReadOnly => "%@ var, ama bu klasör salt okunur",
+            Extra::LauncherManual => "%@ var. Sürümler sayfasından indir",
             Extra::LauncherUpdateFailed => {
                 "Başlatıcı güncellemesi kurulamadı. Bunun yerine GitHub'dan indir."
             }
@@ -615,7 +619,7 @@ impl Extra {
         substitute(self.text(language), args)
     }
 
-    pub const ALL: [Extra; 139] = [
+    pub const ALL: [Extra; 140] = [
         Extra::Toolkit,
         Extra::UpdateCheck,
         Extra::UpdateCheckDetail,
@@ -666,6 +670,7 @@ impl Extra {
         Extra::LauncherToast,
         Extra::RestartNow,
         Extra::LauncherReadOnly,
+        Extra::LauncherManual,
         Extra::LauncherUpdateFailed,
         Extra::Links,
         Extra::LinksDetail,

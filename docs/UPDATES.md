@@ -28,6 +28,12 @@ Every release carries two extra assets next to the binaries: `latest.json` and `
       "url": "https://github.com/anyplaynet/launcher/releases/download/v0.2.0/AnyPlay-Launcher-0.2.0-x64.exe",
       "sha256": "<64 lower-case hex digits>",
       "size": 12345678
+    },
+    "linux-x86_64": {
+      "name": "AnyPlay-Launcher-0.2.0-x86_64.AppImage",
+      "url": "https://github.com/anyplaynet/launcher/releases/download/v0.2.0/AnyPlay-Launcher-0.2.0-x86_64.AppImage",
+      "sha256": "<64 lower-case hex digits>",
+      "size": 87654321
     }
   }
 }
@@ -39,7 +45,7 @@ Every release carries two extra assets next to the binaries: `latest.json` and `
 | `version` | The version this manifest offers, plain semver without `v`. |
 | `published`, `expires` | RFC 3339, UTC. After `expires` the manifest is void. The release workflow sets 30 days; the tool refuses more than 90. |
 | `minimum_version` | The oldest running version that may update from this manifest. A launcher below it refuses (it needs an intermediate release or the installer). The workflow takes it from the repository variable `UPDATE_MINIMUM_VERSION`, default `0.1.0`. |
-| `platforms` | Per platform the exe's `name`, `url`, `sha256` and `size`. Today only `windows-x86_64`. |
+| `platforms` | Per platform the download's `name`, `url`, `sha256` and `size`: `windows-x86_64` (the portable exe) and `linux-x86_64` (the AppImage). A manifest without a Linux entry (every one up to v0.2.4) offers Linux nothing, quietly: it is no error. Windows always needs its entry. |
 
 `latest.json.sig` is one line: the Ed25519 signature in hex over `anyplay-launcher-update-manifest-v1\n` followed by the exact bytes of `latest.json`. The prefix means a signature made for this purpose is good for nothing else. The bytes are verified before they are parsed; nothing is canonicalised.
 
@@ -53,7 +59,7 @@ Once a key is trusted ([Migration](#migration)), an update is taken only when al
 4. It has not expired.
 5. `version` is newer than the running version (semver, pre-releases below their release). An equal or older version offers nothing: this is the rollback check.
 6. The running version is not below `minimum_version`.
-7. The exe's `name` is exactly `AnyPlay-Launcher-<version>-x64.exe` (or the old `AnyPS5-Launcher-<version>-x64.exe`), and its `url` is https.
+7. The download's `name` is exactly `AnyPlay-Launcher-<version>-x64.exe` (or the old `AnyPS5-Launcher-<version>-x64.exe`) on Windows and `AnyPlay-Launcher-<version>-x86_64.AppImage` on Linux, and its `url` is https.
 8. The download's SHA-256 **and** size are the manifest's. The file gets its final name only after that, and a `.verified` marker holding the hash is written beside it.
 
 A staged exe from an earlier run is offered again only if it has its marker and still hashes to it; what an unsigned launcher left in the updates folder is ignored.
@@ -66,6 +72,15 @@ Offline, the check fails with a network error and the launcher runs as it is. A 
 - A player's clock set into the past defeats the expiry check on that PC.
 - A launcher released before this change (up to the version that carries the first key) does not check any signature. It keeps updating from the unsigned path, which is why every release still carries `SHA256SUMS.txt` and `AnyPS5-Launcher-<v>-x64.exe`. Those launchers stay exposed until their players update once.
 - The exe is not code-signed (Windows SmartScreen).
+
+## Linux: the AppImage
+
+The same signed manifest updates the AppImage. Every rule above (signature, expiry, rollback, `minimum_version`, name, https, SHA-256 and size, the repeated check of a staged file) applies unchanged, and **Linux has no unsigned flow at all**: with an empty key list nothing is offered, and a staged file is never offered without a manifest that vouches for it. What differs is which file is replaced and how (`selfupdate::install_path`, `Staged::swap_in`):
+
+- **Which file.** The runtime of an AppImage sets `APPIMAGE` (the path of the `.AppImage`) and `APPDIR` (its mount). Child processes inherit both, so they count only when the running program lies inside `APPDIR` (a `.tar.gz` launcher started from some other AppImage's terminal must never overwrite that one), the path is absolute without `..`, ends in `.AppImage` and is a regular file, not a link. A folder that refuses new files is reported before anything is downloaded (About says it is read-only).
+- **The swap.** The staged file is copied to a sibling `<name>.new`, hashed against the manifest (a mismatch removes the copy and refuses), set to mode 0755, synced and renamed over the original in one atomic step. Linux allows that while the old image runs: the running process keeps its open file. The original is untouched until the rename, and a failure at any step leaves it as it was. A restart starts the new file with the same arguments.
+- **No AppImage, no swap.** A launcher from the `.tar.gz` (no `APPIMAGE`) cannot replace itself. It still checks the signed manifest, and About shows "<v> available. Download it from the releases page"; nothing is downloaded.
+- **The download** must be a 64-bit ELF with the AppImage type 2 magic after its header, on top of the hash and the size.
 
 ## Provenance of a release
 
@@ -182,7 +197,7 @@ The new manifest has its own attestation, made by `resign.yml`; `gh attestation 
 | Command | Does |
 |---|---|
 | `keygen --secret-out <file> [--public-out <file>] [--label <text>]` | Makes a key pair. Prints only the public line. |
-| `manifest --version <v> --exe <file> --out <file> [--minimum <v>] [--days 30] [--base-url <url>]` | Hashes the exe and writes the manifest. The exe must be named `AnyPlay-Launcher-<v>-x64.exe`. |
+| `manifest --version <v> --exe <file> --out <file> [--appimage <file>] [--minimum <v>] [--days 30] [--base-url <url>]` | Hashes the exe (and the AppImage, when given) and writes the manifest. The exe must be named `AnyPlay-Launcher-<v>-x64.exe`, the AppImage `AnyPlay-Launcher-<v>-x86_64.AppImage`. Without `--appimage` the manifest is Windows-only. `release.yml` always passes it; `resign.yml` only when the release it renews has an AppImage. |
 | `sign --manifest <file> --out <file> (--key-env <NAME> \| --key-file <file>)` | Signs, after checking that the manifest is well formed, and verifies the new signature before writing it. Never prints the key. |
 | `verify --manifest <file> --sig <file> --keys <file> [--current <v>]` | What the launcher does, for a release candidate. |
 

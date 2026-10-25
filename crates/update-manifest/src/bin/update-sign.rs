@@ -3,7 +3,7 @@
 //! ```text
 //! update-sign keygen --secret-out <file> [--public-out <file>] [--label <text>]
 //! update-sign manifest --version <v> --exe <file> --out <latest.json>
-//!                      [--minimum <v>] [--days 30] [--base-url <url>]
+//!                      [--appimage <file>] [--minimum <v>] [--days 30] [--base-url <url>]
 //! update-sign sign --manifest <latest.json> --out <latest.json.sig>
 //!                  (--key-env <NAME> | --key-file <file>)
 //! update-sign verify --manifest <latest.json> --sig <latest.json.sig> --keys <file>
@@ -24,8 +24,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyplay_update_manifest::{
-    Artifact, MAX_VALIDITY_DAYS, Manifest, SCHEMA, TrustedKeys, Version, WINDOWS_X64, format_time,
-    generate_signing_key, key_line, seed_hex, sign, signing_key_from_hex, to_hex, verify,
+    Artifact, LINUX_X64, MAX_VALIDITY_DAYS, Manifest, SCHEMA, TrustedKeys, Version, WINDOWS_X64,
+    format_time, generate_signing_key, key_line, seed_hex, sign, signing_key_from_hex, to_hex,
+    verify,
 };
 use sha2::{Digest, Sha256};
 use time::{Duration, OffsetDateTime};
@@ -150,6 +151,21 @@ fn manifest(flags: &Flags) -> Result<()> {
         || format!("{DEFAULT_BASE}/v{version}"),
         |b| b.trim_end_matches('/').to_owned(),
     );
+    let mut platforms = BTreeMap::from([(WINDOWS_X64.to_owned(), artifact(&base, name, &data))]);
+    if let Some(path) = flags.get("appimage") {
+        let path = Path::new(path);
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or("--appimage has no file name")?
+            .to_owned();
+        let expected = format!("AnyPlay-Launcher-{version}-x86_64.AppImage");
+        if name != expected {
+            return Err(format!("the AppImage must be named {expected}, not {name}"));
+        }
+        let data = fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        platforms.insert(LINUX_X64.to_owned(), artifact(&base, name, &data));
+    }
     let now = OffsetDateTime::now_utc();
     let manifest = Manifest {
         schema: SCHEMA,
@@ -157,15 +173,7 @@ fn manifest(flags: &Flags) -> Result<()> {
         published: format_time(now),
         expires: format_time(now + Duration::days(days)),
         minimum_version: minimum,
-        platforms: BTreeMap::from([(
-            WINDOWS_X64.to_owned(),
-            Artifact {
-                url: format!("{base}/{name}"),
-                name,
-                sha256: to_hex(&Sha256::digest(&data)),
-                size: data.len() as u64,
-            },
-        )]),
+        platforms,
     };
     manifest.validate().map_err(|e| e.to_string())?;
     let mut text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
@@ -173,6 +181,16 @@ fn manifest(flags: &Flags) -> Result<()> {
     fs::write(&out, text).map_err(|e| format!("cannot write {}: {e}", out.display()))?;
     eprintln!("wrote {} (expires {})", out.display(), manifest.expires);
     Ok(())
+}
+
+/// The manifest entry of a file that is served from `base`.
+fn artifact(base: &str, name: String, data: &[u8]) -> Artifact {
+    Artifact {
+        url: format!("{base}/{name}"),
+        name,
+        sha256: to_hex(&Sha256::digest(data)),
+        size: data.len() as u64,
+    }
 }
 
 fn read_secret(flags: &Flags) -> Result<Zeroizing<String>> {

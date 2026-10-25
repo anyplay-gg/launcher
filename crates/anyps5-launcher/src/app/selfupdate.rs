@@ -21,6 +21,8 @@ pub enum SelfUpdateEvent {
     Ready(Staged),
     /// A newer release exists but the launcher's folder cannot be written to.
     ReadOnly(String),
+    /// A newer release exists but this launcher cannot replace itself (a Linux `.tar.gz`).
+    Manual(String),
     /// The check or the download failed; nothing to do for the player.
     Failed(String),
 }
@@ -56,20 +58,29 @@ impl SelfUpdateService {
     /// Checks for a newer launcher in the background, once per start. A verified update from an
     /// earlier run is reported at once, without waiting for the network.
     pub fn start(&mut self, paths: &AppPaths) {
-        // The update is the Windows portable exe; a Linux build is replaced from the releases page.
-        if self.started || self.simulated || !cfg!(windows) {
+        if self.started || self.simulated {
             return;
         }
         self.started = true;
-        let Ok(exe) = std::env::current_exe() else {
-            return;
-        };
+        // The Windows exe, or the Linux AppImage that is running; `None` is a launcher that cannot
+        // replace itself (the Linux `.tar.gz`), which is only told that a newer version exists.
+        let install = selfupdate::install_path();
         let (tx, ctx, paths) = (self.tx.clone(), self.ctx.clone(), paths.clone());
         spawn("launcher update", move || {
             let current = env!("CARGO_PKG_VERSION");
             let send = |event| {
                 let _ = tx.send(event);
                 ctx.request_repaint();
+            };
+            let Some(exe) = install else {
+                match selfupdate::check(current) {
+                    Ok(Some(release)) => {
+                        send(SelfUpdateEvent::Manual(release.version().to_owned()));
+                    }
+                    Ok(None) => {}
+                    Err(error) => send(SelfUpdateEvent::Failed(error.to_string())),
+                }
+                return;
             };
             if let Some(staged) = selfupdate::pending(&paths, current)
                 && selfupdate::can_install(&exe)
@@ -115,6 +126,11 @@ impl SelfUpdateService {
                         self.state = LauncherUpdate::ReadOnly(version.clone());
                     }
                 }
+                SelfUpdateEvent::Manual(version) => {
+                    if self.staged.is_none() {
+                        self.state = LauncherUpdate::Manual(version.clone());
+                    }
+                }
                 SelfUpdateEvent::Failed(error) => tracing::warn!("launcher update: {error}"),
             }
         }
@@ -135,7 +151,12 @@ impl SelfUpdateService {
             return Ok(());
         };
         self.state = LauncherUpdate::None;
-        let exe: PathBuf = std::env::current_exe()?;
+        let exe: PathBuf = selfupdate::install_path().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "this launcher cannot replace itself",
+            )
+        })?;
         if std::mem::take(&mut self.restart) {
             // The new launcher waits for this one to end before it takes the single instance.
             let mut args: Vec<std::ffi::OsString> = std::env::args_os()

@@ -132,6 +132,9 @@ pub enum LauncherUpdate {
     Ready(String),
     /// A newer version exists but this folder cannot be written to: its version.
     ReadOnly(String),
+    /// A newer version exists but this launcher cannot install it itself (the Linux `.tar.gz`):
+    /// its version. The player takes it from the releases page.
+    Manual(String),
 }
 
 /// What the settings show that is not a preference.
@@ -680,6 +683,11 @@ pub fn build_categories(
             "launcherUpdate",
             t(Key::Status),
             Some(Extra::LauncherReadOnly.format(language, &[Arg::Str(v)])),
+        )),
+        LauncherUpdate::Manual(v) => about.push(Row::info(
+            "launcherUpdate",
+            t(Key::Status),
+            Some(Extra::LauncherManual.format(language, &[Arg::Str(v)])),
         )),
         LauncherUpdate::None => {}
     }
@@ -1410,6 +1418,11 @@ mod tests {
             restart.is_some() && restart < quit,
             "Restart Now sits before Quit"
         );
+
+        let manual = about_rows(LauncherUpdate::Manual("0.2.0".into()));
+        assert!(manual.contains(&("version", Some("0.1.0".into()))));
+        assert!(manual.iter().any(|(id, _)| *id == "launcherUpdate"));
+        assert!(!manual.iter().any(|(id, _)| *id == "restartNow"));
 
         let read_only = about_rows(LauncherUpdate::ReadOnly("0.2.0".into()));
         assert!(read_only.contains(&("version", Some("0.1.0".into()))));
