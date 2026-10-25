@@ -11,6 +11,7 @@ pub mod feed;
 pub mod fonts;
 pub mod fsx;
 pub mod gamefiles;
+pub mod glibc;
 pub mod hostcpu;
 pub mod issue;
 pub mod launch;

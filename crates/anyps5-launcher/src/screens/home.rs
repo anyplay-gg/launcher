@@ -12,6 +12,7 @@ use egui::{
 
 use crate::app::model::{GameState, Model, SizeState};
 use crate::screens::failure_strings::FailureText;
+use crate::screens::glibc_strings::shortfall_text;
 use crate::screens::online_social_strings::SocialText;
 use crate::screens::online_strings::OnlineText;
 use crate::screens::phone_strings::PhoneText;
@@ -918,9 +919,37 @@ fn paint_hero(
     }
     action_row_status(ui, cx, game, &state, after_buttons.x, geometry.actions_top);
 
+    // The glibc notice takes the line under Play while it applies: it says why a start may fail.
+    let glibc_line = cx
+        .model
+        .glibc
+        .filter(|_| glibc_notice_applies(&state))
+        .map(|short| shortfall_text(&short, language));
+    if let Some(line) = &glibc_line {
+        let top = geometry.actions_top + ACTION_ROW + FRIENDS_GAP;
+        let rect = Rect::from_min_size(pos2(x, top), vec2(width, ty::DETAIL_LARGE.line_height()));
+        let response = place(ui, rect, |ui| {
+            ui.allocate_exact_size(rect.size(), Sense::hover()).1
+        });
+        response.widget_info(|| WidgetInfo::labeled(Role::Label, true, line.as_str()));
+        paint_label(
+            &painter,
+            pos2(x, rect.center().y),
+            &StateLabel {
+                icon: Icon::WARNING,
+                fill: true,
+                tint: color::warning_text(),
+                text: line.clone(),
+            },
+            ty::DETAIL_LARGE,
+            width,
+            1,
+            1.0,
+        );
+    }
     // Friends who play this game now, under Play.
     let names = cx.model.online.friends_playing(&game.title_id);
-    if let Some(line) = friends_line(&names, language) {
+    if let Some(line) = friends_line(&names, language).filter(|_| glibc_line.is_none()) {
         let galley = wrapped(
             &painter,
             ty::DETAIL_LARGE,
@@ -1166,6 +1195,15 @@ fn action_row_status(
             }
         }
     }
+}
+
+/// The glibc notice belongs to the states in which a player unlocks or starts a game; a running
+/// game has started already.
+fn glibc_notice_applies(state: &GameState) -> bool {
+    !matches!(
+        state,
+        GameState::Running | GameState::Starting | GameState::Unreadable
+    )
 }
 
 /// One fact of the hero: a quiet overline over its value, with space and no card around it

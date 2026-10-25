@@ -29,6 +29,8 @@ type Shared = Arc<Mutex<Vec<PipelineEvent>>>;
 pub struct CorePipeline {
     paths: AppPaths,
     toolkit: Option<Toolkit>,
+    /// What `glibc::check` said when the toolkit was located.
+    glibc: Option<anyps5_core::glibc::Shortfall>,
     /// What the releases games stay on look like on disk, by the pin as the preferences hold it.
     /// Cleared when a toolkit was installed, removed or chosen, so no frame reads the disk.
     pinned: HashMap<String, GameToolkit>,
@@ -110,6 +112,7 @@ impl CorePipeline {
         };
         let mut pipeline = Self {
             toolkit: None,
+            glibc: None,
             pinned: HashMap::new(),
             opened: HashMap::new(),
             queue: UnlockQueue::new(sink),
@@ -137,6 +140,14 @@ impl CorePipeline {
                 .or_else(|| Toolkit::locate(&self.paths, None)),
             None => Toolkit::locate(&self.paths, pinned.as_ref()),
         };
+        self.glibc = self.toolkit.as_ref().and_then(anyps5_core::glibc::check);
+        if let Some(short) = self.glibc {
+            tracing::warn!(
+                "the toolkit needs glibc {} and this system has {}; games may not start",
+                short.needed,
+                short.system
+            );
+        }
         if let Some(toolkit) = &self.toolkit {
             match compat::fit(toolkit.version()) {
                 Fit::Newer => tracing::info!(
@@ -350,6 +361,10 @@ impl CorePipeline {
 impl Pipeline for CorePipeline {
     fn toolkit_version(&self) -> Option<String> {
         self.toolkit.as_ref().map(|t| t.version().to_owned())
+    }
+
+    fn glibc_shortfall(&self) -> Option<anyps5_core::glibc::Shortfall> {
+        self.glibc
     }
 
     fn submit(&mut self, command: PipelineCommand, cx: &PipelineContext<'_>) {

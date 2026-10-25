@@ -227,6 +227,8 @@ pub struct Model {
     pub toast: Option<Toast>,
     /// The toolkit version on this PC (`None`: no toolkit, nothing can be unlocked).
     pub toolkit: Option<String>,
+    /// The toolkit needs a newer glibc than this system has (Linux); a notice, not a block.
+    pub glibc: Option<anyps5_core::glibc::Shortfall>,
     /// The toolkit of each game that stays on a release of its own, as the pipeline found it.
     /// A game that is not in here follows [`toolkit`](Self::toolkit).
     pub game_toolkits: HashMap<GameId, GameToolkit>,
@@ -296,6 +298,7 @@ impl Model {
             diagnoses: HashMap::new(),
             toast: None,
             toolkit: None,
+            glibc: None,
             game_toolkits: HashMap::new(),
             toolkit_question: None,
             patches_dir: None,

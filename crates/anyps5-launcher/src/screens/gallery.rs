@@ -284,6 +284,8 @@ pub enum ToolkitLook {
     Local,
     /// Two installed releases nothing uses: the page offers to remove them.
     Unused,
+    /// The system's glibc is older than the libraries ask for (Linux): the note hangs under the header.
+    Glibc,
 }
 
 /// Invented phones for the Phone as Controller page.
@@ -377,6 +379,7 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "toolkit-pinned" => ScreenPage::Toolkit(ToolkitLook::Pinned),
         "toolkit-local" => ScreenPage::Toolkit(ToolkitLook::Local),
         "toolkit-unused" => ScreenPage::Toolkit(ToolkitLook::Unused),
+        "toolkit-glibc" => ScreenPage::Toolkit(ToolkitLook::Glibc),
         "recommended" => ScreenPage::Recommended,
         "recommended-warning" => ScreenPage::RecommendedWarning,
         "whats-new" => ScreenPage::WhatsNew,
@@ -1384,7 +1387,7 @@ impl ScreenGallery {
                     prefs.toolkit = Some("D:\\anyps5\\build".into());
                     toolkit_version = "local-4f2a9c1d7e03".into();
                 }
-                ToolkitLook::Unused => {}
+                ToolkitLook::Unused | ToolkitLook::Glibc => {}
             }
         }
         let phone = match page {
@@ -1647,6 +1650,12 @@ impl ScreenGallery {
             games_found: self.games.len(),
             app_version: "0.1.0",
             toolkit_version: Some(&self.toolkit_version),
+            glibc: matches!(self.page, ScreenPage::Toolkit(ToolkitLook::Glibc)).then_some(
+                anyps5_core::glibc::Shortfall {
+                    needed: anyps5_core::glibc::Version::new(2, 38),
+                    system: anyps5_core::glibc::Version::new(2, 35),
+                },
+            ),
             update: self.update.clone(),
             recent: &recent,
             launcher: if matches!(self.page, ScreenPage::AboutUpdate) {

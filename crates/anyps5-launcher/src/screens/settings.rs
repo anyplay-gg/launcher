@@ -139,6 +139,8 @@ pub struct SettingsEnv<'a> {
     pub app_version: &'a str,
     /// The installed toolkit's version, `None` when there is none.
     pub toolkit_version: Option<&'a str>,
+    /// The toolkit needs a newer glibc than this system has (Linux).
+    pub glibc: Option<anyps5_core::glibc::Shortfall>,
     pub update: UpdateState,
     /// The last releases (`v0.1.3`), for the pinned channel; empty until fetched.
     pub recent: &'a [String],
@@ -442,6 +444,16 @@ pub fn build_categories(
             toolkit.push(Row::info("toolkitFit", Extra::FitOlder.text(language), None).attached());
         }
         _ => {}
+    }
+    if let Some(short) = env.glibc {
+        toolkit.push(
+            Row::info(
+                "toolkitGlibc",
+                crate::screens::glibc_strings::shortfall_text(&short, language),
+                None,
+            )
+            .attached(),
+        );
     }
     toolkit.push(
         Row::choice(
@@ -1250,6 +1262,7 @@ mod tests {
             games_found: 9,
             app_version: "0.1.0",
             toolkit_version: toolkit,
+            glibc: None,
             update,
             launcher: LauncherUpdate::None,
             default_screenshots: std::path::Path::new("C:\\Users\\me\\Pictures\\AnyPS5"),
