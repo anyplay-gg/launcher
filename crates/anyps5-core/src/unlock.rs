@@ -865,13 +865,9 @@ fn run_relinker(
 /// What the game wrote beside `app0` in the old copy (saves in `_sd`, trophies in `_trophy`, its
 /// data and download folders) moves into the new one, so unlocking again keeps the progress.
 /// Failing to move anything but `_sd` and `_trophy` is logged, not fatal, and the name is returned
-/// in `failed` so the caller does not delete the old copy over it. `moved` is what it moved, so a
-/// caller that must undo the move knows what to put back.
-fn carry_over(
-    old: &Path,
-    new: &Path,
-    reporter_log: &dyn LogLine,
-) -> Result<Carried, CarryFailure> {
+/// in `failed` so the caller does not delete the old copy over it. A failing `_sd` or `_trophy`
+/// names what had already moved, so the caller can put it back.
+fn carry_over(old: &Path, new: &Path, reporter_log: &dyn LogLine) -> Result<Carried, CarryFailure> {
     carry_over_with(old, new, reporter_log, &fsx::rename_retry)
 }
 
@@ -885,7 +881,7 @@ fn carry_over_with(
     let mut moved = Vec::new();
     let mut failed = Vec::new();
     let Ok(entries) = fs::read_dir(old) else {
-        return Ok(Carried { moved, failed });
+        return Ok(Carried { failed });
     };
     for entry in entries.flatten() {
         let name = entry.file_name();
@@ -918,13 +914,12 @@ fn carry_over_with(
             }
         }
     }
-    Ok(Carried { moved, failed })
+    Ok(Carried { failed })
 }
 
-/// What `carry_over` did: the names it moved, and the ones it could not move (not fatal).
+/// What `carry_over` could not move without failing (not fatal).
 #[derive(Debug)]
 struct Carried {
-    moved: Vec<OsString>,
     failed: Vec<OsString>,
 }
 
@@ -1515,7 +1510,12 @@ mod tests {
         }
         fs::create_dir_all(&new).unwrap();
         fs::write(new.join("eboot.exe"), "NEW").unwrap();
-        let mut moved = carry_over(&old, &new, &()).unwrap().moved;
+        carry_over(&old, &new, &()).unwrap();
+        let mut moved: Vec<OsString> = ["_sd", "_trophy", "data"]
+            .into_iter()
+            .filter(|n| new.join(n).exists() && !old.join(n).exists())
+            .map(OsString::from)
+            .collect();
         moved.sort();
         assert_eq!(moved, ["_sd", "_trophy", "data"].map(OsString::from));
 
