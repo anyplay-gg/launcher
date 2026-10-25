@@ -178,6 +178,15 @@ impl HomeFocus {
                 _ => {}
             },
         }
+        // A direction that went nowhere has met an edge: a soft bump, so the press is answered.
+        if command.is_direction()
+            && step.intent.is_none()
+            && step.sound.is_none()
+            && step.focus == self
+            && step.selected == ctx.selected.min(last_game)
+        {
+            step.sound = Some(Cue::Bump);
+        }
         step
     }
 }
@@ -294,7 +303,7 @@ impl PanelNav {
                         self.row = 0;
                         step(PanelEffect::None, Some(Cue::Move))
                     } else {
-                        step(PanelEffect::None, None)
+                        step(PanelEffect::None, Some(Cue::Bump))
                     }
                 }
                 Command::Right | Command::Select => {
@@ -320,7 +329,7 @@ impl PanelNav {
                         self.row = i;
                         step(PanelEffect::None, Some(Cue::Move))
                     }
-                    None => step(PanelEffect::None, None),
+                    None => step(PanelEffect::None, Some(Cue::Bump)),
                 }
             }
             Command::Left | Command::Right => {
@@ -399,7 +408,11 @@ mod tests {
     fn tiles_move_selection_clamped_without_wrap() {
         let c = ctx(3, 0, false);
         let s = HomeFocus::Tiles.navigate(Command::Left, c);
-        assert_eq!((s.selected, s.sound), (0, None), "no wrap, no sound");
+        assert_eq!(
+            (s.selected, s.sound),
+            (0, Some(Cue::Bump)),
+            "no wrap, a bump"
+        );
         let s = HomeFocus::Tiles.navigate(Command::Right, c);
         assert_eq!((s.selected, s.sound), (1, Some(Cue::Move)));
         let s = HomeFocus::Tiles.navigate(Command::Right, ctx(3, 2, false));
@@ -444,9 +457,15 @@ mod tests {
             assert_eq!(nav(pair[1], Command::Left).focus, pair[0]);
         }
         let end = nav(HomeFocus::LIBRARY, Command::Left);
-        assert_eq!((end.focus, end.sound), (HomeFocus::LIBRARY, None));
+        assert_eq!(
+            (end.focus, end.sound),
+            (HomeFocus::LIBRARY, Some(Cue::Bump))
+        );
         let end = nav(HomeFocus::PROFILE, Command::Right);
-        assert_eq!((end.focus, end.sound), (HomeFocus::PROFILE, None));
+        assert_eq!(
+            (end.focus, end.sound),
+            (HomeFocus::PROFILE, Some(Cue::Bump))
+        );
         for (focus, intent) in [
             (HomeFocus::LIBRARY, HomeIntent::OpenLibrary),
             (HomeFocus::FRIENDS, HomeIntent::OpenFriends),
@@ -540,7 +559,7 @@ mod tests {
         let s2 = nav.command(Command::Up, &ROWS);
         assert_eq!(
             (nav.category, s.sound, s2.sound),
-            (0, Some(Cue::Move), None),
+            (0, Some(Cue::Move), Some(Cue::Bump)),
             "clamped"
         );
         let s = nav.command(Command::Right, &ROWS);
@@ -577,13 +596,13 @@ mod tests {
         nav.command(Command::Down, &ROWS);
         assert_eq!(nav.row, 5);
         let s = nav.command(Command::Down, &ROWS);
-        assert_eq!((nav.row, s.sound), (5, None));
+        assert_eq!((nav.row, s.sound), (5, Some(Cue::Bump)));
         nav.command(Command::Up, &ROWS);
         nav.command(Command::Up, &ROWS);
         nav.command(Command::Up, &ROWS);
         assert_eq!(nav.row, 1);
         let s = nav.command(Command::Up, &ROWS);
-        assert_eq!((nav.row, s.sound), (1, None), "row 0 is info");
+        assert_eq!((nav.row, s.sound), (1, Some(Cue::Bump)), "row 0 is info");
     }
 
     #[test]
