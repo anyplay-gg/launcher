@@ -159,6 +159,10 @@ impl Toolkit {
 
     /// Opens an installed toolkit folder: `relinker.exe`, `libs\` with `.prx` files and the MinGW
     /// DLLs, optionally `version.txt`, `toolkit.json` and `patches\`.
+    ///
+    /// With a `version.txt` the file is the version and the toolkit's files are only checked for
+    /// being there, not read: hashing the whole toolkit (hundreds of MB) would block the UI thread at every start. Without
+    /// one the folder is fingerprinted and the version is `local-<fp>`.
     pub fn open(root: &Path) -> Result<Toolkit, ToolkitError> {
         Self::open_for(Os::current(), root)
     }
@@ -166,15 +170,13 @@ impl Toolkit {
     fn open_for(os: Os, root: &Path) -> Result<Toolkit, ToolkitError> {
         let relinker = root.join(os.relinker_file());
         let libs = root.join("libs");
-        let mut toolkit = Self::from_parts(os, root, relinker, libs, false)?;
-        if let Ok(text) = fs::read_to_string(root.join("version.txt")) {
-            let line = text.trim();
-            toolkit.version = if line.is_empty() {
-                "unknown".into()
-            } else {
-                line.into()
-            };
-        }
+        let recorded = fs::read_to_string(root.join("version.txt"))
+            .ok()
+            .map(|text| match text.trim() {
+                "" => "unknown".to_string(),
+                line => line.to_string(),
+            });
+        let mut toolkit = Self::from_parts(os, root, relinker, libs, false, recorded)?;
         toolkit.tag = fs::read_to_string(root.join("toolkit.json"))
             .ok()
             .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
@@ -209,19 +211,48 @@ impl Toolkit {
         relinker: PathBuf,
         libs: PathBuf,
         adopted: bool,
+        recorded_version: Option<String>,
     ) -> Result<Toolkit, ToolkitError> {
+        let extra_runtime = Self::validate(os, root, &relinker, &libs, adopted)?;
+        let patches = root.join("patches");
+        // A recorded version replaces the fingerprint, so the hash is not computed for it.
+        let version = match recorded_version {
+            Some(version) => version,
+            None => format!("local-{}", fingerprint(&relinker, &libs, &patches)?),
+        };
+        Ok(Toolkit {
+            root: root.to_path_buf(),
+            relinker,
+            libs,
+            patches,
+            version,
+            tag: None,
+            extra_runtime,
+            adopted,
+            digests: None,
+        })
+    }
+
+    /// The checks that read no more than a few bytes; gives the runtime DLLs found outside libs.
+    fn validate(
+        os: Os,
+        root: &Path,
+        relinker: &Path,
+        libs: &Path,
+        adopted: bool,
+    ) -> Result<Vec<PathBuf>, ToolkitError> {
         if !relinker.is_file() {
             return Err(ToolkitError::Missing(Os::current().relinker_file().into()));
         }
-        if !has_prx(&libs) {
+        if !has_prx(libs) {
             return Err(ToolkitError::Missing("libs\\*.prx".into()));
         }
         if os == Os::Macos {
-            macos::validate(&relinker, root)?;
+            macos::validate(relinker, root)?;
         } else {
             use std::io::Read;
             let mut magic = [0u8; 4];
-            let count = fs::File::open(&relinker)?.read(&mut magic)?;
+            let count = fs::File::open(relinker)?.read(&mut magic)?;
             let macho = matches!(
                 magic,
                 [0xcf, 0xfa, 0xed, 0xfe] | [0xca, 0xfe, 0xba, 0xbe] | [0xca, 0xfe, 0xba, 0xbf]
@@ -255,19 +286,7 @@ impl Toolkit {
         if !missing.is_empty() {
             return Err(ToolkitError::MissingRuntime(missing));
         }
-        let patches = root.join("patches");
-        let fp = fingerprint(&relinker, &libs, &patches)?;
-        Ok(Toolkit {
-            root: root.to_path_buf(),
-            relinker,
-            libs,
-            patches,
-            version: format!("local-{fp}"),
-            tag: None,
-            extra_runtime,
-            adopted,
-            digests: None,
-        })
+        Ok(extra_runtime)
     }
 
     /// The first toolkit that opens: `ANYPS5_TOOLKIT`, the remembered choice, then the newest
@@ -318,6 +337,7 @@ fn from_chosen(root: &Path, relinker: &Path, libs: &Path) -> Result<Toolkit, Too
         relinker.to_path_buf(),
         libs.to_path_buf(),
         true,
+        None,
     )
 }
 
@@ -404,7 +424,7 @@ pub fn adopt_folder(folder: &Path) -> Result<Toolkit, ToolkitError> {
             && has_prx(p)
     })
     .ok_or_else(|| ToolkitError::Missing("libs\\*.prx".into()))?;
-    Toolkit::from_parts(Os::current(), folder, relinker, libs, true)
+    Toolkit::from_parts(Os::current(), folder, relinker, libs, true, None)
 }
 
 /// Breadth-first search, shallow matches first, names in order.
@@ -1262,6 +1282,60 @@ pub(crate) mod tests {
                 tag: "0.1.3".into()
             }
         );
+    }
+
+    #[test]
+    fn open_with_version_txt_does_not_read_the_libs() {
+        let dir = tempfile::tempdir().unwrap();
+        make_toolkit(dir.path(), true);
+        write(&dir.path().join("version.txt"), b"0.1.3-abcdef123456\n");
+        // A lib the hash could not read: before the change this made `open` fail.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let lib = dir.path().join("libs/b.prx");
+            write(&lib, b"BBB");
+            fs::set_permissions(&lib, fs::Permissions::from_mode(0o000)).unwrap();
+            if fs::File::open(&lib).is_ok() {
+                // running as root: the file stays readable, nothing to prove here
+                fs::set_permissions(&lib, fs::Permissions::from_mode(0o644)).unwrap();
+            }
+        }
+        let toolkit = Toolkit::open(dir.path()).unwrap();
+        assert_eq!(toolkit.version(), "0.1.3-abcdef123456");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let lib = dir.path().join("libs/b.prx");
+            fs::set_permissions(&lib, fs::Permissions::from_mode(0o644)).unwrap();
+        }
+    }
+
+    #[test]
+    fn open_without_version_txt_fingerprints_the_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        make_toolkit(dir.path(), true);
+        let toolkit = Toolkit::open(dir.path()).unwrap();
+        let fp = toolkit.version().strip_prefix("local-").unwrap();
+        assert_eq!(fp.len(), 12);
+        assert!(fp.bytes().all(|b| b.is_ascii_hexdigit()));
+        let expected = fingerprint(
+            &dir.path().join(RELINKER),
+            &dir.path().join("libs"),
+            &dir.path().join("patches"),
+        )
+        .unwrap();
+        assert_eq!(fp, expected);
+    }
+
+    #[test]
+    fn open_with_empty_version_txt_is_unknown() {
+        let dir = tempfile::tempdir().unwrap();
+        make_toolkit(dir.path(), true);
+        write(&dir.path().join("version.txt"), b"  \n");
+        let toolkit = Toolkit::open(dir.path()).unwrap();
+        assert_eq!(toolkit.version(), "unknown");
+        assert_eq!(toolkit.tag(), None);
     }
 
     #[test]
