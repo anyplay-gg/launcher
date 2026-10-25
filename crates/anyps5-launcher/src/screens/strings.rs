@@ -305,7 +305,7 @@ impl Extra {
             }
             Extra::GameMusic => "Game Music",
             Extra::GameMusicDetail => {
-                "Plays the selected game's own music on the home screen, in place of the home screen music."
+                "Plays the selected game's own music in place of the home screen music."
             }
             Extra::Vibration => "Controller Vibration",
             Extra::VibrationDetail => {
@@ -515,9 +515,7 @@ impl Extra {
                 "Ana ekranda sakin bir ortam müziği çalar. Oyun çalışırken susar."
             }
             Extra::GameMusic => "Oyun Müziği",
-            Extra::GameMusicDetail => {
-                "Ana ekranda, ana ekran müziği yerine seçili oyunun kendi müziğini çalar."
-            }
+            Extra::GameMusicDetail => "Ana ekran müziği yerine seçili oyunun kendi müziğini çalar.",
             Extra::Vibration => "Kol Titreşimi",
             Extra::VibrationDetail => {
                 "Kolda bir tuşa basınca kısa, yumuşak bir titreşim karşılık verir. Oyun öndeyken asla."

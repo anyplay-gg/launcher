@@ -24,13 +24,30 @@ static void GenerateImdctWindow(int frameSizePower);
 
 static int BlockTypeToChannelCount(BlockType blockType);
 
+/* AnyPlay: the trig, shuffle, window, Huffman and gradient tables are global and the same for
+   every stream. Upstream rebuilds them in every InitDecoder, which rewrites them while another
+   thread may be decoding. They are built once here, for every frame size; the caller serialises
+   InitDecoder (anyplay_atrac9 holds a lock around it), so the first build finishes before any
+   decoder exists. */
+static int TablesReady = 0;
+
+static void InitGlobalTables(void)
+{
+	if (TablesReady) return;
+	for (int power = 6; power <= 8; power++)
+	{
+		InitMdctTables(power);
+	}
+	InitHuffmanCodebooks();
+	GenerateGradientCurves();
+	TablesReady = 1;
+}
+
 At9Status InitDecoder(Atrac9Handle* handle, unsigned char* configData, int wlength)
 {
 	ERROR_CHECK(InitConfigData(&handle->Config, configData));
 	ERROR_CHECK(InitFrame(handle));
-	InitMdctTables(handle->Config.FrameSamplesPower);
-	InitHuffmanCodebooks();
-	GenerateGradientCurves();
+	InitGlobalTables();
 	handle->Wlength = wlength;
 	handle->Initialized = 1;
 	return ERR_SUCCESS;
@@ -68,6 +85,12 @@ static At9Status ReadConfigData(ConfigData* config)
 	config->SuperframeIndex = ReadInt(&br, 2);
 
 	if (header != 0xFE || validationBit != 0)
+	{
+		return ERR_BAD_CONFIG_DATA;
+	}
+
+	/* AnyPlay: ChannelConfigs has 6 entries; the field has 3 bits. */
+	if (config->ChannelConfigIndex > 5)
 	{
 		return ERR_BAD_CONFIG_DATA;
 	}

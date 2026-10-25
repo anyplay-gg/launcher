@@ -4,10 +4,17 @@
 //! LibAtrac9's bit reader does not check where a buffer ends, so a damaged stream could make it
 //! read past the bytes it was given. [`Decoder::decode_superframe`] therefore copies every
 //! superframe into a buffer with a long run of zeros after it, which no frame can read beyond.
+//! The guard is sized for mono and stereo, so only those streams are accepted (theme songs are
+//! stereo).
+//!
+//! LibAtrac9 also keeps global tables. Our copy builds them once, in the first `InitDecoder`;
+//! [`INIT`] serialises every `InitDecoder`, so that first build finishes before any decoder
+//! exists and nothing writes the tables while another thread decodes.
 
 use std::ffi::{c_int, c_short, c_uchar, c_void};
 use std::fmt;
 use std::ptr::NonNull;
+use std::sync::Mutex;
 
 #[repr(C)]
 #[derive(Default)]
@@ -35,8 +42,12 @@ unsafe extern "C" {
     fn Atrac9GetCodecInfo(handle: *mut c_void, info: *mut CodecInfo) -> c_int;
 }
 
-/// Zeros after every superframe: more than one frame can ever read (a frame is at most 2 KiB).
+/// Zeros after every superframe: more than one mono or stereo frame can ever read (at most
+/// 2 KiB of frame data, plus what a damaged header makes it skip).
 const GUARD: usize = 4096;
+
+/// Held around every `Atrac9InitDecoder`, which builds LibAtrac9's global tables on first use.
+static INIT: Mutex<()> = Mutex::new(());
 
 /// A LibAtrac9 error code (`error_codes.h`), or 0 for a problem found on this side.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,7 +85,8 @@ pub struct Decoder {
     scratch: Vec<u8>,
 }
 
-// The handle is plain memory owned by this value; LibAtrac9 keeps no global state.
+// The handle is plain memory owned by this value. LibAtrac9's global tables are only written
+// during the first `InitDecoder`, under `INIT`, before any decoder can be sent anywhere.
 unsafe impl Send for Decoder {}
 
 impl Decoder {
@@ -93,8 +105,12 @@ impl Decoder {
             },
             scratch: Vec::new(),
         };
-        // SAFETY: the handle is live; `config` is four readable bytes, as the API takes.
-        let status = unsafe { Atrac9InitDecoder(handle.as_ptr(), config.as_mut_ptr()) };
+        let status = {
+            let _tables = INIT.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            // SAFETY: the handle is live; `config` is four readable bytes, as the API takes; INIT
+            // keeps the one-time build of the global tables to a single thread.
+            unsafe { Atrac9InitDecoder(handle.as_ptr(), config.as_mut_ptr()) }
+        };
         if status != 0 {
             return Err(Error(status));
         }
@@ -111,7 +127,7 @@ impl Decoder {
             frames_in_superframe: usize::try_from(raw.frames_in_superframe).unwrap_or(0),
             frame_samples: usize::try_from(raw.frame_samples).unwrap_or(0),
         };
-        let sane = (1..=8).contains(&info.channels)
+        let sane = (1..=2).contains(&info.channels)
             && info.sample_rate > 0
             && (1..=GUARD).contains(&info.superframe_size)
             && (1..=8).contains(&info.frames_in_superframe)
@@ -197,6 +213,17 @@ mod tests {
     fn a_bad_configuration_is_an_error() {
         assert!(Decoder::new([0, 0, 0, 0]).is_err());
         assert!(Decoder::new([0xFE, 0xFF, 0xFF, 0xFF]).is_err());
+    }
+
+    #[test]
+    fn only_mono_and_stereo_are_accepted() {
+        // Byte 1: the sample rate index in the high nibble, the channel layout in bits 3 to 1.
+        let layout = |index: u8| [0xFE, 0x70 | (index << 1), 0x05, 0xF0];
+        assert_eq!(Decoder::new(layout(0)).unwrap().info().channels, 1);
+        assert_eq!(Decoder::new(layout(2)).unwrap().info().channels, 2);
+        for index in 3..=7 {
+            assert!(Decoder::new(layout(index)).is_err(), "layout {index}");
+        }
     }
 
     #[test]

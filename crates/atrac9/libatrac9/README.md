@@ -17,6 +17,9 @@ AddressSanitizer and UndefinedBehaviorSanitizer (`../fuzz/noise.c`) found the pl
 - `band_extension.c`: every table index (mode, values, scale factors, unit count) is checked before the extension runs.
 - `bit_allocation.c`: the gradient fits its 31 entries; the fine precision stays within its 16-entry table.
 - `utility.c`: no 32-bit shift by 32, no left shift of a negative value.
+- `decinit.c`: a configuration with a channel layout above 5 is refused; the global tables are built once, in the
+  first `InitDecoder`, instead of on every call (`../src/lib.rs` serialises `InitDecoder`, so no decoder reads a table
+  while another thread writes it).
 
 After the fixes: one million random superframes over five configurations, no finding. Rerun the fuzzer after any update:
 `gcc -fsanitize=address,undefined -g -O1 -I. *.c ../fuzz/noise.c -lm -o noise && ./noise 200000` (on Linux).

@@ -156,10 +156,7 @@ pub fn from_bytes(mut bytes: Vec<u8>) -> Result<ThemeSong, ThemeError> {
         let last = u32_at(smpl, 36 + 12)? as usize;
         Some((first, (last + 1).min(end)))
     });
-    let loop_frames = match looped {
-        Some((first, after)) if first < after => (first, after),
-        _ => (delay, end),
-    };
+    let loop_frames = choose_loop(looped, (delay, end), rate);
     if delay >= end {
         return Err(ThemeError::Format("no audio after the encoder delay"));
     }
@@ -177,6 +174,15 @@ pub fn from_bytes(mut bytes: Vec<u8>) -> Result<ThemeSong, ThemeError> {
     };
     probe(&song)?;
     Ok(song)
+}
+
+/// The file's own loop, unless it is missing or under a second (it would stutter); then the
+/// whole song.
+fn choose_loop(looped: Option<(usize, usize)>, song: (usize, usize), rate: u32) -> (usize, usize) {
+    match looped {
+        Some((first, after)) if after.saturating_sub(first) >= rate as usize => (first, after),
+        _ => song,
+    }
 }
 
 /// Decodes the first superframes once, so a broken stream is found before it plays.
@@ -227,10 +233,13 @@ impl ThemePlayer {
     }
 
     /// Jumps to `frame`. The decoder carries state from one superframe to the next, so it starts
-    /// a superframe early and that one is thrown away.
+    /// a superframe early and that one is thrown away. The decoder is kept across jumps: a loop
+    /// runs on the audio thread, which should not allocate.
     fn seek(&mut self, frame: usize) {
         let wanted = frame / self.song.superframe_frames;
-        self.decoder = Decoder::new(self.song.config).ok();
+        if self.decoder.is_none() {
+            self.decoder = Decoder::new(self.song.config).ok();
+        }
         if wanted > 0 {
             self.decode(wanted - 1);
         }
@@ -388,6 +397,18 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_loop_under_a_second_gives_way_to_the_whole_song() {
+        let song = (256, 100_256);
+        assert_eq!(
+            choose_loop(Some((1_000, 61_000)), song, 48_000),
+            (1_000, 61_000)
+        );
+        assert_eq!(choose_loop(Some((1_000, 2_000)), song, 48_000), song);
+        assert_eq!(choose_loop(Some((5_000, 5_000)), song, 48_000), song);
+        assert_eq!(choose_loop(None, song, 48_000), song);
     }
 
     /// A song built by hand around a known stream, to check positions without real audio.

@@ -476,7 +476,7 @@ pub fn build_categories(
             prefs.game_music,
         )
         .detail(Extra::GameMusicDetail.text(language))
-        .icon(Icon::HEADPHONES),
+        .icon(Icon::GAME_CONTROLLER),
         Row::toggle(
             "discord",
             Extra::DiscordPresence.text(language),

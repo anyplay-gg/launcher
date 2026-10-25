@@ -92,7 +92,8 @@ impl Picker {
             self.playing = Some(path);
             return Some(Action::Play(song));
         }
-        // A song still loading for another game is left to finish and kept; this one starts now.
+        // A load still running for another game is dropped: its thread finishes and nothing reads
+        // the result. This one starts now.
         if self
             .loading
             .as_ref()

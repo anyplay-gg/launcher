@@ -67,7 +67,8 @@ static void ApplyBandExtensionChannel(Channel* channel)
 		case 4: limit = 8; break;
 		default: return;
 		}
-		for (int i = 0; i < 4; i++)
+		/* Only the values this frame read; the rest may be stale from an earlier frame. */
+		for (int i = 0; i < channel->BexValueCount && i < 4; i++)
 		{
 			if (values[i] < 0 || values[i] >= limit) return;
 		}
