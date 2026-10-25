@@ -474,6 +474,10 @@ pub struct Preferences {
     pub discord_presence: bool,
     #[serde(default)]
     pub hide_while_playing: bool,
+    /// Hidden trophies that are not earned show their name and description in the trophy list.
+    /// Local only: the network never sees it.
+    #[serde(default)]
+    pub show_hidden_trophies: bool,
     /// The launcher fills its screen, like a console; off, it is a maximised window (F11).
     #[serde(default = "yes")]
     pub fullscreen: bool,
@@ -549,6 +553,7 @@ impl Default for Preferences {
             music: true,
             discord_presence: true,
             hide_while_playing: false,
+            show_hidden_trophies: false,
             fullscreen: true,
             profile_name: default_profile_name(),
             games_folder: None,

@@ -987,6 +987,7 @@ impl PanelHost {
             set,
             language: cx.model.language(),
             accent: cx.shell.accent_color(),
+            show_hidden: cx.model.prefs.show_hidden_trophies,
         };
         let actions = self.trophies.show(cx.shell, cx.ctx, &events, &data);
         for TrophyAction::Close in actions {

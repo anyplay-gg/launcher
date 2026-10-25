@@ -1,11 +1,13 @@
 //! The trophy list (docs/DESIGN.md 5.11): the set's icon, title and progress on top, one row per
-//! trophy below with its icon, grade and earned date. Secret trophies stay locked until earned.
-//! Up and down move, back and options close; clicking a row focuses it.
+//! trophy below with its icon, grade and earned date. Secret trophies stay locked until earned,
+//! unless the player reveals one (the "Show" pill on the focused row, or select) for this visit, or
+//! has "Always Show Hidden Trophies" on. Nothing of that leaves the launcher.
+//! Up and down move, select reveals a secret, back and options close; clicking a row focuses it.
 //!
 //! The data is the core's [`TrophySet`]; trophy icons are PNG bytes inside it, decoded here into
 //! textures (greyscale and dimmed until a trophy is earned).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyps5_core::trophies::{Trophy, TrophySet};
 use egui::{
@@ -18,6 +20,7 @@ use crate::screens::convert;
 use crate::screens::format;
 use crate::screens::scroll::Follow;
 use crate::screens::side::commands;
+use crate::screens::strings::Extra;
 use crate::ui::Shell;
 use crate::ui::anim::{AnimExt, lerp};
 use crate::ui::chrome::fullscreen_panel;
@@ -32,6 +35,15 @@ use crate::ui::theme::{self, Grade, black, color, fade, mix, radius, shadows, si
 
 /// Room around the scrolling rows for the focused card's grow and shadow.
 const LIST_MARGIN: f32 = 8.0;
+
+/// The "Show" pill on a focused secret: height, side padding, and the gap to the grade column.
+const SHOW_HEIGHT: f32 = 34.0;
+const SHOW_PAD: f32 = 18.0;
+const SHOW_GAP: f32 = 26.0;
+/// The pill is a small target; the click area reaches this far past it.
+const SHOW_REACH: f32 = 5.0;
+/// Concentric with the row's radius 16 at the pill's distance from the card edge.
+const SHOW_RADIUS: f32 = 12.0;
 
 /// What the host has to do after a frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,6 +60,8 @@ pub struct TrophyData<'a> {
     pub set: &'a TrophySet,
     pub language: Language,
     pub accent: Color32,
+    /// "Always Show Hidden Trophies": no trophy is secret.
+    pub show_hidden: bool,
 }
 
 /// Decodes and keeps trophy icon textures.
@@ -128,8 +142,7 @@ pub fn paint_trophy_icon(ui: &mut Ui, rect: Rect, texture: Option<TextureId>, ea
 }
 
 /// The accessible name of a trophy row: name, grade and whether it is earned.
-fn trophy_label(trophy: &Trophy, language: Language) -> String {
-    let secret = trophy.hidden && !trophy.is_unlocked();
+fn trophy_label(trophy: &Trophy, secret: bool, language: Language) -> String {
     let name = if secret {
         language.text(Key::TrophyHidden)
     } else {
@@ -150,6 +163,10 @@ pub struct TrophyListPanel {
     closing: bool,
     index: usize,
     icons: IconCache,
+    /// Secrets the player revealed since the list opened (by position in the set).
+    revealed: HashSet<usize>,
+    /// Counts the visits, so a row's reveal animation never carries over to the next one.
+    visit: u32,
 }
 
 impl TrophyListPanel {
@@ -162,6 +179,13 @@ impl TrophyListPanel {
         self.open = true;
         self.closing = false;
         self.index = index;
+        self.revealed.clear();
+        self.visit = self.visit.wrapping_add(1);
+    }
+
+    /// Reveals one secret for this visit.
+    pub fn reveal(&mut self, index: usize) {
+        self.revealed.insert(index);
     }
 
     pub fn close(&mut self) {
@@ -169,6 +193,14 @@ impl TrophyListPanel {
             self.open = false;
             self.closing = true;
         }
+    }
+
+    /// Whether the trophy at `index` still shows as a secret.
+    fn is_secret(&self, trophy: &Trophy, index: usize, data: &TrophyData<'_>) -> bool {
+        trophy.hidden
+            && !trophy.is_unlocked()
+            && !data.show_hidden
+            && !self.revealed.contains(&index)
     }
 
     pub fn is_active(&self) -> bool {
@@ -211,18 +243,30 @@ impl TrophyListPanel {
                         self.close();
                         actions.push(TrophyAction::Close);
                     }
-                    Command::Left | Command::Right | Command::Select => {}
+                    Command::Select => {
+                        let secret = data
+                            .set
+                            .trophies
+                            .get(self.index)
+                            .is_some_and(|t| self.is_secret(t, self.index, data));
+                        if secret {
+                            self.reveal(self.index);
+                            shell.play(Cue::Select);
+                        }
+                    }
+                    Command::Left | Command::Right => {}
                 }
             }
         }
         let open = self.open;
         let mut clicked = None;
+        let mut shown = None;
         let drawn = fullscreen_panel(
             ctx,
             "trophy-list",
             open,
             GlassStyle::fullscreen_panel(),
-            |ui, _| self.draw(ui, data, &mut clicked),
+            |ui, _| self.draw(ui, data, &mut clicked, &mut shown),
         );
         if drawn.is_none() {
             self.closing = false;
@@ -231,10 +275,20 @@ impl TrophyListPanel {
             self.index = i;
             shell.play(Cue::Move);
         }
+        if let Some(i) = shown.filter(|_| open) {
+            self.reveal(i);
+            shell.play(Cue::Select);
+        }
         actions
     }
 
-    fn draw(&mut self, ui: &mut Ui, data: &TrophyData<'_>, clicked: &mut Option<usize>) {
+    fn draw(
+        &mut self,
+        ui: &mut Ui,
+        data: &TrophyData<'_>,
+        clicked: &mut Option<usize>,
+        shown: &mut Option<usize>,
+    ) {
         let area = ui
             .max_rect()
             .shrink2(vec2(theme::pad::TROPHIES.0, theme::pad::TROPHIES.1));
@@ -246,7 +300,7 @@ impl TrophyListPanel {
             pos2(area.max.x + LIST_MARGIN, area.max.y),
         );
         let mut child = ui.new_child(UiBuilder::new().max_rect(list));
-        self.draw_rows(&mut child, data, clicked);
+        self.draw_rows(&mut child, data, clicked, shown);
     }
 
     fn draw_header(&mut self, ui: &mut Ui, header: Rect, data: &TrophyData<'_>) {
@@ -343,7 +397,13 @@ impl TrophyListPanel {
         crate::screens::right_aligned_hints(ui, header, language);
     }
 
-    fn draw_rows(&mut self, ui: &mut Ui, data: &TrophyData<'_>, clicked: &mut Option<usize>) {
+    fn draw_rows(
+        &mut self,
+        ui: &mut Ui,
+        data: &TrophyData<'_>,
+        clicked: &mut Option<usize>,
+        shown: &mut Option<usize>,
+    ) {
         let ctx = ui.ctx().clone();
         let id = ui.make_persistent_id("trophy-rows");
         let (follow, scroll_to) = Follow::begin(&ctx, id, Some(self.index));
@@ -364,17 +424,38 @@ impl TrophyListPanel {
                     ui.spacing_mut().item_spacing.y = 10.0;
                     let origin = ui.cursor().min.y;
                     for (i, trophy) in data.set.trophies.iter().enumerate() {
-                        let rect = self.draw_row(ui, data, trophy, i, i == self.index);
+                        let (rect, pill) = self.draw_row(ui, data, trophy, i, i == self.index);
                         geometry.push((rect.min.y - origin, rect.height()));
                         // Hit-test after drawing so the click reads the row's own response.
                         let response =
                             ui.interact(rect, id.with(("trophy-row", i)), Sense::click());
-                        let label = trophy_label(trophy, data.language);
+                        let secret = self.is_secret(trophy, i, data);
+                        let label = trophy_label(trophy, secret, data.language);
                         response.widget_info(|| {
                             egui::WidgetInfo::labeled(egui::Role::Button, true, label.as_str())
                         });
                         if response.clicked() {
                             *clicked = Some(i);
+                        }
+                        // After the row, so the pill wins a click on both.
+                        if let Some(pill) = pill {
+                            let name = format!(
+                                "{}, {}",
+                                Extra::TrophyShow.text(data.language),
+                                data.language.text(Key::TrophyHidden)
+                            );
+                            let show = ui.interact(
+                                pill.expand(SHOW_REACH),
+                                id.with(("trophy-show", i)),
+                                Sense::click(),
+                            );
+                            show.widget_info(|| {
+                                egui::WidgetInfo::labeled(egui::Role::Button, true, name.as_str())
+                            });
+                            if show.clicked() {
+                                *shown = Some(i);
+                                *clicked = None;
+                            }
                         }
                     }
                 });
@@ -395,11 +476,25 @@ impl TrophyListPanel {
         trophy: &Trophy,
         index: usize,
         focused: bool,
-    ) -> Rect {
+    ) -> (Rect, Option<Rect>) {
         let ctx = ui.ctx().clone();
         let language = data.language;
         let earned = trophy.is_unlocked();
-        let secret = trophy.hidden && !earned;
+        let secret = self.is_secret(trophy, index, data);
+        // 0 while the lock tile and the placeholder texts show, 1 once the trophy is shown.
+        let revealable = trophy.hidden && !earned;
+        let shown_t = if revealable {
+            ctx.focus_t(("trophy-reveal", self.visit, index), !secret)
+        } else {
+            1.0
+        };
+        let show_label = Extra::TrophyShow.text(language);
+        let show_style = theme::TextStyle::new(15.0, theme::Weight::SemiBold);
+        let show_w = if secret {
+            text::width(ui.painter(), show_style, show_label) + 2.0 * SHOW_PAD
+        } else {
+            0.0
+        };
         let width = ui.available_width();
         let painter = ui.painter().clone();
         let grade: Grade = convert::grade(trophy.grade);
@@ -418,6 +513,12 @@ impl TrophyListPanel {
         let icon_size = size::TROPHY_ICON;
         let text_x = 18.0 + icon_size + 20.0;
         let text_w = (width - text_x - 18.0 - right_w - 12.0).max(60.0);
+        // A secret keeps the room of its "Show" pill from the start, so focus never reflows it.
+        let text_w = if secret {
+            (text_w - show_w - SHOW_GAP).max(60.0)
+        } else {
+            text_w
+        };
         let name = if secret {
             language.text(Key::TrophyHidden)
         } else {
@@ -452,7 +553,7 @@ impl TrophyListPanel {
         let height = icon_size.max(block) + 28.0;
         let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
         if !ui.is_rect_visible(rect) {
-            return rect;
+            return (rect, None);
         }
         let t = ctx.focus_t(("trophy-row-focus", index), focused);
         let r = radius::TROPHY_ROW;
@@ -471,19 +572,28 @@ impl TrophyListPanel {
             pos2(rect.min.x + 18.0 + icon_size * 0.5, rect.center().y),
             vec2(icon_size, icon_size),
         );
-        if secret {
-            painter.rect_filled(icon_rect, corner(12.0), white(0.07));
+        if shown_t < 1.0 {
+            let a = 1.0 - shown_t;
+            painter.rect_filled(icon_rect, corner(12.0), ink(0.07 * a));
             painter.text(
                 icon_rect.center(),
                 Align2::CENTER_CENTER,
                 Icon::LOCK.glyph(),
                 Icon::LOCK.font(22.0, true),
-                white(0.5),
+                ink(0.5 * a),
             );
-        } else {
+        }
+        if shown_t > 0.0 {
             let key = format!("{}/{}", data.game_key, trophy.id());
             let texture = self.icons.get(&ctx, &key, trophy.icon.as_deref(), earned);
-            paint_trophy_icon(ui, icon_rect, texture, earned);
+            if shown_t < 1.0 {
+                // Fades in over the lock tile.
+                let mut fading = ui.new_child(UiBuilder::new().max_rect(rect));
+                fading.set_opacity(shown_t);
+                paint_trophy_icon(&mut fading, icon_rect, texture, earned);
+            } else {
+                paint_trophy_icon(ui, icon_rect, texture, earned);
+            }
         }
 
         // Name, detail and the progress line.
@@ -491,10 +601,34 @@ impl TrophyListPanel {
         let top = rect.center().y - block * 0.5;
         let name_color = ink(if earned { 1.0 } else { 0.8 });
         let name_h = name_g.size().y;
-        painter.galley(pos2(x, top), name_g, name_color);
         let detail_y = top + name_h + 6.0;
         let detail_h = detail_g.size().y;
-        painter.galley(pos2(x, detail_y), detail_g, ink(0.6));
+        if shown_t < 1.0 && !secret {
+            // Just revealed: the placeholder words fade out where the real ones fade in.
+            let ghost_name = clamped(
+                &painter,
+                ty::TROPHY_NAME,
+                language.text(Key::TrophyHidden),
+                Color32::PLACEHOLDER,
+                text_w,
+                1,
+            );
+            let ghost_detail = clamped(
+                &painter,
+                ty::DETAIL_LARGE,
+                language.text(Key::TrophyHiddenDetail),
+                Color32::PLACEHOLDER,
+                text_w,
+                2,
+            );
+            let a = 1.0 - shown_t;
+            painter.galley(pos2(x, top), ghost_name, fade(name_color, a));
+            painter.galley(pos2(x, detail_y), ghost_detail, fade(ink(0.6), a));
+        }
+        // A secret shows its placeholder words at full strength; a shown trophy fades them in.
+        let text_a = if secret { 1.0 } else { shown_t };
+        painter.galley(pos2(x, top), name_g, fade(name_color, text_a));
+        painter.galley(pos2(x, detail_y), detail_g, fade(ink(0.6), text_a));
         if let Some((value, target)) = progress {
             let y = detail_y + detail_h + 6.0;
             let bar = Rect::from_center_size(pos2(x + 90.0, y + 7.2), vec2(180.0, 4.0));
@@ -548,7 +682,36 @@ impl TrophyListPanel {
             &date_text,
             ink(if earned { 0.7 } else { 0.4 }),
         );
-        rect
+
+        // The "Show" pill of a focused secret, left of the grade column.
+        let mut pill = None;
+        if secret && t > 0.0 {
+            let right_edge = right - right_w - SHOW_GAP;
+            let mut area = Rect::from_center_size(
+                pos2(right_edge - show_w * 0.5, rect.center().y),
+                vec2(show_w, SHOW_HEIGHT),
+            );
+            let hovered = focused
+                && ctx
+                    .pointer_hover_pos()
+                    .is_some_and(|p| area.expand(SHOW_REACH).contains(p));
+            if hovered && ctx.input(|i| i.pointer.primary_down()) {
+                area = area.shrink2(vec2(show_w, SHOW_HEIGHT) * 0.02);
+            }
+            let fill = black(if hovered { 0.14 } else { 0.08 });
+            painter.rect_filled(area, corner(SHOW_RADIUS), fade(fill, t));
+            text::paint(
+                &painter,
+                area.center(),
+                Align2::CENTER_CENTER,
+                show_style,
+                show_label,
+                fade(Color32::BLACK, 0.9 * t),
+            );
+            // Only a focused row can be asked to show; a fading pill is not a target yet.
+            pill = focused.then_some(area);
+        }
+        (rect, pill)
     }
 }
 
@@ -584,6 +747,54 @@ mod tests {
     fn a_broken_icon_is_none_not_a_panic() {
         assert!(decode_icon(b"not a png", true).is_none());
         assert!(decode_icon(&[], false).is_none());
+    }
+
+    fn hidden(unlocked: Option<i64>) -> Trophy {
+        Trophy {
+            service_label: 0,
+            number: 0,
+            grade: anyps5_core::trophies::Grade::Gold,
+            hidden: true,
+            name: "Name".into(),
+            detail: "Detail".into(),
+            icon: None,
+            unlocked,
+            progress: None,
+        }
+    }
+
+    fn data(set: &TrophySet, show_hidden: bool) -> TrophyData<'_> {
+        TrophyData {
+            game_key: "g",
+            game_name: "G",
+            set,
+            language: Language::English,
+            accent: Color32::WHITE,
+            show_hidden,
+        }
+    }
+
+    #[test]
+    fn a_secret_opens_for_one_visit_or_always() {
+        let set = TrophySet {
+            title: String::new(),
+            icon: None,
+            trophies: Vec::new(),
+        };
+        let mut panel = TrophyListPanel::default();
+        panel.open_at(0);
+        let locked = hidden(None);
+        assert!(panel.is_secret(&locked, 0, &data(&set, false)));
+        assert!(!panel.is_secret(&locked, 0, &data(&set, true)));
+        panel.reveal(0);
+        assert!(!panel.is_secret(&locked, 0, &data(&set, false)));
+        assert!(panel.is_secret(&locked, 1, &data(&set, false)));
+        // Leaving and coming back hides it again.
+        panel.close();
+        panel.open_at(0);
+        assert!(panel.is_secret(&locked, 0, &data(&set, false)));
+        // An earned trophy is never a secret.
+        assert!(!panel.is_secret(&hidden(Some(1)), 0, &data(&set, false)));
     }
 
     #[test]

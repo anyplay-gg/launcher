@@ -332,6 +332,13 @@ pub fn build_categories(
         .icon(Icon::DISCORD_LOGO),
         Row::toggle("hide", t(Key::HideWhilePlaying), prefs.hide_while_playing)
             .icon(Icon::EYE_SLASH),
+        Row::toggle(
+            "hiddenTrophies",
+            Extra::ShowHiddenTrophies.text(language),
+            prefs.show_hidden_trophies,
+        )
+        .detail(Extra::ShowHiddenTrophiesDetail.text(language))
+        .icon(Icon::TROPHY),
     ];
     // The registration lives in the registry, so only Windows has the row.
     if cfg!(windows) {
@@ -641,6 +648,10 @@ pub fn apply_value(prefs: &mut Preferences, change: &Change) -> bool {
         Change::Toggle { row: "music", on } => prefs.music = *on,
         Change::Toggle { row: "discord", on } => prefs.discord_presence = *on,
         Change::Toggle { row: "hide", on } => prefs.hide_while_playing = *on,
+        Change::Toggle {
+            row: "hiddenTrophies",
+            on,
+        } => prefs.show_hidden_trophies = *on,
         Change::Toggle {
             row: "recordNetwork",
             on,
@@ -1302,6 +1313,15 @@ mod tests {
             }
         ));
         assert!(!prefs.discord_presence);
+        assert!(!prefs.show_hidden_trophies);
+        assert!(apply_value(
+            &mut prefs,
+            &Change::Toggle {
+                row: "hiddenTrophies",
+                on: true
+            }
+        ));
+        assert!(prefs.show_hidden_trophies);
         assert!(apply_value(
             &mut prefs,
             &Change::Choice {

@@ -957,13 +957,13 @@ category's rows (5.8).
 | Appearance (`appearance`) | brush | `theme` choice (Cosmic/Aurora/Sunset), `accent` choice (six), `backdrop` choice (`backgroundTheme` / `backgroundImage` / `backgroundVideo`; picking image/video opens a file dialog when no file is set or the kind changed), `file` action `chooseFile` (only when backdrop is not theme; detail = file name), `artwork` toggle `gameArtwork`, `motion` choice (`motionFull` / `motionReduced`) |
 | Library (`storage`) | 2x2 grid | `folder` action `folder` (detail = path or an em dash; opens the folder dialog), `rescan` action `rescan` (detail `gamesFound` with count; sound `select`), info `installedSize` |
 | Language (`language`) | globe | `language` choice (Türkçe, English; shown in their own language) |
-| Behaviour (`behaviour`) | sliders | `name` text field `profileName` (live edit), `sounds` toggle, `music` toggle (Home Screen Music, 7.3), `hide` toggle `hideWhilePlaying` (+ platform row, see 9) |
+| Behaviour (`behaviour`) | sliders | `name` text field `profileName` (live edit), `sounds` toggle, `music` toggle (Home Screen Music, 7.3), `hide` toggle `hideWhilePlaying`, `hiddenTrophies` toggle `showHiddenTrophies` (trophy glyph; detail `showHiddenTrophiesDetail`; the trophy list's only option, 5.11) (+ platform row, see 9) |
 | Advanced (`advanced`) | wrench+screwdriver | `screenshots` action `screenshotsFolder` (detail = path, `~` abbreviated), `showScreenshots` action, `fonts` action `fontsFolder` (detail = path or `fontsNone`), `fontsReset` action (only when a fonts folder is set), info `fontsHint` |
 | About (`about`) | info circle | info `aboutText`, info `version` (app version), info `toolkitVersion`, (platform row), `quit` action `quit` (destructive) |
 
 Settings are persisted per user (`Preferences`): `onboarded`, `language` (system default: Turkish if the OS UI language starts with
 `tr`, else English), `theme` (Cosmic), `accent` (nil = theme default), `backdrop` (theme), `backdropFile`, `gameArtwork` (true),
-`reducedMotion` (false), `sounds` (true), `music` (true), `discordPresence` (true), `hideWhilePlaying` (false), `profileName` (first word of the user's full name, fallback
+`reducedMotion` (false), `showHiddenTrophies` (false), `sounds` (true), `music` (true), `discordPresence` (true), `hideWhilePlaying` (false), `profileName` (first word of the user's full name, fallback
 "Player"), `gamesFolder`, `screenshotsFolder` (nil = `Pictures/AnyPS5`), `fontsFolder`, per-game settings, `lastPlayed`.
 Every change saves immediately and re-applies language, motion and sound flags.
 
@@ -1074,10 +1074,18 @@ tabular, white 0.85); hint bar (no options) right. Below, a scrolling list (gap 
 ```
 
 Earned: icon in colour, name white; not earned: icon in greyscale at 0.45 opacity, name white 0.8, grade colour at 0.55. Secret
-(hidden and not earned): a lock tile (white 0.07, lock glyph 22 semibold, 0.5) instead of the icon, name `trophyHidden`,
-description `trophyHiddenDetail`, no progress. The focused row: fill white 0.13 (else 0.05) and focus ring width 2. Dates use the
+(hidden and not earned, not revealed, and "Always Show Hidden Trophies" off): a lock tile (white 0.07, lock glyph 22 semibold, 0.5)
+instead of the icon, name `trophyHidden`, description `trophyHiddenDetail`, no progress.
+**Reveal (launcher addition, local only):** the focused secret shows a "Show" pill (`trophyShow`, 15 semibold, 34 high, 18 side
+padding, radius 12, black 0.08 fill and black 0.9 ink on the white card, black 0.14 on hover, 0.98 on press) left of the grade
+column, 26 from it; the click area reaches 5 past the pill. Click on the pill or select (Enter, Space, the confirm button)
+reveals the trophy until the list closes: the lock tile and the placeholder words fade out and the greyscale icon, name and
+description fade in (`Motion.focus`, opacity only; reduced motion follows the usual rule). A revealed trophy reads like any
+unearned one (no "Show"). Every secret keeps the pill's room in its text column, so focus never reflows it. The setting
+`showHiddenTrophies` (5.7, Behaviour; default off) shows all of them from the start. Nothing is sent anywhere; the cloud and friends
+see the same as before. Select on any other row does nothing. The focused row: fill white 0.13 (else 0.05) and focus ring width 2. Dates use the
 launcher language's locale, medium date + short time (`Oct 17, 2026 at 9:14 PM`, Turkish similar with the Turkish month name **(estimate)**). Keys: up/down move
-(sound `move`), back/options close; left/right/select do nothing. Clicking a row focuses it.
+(sound `move`), back/options close; select reveals a secret (sound `select`), otherwise it and left/right do nothing. Clicking a row focuses it.
 
 Trophy list and texts come from `sce_sys/trophy2/trophyNN.ucp` of the dump (language = the game's language setting, else the
 launcher's) and the unlock records the game writes; both read in `anyps5-core` (logic, not UI).
@@ -1978,7 +1986,7 @@ Decisions made while implementing:
 
 One module per panel; each has a state struct and a `show(...)` that takes the `Shell`, the egui context and the frame's
 `InputEvent`s and returns the actions for the host (the home screen). Previews: `--gallery=settings|settings1..6|game-settings|confirm|
-controls|controls-capture|advanced|trophies|banner|start|unlocking|log|library` over invented data and generated artwork.
+controls|controls-capture|advanced|trophies|trophies-hidden|trophies-revealed|banner|start|unlocking|log|library` over invented data and generated artwork.
 
 | Module | Screen | Notes |
 |---|---|---|

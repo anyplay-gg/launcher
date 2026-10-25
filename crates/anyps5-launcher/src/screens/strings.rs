@@ -46,6 +46,10 @@ pub enum Extra {
     /// Settings row: the running game on Discord.
     DiscordPresence,
     DiscordPresenceDetail,
+    /// Settings row: hidden trophies in the trophy list, and the action on one hidden trophy.
+    ShowHiddenTrophies,
+    ShowHiddenTrophiesDetail,
+    TrophyShow,
     /// The log box before the game wrote anything.
     EmptyLog,
     /// The button of the removal confirmation (its title already says what is removed).
@@ -269,6 +273,11 @@ impl Extra {
             Extra::DiscordPresenceDetail => {
                 "With Discord open, your profile shows the game and for how long."
             }
+            Extra::ShowHiddenTrophies => "Always Show Hidden Trophies",
+            Extra::ShowHiddenTrophiesDetail => {
+                "Hidden trophies show their name and description before you earn them. Only you see this."
+            }
+            Extra::TrophyShow => "Show",
             Extra::EmptyLog => "No log yet. Play the game once and it appears here.",
             Extra::Remove => "Remove",
             Extra::ToolkitFolderInvalid => {
@@ -441,6 +450,11 @@ impl Extra {
             Extra::DiscordPresenceDetail => {
                 "Discord açıksa profilinde oyunun adı ve süresi görünür."
             }
+            Extra::ShowHiddenTrophies => "Gizli Kupaları Her Zaman Göster",
+            Extra::ShowHiddenTrophiesDetail => {
+                "Gizli kupaların adı ve açıklaması kazanmadan önce de görünür. Bunu yalnızca sen görürsün."
+            }
+            Extra::TrophyShow => "Göster",
             Extra::EmptyLog => "Henüz günlük yok. Oyunu bir kez oynadığında burada görünür.",
             Extra::Remove => "Kaldır",
             Extra::ToolkitFolderInvalid => {
@@ -583,7 +597,7 @@ impl Extra {
         substitute(self.text(language), args)
     }
 
-    pub const ALL: [Extra; 131] = [
+    pub const ALL: [Extra; 134] = [
         Extra::Toolkit,
         Extra::UpdateCheck,
         Extra::UpdateCheckDetail,
@@ -614,6 +628,9 @@ impl Extra {
         Extra::HomeMusicDetail,
         Extra::DiscordPresence,
         Extra::DiscordPresenceDetail,
+        Extra::ShowHiddenTrophies,
+        Extra::ShowHiddenTrophiesDetail,
+        Extra::TrophyShow,
         Extra::EmptyLog,
         Extra::Remove,
         Extra::Layout,
