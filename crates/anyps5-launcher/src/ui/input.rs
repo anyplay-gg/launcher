@@ -6,7 +6,9 @@
 //!   Keys with Ctrl or Alt held are ignored, except `Ctrl+,` (settings) and `F11` (fullscreen).
 //! * Wheel: +-40 dp of accumulated scroll make one step (one classic wheel notch = one step).
 //! * Gamepad: D-pad and left stick (> 0.55) are directions; A/B/Y/Start are select/back/options/options.
-//!   A held direction fires at once, repeats after 0.38 s and then every 0.085 s.
+//! * A held direction, from the pad or from an arrow key, fires at once, repeats after 0.36 s every
+//!   0.10 s and, after six repeats, every 0.06 s (one [`Repeater`] logic for both devices, so a
+//!   list moves the same under a thumb and under a finger).
 
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
@@ -124,15 +126,21 @@ impl WheelAccumulator {
 // ---------------------------------------------------------------------------------------------
 
 /// Delay before a held direction starts to repeat.
-pub const REPEAT_DELAY: f64 = 0.38;
-/// Interval between repeats.
-pub const REPEAT_INTERVAL: f64 = 0.085;
+pub const REPEAT_DELAY: f64 = 0.36;
+/// Interval between the first repeats.
+pub const REPEAT_INTERVAL: f64 = 0.10;
+/// Repeats at [`REPEAT_INTERVAL`] before a long list speeds up.
+pub const REPEAT_SLOW_COUNT: u32 = 6;
+/// Interval once the hold has gone on for a while.
+pub const REPEAT_FAST_INTERVAL: f64 = 0.06;
 
-/// Console-menu style repeat for held gamepad directions.
+/// Console-menu style repeat for held directions: a pause, a steady pace, then a faster one for
+/// long lists and the library grid.
 #[derive(Debug, Default)]
 pub struct Repeater {
     held: Option<Command>,
     next_fire: f64,
+    repeats: u32,
 }
 
 impl Repeater {
@@ -144,7 +152,16 @@ impl Repeater {
         }
         self.held = direction;
         self.next_fire = now + REPEAT_DELAY;
+        self.repeats = 0;
         direction
+    }
+
+    fn interval(&self) -> f64 {
+        if self.repeats >= REPEAT_SLOW_COUNT {
+            REPEAT_FAST_INTERVAL
+        } else {
+            REPEAT_INTERVAL
+        }
     }
 
     /// Call every frame. Returns a repeat if one is due.
@@ -154,7 +171,9 @@ impl Repeater {
             return None;
         }
         // Keep the rate when frames are slow, but never fire a burst.
-        self.next_fire = (self.next_fire + REPEAT_INTERVAL).max(now + REPEAT_INTERVAL * 0.5);
+        let interval = self.interval();
+        self.next_fire = (self.next_fire + interval).max(now + interval * 0.5);
+        self.repeats += 1;
         Some(held)
     }
 
@@ -165,6 +184,11 @@ impl Repeater {
 
     pub fn held(&self) -> Option<Command> {
         self.held
+    }
+
+    /// The hold has produced a repeat: what fires now is not a fresh press.
+    pub fn is_repeating(&self) -> bool {
+        self.repeats > 0
     }
 }
 
@@ -225,7 +249,18 @@ pub fn set_device(ctx: &Context, device: Device) {
 pub struct Input {
     wheel: WheelAccumulator,
     repeater: Repeater,
+    /// The repeat of a held arrow key (the OS's own repeat is ignored, so the keyboard paces a
+    /// list like the pad does).
+    key_repeater: Repeater,
+    held_key: Option<Key>,
     pad: Option<Receiver<PadMessage>>,
+    /// The last direction a command went: the way an edge bump leans.
+    pub last_direction: Option<Command>,
+    /// What fired last was a repeat of a held direction, not a fresh press: an edge is bumped once
+    /// per press, not on every repeat.
+    pub repeating: bool,
+    /// The pad is the device in use: only then does it vibrate.
+    pub pad_in_use: bool,
     /// True while a native dialog is open: keyboard and wheel are ignored.
     pub blocked: bool,
     /// True while a binding waits for a key: every key press is returned as [`InputEvent::CapturedKey`].
@@ -242,6 +277,18 @@ impl Input {
 
     /// Collects this frame's events. Text fields keep their keys; Enter and Esc leave them.
     pub fn poll(&mut self, ctx: &Context) -> Vec<InputEvent> {
+        let (mut fresh, mut repeated) = (false, false);
+        let out = self.collect(ctx, &mut fresh, &mut repeated);
+        // A frame with any fresh press is a press; only a frame of repeats alone is a repeat.
+        if fresh {
+            self.repeating = false;
+        } else if repeated {
+            self.repeating = true;
+        }
+        out
+    }
+
+    fn collect(&mut self, ctx: &Context, fresh: &mut bool, repeated: &mut bool) -> Vec<InputEvent> {
         let mut out = Vec::new();
         let now = ctx.input(|i| i.time);
 
@@ -250,21 +297,52 @@ impl Input {
             while let Ok(message) = pad.try_recv() {
                 if !matches!(message, PadMessage::Direction(None)) {
                     set_device(ctx, Device::Gamepad);
+                    self.pad_in_use = true;
                 }
                 match message {
                     PadMessage::Direction(direction) => {
+                        if direction.is_some() {
+                            crate::ui::latency::pad_event_seen();
+                        }
                         if let Some(command) = self.repeater.set_direction(direction, now) {
+                            *fresh = true;
+                            self.last_direction = Some(command);
                             out.push(InputEvent::Command(command));
                         }
                     }
-                    PadMessage::Button(command) => out.push(InputEvent::Command(command)),
+                    PadMessage::Button(command) => {
+                        crate::ui::latency::pad_event_seen();
+                        out.push(InputEvent::Command(command));
+                    }
                 }
             }
         }
         if let Some(command) = self.repeater.tick(now) {
+            *repeated = true;
+            self.last_direction = Some(command);
             out.push(InputEvent::Command(command));
         }
         if let Some(due) = self.repeater.next_due_in(now) {
+            ctx.request_repaint_after(Duration::from_secs_f64(due.max(0.001)));
+        }
+
+        // A held arrow key repeats on our clock. It ends when the key is up (or the keyboard is
+        // taken away: a dialog, a binding waiting for a key), whatever the key events said.
+        if let Some(key) = self.held_key
+            && (self.blocked
+                || self.capture_keys
+                || crate::ui::a11y::foreign_focus(ctx)
+                || ctx.input(|i| !i.key_down(key) || i.modifiers.ctrl || i.modifiers.alt))
+        {
+            self.held_key = None;
+            self.key_repeater.set_direction(None, now);
+        }
+        if let Some(command) = self.key_repeater.tick(now) {
+            *repeated = true;
+            self.last_direction = Some(command);
+            out.push(InputEvent::Command(command));
+        }
+        if let Some(due) = self.key_repeater.next_due_in(now) {
             ctx.request_repaint_after(Duration::from_secs_f64(due.max(0.001)));
         }
 
@@ -277,7 +355,11 @@ impl Input {
         let events = ctx.input(|i| i.events.clone());
         for event in events {
             match event {
-                Event::PointerMoved(_) => set_device(ctx, Device::Keyboard),
+                Event::PointerButton { .. } => self.pad_in_use = false,
+                Event::PointerMoved(_) => {
+                    set_device(ctx, Device::Keyboard);
+                    self.pad_in_use = false;
+                }
                 Event::Key {
                     key,
                     physical_key,
@@ -286,6 +368,7 @@ impl Input {
                     modifiers,
                 } => {
                     set_device(ctx, Device::Keyboard);
+                    self.pad_in_use = false;
                     if self.capture_keys {
                         crate::ui::a11y::consume_activation(ctx);
                         out.push(InputEvent::CapturedKey {
@@ -308,14 +391,22 @@ impl Input {
                     } else if key == Key::Comma && modifiers.ctrl && !modifiers.alt {
                         out.push(InputEvent::OpenSettings);
                     } else if let Some(command) = command_for_key(key, modifiers) {
-                        // Held arrows repeat at the OS rate; held action keys do not re-fire.
-                        if !repeat || command.is_direction() {
+                        // The OS repeat is ignored: a held arrow repeats on our clock, held action
+                        // keys do not re-fire.
+                        if !repeat {
+                            if command.is_direction() {
+                                self.held_key = Some(key);
+                                self.key_repeater.set_direction(Some(command), now);
+                                *fresh = true;
+                                self.last_direction = Some(command);
+                            }
                             out.push(InputEvent::Command(command));
                         }
                         crate::ui::a11y::consume_activation(ctx);
                     }
                 }
                 Event::MouseWheel { unit, delta, .. } => {
+                    self.pad_in_use = false;
                     let dominant = if delta.x.abs() > delta.y.abs() {
                         delta.x
                     } else {
@@ -411,12 +502,39 @@ mod tests {
             r.set_direction(Some(Command::Right), 10.0),
             Some(Command::Right)
         );
+        assert!(!r.is_repeating());
         assert_eq!(r.tick(10.2), None);
-        assert_eq!(r.tick(10.37), None);
-        assert_eq!(r.tick(10.381), Some(Command::Right));
+        assert_eq!(r.tick(10.35), None);
+        assert_eq!(r.tick(10.361), Some(Command::Right));
+        assert!(r.is_repeating());
         assert_eq!(r.tick(10.40), None);
-        assert_eq!(r.tick(10.466), Some(Command::Right)); // 0.085 s later
-        assert_eq!(r.tick(10.551), Some(Command::Right));
+        assert_eq!(r.tick(10.462), Some(Command::Right)); // 0.10 s later
+        assert_eq!(r.tick(10.563), Some(Command::Right));
+    }
+
+    #[test]
+    fn a_long_hold_speeds_up_after_six_repeats() {
+        let mut r = Repeater::default();
+        r.set_direction(Some(Command::Down), 0.0);
+        let mut fired = Vec::new();
+        let mut t = 0.0;
+        while t < 1.6 {
+            t += 0.001;
+            if r.tick(t).is_some() {
+                fired.push(t);
+            }
+        }
+        let gaps: Vec<f64> = fired.windows(2).map(|w| w[1] - w[0]).collect();
+        // The first repeat comes after the delay; the next five at the steady pace.
+        assert!((fired[0] - REPEAT_DELAY).abs() < 0.003);
+        for gap in &gaps[..5] {
+            assert!((gap - REPEAT_INTERVAL).abs() < 0.003, "{gap}");
+        }
+        for gap in &gaps[6..] {
+            assert!((gap - REPEAT_FAST_INTERVAL).abs() < 0.003, "{gap}");
+        }
+        // 0.36 s, six steps of 0.10 s, then 0.06 s: a hold of 1.6 s moves a list 17 rows.
+        assert!((16..=18).contains(&fired.len()), "{}", fired.len());
     }
 
     #[test]
@@ -428,10 +546,11 @@ mod tests {
         );
         assert_eq!(r.set_direction(Some(Command::Down), 0.1), None);
         assert_eq!(r.set_direction(Some(Command::Up), 0.2), Some(Command::Up));
-        assert_eq!(r.tick(0.5), None, "0.38 s counts from the change at 0.2");
-        assert_eq!(r.tick(0.581), Some(Command::Up));
+        assert_eq!(r.tick(0.5), None, "0.36 s count from the change at 0.2");
+        assert_eq!(r.tick(0.561), Some(Command::Up));
         assert_eq!(r.set_direction(None, 0.6), None);
         assert_eq!(r.tick(5.0), None, "released: nothing repeats");
+        assert!(!r.is_repeating(), "a new press starts fresh");
     }
 
     #[test]
@@ -441,5 +560,65 @@ mod tests {
         assert_eq!(r.tick(2.0), Some(Command::Left));
         assert_eq!(r.tick(2.0), None);
         assert_eq!(r.tick(2.01), None);
+    }
+
+    /// Runs one frame of `input` at `time` with the given key events.
+    fn frame(ctx: &Context, input: &mut Input, time: f64, events: Vec<Event>) -> Vec<InputEvent> {
+        let raw = egui::RawInput {
+            time: Some(time),
+            events,
+            ..Default::default()
+        };
+        let mut out = Vec::new();
+        let mut output = ctx.run_ui(raw, |ui| out = input.poll(ui.ctx()));
+        output.textures_delta.clear();
+        out
+    }
+
+    fn arrow(pressed: bool, repeat: bool) -> Event {
+        Event::Key {
+            key: Key::ArrowRight,
+            physical_key: Some(Key::ArrowRight),
+            pressed,
+            repeat,
+            modifiers: Modifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn a_held_arrow_key_repeats_on_our_clock_not_the_systems() {
+        let ctx = Context::default();
+        let mut input = Input::new(None);
+        let right = || InputEvent::Command(Command::Right);
+        assert_eq!(
+            frame(&ctx, &mut input, 1.0, vec![arrow(true, false)]),
+            [right()]
+        );
+        assert!(!input.repeating);
+        // The OS repeat events are dropped.
+        assert!(frame(&ctx, &mut input, 1.1, vec![arrow(true, true)]).is_empty());
+        assert!(frame(&ctx, &mut input, 1.2, vec![arrow(true, true)]).is_empty());
+        assert_eq!(frame(&ctx, &mut input, 1.37, vec![]), [right()]);
+        assert!(input.repeating);
+        assert_eq!(input.last_direction, Some(Command::Right));
+        // Released: nothing more, and the next press is fresh.
+        assert!(frame(&ctx, &mut input, 1.4, vec![arrow(false, false)]).is_empty());
+        assert!(frame(&ctx, &mut input, 3.0, vec![]).is_empty());
+        assert_eq!(
+            frame(&ctx, &mut input, 4.0, vec![arrow(true, false)]),
+            [right()]
+        );
+        assert!(!input.repeating);
+    }
+
+    #[test]
+    fn a_hold_ends_when_the_keyboard_is_taken_away() {
+        let ctx = Context::default();
+        let mut input = Input::new(None);
+        frame(&ctx, &mut input, 1.0, vec![arrow(true, false)]);
+        input.blocked = true;
+        assert!(frame(&ctx, &mut input, 1.5, vec![]).is_empty());
+        input.blocked = false;
+        assert!(frame(&ctx, &mut input, 2.5, vec![]).is_empty());
     }
 }

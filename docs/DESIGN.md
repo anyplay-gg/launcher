@@ -395,6 +395,7 @@ key..." pulse, the banner pop.
 | 30 | Banner out | after 5 s: easeIn 0.3 s back up and out; next banner starts 0.35 s later | see 5.14 |
 | 31 | Scroll-to-focus in lists | `scrollTo(anchor: .center)` inside `Motion.focus` | spring focus on the scroll offset toward "focused row centred" |
 | 32 | Tile hover | none (only buttons hover: fill white 0.16) | |
+| 33 | Edge bump (6.7) | none | focus ring leans 3 dp toward the wall and returns: velocity kick 140 dp/s on `Motion::Focus`; off under reduced motion |
 
 Animations 1, 10-15 can share one helper: `focus_t: Spring` per focusable widget id stored in egui memory.
 
@@ -772,7 +773,7 @@ The launcher keeps the port's structure but trims what read as noise next to the
   used 16.5 % of a core and 30 % GPU (58 threads) before, 11 % and 15 % (26 threads) after; the
   backdrop is untouched and still draws at 60 Hz while focused. A window without focus, and a game
   running, stop all drawing (0.2 to 2 % of a core). The gamepad thread polls every 100 ms while no
-  pad is connected (8 ms with one). `ANYPS5_GPU=dx12|vulkan|both` and `ANYPS5_POWER=high` undo the
+  pad is connected (4 ms with one). `ANYPS5_GPU=dx12|vulkan|both` and `ANYPS5_POWER=high` undo the
   choice for diagnosis; the log carries `startup t=...ms <step>` lines and the demo an `idle ...
   frames/s` line every 5 s. The demo no longer forces a repaint every frame (it idled at 40 % of a
   core, unlike the launcher).
@@ -1484,8 +1485,9 @@ Original: `Input.swift`, `AppModel.handle`, `panelCommand`, `onboardingCommand`.
 Rules: any key with the **Command** modifier is ignored (Windows: ignore when Ctrl, Alt or the Windows key is held, except the
 shortcut below). While a native dialog is open the launcher does not handle keys. While a text field has focus (profile name) keys go
 to the text field (the original never handles them; the port additionally lets Enter and Esc blur the field, see section 9). While a
-binding waits for a key (controls panel) every key is captured by the panel. Key repeat is the OS's: a held arrow produces repeated
-commands at the OS repeat rate. **Shortcut**: `Cmd+,` opens Settings when onboarded -> `Ctrl+,`. F11 toggles fullscreen (Windows addition).
+binding waits for a key (controls panel) every key is captured by the panel. Key repeat is ours, not the OS's (2026-10-25): the OS repeat events of an arrow
+key are dropped and a held arrow runs the same repeat as a held direction on the pad (6.3), so a list moves the same under a finger
+and under a thumb. It ends when the key is up, when a dialog opens or when a binding starts to wait for a key. **Shortcut**: `Cmd+,` opens Settings when onboarded -> `Ctrl+,`. F11 toggles fullscreen (Windows addition).
 
 ### 6.2 Mouse and wheel
 
@@ -1499,16 +1501,25 @@ uses AppKit's inverted deltas; the intent above is what the user experiences.)
 
 | Control | Command |
 |---|---|
-| D-pad, left stick (axis > 0.55 on an axis, else that axis counts as 0) | direction commands; the dominant axis wins, stick up = up |
+| D-pad, left stick (axis > 0.55 on an axis, else that axis counts as 0, see hysteresis below) | direction commands; the dominant axis wins, stick up = up |
 | A / Cross (South) | select |
 | B / Circle (East) | back |
 | Y / Triangle (North) | options |
 | Menu / Start | options |
 
-**Repeat timing:** when a direction is pressed it fires immediately; if held, after **0.38 s** it repeats every **0.085 s** until released or
-the direction changes (a change cancels the timers and fires the new direction at once). Identical consecutive directions are not
-re-fired. Controller input is not blocked by text fields or panels. The hint bar text is always `✕ / ○ / △` (PlayStation
+**Repeat timing (2026-10-25, replaces 0.38 s / 0.085 s):** when a direction is pressed it fires immediately; if held, after **0.36 s** it
+repeats every **0.10 s**, and after six repeats every **0.06 s**, until released or the direction changes (a change cancels the timers
+and fires the new direction at once). That is 17 rows in a 1.6 s hold, and a long list or the library grid no longer takes ten seconds
+to cross. A slow frame never fires a burst. Identical consecutive directions are not re-fired. Controller input is not blocked by text fields or panels. The hint bar text is always `✕ / ○ / △` (PlayStation
 naming) regardless of the controller.
+
+**Stick hysteresis:** the stick engages at 0.55 and lets go only below **0.38**, so a thumb resting near the threshold does not
+flutter between "right" and "nothing". A held direction gives way to the other axis only when that axis is at least 0.55 and **1.25
+times** the held one, so a thumb near the diagonal does not jump between "right" and "up"; a flick through the middle (right to left)
+changes direction at once. The D-pad beats the stick. The gamepad thread polls every **4 ms** (was 8) while a pad is connected.
+
+**Latency.** `ui::latency` stamps an event when the gamepad thread reads it, when the frame takes it off the channel and when that frame
+is built; with `RUST_LOG=anyplay_launcher::ui::latency=debug` it logs the average and the maximum of both intervals every 40 events.
 
 ### 6.4 Focus model
 
@@ -1592,6 +1603,48 @@ foreground switch against a real game window. The test hook is `--demo` with `AN
 `ANYPS5_PS_TEST_WINDOW=<hwnd>`: that window becomes the running game, each line `ps` on stdin is a press, and the log prints
 the foreground window before and after (`ps-test: ...`).
 
+### 6.7 The edge bump (2026-10-25)
+
+A direction that has nowhere to go (left on the first tile, up in the top bar, down on the last row, the end of the library grid or the
+trophy list, the top or bottom category) is answered like every other press, within the same frame: the `bump` cue (7.3) and a leaning
+focus ring. The ring, and only the ring, moves toward the wall by about **3 dp** and springs back (`ui::nudge`): a velocity kick of
+140 dp/s into a spring pair on `Motion::Focus`, which peaks after 55 ms, undershoots by less than a quarter of a dp and is still
+inside a quarter of a second. Nothing but a transform changes, the layout stays put and the element does not move. Under "Animations:
+Reduced" the ring stays and only the sound is left. A held direction bumps **once per hold**: the repeats at the edge
+are silent and still (`Input::repeating`). The sites that bump are the home screen, the panel rows and categories, the library grid and the trophy list; each calls `Shell::play(Cue::Bump)`, and the shell leans the
+ring toward `Input::last_direction`.
+
+### 6.8 Controller vibration (2026-10-25)
+
+A short, soft pulse answers the actions that have a sound, so the hand and the ear get the same answer in the same frame
+(`Shell::play` is the one place that decides both). Setting **Controller Vibration** (Settings > Behaviour): Off, Light (x0.7),
+Medium (x1, the default), Strong (x1.5). Changing it on the pad plays a select pulse at the new strength.
+
+| Action (cue) | Pulse (ms after start: length, light motor / heavy motor) | Feel |
+|---|---|---|
+| select | 0: 24, 0.32 / 0 | very light tap |
+| back | 0: 18, 0.22 / 0 | lighter |
+| error, refused | 0: 30, 0.42 / 0.14; 90: 30, 0.42 / 0.14 | two short taps |
+| trophy | 0: 24, 0.24 / 0; 70: 30, 0.30 / 0.12; 150: 70, 0.34 / 0.26 | three taps that swell |
+| call (ring) | 0: 60, 0 / 0.24; 110: 40, 0.30 / 0 | a heavy beat, then a light one |
+| edge bump | 0: 14, 0.16 / 0 | barely there |
+| move focus, hover, boot | none | the focus moves dozens of times a minute |
+
+How it runs. `ui::haptics` drives the pad through `gilrs-core` directly: gilrs' own force-feedback server works in 50 ms ticks, which
+cannot make a 14 ms tap and delays every start by up to a tick. A thread of its own holds a pattern as a list of motor states with
+their times, sets each at its moment (it asks Windows for a 1 ms timer) and ends on zero. It starts when the pad is first used,
+so the first pulse is not late. A pulse is lifted to 0.14 before the level scales it (a weaker one is not felt; an estimate to
+tune on hardware), so Light stays below Medium for every cue, and the result is capped at 1. Safe by construction: a pad without force feedback is skipped; the thread zeroes the motors (only when it has lit them: a game's
+own rumble is never overwritten) when a pattern is replaced, when it ends, when the setting goes Off, when a game takes the pad
+(`Shell::begin_frame` sees `HomeButton::accepts_pad` turn false and stops mid-pulse), when the handle is dropped (it joins the
+thread), and a Linux pulse carries its own 200 ms timer. A crash is the one gap: on Windows the pad keeps a pulse of at most
+70 ms until the system resets it. It acts only
+while the pad is the device in use (a keyboard or mouse player with a pad plugged in feels nothing) and never while a game is in
+front. Known limits. Every connected pad with force feedback vibrates, not only the one that was pressed. On Windows `gilrs-core` uses
+Windows.Gaming.Input, which offers vibration to Xbox-style pads only: a DualSense or DualShock gets none there (`is_ff_supported`
+is false), the setting then has no effect. Not verified on hardware: the feel of the strengths and the floor, WGI vibration from a
+second thread and the Linux timer.
+
 ## 7. Sounds and media
 
 ### 7.1 Sounds (`Sounds.swift`): synthesized, nothing bundled
@@ -1671,6 +1724,7 @@ decay with time constant τ), followed by a one-pole lowpass and a Freeverb send
 | `back` | A3, E4 (0.7) | as `select` | 10 / 90 ms | -15 dBFS | 0.12 / 0.8 s |
 | `error` | A3, B♭3 (0.9) | 1; 2 at 0.25 | 12 / 90 ms | -15 dBFS | 0.06 / 0.8 s |
 | `unlocked` | F4 C5 G5 C6 (1, 0.85, 0.7, 0.55), 15 ms apart, each as two voices 5 cents apart | 1; 2 at 0.25 | 25 / 250 ms | -9 dBFS | 0.20 / 1.2 s |
+| `bump` | F3, faint octave, lowpass 1.6 kHz | 1; 2 at 0.25 | 10 / 28 ms | -23 dBFS | 0.04 / 0.4 s |
 | `boot` | F3 C4 G4 C5 F5 (0.9 to 0.45), 70 ms apart, two voices 5 cents apart, glitter at 0.3 s | 1; 2 at 0.25 | 350 / 650 ms | -12 dBFS | 0.35 / 2.2 s |
 
 `unlocked` adds a faint glitter: six sines between 3.15 and 7.88 kHz at 0.12, gone within about 0.1 s. `error` is new and plays
@@ -2092,16 +2146,17 @@ list still updates.
 
 ### 9.5 The launcher updates itself
 
-No counterpart in the macOS launcher (Sparkle there). Core module `anyps5_core::selfupdate`, host `app::selfupdate`.
+No counterpart in the macOS launcher (Sparkle there). Core module `anyps5_core::selfupdate`, host `app::selfupdate`. Windows only for now: a Linux build is replaced from the releases page.
 
-- **Check.** Once per start, in the background, when the *Check for Updates* preference is on: the latest release of `anyplaynet/launcher` (the same request and HTTP client as the toolkit check). A newer semver (pre-release tags sort below their release) is downloaded and verified at once; garbage tags are never newer. Previews, the demo, the gallery and the tests never check.
-- **Verify.** The portable `AnyPlay-Launcher-<v>-x64.exe` (or, in a release without it, `AnyPS5-Launcher-<v>-x64.exe`; every release carries both, 9.7) goes to `%LOCALAPPDATA%\AnyPS5\Updates`. Its SHA-256 must match the line in the release's `SHA256SUMS.txt`; a missing line, a wrong hash or a file that does not start with `MZ` refuses the update and leaves nothing behind. The file gets its final name only after that, so a file of that name is always a verified one.
-- **Swap.** Windows cannot overwrite a running exe but can rename it. The staged file is copied beside the running exe (`<name>.new`, it may be on another drive), the running exe is renamed to `<name>.old`, the copy takes its place. A failure in the second step moves the old one back. The next start deletes `.old` files and stale downloads (one still in use stays until a later start). It works for the installed exe (`%LOCALAPPDATA%\Programs\AnyPlay Launcher`, or `...\AnyPS5 Launcher` for an install from v0.1.x) and for the portable exe in any writable folder. The swap keeps the exe's file name; nothing depends on it. A folder that refuses new files is reported before anything is downloaded: About shows "<v> available, but this folder is read-only" and nothing else happens.
-- **When.** A calm toast when the update is ready: "Launcher <v> is ready. It installs when you close the launcher." The swap runs on exit, after the preferences are saved. An update staged by a run that closed too early is offered again at the next start without a second download.
-- **About.** The *Version* row reads "<v>" and, with a staged update, "<v> ready" with a *Restart Now* row above *Quit*. It closes the launcher, swaps, and starts the new exe with the same arguments. Under it, from a gap: *AnyPlay Website* (anyplaynet.com), *AnyPlay Discord* (news, help and other players), *Privacy Policy* and *Terms of Service* open their pages in the browser (`about_strings`; the launcher opens only these), then a line on who it builds on (AnyPS5 by boykopovar; the launcher began as utkuhalis’ AnyPS5-ARM launcher), and *Quit* last.
-- **What’s New.** The highlights group the toolkit’s changes under names players know (Graphics, Trophies, Saves, Sound, Controllers, Online, Starting games, System; `area_title`), merging areas that share a name; an unknown area keeps its own. *Everything* below keeps the exact scopes.
-- **Signed manifest.** The step above is the *unsigned* path and runs only while `data/update-keys.txt` holds no trusted key (it holds none yet). From the first key on, the launcher takes updates only through the release's `latest.json` and `latest.json.sig`: an Ed25519 signature by a trusted key, an unexpired manifest, a version newer than the running one, a running version not below the manifest's `minimum_version`, and a download with the manifest's SHA-256 and size. The tag and `SHA256SUMS.txt` are then not used, and there is no fallback to the unsigned path: a release without a manifest is refused. A refusal only logs, offline the check just fails, and neither touches the installed exe. Nothing the player sees changes. The format, the rules, the migration and the key ceremony (making, storing, adding and rotating the key) are in [UPDATES.md](UPDATES.md).
-- **Not done.** The exe is not code-signed. Without a trusted key the checksum list comes from the same release as the exe, so it guards against a damaged or substituted download, not against a compromised release; the signed manifest is what does.
+- **Check.** At the start and then every 6 hours while the launcher stays open (after a check that could not reach GitHub, every 30 minutes), in the background, when the *Check for Updates* preference is on. *Check Now* on the About page checks once whatever the preference says. The request is conditional: the release data of `anyplaynet/launcher` is asked for with the ETag of the last answer, so a check that finds nothing new costs one small reply that GitHub does not count against its rate limit. The last copy is never taken for an answer when the network fails: an offline launcher does not call itself up to date. A newer semver (pre-release tags sort below their release) is downloaded and verified at once; garbage tags are never newer. Previews, the demo, the gallery and the tests never check.
+- **Verify.** From the first trusted key on (`data/update-keys.txt` holds "anyplay 2026" since 0.2.0) the launcher takes updates only through the release's signed `latest.json` and `latest.json.sig`: an Ed25519 signature by a trusted key, an unexpired manifest, a version newer than the running one, a running version not below the manifest's `minimum_version`, and a download with exactly the manifest's SHA-256 and size. The portable `AnyPlay-Launcher-<v>-x64.exe` (or `AnyPS5-Launcher-<v>-x64.exe`, which every release also carries, 9.7) goes to `%LOCALAPPDATA%\AnyPS5\Updates` under its final name only after that. There is no fallback to the unsigned `SHA256SUMS.txt` flow. The format, the rules, the migration and the key ceremony are in [UPDATES.md](UPDATES.md).
+- **Swap.** Windows cannot overwrite a running exe but can rename it. The staged file is copied beside the running exe (`<name>.new`, it may be on another drive), hashed again, the running exe is renamed to `<name>.old`, the copy takes its place. A failure in the second step moves the old one back. The next start deletes `.old` files and stale downloads (one still in use stays until a later start). It works for the installed exe (`%LOCALAPPDATA%\Programs\AnyPlay Launcher`, or `...\AnyPS5 Launcher` for an install from v0.1.x) and for the portable exe in any writable folder. The swap keeps the exe's file name; nothing depends on it. A folder that refuses new files is reported before anything is downloaded.
+- **Where the player sees it.** An update is visible in two places, and never as a toast or a progress bar in the way.
+  - *About*, under *Version* (which always shows the version that runs): the row *Launcher Update* with one short value and, under it, one sentence and at most one row that acts. Checking: "Checking…". Nothing newer: "Up to date" and *Check Now*. Downloading: "Downloading 42%", then "Verifying"; this is the only place with progress. Ready: "0.2.5 ready", "Restart now, or it installs the next time you close the launcher.", *Restart Now* and *What's New in 0.2.5*. Held for a game: "Waiting for your game", *Cancel Restart*. A read-only folder, a release that was refused (signature, expiry, hash, size) or any other failure: "Not installed" or "0.2.5 available" with the one thing to do, *Download from GitHub*. Offline: "Not reachable" and *Check Now*; the launcher tries again by itself. A refusal is logged and says nothing anywhere else.
+  - *The notice on the home screen*, after the title, only while a verified update waits and the player has not sent it away: "Launcher 0.2.5 is ready" with *Restart Now* (the one primary button) and *Later*. *Later* hides it until the next start; the About row stays. While a restart waits for a game, the notice says "Restarts when your game closes" with *Cancel Restart*. The pad reaches it from the library button (left of it), so every action has a key and a pad path. It is out of the way of the top bar and only appears where it fits.
+- **Restart Now.** Closes the launcher, swaps, starts the new exe with the same flags and **opens where the player was**: the link of the selected game (`anyps5://game/<TITLEID>`, which selects it again) or, from the settings, `anyps5://settings/about`. It never interrupts a running game: while a game runs or starts, the restart is held, the About row and the notice say so, and it goes ahead the moment no game runs. Closing the launcher by hand still installs the update, without starting it again.
+- **What's New.** The notes of the staged release are taken from the release data the check fetched anyway (display only; nothing is decided by them) and shown in the same full-screen panel as the toolkit's notes: every `###` heading of the release is a group, every bullet a line, all groups unfolded. *Back* returns to About.
+- **Not done.** The exe is not code-signed (Windows SmartScreen); that costs money and is the owner's decision. Provenance (GitHub attestations) is separate, see UPDATES.md.
 
 ### 9.6 Deep links, single instance and folder entry
 
@@ -2225,7 +2280,7 @@ Decisions made while implementing:
   blurred backdrop with saturation 1.25 and a 6 % white tint (both estimates, tune against the original).
 - **Keyboard repeat** of select/back/options is suppressed (a held Enter must not re-fire); held arrows repeat at the OS rate.
 - **Row padding**: panel rows keep 10 dp above and below their text even when the title wraps (the original has none).
-- The gamepad thread only translates events; the 0.38 s / 0.085 s repeat runs on the UI clock (`input::Repeater`).
+- The gamepad thread only translates events; the 0.36 s / 0.10 s / 0.06 s repeat runs on the UI clock (`input::Repeater`).
 
 ---
 
@@ -2372,7 +2427,7 @@ Hints that explain a text field or a toggle stand under it with the normal 8 dp 
 
 **Appear Offline** (network ADR 0028, control command `set_appear_offline`, `account.appear_offline` of the `state` event). `Online::set_appear_offline` shows the choice at once, a refusal takes it back with a toast, and the `state` event settles it (also when another device changes it). Where it shows: the switch "Appear Offline" (detail "Friends see you as offline") on the Account page of the online panel; the button on the own profile; "Appearing offline" in the panel's subtitle, the profile's status line and, in quiet ink (white 72 %), after the name in the top bar's profile pill, whose accent dot becomes a ring while it is on (its accessible name says "Appearing offline" instead of "Online"). Offline from the cloud the player is simply offline: nothing is shown.
 
-**Secret trophies.** The launcher tells the cloud which trophies of a game it hides (`secret_trophies`, once per title and sign-in, whenever the trophy file is read) and reveals one when the player shows it on the trophy list or the compare screen (`reveal_trophies`).
+**Secret trophies.** The launcher tells the cloud which hidden trophies of a game the player has not earned (`secret_trophies`, once per title and sign-in, whenever the trophy file is read). An earned trophy is never secret: the hidden ones the player has earned are revealed (`reveal_trophies`) as soon as the trophy file shows them earned, as consoles do. The player reveals an unearned one by showing it on the trophy list or the compare screen.
 
 Gallery scenes (1600 x 900 and 1920 x 1200): `profile-own-appearing`, `profile-friend-compare`, `online-account-appearing`, `home-appearing` (the real home with the pill), `compare`, `compare-secret`, `compare-revealed`, `compare-numbers`, `compare-loading`, `compare-offline`, `compare-error`, `compare-hidden`, `compare-empty`, and `profile-own`, `profile-own-focus`, `profile-own-end` (scrolled to the last row, the header faded), `profile-friend`, `profile-friend-hidden` (trophies and playtime hidden), `profile-request`, `profile-new` (a new account's own profile), `profile-new-friend`, `profile-private`, `profile-loading`, `profile-error`, `profile-offline`.
 

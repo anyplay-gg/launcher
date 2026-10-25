@@ -27,6 +27,8 @@ pub enum HomeFocus {
     Actions(usize),
     /// "How did it run?" below the facts: the four answers (0 to 3), then dismiss (4).
     Ask(usize),
+    /// The launcher update notice after the title: its buttons from the left.
+    Update(u8),
 }
 
 /// What the home screen needs to know to navigate.
@@ -40,6 +42,8 @@ pub struct HomeContext {
     pub has_trophies: bool,
     /// "How did it run?" is on screen.
     pub asking: bool,
+    /// Buttons of the launcher update notice (0 = no notice).
+    pub notice: u8,
 }
 
 impl HomeContext {
@@ -60,6 +64,8 @@ pub enum HomeIntent {
     OpenGameSettings,
     /// Answer "How did it run?" (0 to 3) or dismiss it (4).
     AnswerRun(usize),
+    /// A button of the launcher update notice (0 = the main one).
+    UpdateAction(usize),
     OpenLibrary,
     OpenSettings,
     /// The friends button: the online area on the friends list, or on sign-in while signed out.
@@ -138,6 +144,9 @@ impl HomeFocus {
                 _ => {}
             },
             HomeFocus::Top(i) => match command {
+                Command::Left if i == 0 && ctx.notice > 0 => {
+                    go(&mut step, HomeFocus::Update(ctx.notice - 1));
+                }
                 Command::Left => go(&mut step, HomeFocus::Top(i.saturating_sub(1))),
                 Command::Right => go(&mut step, HomeFocus::Top((i + 1).min(Self::LAST_TOP))),
                 Command::Down | Command::Back => go(&mut step, HomeFocus::Tiles),
@@ -169,6 +178,15 @@ impl HomeFocus {
                     _ => {}
                 }
             }
+            HomeFocus::Update(i) => match command {
+                Command::Left => go(&mut step, HomeFocus::Update(i.saturating_sub(1))),
+                Command::Right if i + 1 < ctx.notice => go(&mut step, HomeFocus::Update(i + 1)),
+                Command::Right => go(&mut step, HomeFocus::Top(0)),
+                Command::Down | Command::Back => go(&mut step, HomeFocus::Tiles),
+                Command::Select => step.intent = Some(HomeIntent::UpdateAction(usize::from(i))),
+                Command::Options if has_games => step.intent = Some(HomeIntent::OpenGameSettings),
+                _ => {}
+            },
             HomeFocus::Ask(i) => match command {
                 Command::Left => go(&mut step, HomeFocus::Ask(i.saturating_sub(1))),
                 Command::Right => go(&mut step, HomeFocus::Ask((i + 1).min(ASK_LAST))),
@@ -177,6 +195,15 @@ impl HomeFocus {
                 Command::Options if has_games => step.intent = Some(HomeIntent::OpenGameSettings),
                 _ => {}
             },
+        }
+        // A direction that went nowhere has met an edge: a soft bump, so the press is answered.
+        if command.is_direction()
+            && step.intent.is_none()
+            && step.sound.is_none()
+            && step.focus == self
+            && step.selected == ctx.selected.min(last_game)
+        {
+            step.sound = Some(Cue::Bump);
         }
         step
     }
@@ -294,7 +321,7 @@ impl PanelNav {
                         self.row = 0;
                         step(PanelEffect::None, Some(Cue::Move))
                     } else {
-                        step(PanelEffect::None, None)
+                        step(PanelEffect::None, Some(Cue::Bump))
                     }
                 }
                 Command::Right | Command::Select => {
@@ -320,7 +347,7 @@ impl PanelNav {
                         self.row = i;
                         step(PanelEffect::None, Some(Cue::Move))
                     }
-                    None => step(PanelEffect::None, None),
+                    None => step(PanelEffect::None, Some(Cue::Bump)),
                 }
             }
             Command::Left | Command::Right => {
@@ -374,6 +401,7 @@ mod tests {
             selected,
             has_trophies,
             asking: false,
+            notice: 0,
         }
     }
 
@@ -399,7 +427,11 @@ mod tests {
     fn tiles_move_selection_clamped_without_wrap() {
         let c = ctx(3, 0, false);
         let s = HomeFocus::Tiles.navigate(Command::Left, c);
-        assert_eq!((s.selected, s.sound), (0, None), "no wrap, no sound");
+        assert_eq!(
+            (s.selected, s.sound),
+            (0, Some(Cue::Bump)),
+            "no wrap, a bump"
+        );
         let s = HomeFocus::Tiles.navigate(Command::Right, c);
         assert_eq!((s.selected, s.sound), (1, Some(Cue::Move)));
         let s = HomeFocus::Tiles.navigate(Command::Right, ctx(3, 2, false));
@@ -444,9 +476,15 @@ mod tests {
             assert_eq!(nav(pair[1], Command::Left).focus, pair[0]);
         }
         let end = nav(HomeFocus::LIBRARY, Command::Left);
-        assert_eq!((end.focus, end.sound), (HomeFocus::LIBRARY, None));
+        assert_eq!(
+            (end.focus, end.sound),
+            (HomeFocus::LIBRARY, Some(Cue::Bump))
+        );
         let end = nav(HomeFocus::PROFILE, Command::Right);
-        assert_eq!((end.focus, end.sound), (HomeFocus::PROFILE, None));
+        assert_eq!(
+            (end.focus, end.sound),
+            (HomeFocus::PROFILE, Some(Cue::Bump))
+        );
         for (focus, intent) in [
             (HomeFocus::LIBRARY, HomeIntent::OpenLibrary),
             (HomeFocus::FRIENDS, HomeIntent::OpenFriends),
@@ -540,7 +578,7 @@ mod tests {
         let s2 = nav.command(Command::Up, &ROWS);
         assert_eq!(
             (nav.category, s.sound, s2.sound),
-            (0, Some(Cue::Move), None),
+            (0, Some(Cue::Move), Some(Cue::Bump)),
             "clamped"
         );
         let s = nav.command(Command::Right, &ROWS);
@@ -577,13 +615,13 @@ mod tests {
         nav.command(Command::Down, &ROWS);
         assert_eq!(nav.row, 5);
         let s = nav.command(Command::Down, &ROWS);
-        assert_eq!((nav.row, s.sound), (5, None));
+        assert_eq!((nav.row, s.sound), (5, Some(Cue::Bump)));
         nav.command(Command::Up, &ROWS);
         nav.command(Command::Up, &ROWS);
         nav.command(Command::Up, &ROWS);
         assert_eq!(nav.row, 1);
         let s = nav.command(Command::Up, &ROWS);
-        assert_eq!((nav.row, s.sound), (1, None), "row 0 is info");
+        assert_eq!((nav.row, s.sound), (1, Some(Cue::Bump)), "row 0 is info");
     }
 
     #[test]

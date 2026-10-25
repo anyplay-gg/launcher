@@ -106,7 +106,10 @@ pub enum ScreenPage {
     /// The Toolkit category, in its rows: stable, an update waiting, pinned, a local build.
     Toolkit(ToolkitLook),
     /// The About page with a downloaded launcher update waiting ("Restart Now").
-    AboutUpdate,
+    /// The About page with the launcher's own update in one state.
+    AboutUpdate(UpdateLook),
+    /// The notes of a launcher update, in the "What's New" panel.
+    WhatsNewLauncher,
     /// Behavior with the AnyPlay links registered to this launcher.
     BehaviourLinks,
     Recommended,
@@ -315,6 +318,44 @@ pub enum OnlineLook {
     PartyDiscord,
 }
 
+/// What a launcher release's notes look like (the shape of the GitHub release body).
+const LAUNCHER_SAMPLE_NOTES: &str = "## AnyPlay Launcher 0.1.4\n\n### Your Profile\n\n- Your profile button now opens a full-screen profile: your games, hours and trophies.\n- **Edit Profile** opens your account on the web.\n\n### Look and Feel\n\n- Focus is a ring around buttons, rows and cards instead of a white fill.\n- Every control reacts when the mouse is over it.\n\n### Calls\n\n- A call uses Voice Activity while it lasts, so you no longer hold a key to talk.\n";
+
+/// Where the launcher's own update stands on the About page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UpdateLook {
+    Checking,
+    UpToDate,
+    Available,
+    Downloading,
+    Ready,
+    Holding,
+    ReadOnly,
+    Offline,
+    Refused,
+}
+
+impl UpdateLook {
+    fn state(self) -> LauncherUpdate {
+        use crate::screens::settings::UpdateFailure;
+        let version = "0.1.4".to_owned();
+        match self {
+            UpdateLook::Checking => LauncherUpdate::Checking,
+            UpdateLook::UpToDate => LauncherUpdate::UpToDate,
+            UpdateLook::Available => LauncherUpdate::Available(version),
+            UpdateLook::Downloading => LauncherUpdate::Downloading {
+                version,
+                permille: 420,
+            },
+            UpdateLook::Ready => LauncherUpdate::Ready(version),
+            UpdateLook::Holding => LauncherUpdate::Holding(version),
+            UpdateLook::ReadOnly => LauncherUpdate::ReadOnly(version),
+            UpdateLook::Offline => LauncherUpdate::Failed(UpdateFailure::Offline),
+            UpdateLook::Refused => LauncherUpdate::Failed(UpdateFailure::Refused),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToolkitLook {
     Stable,
@@ -405,7 +446,16 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "log" => ScreenPage::Log,
         "report" => ScreenPage::Report,
         "library" => ScreenPage::Library,
-        "about-update" => ScreenPage::AboutUpdate,
+        "about-update" => ScreenPage::AboutUpdate(UpdateLook::Ready),
+        "about-update-checking" => ScreenPage::AboutUpdate(UpdateLook::Checking),
+        "about-update-current" => ScreenPage::AboutUpdate(UpdateLook::UpToDate),
+        "about-update-available" => ScreenPage::AboutUpdate(UpdateLook::Available),
+        "about-update-downloading" => ScreenPage::AboutUpdate(UpdateLook::Downloading),
+        "about-update-holding" => ScreenPage::AboutUpdate(UpdateLook::Holding),
+        "about-update-readonly" => ScreenPage::AboutUpdate(UpdateLook::ReadOnly),
+        "about-update-offline" => ScreenPage::AboutUpdate(UpdateLook::Offline),
+        "about-update-refused" => ScreenPage::AboutUpdate(UpdateLook::Refused),
+        "whats-new-launcher" => ScreenPage::WhatsNewLauncher,
         "behavior-links" => ScreenPage::BehaviourLinks,
         "phone-off" => ScreenPage::Phone(PhoneLook::Off),
         "phone-waiting" => ScreenPage::Phone(PhoneLook::Waiting),
@@ -1417,6 +1467,8 @@ pub struct ScreenGallery {
     recommended: RecommendedPanel,
     whats_new: WhatsNewPanel,
     notes: Published,
+    /// The notes of a launcher update.
+    launcher_notes: Published,
     update: UpdateState,
     toolkit_version: String,
     phone: crate::app::phone::PhoneState,
@@ -1488,6 +1540,11 @@ impl ScreenGallery {
                 tag: "0.1.3".into(),
                 date: "2026-10-20".into(),
                 notes: ReleaseNotes::parse(SAMPLE_NOTES),
+            },
+            launcher_notes: Published {
+                tag: "0.1.4".into(),
+                date: String::new(),
+                notes: ReleaseNotes::parse_launcher(LAUNCHER_SAMPLE_NOTES),
             },
             update,
             toolkit_version,
@@ -1783,11 +1840,14 @@ impl ScreenGallery {
             ),
             update: self.update.clone(),
             recent: &recent,
-            launcher: if matches!(self.page, ScreenPage::AboutUpdate) {
-                LauncherUpdate::Ready("0.1.3".into())
-            } else {
-                LauncherUpdate::None
+            launcher: match self.page {
+                ScreenPage::AboutUpdate(look) => look.state(),
+                _ => LauncherUpdate::None,
             },
+            launcher_notes: matches!(
+                self.page,
+                ScreenPage::AboutUpdate(UpdateLook::Ready | UpdateLook::Holding)
+            ),
             default_screenshots: std::path::Path::new("C:\\Users\\mira\\Pictures\\AnyPS5"),
             links: if matches!(self.page, ScreenPage::BehaviourLinks) {
                 anyps5_core::linkreg::Handler::ThisExe
@@ -1870,15 +1930,19 @@ impl ScreenGallery {
             self.recommended.show(shell, &ctx, &events, &data);
         }
         {
+            let launcher = matches!(self.page, ScreenPage::WhatsNewLauncher);
             let view = if matches!(self.page, ScreenPage::WhatsNewLoading) {
                 NotesView::Loading
+            } else if launcher {
+                NotesView::Ready(&self.launcher_notes)
             } else {
                 NotesView::Ready(&self.notes)
             };
             let data = WhatsNewData {
-                tag: "0.1.3",
+                tag: if launcher { "0.1.4" } else { "0.1.3" },
                 view,
                 language,
+                launcher,
             };
             self.whats_new.show(shell, &ctx, &events, &data);
         }
@@ -2120,9 +2184,22 @@ impl ScreenGallery {
                     self.settings.focus_row(7);
                 }
             }
-            ScreenPage::AboutUpdate => {
+            ScreenPage::AboutUpdate(look) => {
                 self.settings.open_at(7, true);
-                self.settings.focus_row(2);
+                // The row that acts, when there is one; else the first row that can be focused.
+                self.settings.focus_row(match look {
+                    UpdateLook::Ready
+                    | UpdateLook::Holding
+                    | UpdateLook::ReadOnly
+                    | UpdateLook::Offline
+                    | UpdateLook::Refused => 4,
+                    UpdateLook::UpToDate => 3,
+                    _ => 0,
+                });
+            }
+            ScreenPage::WhatsNewLauncher => {
+                self.whats_new
+                    .open_launcher(&self.launcher_notes.notes, shell.language);
             }
             ScreenPage::BehaviourLinks => self.settings.open_at(3, true),
             ScreenPage::Phone(look) => {
