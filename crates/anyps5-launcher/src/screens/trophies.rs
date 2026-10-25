@@ -28,7 +28,7 @@ use crate::ui::components::{self, corner, paint_progress};
 use crate::ui::glass::GlassStyle;
 use crate::ui::i18n::{Key, Language};
 use crate::ui::icons::Icon;
-use crate::ui::input::{Command, InputEvent};
+use crate::ui::input::{self, Command, InputEvent};
 use crate::ui::sound::Cue;
 use crate::ui::text;
 use crate::ui::theme::{self, Grade, color, fade, radius, size, ty, white};
@@ -433,6 +433,7 @@ impl TrophyListPanel {
                         // Hit-test after drawing so the click reads the row's own response.
                         let response =
                             ui.interact(rect, id.with(("trophy-row", i)), Sense::click());
+                        crate::ui::a11y::follow(&ctx, response.id, i == self.index);
                         let secret = self.is_secret(trophy, i, data);
                         let label = trophy_label(trophy, secret, data.language);
                         response.widget_info(|| {
@@ -562,7 +563,8 @@ impl TrophyListPanel {
         let t = ctx.focus_t(("trophy-row-focus", index), focused);
         let r = radius::TROPHY_ROW;
         // The focused row is a row of every other panel: lifted, with the ring.
-        let under_pointer = ctx.pointer_hover_pos().is_some_and(|p| rect.contains(p));
+        let under_pointer = input::pointer_in_use(&ctx)
+            && ctx.pointer_hover_pos().is_some_and(|p| rect.contains(p));
         let hover_t = ctx.animate_to(
             ("trophy-row-hover", index),
             f32::from(under_pointer),
@@ -704,6 +706,7 @@ impl TrophyListPanel {
                 vec2(show_w, SHOW_HEIGHT),
             );
             let hovered = focused
+                && input::pointer_in_use(&ctx)
                 && ctx
                     .pointer_hover_pos()
                     .is_some_and(|p| area.expand(SHOW_REACH).contains(p));

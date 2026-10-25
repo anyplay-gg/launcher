@@ -32,6 +32,7 @@ use crate::ui::components::{
 use crate::ui::focus::HomeFocus;
 use crate::ui::i18n::{Arg, Key, Language, byte_text};
 use crate::ui::icons::Icon;
+use crate::ui::input;
 use crate::ui::intro;
 use crate::ui::text;
 use crate::ui::theme::{self, Weight, color, pad, size, ty, white};
@@ -57,9 +58,11 @@ const ACTION_ROW: f32 = size::BUTTON_MIN_HEIGHT;
 /// Longest a failure or diagnosis text gets.
 const MESSAGE_WIDTH: f32 = 520.0;
 
-/// Darkness of the shade under the top bar and in the hero's corner.
-const SCRIM_TOP: f32 = 0.30;
-const SCRIM_HERO: f32 = 0.46;
+/// Darkness of the shade under the top bar, in the hero's corner and under the hint bar. The facts
+/// (white at 0.55) and the hints (0.72) hold 4.5:1 on Sunset's warm lower band with these.
+const SCRIM_TOP: f32 = 0.40;
+const SCRIM_HERO: f32 = 0.58;
+const SCRIM_HINTS: f32 = 0.34;
 
 /// A press the model has to hear about, collected while painting.
 #[derive(Clone, Copy, Debug)]
@@ -130,7 +133,7 @@ fn staged(
     add(&mut child, intro::lift(screen, t));
 }
 
-/// Soft shade behind the hero (bottom left) and the top bar, so white text still reads on bright
+/// Soft shade behind the hero (bottom, strongest at the left), the hint bar and the top bar, so white text still reads on bright
 /// artwork. Every side fades to nothing, so it never shows an edge.
 fn paint_scrims(painter: &egui::Painter, screen: Rect, with_hero: bool) {
     let quad = |rect: Rect, corners: [f32; 4]| {
@@ -152,9 +155,9 @@ fn paint_scrims(painter: &egui::Painter, screen: Rect, with_hero: bool) {
         let height = (screen.height() * 0.5).min(480.0);
         let hero = Rect::from_min_max(
             pos2(screen.min.x, screen.max.y - height),
-            pos2(screen.min.x + screen.width() * 0.72, screen.max.y),
+            pos2(screen.max.x, screen.max.y),
         );
-        quad(hero, [0.0, 0.0, SCRIM_HERO, 0.0]);
+        quad(hero, [0.0, 0.0, SCRIM_HERO, SCRIM_HINTS]);
     }
 }
 
@@ -713,6 +716,7 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
         style.opacity = opacity.clamp(0.0, 1.0);
         let under_pointer = interactive
             && opacity > 0.5
+            && input::pointer_in_use(&ctx)
             && ctx.pointer_hover_pos().is_some_and(|p| rect.contains(p));
         style.hover = ctx.animate_to(key("tile-hover"), f32::from(under_pointer), Motion::Hover);
         chrome::paint_tile(&painter, rect, &style);
@@ -727,7 +731,8 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
             let response =
                 ui.interact(rect, Id::unique(("tile", game.id.as_str())), Sense::click());
             response.widget_info(|| WidgetInfo::labeled(Role::Button, true, label.as_str()));
-            if response.hovered() {
+            crate::ui::a11y::follow(&ctx, response.id, ring_on && is_selected);
+            if input::hovered(&ctx, &response) {
                 ctx.set_cursor_icon(CursorIcon::PointingHand);
             }
             if response.double_clicked() {

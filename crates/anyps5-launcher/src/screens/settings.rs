@@ -36,7 +36,7 @@ use crate::ui::focus::PanelNav;
 use crate::ui::glass::GlassStyle;
 use crate::ui::i18n::{Arg, Key, Language};
 use crate::ui::icons::Icon;
-use crate::ui::input::InputEvent;
+use crate::ui::input::{self, InputEvent};
 use crate::ui::sound::Cue;
 use crate::ui::text;
 use crate::ui::theme::{Accent, Theme, pad, radius, size, ty, white};
@@ -462,7 +462,9 @@ pub fn build_categories(
                 crate::screens::glibc_strings::shortfall_text(&short, language),
                 None,
             )
-            .attached(),
+            .attached()
+            // On a note, `destructive` is the amber warning ink (the line under Play on the home screen).
+            .destructive(),
         );
     }
     toolkit.push(
@@ -1194,11 +1196,12 @@ fn draw(
             ui.make_persistent_id(("category", index)),
             Sense::click(),
         );
+        crate::ui::a11y::follow(&ctx, response.id, focused);
         let title_text = cat.category.title(language);
         response.widget_info(|| {
             egui::WidgetInfo::selected(egui::Role::Tab, true, selected, title_text)
         });
-        if response.hovered() {
+        if input::hovered(&ctx, &response) {
             ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         if response.clicked() {
@@ -1208,7 +1211,7 @@ fn draw(
         let t_sel = ctx.focus_t(("category-selected", index), selected);
         let hover_t = ctx.animate_to(
             ("category-hover", index),
-            f32::from(response.hovered() && !selected),
+            f32::from(input::hovered(&ctx, &response) && !selected),
             Motion::Hover,
         );
         // The selected category keeps its quiet fill; the one with the focus gets the ring.

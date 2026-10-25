@@ -205,6 +205,10 @@ pub enum Motion {
     Focus,
     /// Pointer hover: easeOut 0.12 s, the same with reduced motion (a colour change only).
     Hover,
+    /// A control pressed by the pointer: easeOut 0.10 s both ways, the same with reduced motion. A
+    /// spring would lag behind the click; an ease retargets from the current value, so a quick
+    /// click-and-release reverses mid-press instead of finishing it first.
+    Press,
     /// Tile row, hero swap, onboarding steps, list reflow: 0.45 / 0.86.
     Layout,
     /// Panels, splash, toast: 0.42 / 0.90.
@@ -236,6 +240,7 @@ impl Motion {
             (Motion::Focus, false) => Curve::Spring(Self::FOCUS),
             (Motion::Focus, true) => ease_out(0.12),
             (Motion::Hover, _) => ease_out(0.12),
+            (Motion::Press, _) => ease_out(0.10),
             (Motion::Layout, false) => Curve::Spring(Self::LAYOUT),
             (Motion::Layout, true) => ease_out(0.15),
             (Motion::Overlay, false) => Curve::Spring(Self::OVERLAY),
@@ -721,6 +726,16 @@ mod tests {
         assert!(Bezier::EASE_OUT.ease(0.5) > 0.5);
         assert!(Bezier::EASE_IN.ease(0.5) < 0.5);
         assert!((Bezier::LINEAR.ease(0.3) - 0.3).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_press_is_a_short_ease_never_a_spring() {
+        for reduced in [false, true] {
+            assert!(matches!(
+                Motion::Press.curve(reduced),
+                Curve::Ease { duration, .. } if duration <= 0.12
+            ));
+        }
     }
 
     #[test]

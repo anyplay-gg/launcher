@@ -23,6 +23,7 @@
 // The foundation is consumed by the screens of later PRs; until then most of its API is unused.
 #![allow(dead_code)]
 
+pub mod a11y;
 pub mod anim;
 pub mod artwork;
 pub mod background;

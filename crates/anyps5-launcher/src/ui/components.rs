@@ -220,11 +220,11 @@ pub fn interact(
     let focus = ui.ctx().focus_t((id, "focus"), focused && enabled);
     let (rect, response) = ui.allocate_exact_size(size, sense);
     debug_assert_eq!(response.id, id);
+    crate::ui::a11y::follow(ui.ctx(), id, focused && enabled);
     // The pointer only counts while it is the device in use: with a gamepad, a resting mouse must
     // not leave a second control lit beside the focused one.
-    let pointer_in_use = input::device(ui.ctx()) != Device::Gamepad;
     let hovered = enabled
-        && ((response.hovered() && pointer_in_use)
+        && (input::hovered(ui.ctx(), &response)
             || force == Some(Force::Hover)
             || force == Some(Force::Press));
     let pressed = enabled && (response.is_pointer_button_down_on() || force == Some(Force::Press));
@@ -237,7 +237,7 @@ pub fn interact(
     let press = ctx.animate_to(
         (response.id, "press"),
         if pressed { 1.0 } else { 0.0 },
-        Motion::Focus,
+        Motion::Press,
     );
     if hovered && enabled {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -590,7 +590,10 @@ impl<'a> ConsoleButton<'a> {
         // Content, centred.
         let mut x = rect.center().x - content * 0.5;
         if let Some(icon) = self.icon {
-            let centre = pos2(x + icon_width * 0.5, rect.center().y);
+            let centre = pos2(
+                x + icon_width * 0.5 + icon.optical_dx(icon_width),
+                rect.center().y,
+            );
             if icon == Icon::DOTS_THREE && !has_text {
                 // The font's dots are hairline-thin at button size: three round dots instead.
                 let k = height / size::CONTROL_L;
@@ -744,7 +747,7 @@ impl Switch {
         if self.announce {
             response.widget_info(|| WidgetInfo::selected(Role::Switch, enabled, on, label));
         }
-        let hovered = self.enabled && response.hovered();
+        let hovered = self.enabled && input::hovered(ui.ctx(), &response);
         if hovered {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }

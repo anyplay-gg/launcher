@@ -31,6 +31,13 @@ impl Icon {
         RichText::new(self.0.to_string()).font(theme::font_icon_fill(size))
     }
 
+    /// How far to move the glyph to the right so it looks centred, in dp at `size`. A triangle
+    /// pointing right has its mass toward the flat side: centred by its box it reads as too far
+    /// left, so the play glyph sits 8 % of its size to the right (about 1.4 dp at 17, 1.8 at 22).
+    pub fn optical_dx(self, size: f32) -> f32 {
+        if self == Icon::PLAY { size * 0.08 } else { 0.0 }
+    }
+
     /// Font to paint the glyph with.
     pub fn font(self, size: f32, fill: bool) -> egui::FontId {
         if fill {

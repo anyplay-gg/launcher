@@ -856,7 +856,7 @@ fn surface(
             name,
         )
     });
-    let hovered = pressable && response.hovered();
+    let hovered = pressable && crate::ui::input::hovered(ctx, &response);
     if hovered {
         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
     }

@@ -861,6 +861,28 @@ middle (two dots on the digits' cap height), so the minute ticking over moves no
 **Failed unlock** says what happened and what to do in one headline ("Unlocking stopped. Try again. ..."), with the technical
 message as a quiet line under it.
 
+**Round 2 (2026-10-25).**
+- *Press is immediate.* The press scale (0.97) rides `Motion::Press`: easeOut 0.10 s both ways, retargeted from the
+  current value, so a quick click reverses mid-press. The focus spring (0.32 s) stays for focus only.
+- *The reaction pills of the feed* are Small controls (32), like every answer inside a line of content.
+- *Optical centring.* A right-pointing triangle has its mass on the flat side; `Icon::optical_dx` moves the play glyph 8 % of
+  its size to the right.
+- *The pointer lights nothing while a pad is the device in use* (`input::hovered`, `input::pointer_in_use`): no hover fill,
+  no hover ring and no pointing hand next to the control the pad has focused. Moving the mouse takes the device back.
+- *Screen-reader focus follows the ring* (`ui::a11y`). The model decides the focus and the widgets draw the ring; egui's
+  own focus is what AccessKit announces, so each focusable widget calls `a11y::follow` with whether the model has it
+  focused. egui's focus is only taken when nothing, or our own earlier choice, holds it (a text field being edited, or a
+  control reached with Tab, keeps it); Tab and the arrows are claimed so egui does not move the focus away from the ring;
+  Enter and Space, which egui would also read as a click on the focused widget, are consumed once the model has taken
+  them as "select".
+- *A note marked destructive in a panel* (`Row::destructive` on an info row) is a warning: the amber of the glibc line under
+  Play. The top scrim of the home screen is 0.40 so the clock and the caption glyphs hold on a pale picture.
+- *Gallery.* The panel scenes draw the real home under the panel (`app::preview::HomeStand`: the same `home::show` and
+  artwork layer as the app, with the focus hidden as under a panel). New flags: `--theme=aurora|sunset|cosmic` (components,
+  panels, home scenes), `--bright` (a pale picture as the selected game's artwork), `--frames=N` (gallery pages, so the real
+  home's pictures have loaded), `--hover=X,Y` with `--pad` rests the pointer without taking the device back from the pad.
+  New page `--gallery=states`: destructive buttons, the switch and rows in every state.
+
 ## 4. Materials and blur on the GPU
 
 SwiftUI `.ultraThinMaterial` is a backdrop blur with a light tint and some saturation; it is used under every panel. egui has no
