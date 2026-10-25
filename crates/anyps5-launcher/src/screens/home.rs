@@ -296,11 +296,7 @@ fn phone_status(ui: &mut Ui, left_middle: egui::Pos2, name: &str, language: Lang
     if !ui.is_rect_visible(rect) {
         return;
     }
-    painter.rect_filled(
-        rect,
-        components::corner(PHONE_STATUS_HEIGHT * 0.5),
-        color::surface(),
-    );
+    components::paint_capsule(&painter, rect, color::surface());
     let ink = white(0.92);
     painter.text(
         pos2(rect.min.x + 12.0 + glyph * 0.5, rect.center().y),
@@ -367,9 +363,9 @@ fn paint_pill(painter: &egui::Painter, it: &components::Interaction) -> (Rect, f
     };
     let r = (rect.height() * 0.5).round();
     components::paint_shadow(painter, rect, r, theme::shadows::icon_button(it.focus));
-    painter.rect_filled(
+    components::paint_capsule(
+        painter,
         rect,
-        components::corner(r),
         theme::mix(rest, color::surface_focused(), it.focus),
     );
     (rect, rect.height() / size::ICON_BUTTON)
@@ -478,9 +474,9 @@ fn profile_button(
             pos2(shown.max.x + 8.0 * s, rect.center().y - h * 0.5),
             vec2(w, h),
         );
-        painter.rect_filled(
+        components::paint_capsule(
+            &painter,
             badge,
-            components::corner(h * 0.5),
             theme::mix(white(0.92), Color32::BLACK, it.focus),
         );
         text::paint(

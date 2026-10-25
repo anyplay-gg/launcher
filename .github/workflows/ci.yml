@@ -11,7 +11,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
 
-# The online crates come from anyplay-gg/network, checked out beside the launcher at the commit in
+# The online crates come from anyplaynet/network, checked out beside the launcher at the commit in
 # network.ref (one full SHA, the file the release reads too). A pull request that needs newer
 # network code changes that file; a merge on the network's main alone cannot turn this red.
 defaults:
@@ -26,7 +26,7 @@ jobs:
         with:
           persist-credentials: false
           path: launcher
-      # The online crates come from anyplay-gg/network, checked out beside the launcher.
+      # The online crates come from anyplaynet/network, checked out beside the launcher.
       - id: network-pin
         name: Read the pinned network revision
         shell: bash
@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          repository: anyplay-gg/network
+          repository: anyplaynet/network
           ref: ${{ steps.network-pin.outputs.ref }}
           path: network
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
@@ -69,7 +69,7 @@ jobs:
         with:
           persist-credentials: false
           path: launcher
-      # The online crates come from anyplay-gg/network, checked out beside the launcher.
+      # The online crates come from anyplaynet/network, checked out beside the launcher.
       - id: network-pin
         name: Read the pinned network revision
         shell: bash
@@ -80,7 +80,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          repository: anyplay-gg/network
+          repository: anyplaynet/network
           ref: ${{ steps.network-pin.outputs.ref }}
           path: network
       # alsa for cpal (sound), udev for gilrs (gamepads), xkbcommon/xcb for winit's X11 and
@@ -146,7 +146,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          repository: anyplay-gg/network
+          repository: anyplaynet/network
           ref: ${{ steps.network-pin.outputs.ref }}
           path: network
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
@@ -192,7 +192,7 @@ jobs:
   # Links, licences and advisories: the rules every AnyPlay repository shares. The launcher handles
   # title IDs as data, so that rule is off here.
   rules:
-    uses: anyplay-gg/.github/.github/workflows/rules.yml@main
+    uses: anyplaynet/.github/.github/workflows/rules.yml@main
     with:
       network: true
       title-ids: false

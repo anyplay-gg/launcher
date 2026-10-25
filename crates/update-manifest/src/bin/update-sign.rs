@@ -33,7 +33,7 @@ use zeroize::Zeroizing;
 
 /// The longest a manifest may stay valid; `Manifest::validate` enforces the same line when signing.
 const MAX_DAYS: i64 = MAX_VALIDITY_DAYS;
-const DEFAULT_BASE: &str = "https://github.com/anyplay-gg/launcher/releases/download";
+const DEFAULT_BASE: &str = "https://github.com/anyplaynet/launcher/releases/download";
 
 type Result<T> = std::result::Result<T, String>;
 

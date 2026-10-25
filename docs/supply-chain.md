@@ -14,7 +14,7 @@ How a launcher release can be traced from the source to the binary, and what mak
 | Release builds | No build cache, so a poisoned cache cannot put code into a binary that no commit holds. The Rust compiler is an exact version (`RUST_TOOLCHAIN` in `release.yml`). The network commit the net service is built from is a full SHA, the one in `network.ref` (overridable by the repository variable `NETWORK_REF` or by an input of a run by hand), and is used by every job; bump the file by a pull request. CI reads the same file, so the commit a release carries is the one the checks passed against. |
 | Licences, advisories, sources | `cargo deny` with [deny.toml](../deny.toml) on every pull request (the shared `rules` workflow) and every Monday (`advisories.yml`). Unknown registries and git sources are refused. |
 
-The shared `rules` workflow comes from `anyplay-gg/.github@main`, which is the organisation's own code and is not pinned to a commit.
+The shared `rules` workflow comes from `anyplaynet/.github@main`, which is the organisation's own code and is not pinned to a commit.
 
 ## How updates arrive
 
@@ -38,14 +38,14 @@ The binaries themselves are built with `cargo auditable`: the list of every crat
 You need the [GitHub CLI](https://cli.github.com/) (2.49 or later). Download the file, then:
 
 ```
-gh attestation verify AnyPlay-Launcher-0.2.0-x64.exe --repo anyplay-gg/launcher
+gh attestation verify AnyPlay-Launcher-0.2.0-x64.exe --repo anyplaynet/launcher
 ```
 
 That checks a signature made by GitHub's attestation service over the file's hash, and prints which workflow, on which commit and tag, built it. To insist that it was this repository's release workflow on that tag:
 
 ```
-gh attestation verify AnyPlay-Launcher-0.2.0-x64.exe --repo anyplay-gg/launcher \
-  --signer-workflow anyplay-gg/launcher/.github/workflows/release.yml \
+gh attestation verify AnyPlay-Launcher-0.2.0-x64.exe --repo anyplaynet/launcher \
+  --signer-workflow anyplaynet/launcher/.github/workflows/release.yml \
   --source-ref refs/tags/v0.2.0
 ```
 
@@ -62,3 +62,7 @@ The attestation is made by the `release` job of a tag build. A release workflow 
 - **The Rust toolchain** of CI (not of releases) is `stable`, and the runner images and the apt packages of the Linux build are whatever GitHub provides that day.
 - **The shared rules workflow** is referenced by branch, see above.
 - **Vulnerabilities in a built binary** are not scanned after the build; `cargo deny` looks at the lockfile.
+
+## Fonts and icons
+
+Licence texts are in `crates/anyps5-launcher/assets/fonts/`. Bundled: [Inter](https://rsms.me/inter/) (SIL OFL 1.1), [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (SIL OFL 1.1), [Noto Sans](https://github.com/notofonts) in Latin, Mono, Thai and Arabic, which also stand in for the games' system fonts (SIL OFL 1.1; sources and checksums in `crates/anyps5-launcher/assets/fonts/noto/README.md`), and [Phosphor Icons](https://phosphoricons.com) (MIT). The Japanese, Chinese and Korean Noto Sans CJK fonts are not bundled: the launcher downloads them (pinned release, SHA-256 checked) on request or at the first game start.

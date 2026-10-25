@@ -22,7 +22,7 @@ fn main() {
     }
 }
 
-/// A release build carries the net service (`anyplay-net` from anyplay-gg/network) inside the
+/// A release build carries the net service (`anyplay-net` from anyplaynet/network) inside the
 /// launcher, so every download and every self-update brings the service that matches it.
 /// `ANYPLAY_NET_EMBED` names the built service; without it the launcher looks for one beside
 /// itself.
@@ -43,7 +43,7 @@ fn embed_net_service() {
 }
 
 /// A release build for Windows also carries the share worker (`anyplay-share` from
-/// anyplay-gg/network), which streams and shows a game's window for share screen.
+/// anyplaynet/network), which streams and shows a game's window for share screen.
 /// `ANYPLAY_SHARE_EMBED` names the built worker; without it the launcher looks for one beside
 /// itself, and share screen stays off where there is none.
 fn embed_share_worker() {

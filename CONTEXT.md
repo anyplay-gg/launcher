@@ -230,7 +230,7 @@ _Avoid_: Lock, mutex (how it is done)
 
 ### Online
 
-The network's own words (account, handle, friend, presence, session, invitation, join intent, version guard, cloud, party, party leader, conversation, message, message number, read mark, message request) are defined in [anyplay-gg/network](https://github.com/anyplay-gg/network/blob/main/CONTEXT.md). The launcher adds these:
+The network's own words (account, handle, friend, presence, session, invitation, join intent, version guard, cloud, party, party leader, conversation, message, message number, read mark, message request) are defined in [anyplaynet/network](https://github.com/anyplaynet/network/blob/main/CONTEXT.md). The launcher adds these:
 
 **Friends button**:
 The top bar's button between the library and the settings. It opens the online area on the friends list and shows how many friends are online (a dot and the number; nothing at none or while signed out).
