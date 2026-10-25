@@ -8,6 +8,7 @@ pub mod discord;
 pub mod error;
 pub mod events;
 pub mod feed;
+pub mod fonts;
 pub mod fsx;
 pub mod gamefiles;
 pub mod hostcpu;

@@ -1122,7 +1122,7 @@ fn prune_old_releases(paths: &AppPaths, keep_tag: &str, keep: &[String]) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     // The real host entry point must not select a Linux release on macOS.
@@ -1456,7 +1456,7 @@ mod tests {
         assert!(safe_entry_name("C:/x").is_none());
     }
 
-    fn build_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    pub(crate) fn build_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
         let mut cursor = io::Cursor::new(Vec::new());
         {
             let mut writer = zip::ZipWriter::new(&mut cursor);
@@ -1511,7 +1511,7 @@ mod tests {
     }
 
     /// Serves fixed bodies on localhost for the download tests.
-    fn serve(
+    pub(crate) fn serve(
         routes: Vec<(&'static str, Vec<u8>, u16)>,
     ) -> (
         String,
@@ -1543,7 +1543,7 @@ mod tests {
         (base, handle, stop)
     }
 
-    fn sha_hex(data: &[u8]) -> String {
+    pub(crate) fn sha_hex(data: &[u8]) -> String {
         hex(&Sha256::digest(data))
     }
 
