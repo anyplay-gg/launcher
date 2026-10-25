@@ -1754,7 +1754,7 @@ mod tests {
     }
 
     #[test]
-    fn back_closes_a_blocker_then_turns_an_offer_down_then_goes_home() {
+    fn back_closes_a_blocker_then_puts_an_offer_away_then_goes_home() {
         use crate::ui::input::Command as Key;
         let mut model = lan_model();
         crate::app::together::join(&mut model, offer("01.100.000"));
@@ -1776,7 +1776,13 @@ mod tests {
         assert!(crate::app::together::card(&model).is_some());
         model.handle(Key::Back);
         assert!(crate::app::together::card(&model).is_none());
-        assert!(model.online.take_outbox()[0].contains("answer_invitation"));
+        assert!(
+            model
+                .online
+                .take_outbox()
+                .iter()
+                .all(|m| !m.contains("answer_invitation"))
+        );
         // No card: Back is the home screen's again.
         assert!(!crate::app::together::escape(&mut model));
     }

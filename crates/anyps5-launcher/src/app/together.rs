@@ -270,14 +270,16 @@ pub fn card(model: &Model) -> Option<Card> {
     None
 }
 
-/// Back (Esc, the pad's back button) with the card on screen: a blocker closes, an offer is turned
-/// down. True when the card took the press.
+/// Back (Esc, the pad's back button) with the card on screen: a blocker closes, an offer is put away
+/// (an invitation is not declined by it). True when the card took the press.
 pub fn escape(model: &mut Model) -> bool {
     let action = match card(model) {
         Some(Card::Blocked(_)) => Action::Close,
-        Some(Card::Offer {
-            key, invitation, ..
-        }) => Action::Dismiss { key, invitation },
+        Some(Card::Offer { key, .. }) => {
+            // Back only puts the card away; an invitation stays in the Friends screen to answer.
+            model.together.dismiss(&key);
+            return true;
+        }
         None => return false,
     };
     apply(model, action);

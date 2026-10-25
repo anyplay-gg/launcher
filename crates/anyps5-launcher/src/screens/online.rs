@@ -1109,9 +1109,9 @@ impl OnlinePanel {
                     && let Err(blocker @ anyps5_core::play_together::Blocker::NoSession { .. }) =
                         anyps5_core::play_together::Offer::of_friend(f)
                 {
-                    // One clear line; the card's text says the other possible reason.
-                    let (headline, _) = super::together_strings::blocker_text(&blocker, language);
-                    rows.push(Row::info("noSession", headline, None));
+                    let (headline, line) =
+                        super::together_strings::blocker_text(&blocker, language);
+                    rows.push(Row::info("noSession", headline, None).detail(line));
                 }
                 let in_session = online
                     .session

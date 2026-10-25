@@ -1132,7 +1132,7 @@ impl Model {
         if let Some(overlay) = self.overlay {
             return Routed::Overlay(overlay);
         }
-        // Back answers the Play Together card first: it closes a blocker and says "not now" to an offer.
+        // Back answers the Play Together card first: it closes a blocker and puts an offer away.
         if command == Command::Back && crate::app::together::escape(self) {
             self.sound(Cue::Close);
             return Routed::Done;

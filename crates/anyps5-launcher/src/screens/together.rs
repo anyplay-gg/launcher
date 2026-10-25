@@ -336,9 +336,9 @@ pub(crate) fn paint(
             child.spacing_mut().item_spacing.x = GAP;
             child.set_opacity(a);
             let each = if view.quiet.is_some() {
-                (inner.width() - GAP) * 0.5 - 6.0
+                (inner.width() - GAP) * 0.5
             } else {
-                inner.width() - 12.0
+                inner.width()
             };
             if let Some((label, quiet)) = &view.quiet {
                 let focused = keyboard_focus(&child);

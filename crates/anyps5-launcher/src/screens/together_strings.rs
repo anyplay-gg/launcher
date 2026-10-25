@@ -39,6 +39,8 @@ pub enum TogetherText {
     /// `%@` = the game, the version needed, the version the player has.
     WrongVersionHeadline,
     WrongVersionLine,
+    /// `%@` = the game, `%@` = the version. You are ahead of the session.
+    WrongVersionLineAhead,
     /// `%@` = the toolkit needed, the toolkit the player has.
     WrongBuildHeadline,
     WrongBuildLine,
@@ -82,14 +84,14 @@ impl TogetherText {
             TogetherText::PlayTogether => "Play Together",
             TogetherText::PlayTogetherDetail => "Start %@ and let friends join",
             TogetherText::OfferHeadline => "%@ is playing %@. Join?",
-            TogetherText::OfferPlaces => "%@ of %@ places taken",
+            TogetherText::OfferPlaces => "%@ of %@ players",
             TogetherText::OfferNoPlaces => "Your game starts in their session",
             TogetherText::Join => "Join",
             TogetherText::NotNow => "Not now",
             TogetherText::Close => "Close",
             TogetherText::SignIn => "Sign in",
-            TogetherText::SwitchOn => "Switch on",
-            TogetherText::SignedOutHeadline => "Sign in to play together",
+            TogetherText::SwitchOn => "Switch on online play",
+            TogetherText::SignedOutHeadline => "Sign in to use Play Together",
             TogetherText::SignedOutLine => "Play Together uses your AnyPlay account.",
             TogetherText::OfflineHeadline => "You are offline",
             TogetherText::OfflineLine => "Play Together needs a connection. Try again in a moment.",
@@ -98,7 +100,8 @@ impl TogetherText {
             TogetherText::NotOwnedHeadline => "You need %@ to join",
             TogetherText::NotOwnedLine => "It is not in your library. Add it, then join again.",
             TogetherText::WrongVersionHeadline => "You need %@ %@; you have %@",
-            TogetherText::WrongVersionLine => "Both of you need the same version to play together.",
+            TogetherText::WrongVersionLine => "Update the game, then join again.",
+            TogetherText::WrongVersionLineAhead => "Ask your friend to update, or install %@ %@.",
             TogetherText::WrongBuildHeadline => "You need toolkit %@; you have %@",
             TogetherText::WrongBuildLine => {
                 "Choose it under Toolkit for This Game, then join again."
@@ -109,9 +112,9 @@ impl TogetherText {
             TogetherText::BusyLine => "Close it, then join.",
             TogetherText::EndedHeadline => "That session has ended",
             TogetherText::EndedLine => "Ask your friend to start a new one.",
-            TogetherText::NoSessionHeadline => "Online play is off on %@\u{2019}s PC",
+            TogetherText::NoSessionHeadline => "%@ has nothing to join yet",
             TogetherText::NoSessionLine => {
-                "Or they started %@ without Play Together. There is nothing to join yet."
+                "Their online play is off, or they started %@ without Play Together."
             }
             TogetherText::NotJoinableHeadline => "%@ is not in a game you can join",
             TogetherText::NotJoinableLine => "Try again when they start one.",
@@ -138,7 +141,7 @@ impl TogetherText {
             TogetherText::PlayTogether => "Birlikte oyna",
             TogetherText::PlayTogetherDetail => "%@ oyununu başlat, arkadaşların katılsın",
             TogetherText::OfferHeadline => "%@ %@ oynuyor. Katılmak ister misin?",
-            TogetherText::OfferPlaces => "%@ / %@ yer dolu",
+            TogetherText::OfferPlaces => "%@ / %@ oyuncu",
             TogetherText::OfferNoPlaces => "Oyunun onların oturumunda açılır",
             TogetherText::Join => "Katıl",
             TogetherText::NotNow => "Şimdi değil",
@@ -156,8 +159,9 @@ impl TogetherText {
             TogetherText::NotOwnedHeadline => "Katılmak için %@ gerekir",
             TogetherText::NotOwnedLine => "Kitaplığında yok. Ekle, sonra tekrar katıl.",
             TogetherText::WrongVersionHeadline => "%@ %@ sürümü gerekir; sende %@ var",
-            TogetherText::WrongVersionLine => {
-                "Birlikte oynamak için ikinizin de aynı sürüme ihtiyacı var."
+            TogetherText::WrongVersionLine => "Oyunu güncelle, sonra tekrar katıl.",
+            TogetherText::WrongVersionLineAhead => {
+                "Arkadaşından güncellemesini iste ya da %@ %@ sürümünü kur."
             }
             TogetherText::WrongBuildHeadline => "%@ araç takımı gerekir; sende %@ var",
             TogetherText::WrongBuildLine => {
@@ -169,9 +173,9 @@ impl TogetherText {
             TogetherText::BusyLine => "Onu kapat, sonra katıl.",
             TogetherText::EndedHeadline => "Bu oturum sona erdi",
             TogetherText::EndedLine => "Arkadaşından yeni bir oturum açmasını iste.",
-            TogetherText::NoSessionHeadline => "%@ kullanıcısının PC'sinde çevrimiçi oyun kapalı",
+            TogetherText::NoSessionHeadline => "%@ için katılacak bir şey yok",
             TogetherText::NoSessionLine => {
-                "Ya da %@ oyununu Birlikte oyna olmadan başlattı. Henüz katılacak bir şey yok."
+                "Çevrimiçi oyunu kapalı ya da %@ oyununu Birlikte oyna olmadan başlattı."
             }
             TogetherText::NotJoinableHeadline => "%@ katılabileceğin bir oyunda değil",
             TogetherText::NotJoinableLine => "Yeni bir oyun başlatınca tekrar dene.",
@@ -218,11 +222,19 @@ pub fn blocker_text(blocker: &Blocker, language: Language) -> (String, String) {
         Blocker::NotOwned { title } => {
             one(T::NotOwnedHeadline, T::NotOwnedLine, &[Arg::Str(title)])
         }
-        Blocker::WrongVersion { title, need, have } => one(
-            T::WrongVersionHeadline,
-            T::WrongVersionLine,
-            &[Arg::Str(title), Arg::Str(need), Arg::Str(have)],
-        ),
+        Blocker::WrongVersion { title, need, have } => {
+            // Versions are fixed-width ("01.044.000"): the text order is the version order.
+            let line = if need.as_str() > have.as_str() {
+                T::WrongVersionLine
+            } else {
+                T::WrongVersionLineAhead
+            };
+            (
+                T::WrongVersionHeadline
+                    .format(language, &[Arg::Str(title), Arg::Str(need), Arg::Str(have)]),
+                line.format(language, &[Arg::Str(title), Arg::Str(need)]),
+            )
+        }
         Blocker::WrongBuild { need, have } => one(
             T::WrongBuildHeadline,
             T::WrongBuildLine,
@@ -296,6 +308,7 @@ mod tests {
             TogetherText::OfferPlaces,
             TogetherText::NotOwnedHeadline,
             TogetherText::WrongVersionHeadline,
+            TogetherText::WrongVersionLineAhead,
             TogetherText::WrongBuildHeadline,
             TogetherText::NoSessionHeadline,
             TogetherText::NoSessionLine,
@@ -323,7 +336,17 @@ mod tests {
         };
         let (head, line) = blocker_text(&blocker, Language::English);
         assert_eq!(head, "You need Minecraft 01.044.000; you have 01.008.000");
-        assert!(line.contains("same version"));
+        assert!(line.contains("Update the game"));
+        let ahead = Blocker::WrongVersion {
+            title: "Minecraft".into(),
+            need: "01.008.000".into(),
+            have: "01.044.000".into(),
+        };
+        let (_, line) = blocker_text(&ahead, Language::English);
+        assert_eq!(
+            line,
+            "Ask your friend to update, or install Minecraft 01.008.000."
+        );
     }
 
     #[test]
