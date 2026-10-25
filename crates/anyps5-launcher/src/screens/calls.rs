@@ -17,6 +17,7 @@ use egui::{Align2, Area, Color32, Context, Id, Order, Rect, Sense, Ui, UiBuilder
 
 use crate::app::model::Model;
 use crate::screens::online_call_strings::CallText as CT;
+use crate::screens::online_voice_strings::VoiceText;
 use crate::screens::shared::paint_gradient_circle;
 use crate::ui::Shell;
 use crate::ui::anim::{AnimExt, Motion};
@@ -75,6 +76,9 @@ pub struct StripData {
     pub kind: StripKind,
     pub muted: bool,
     pub deafened: bool,
+    /// The call talks with Voice Activity although the player's setting is another mode, so
+    /// nobody needs a key: the strip says so rather than leaving the setting to be assumed.
+    pub mode_override: bool,
     /// The player's voice is on Discord: no microphone controls, the party's link instead.
     pub discord: Option<DiscordLine>,
 }
@@ -233,6 +237,7 @@ pub fn strip_data(online: &net::Online) -> Option<StripData> {
         kind,
         muted: online.voice.muted,
         deafened: online.voice.deafened,
+        mode_override: discord.is_none() && online.voice.call_overrides_mode(),
         discord,
     })
 }
@@ -516,19 +521,18 @@ pub(crate) fn call_strip(
                     members_line(members, language),
                 ),
                 (StripKind::Connected(members), None) => {
+                    // A mute or deafen outranks the mode: it is what the player must know first.
                     let state = if data.deafened {
-                        Some(CT::YouDeafened)
+                        Some(CT::YouDeafened.text(language))
                     } else if data.muted {
-                        Some(CT::YouMuted)
+                        Some(CT::YouMuted.text(language))
+                    } else if data.mode_override {
+                        Some(VoiceText::VoiceActivity.text(language))
                     } else {
                         None
                     };
                     let title = match state {
-                        Some(state) => format!(
-                            "{} · {}",
-                            CT::InCall.text(language),
-                            state.text(language)
-                        ),
+                        Some(state) => format!("{} · {state}", CT::InCall.text(language)),
                         None => CT::InCall.text(language).to_owned(),
                     };
                     (title, members_line(members, language))

@@ -107,4 +107,5 @@ impl Icon {
     pub const DEVICE_MOBILE: Icon = Icon('\u{e1e0}');
     pub const WIFI_HIGH: Icon = Icon('\u{e4ea}');
     pub const PLUG: Icon = Icon('\u{e946}');
+    pub const STEAM_LOGO: Icon = Icon('\u{ead4}');
 }

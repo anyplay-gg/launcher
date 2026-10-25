@@ -166,6 +166,7 @@ impl OnlinePanel {
             .icon(Icon::SLIDERS_HORIZONTAL),
         );
         let note = match voice.mode() {
+            _ if voice.call_overrides_mode() => V::CallModeNote,
             VoiceMode::PushToTalk if data.game_running => V::PttInGameNote,
             VoiceMode::PushToTalk => V::PttNote,
             VoiceMode::VoiceActivity => V::ActivityNote,
