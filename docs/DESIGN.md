@@ -2672,6 +2672,39 @@ Gallery scenes: `friends-muted` (Home with a mute), `friends-restriction` (the m
 Gallery scenes: `friends-activity` (a card focused), `friends-activity-reaction` (a reaction focused), `friends-activity-empty`, `friends-activity-loading` and `friends-activity-error`; `friends-muted` (Home with a mute), `friends-restriction` (the mute's page), `friends-paused` (a conversation while muted), `friends-banned` (the Start page after a ban), `friends-signin`, `friends-browser`, `friends`, `friends-friend`, `friends-settings`, `friends-picker`, `friends-party`, `friends-party-picker`, `friends-messages`, `friends-conversation`, `friends-message`, `friends-request`, and `home-messages` (the profile button with unread messages).
 Gallery scenes of the Friends screen itself (1600 x 900): `friends` (the default page, the focus on the first request), `friends-busy` (five requests, friends playing), `friends-empty` (no friends yet), `friends-focus` (a friend's row with its quick actions up), `friends-rail` (the focus on the rail), `friends-offline` (the note and Try Again), `friends-connecting`, `friends-party-none` (the Party section without a party), `friends-signin` and `friends-browser` (no rail), `friends-banned`; every page of the table has a `friends-` scene of its own.
 
+### Play Together (2026-10-25, part of section 17)
+
+The launcher's side of [Play Together](https://github.com/anyplaynet/network/blob/main/spec/play-together.md): the owner's picture is "I start Minecraft from the launcher, my friend presses Join, his launcher starts Minecraft in the same session, and my world shows up as a LAN world". Nobody sets up a VPN, a port or an address. The pure rules are `anyps5_core::play_together` (the table, the join check, the presence wording); the flow is `app::together` and `app::online`; the card is `screens::together`; the words are `screens::together_strings`.
+
+**The table.** `data/lan-titles.v1.json` lists the games that can be played together (first entry: PPSA17221, Minecraft, up to 8 players). A copy is built in; an entry with a mode the launcher does not know is left out. Play Together exists only for a game in the table.
+
+**Hosting.** On the game's page the action row reads Play, Play Together, trophies, "...". Play stays the one primary action; Play Together is a secondary control of the same size, shown only for an unlocked game in the table (a game that is locked, starting or running shows no second button). The party page has a row of the same name with the game's name as its detail. Pressing it starts the game through the ordinary start with `game_start` carrying `host` (`max_members` from the table, `visibility` friends, `party` when the player is in a party); a plain Play carries none. When the net service cannot open the session, the game runs anyway and a toast says why nobody can join ("Nobody can join: Play Together could not start. Your game runs anyway."). A start that the net service does not answer within three seconds runs alone and says so.
+
+**Joining.** One function, one card. An invitation of kind `lan`, a friend of the party who plays in a Play Together session, a friend's Join row and an accepted invitation in the panel all end in `together::join`: the local checks first (signed in, online, online play on, owned, version, toolkit, place, not busy, in the order of the spec's table), then the net service's `check_join`, then `game_start` with `join`. A game that is owned but not unlocked is unlocked first and starts in the session when the unlock is done; a failed unlock drops the join and says so. An invitation of kind `lan` is not a toast and not an invitation row: it is the card "Mira is playing Minecraft. Join?".
+
+**The card.** A glass card at the top centre, on the call card's place and below it while a call rings (12 dp apart), entering with the overlay spring. Left a 56 dp lead (the friend's initial, or a quiet warning glyph), right a headline (semibold 16, three lines at most) and one line under it (14, 70 % white). Under both, the answers on one row, 12 dp apart: the quiet one on the left, the primary one (ink fill) on the right, one primary per card.
+
+| State | Headline | Line | Answers |
+|---|---|---|---|
+| Offer | Mira is playing Minecraft. Join? | 2 of 4 places taken (an invitation: Your game starts in their session) | Not now, **Join** |
+| Signed out | Sign in to play together | Play Together uses your AnyPlay account. | Close, **Sign in** |
+| Offline | You are offline | Play Together needs a connection. Try again in a moment. | **Close** |
+| Online play off | Online play is switched off | Switch it on to play together. | Close, **Switch on** |
+| Not owned | You need Minecraft to join | It is not in your library. Add it, then join again. | **Close** |
+| Wrong version | You need Minecraft 01.044.000; you have 01.008.000 | Both of you need the same version to play together. | **Close** |
+| Wrong toolkit | You need toolkit v0.1.5; you have v0.1.4 | Choose it under Toolkit for This Game, then join again. | **Close** |
+| Full | This game is full | Try again when someone leaves. | **Close** |
+| Busy | Another game is running | Close it, then join. | **Close** |
+| Ended | That session has ended | Ask your friend to start a new one. | **Close** |
+
+A friend who plays the game with no session (their online play is off, or they pressed Play) has no Join row; their page says "Online play is off on Mira's PC" above the actions. "Not now" remembers the offer by its session and declines the invitation; the card does not come back for that session. When the host's session ends while the player's game runs, a toast says "Mira's session ended. Your game keeps running." and the game is left alone.
+
+**Presence.** A friend in a Play Together session reads "Playing Minecraft together (2/4)" in the friends list, on the friend's page and in the party; the player's own session caption reads the same. A session of any other kind keeps the wording it had.
+
+**Strings.** `together_strings.rs`, English and Turkish (the Turkish is unreviewed). Headlines say what is the case; the line under says what to do. The wrong-version headline is the owner's sentence.
+
+**Gallery.** `home-together` (the button, focused), `together-offer`, `together-offer-invitation`, one scene for each blocker (`together-signed-out`, `-offline`, `-online-off`, `-not-owned`, `-wrong-version`, `-wrong-build`, `-full`, `-busy`, `-ended`, `-no-session`), and the panel pages `together-friends`, `together-friend`, `together-friend-nosession`, `together-party`.
+
 ## 18. Phone as controller
 
 Code: `anyps5_core::remote` (server, protocol, virtual controller) and, in `anyps5-launcher`, `app::phone` and `screens::phone`.

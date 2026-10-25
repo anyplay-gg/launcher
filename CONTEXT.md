@@ -271,6 +271,23 @@ One entry of the Friends screen's rail with a first page of its own. Every page 
 **Quick actions**:
 The buttons at the end of a friend's row (Join, Message, Invite to Party, View Profile, Options). They rest hidden and come up with the focus or the pointer; select presses the chosen one and a click on the row's body opens Options, the friend's own page.
 
+**Play Together**:
+Starting a game that finds others on a local network so that friends can join it. The player presses Play Together on the game's page or in the party; a friend presses Join on an invitation, a friend's page or the prompt card. Only games in the LAN title table have the button. Defined in the network's glossary; the launcher only adds what it shows.
+_Avoid_: Multiplayer (alone), hosting a server, LAN party
+
+**LAN title table**:
+The small list in `data/lan-titles.v1.json` of the games that can be played together, with the most players each allows. Built into every launcher; the cloud has no copy.
+_Avoid_: Compatibility list, whitelist
+
+**Join check**:
+What the launcher compares before it starts a game in a friend's session, in a fixed order: signed in and online, online play on, owned, version, toolkit, place, not busy, still there. It stops at the first that does not hold and names exactly what is missing.
+_Avoid_: Validation, handshake
+
+**Prompt card**:
+The glass card at the top centre that asks "Mira is playing Minecraft. Join?" and, in the same place, says why a join did not go ahead.
+_Avoid_: Popup, banner, toast (a toast says what happened; the card asks or explains)
+
+
 **Profile screen**:
 The full-screen page of a player's profile, the player's own or another's, opened from the profile button, a friend's page or a card of the feed; Back returns to where it was opened from. A header (avatar, handle, how you know each other, a line about them), a few figures (games, hours, trophies by grade) and up to three quiet lists: games, recent trophies, recent activity. Everything is only what the player may see; a part the cloud leaves out leaves no gap and no placeholder for another player. The player's own profile reads games and trophies from this PC and adds Edit Profile (opens the account web) and Friends (the Friends screen). The launcher shows games by name and art from the player's own library only; the cloud only knows title IDs.
 _Avoid_: Profile page (the side panel's old page), banner

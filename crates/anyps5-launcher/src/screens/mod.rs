@@ -41,6 +41,7 @@ pub mod friends;
 pub mod friends_strings;
 pub mod gallery;
 pub mod gallery_feed;
+pub mod gallery_together;
 pub mod game_settings;
 pub mod glibc_strings;
 pub mod home;
