@@ -187,6 +187,8 @@ pub struct SettingsEnv<'a> {
     pub app_version: &'a str,
     /// The installed toolkit's version, `None` when there is none.
     pub toolkit_version: Option<&'a str>,
+    /// The day the installed AnyPlay engine was built (`2026-10-25`), when that channel is in use.
+    pub engine_built: Option<&'a str>,
     /// The toolkit needs a newer glibc than this system has (Linux).
     pub glibc: Option<anyps5_core::glibc::Shortfall>,
     pub update: UpdateState,
@@ -207,9 +209,29 @@ pub struct SettingsEnv<'a> {
     /// What the phone server is doing.
     pub phone: &'a PhoneState,
     pub clips: ClipsEnv,
+    pub location: LocationEnv,
     /// Linux with share screen on: Cisco's OpenH264 and what the share worker made of it. `None`
     /// shows no codec row.
     pub openh264: Option<Openh264Env>,
+}
+
+/// What the unlocked games location row shows (docs/DESIGN.md 5.7).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LocationEnv {
+    /// The last look at the location, from a worker; `None` before the first answer.
+    pub report: Option<anyps5_core::location::Report>,
+    /// A move runs: copies done, copies in all, thousandths of the bytes.
+    pub moving: Option<MoveEnv>,
+    /// A move stopped with copies left: where they are, and how many (0: not known).
+    pub left: Option<(PathBuf, usize)>,
+}
+
+/// How far a move is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MoveEnv {
+    pub done: usize,
+    pub total: usize,
+    pub permille: u16,
 }
 
 /// The codec row's facts.
@@ -227,6 +249,16 @@ pub enum SettingsAction {
     Close,
     /// A new games folder was chosen (already stored in the preferences): rescan and watch it.
     GamesFolderChosen(PathBuf),
+    /// A folder was picked for the unlocked games (not stored yet: the host checks it).
+    UnlockedFolderPicked(PathBuf),
+    /// "Use Default Location".
+    UseDefaultLocation,
+    /// "Cancel Move".
+    CancelMove,
+    /// "Continue Moving".
+    ContinueMove,
+    /// "Leave Games Where They Are".
+    LeaveOldCopies,
     Rescan,
     ShowScreenshots,
     /// "Show Clips": the folder the clips are in.
@@ -239,6 +271,8 @@ pub enum SettingsAction {
     AdoptToolkitFolder(PathBuf),
     /// The channel is stable again (already stored in the preferences): use the newest installed.
     UseStableToolkit,
+    /// Use the AnyPlay engine (already stored in the preferences): install it if needed.
+    UseEngineToolkit,
     /// Stay on this release (`v0.1.3`, already stored in the preferences): install it if needed.
     PinToolkit(String),
     /// Download the Japanese, Chinese and Korean fonts of the built-in set.
@@ -289,6 +323,74 @@ fn path_text(path: &Option<PathBuf>) -> String {
     path.as_ref()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "—".to_owned())
+}
+
+/// The rows of the unlocked games location: the place and its free space, a note that says what
+/// that means, and the commands that fit the state (use the default, cancel or continue a move).
+fn location_rows(prefs: &Preferences, location: &LocationEnv, language: Language) -> Vec<Row> {
+    use crate::screens::location_strings as words;
+    use anyps5_core::location::Availability;
+    let custom = prefs.unlocked_folder.as_deref();
+    let report = location.report.as_ref();
+    let missing = report.is_some_and(|r| r.availability == Availability::Missing);
+    let free = report.and_then(|r| r.free);
+    let title = words::title(language);
+    let mut rows = Vec::new();
+    if let Some(moving) = location.moving {
+        // A move in progress: the row is a status, nothing to pick.
+        let percent = u32::from(moving.permille) / 10;
+        rows.push(
+            Row::info(
+                "unlockedLocation",
+                title,
+                Some(words::moving(moving.done, moving.total, percent, language)),
+            )
+            .icon(Icon::HARD_DRIVE),
+        );
+        rows.push(Row::info("unlockedNote", words::note_moving(language), None).attached());
+        rows.push(Row::command("moveCancel", words::cancel_move(language)).icon(Icon::X_CIRCLE));
+        return rows;
+    }
+    rows.push(
+        Row::action("unlockedLocation", title)
+            .detail(words::detail(custom, free, missing, language))
+            .icon(Icon::HARD_DRIVE),
+    );
+    if let Some((from, count)) = &location.left {
+        rows.push(
+            Row::info(
+                "unlockedNote",
+                words::note_left(*count, from, language),
+                None,
+            )
+            .attached()
+            .warning(),
+        );
+        rows.push(Row::command("moveContinue", words::continue_move(language)).icon(Icon::PLAY));
+        rows.push(
+            Row::command("moveLeave", words::leave(language))
+                .detail(words::leave_detail(language))
+                .icon(Icon::PROHIBIT),
+        );
+        return rows;
+    }
+    let note = if missing {
+        Row::info("unlockedNote", words::note_missing(language), None).warning()
+    } else if report.is_some_and(|r| r.network) {
+        Row::info("unlockedNote", words::note_network(language), None).warning()
+    } else if custom.is_some() {
+        Row::info("unlockedNote", words::note_custom(language), None)
+    } else {
+        Row::info("unlockedNote", words::note_default(language), None)
+    };
+    rows.push(note.attached());
+    if custom.is_some() {
+        rows.push(
+            Row::command("unlockedDefault", words::use_default(language))
+                .icon(Icon::ARROW_COUNTER_CLOCKWISE),
+        );
+    }
+    rows
 }
 
 /// The releases the pinned channel offers: the last ones, plus the pinned one and the installed
@@ -432,15 +534,15 @@ pub fn build_categories(
     );
 
     // Library
-    let library = vec![
+    let mut library = vec![
         Row::action("folder", t(Key::Folder))
             .detail(path_text(&prefs.games_folder))
             .icon(Icon::FOLDER),
         Row::command("rescan", t(Key::Rescan))
             .detail(language.format(Key::GamesFound, &[Arg::Int(env.games_found as i64)]))
             .icon(Icon::ARROW_CLOCKWISE),
-        Row::info("clones", t(Key::InstalledSize), None),
     ];
+    library.extend(location_rows(prefs, &env.location, language));
 
     // Language
     let languages = vec![
@@ -523,6 +625,9 @@ pub fn build_categories(
         .detail(Extra::VibrationDetail.text(language))
         .icon(Icon::WAVE_SINE),
     );
+    // Where a player looks when the launcher does not react to the pad.
+    behaviour
+        .push(Row::info("controllerHelp", Extra::ControllerHelp.text(language), None).attached());
     behaviour.push(
         Row::toggle(
             "hiddenTrophies",
@@ -578,6 +683,16 @@ pub fn build_categories(
         }
         _ => {}
     }
+    if let (ToolkitChannel::Engine, Some(day)) = (channel, env.engine_built) {
+        toolkit.push(
+            Row::info(
+                "engineBuilt",
+                Extra::EngineBuilt.format(language, &[Arg::Str(day)]),
+                None,
+            )
+            .attached(),
+        );
+    }
     if let Some(short) = env.glibc {
         toolkit.push(
             Row::info(
@@ -603,13 +718,15 @@ pub fn build_categories(
             Extra::ChannelTitle.text(language),
             vec![
                 Extra::ChannelStable.text(language).to_owned(),
+                Extra::ChannelEngine.text(language).to_owned(),
                 Extra::ChannelPinned.text(language).to_owned(),
                 Extra::ChannelLocal.text(language).to_owned(),
             ],
             match channel {
                 ToolkitChannel::Stable => 0,
-                ToolkitChannel::Pinned => 1,
-                ToolkitChannel::Local => 2,
+                ToolkitChannel::Engine => 1,
+                ToolkitChannel::Pinned => 2,
+                ToolkitChannel::Local => 3,
             },
         )
         .detail(
@@ -617,6 +734,7 @@ pub fn build_categories(
                 ToolkitChannel::Stable => Extra::ChannelStableDetail,
                 ToolkitChannel::Pinned => Extra::ChannelPinnedDetail,
                 ToolkitChannel::Local => Extra::ChannelLocalDetail,
+                ToolkitChannel::Engine => Extra::ChannelEngineDetail,
             }
             .text(language),
         )
@@ -644,9 +762,11 @@ pub fn build_categories(
             Row::action("toolkitFolder", Extra::ToolkitChooseFolder.text(language))
                 .icon(Icon::FOLDER),
         ),
-        ToolkitChannel::Stable => {}
+        ToolkitChannel::Stable | ToolkitChannel::Engine => {}
     }
-    if let Some(tag) = whats_new_tag(env) {
+    // The notes of a nightly build are commit messages, not a release; the engine has none to read.
+    let notes_tag = whats_new_tag(env).filter(|_| channel != ToolkitChannel::Engine);
+    if let Some(tag) = notes_tag {
         let detail = match &env.update {
             UpdateState::Available(_) if channel == ToolkitChannel::Stable => {
                 Extra::UpdateAvailable.format(language, &[Arg::Str(&format!("v{tag}"))])
@@ -660,8 +780,8 @@ pub fn build_categories(
         );
     }
     let missing = env.toolkit_version.is_none() && channel != ToolkitChannel::Local;
-    let update_ready =
-        channel == ToolkitChannel::Stable && matches!(env.update, UpdateState::Available(_));
+    let follows_updates = matches!(channel, ToolkitChannel::Stable | ToolkitChannel::Engine);
+    let update_ready = follows_updates && matches!(env.update, UpdateState::Available(_));
     if missing || update_ready {
         let text = if missing {
             Extra::ToolkitInstall
@@ -670,7 +790,7 @@ pub fn build_categories(
         };
         toolkit.push(Row::command("install", text.text(language)).icon(Icon::DOWNLOAD_SIMPLE));
     }
-    if channel == ToolkitChannel::Stable {
+    if follows_updates {
         let status = match &env.update {
             UpdateState::Unknown => None,
             UpdateState::Checking => Some(Extra::Checking.text(language).to_owned()),
@@ -1405,6 +1525,30 @@ impl SettingsPanel {
                 ctx.request_repaint();
             }
             Change::Run { row: "rescan" } => out.actions.push(SettingsAction::Rescan),
+            Change::Run {
+                row: "unlockedLocation",
+            } => {
+                let start = prefs
+                    .unlocked_folder
+                    .clone()
+                    .or_else(|| prefs.games_folder.clone());
+                if let Some(folder) = dialogs::pick_folder(
+                    shell,
+                    crate::screens::location_strings::dialog(language),
+                    start.as_deref(),
+                ) {
+                    out.actions
+                        .push(SettingsAction::UnlockedFolderPicked(folder));
+                }
+            }
+            Change::Run {
+                row: "unlockedDefault",
+            } => out.actions.push(SettingsAction::UseDefaultLocation),
+            Change::Run { row: "moveCancel" } => out.actions.push(SettingsAction::CancelMove),
+            Change::Run {
+                row: "moveContinue",
+            } => out.actions.push(SettingsAction::ContinueMove),
+            Change::Run { row: "moveLeave" } => out.actions.push(SettingsAction::LeaveOldCopies),
             change if phone::action(env.phone, change).is_some() => {
                 out.actions
                     .extend(phone::action(env.phone, change).map(SettingsAction::Phone));
@@ -1460,6 +1604,7 @@ impl SettingsPanel {
                 index: 0,
             } => {
                 prefs.toolkit = None;
+                prefs.toolkit_engine = false;
                 prefs.toolkit_pinned = None;
                 changed = true;
                 out.actions.push(SettingsAction::UseStableToolkit);
@@ -1468,6 +1613,16 @@ impl SettingsPanel {
                 row: "channel",
                 index: 1,
             } => {
+                prefs.toolkit = None;
+                prefs.toolkit_pinned = None;
+                prefs.toolkit_engine = true;
+                changed = true;
+                out.actions.push(SettingsAction::UseEngineToolkit);
+            }
+            Change::Choice {
+                row: "channel",
+                index: 2,
+            } => {
                 // Stay on what is installed now; the list offers the other releases.
                 let tag = env
                     .toolkit_version
@@ -1475,6 +1630,7 @@ impl SettingsPanel {
                     .map(|t| format!("v{t}"))
                     .or_else(|| env.recent.first().cloned());
                 if let Some(tag) = tag {
+                    prefs.toolkit_engine = false;
                     prefs.toolkit = None;
                     prefs.toolkit_pinned = Some(tag.clone());
                     changed = true;
@@ -1483,7 +1639,7 @@ impl SettingsPanel {
             }
             Change::Choice {
                 row: "channel",
-                index: 2,
+                index: 3,
             } if prefs.toolkit.is_none() => {
                 if let Some(folder) =
                     dialogs::pick_folder(shell, Extra::ToolkitChooseFolder.text(language), None)
@@ -1710,6 +1866,7 @@ mod tests {
             games_found: 9,
             app_version: "0.1.0",
             toolkit_version: toolkit,
+            engine_built: None,
             glibc: None,
             update,
             launcher: LauncherUpdate::None,
@@ -1719,6 +1876,7 @@ mod tests {
             cjk_fonts: CjkState::Missing,
             phone: Box::leak(Box::new(PhoneState::default())),
             clips: ClipsEnv::default(),
+            location: LocationEnv::default(),
             openh264: None,
         }
     }
@@ -2317,6 +2475,67 @@ mod tests {
             !local.contains(&"whatsNew"),
             "a local build has no release notes"
         );
+    }
+
+    #[test]
+    fn the_engine_channel_follows_updates_but_has_no_release_notes() {
+        let prefs = Preferences {
+            toolkit_engine: true,
+            ..Default::default()
+        };
+        let mut with = env(
+            Some("anyplay-30d0fe9"),
+            UpdateState::Available("anyplay-a1b2c3d".into()),
+        );
+        with.engine_built = Some("2026-10-25");
+        let cats = build_categories(&prefs, &with, Language::English);
+        let rows = &cats
+            .iter()
+            .find(|c| c.category == Category::Toolkit)
+            .unwrap()
+            .rows;
+        let ids: Vec<&str> = rows.iter().map(|r| r.id).collect();
+        for row in [
+            "channel",
+            "engineBuilt",
+            "updateCheck",
+            "checkNow",
+            "install",
+        ] {
+            assert!(ids.contains(&row), "the engine has {row}");
+        }
+        assert!(!ids.contains(&"whatsNew") && !ids.contains(&"pinned"));
+        let channel = rows.iter().find(|r| r.id == "channel").unwrap();
+        assert_eq!(
+            channel.detail.as_deref(),
+            Some(Extra::ChannelEngineDetail.text(Language::English))
+        );
+        let built = rows.iter().find(|r| r.id == "engineBuilt").unwrap();
+        assert_eq!(built.title, "Built on 2026-10-25");
+        assert!(built.attached, "the day hangs under the version row");
+    }
+
+    #[test]
+    fn the_build_day_shows_only_on_the_engine_channel() {
+        let mut with = env(Some("0.1.3-abc"), UpdateState::UpToDate);
+        with.engine_built = Some("2026-10-25");
+        let cats = build_categories(&Preferences::default(), &with, Language::English);
+        let rows = &cats
+            .iter()
+            .find(|c| c.category == Category::Toolkit)
+            .unwrap()
+            .rows;
+        assert!(rows.iter().all(|r| r.id != "engineBuilt"));
+    }
+
+    #[test]
+    fn the_engine_without_a_build_offers_the_download() {
+        let prefs = Preferences {
+            toolkit_engine: true,
+            ..Default::default()
+        };
+        let ids = toolkit_ids(&prefs, None);
+        assert!(ids.contains(&"install"));
     }
 
     #[test]

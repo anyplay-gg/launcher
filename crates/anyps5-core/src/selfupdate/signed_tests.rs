@@ -45,6 +45,7 @@ fn manifest_for(version: &str, program: &[u8], base: &str) -> Manifest {
         published: anyplay_update_manifest::format_time(now - Span::days(1)),
         expires: anyplay_update_manifest::format_time(now + Span::days(29)),
         minimum_version: "0.1.0".into(),
+        min_supported_version: None,
         platforms: BTreeMap::from([(
             WINDOWS_X64.into(),
             Artifact {
@@ -976,4 +977,95 @@ fn the_key_list_in_the_repository_is_readable_and_decides_the_mode() {
     assert_eq!(signing_required(), !keys.is_empty());
     // And an unreadable list is never taken for an empty one.
     assert!(TrustedKeys::parse("ed25519 nonsense").is_err());
+}
+
+// --- the version below which an update is required -------------------------------------------------
+
+#[test]
+fn an_update_is_optional_without_the_field_and_above_it() {
+    let key = generate_signing_key();
+    let keys = TrustedKeys::of(key.verifying_key());
+    // No field at all: what every release before this change looks like.
+    let (result, stop) = signed_check(&key, &keys, "0.1.3", |_| {});
+    stop.store(true, AtomicOrdering::SeqCst);
+    assert!(!result.unwrap().expect("an update").required());
+    // The running version is at or above the field: the update stays optional.
+    for running in ["0.1.5", "0.1.9"] {
+        let (result, stop) = signed_check(&key, &keys, running, |m| {
+            m.min_supported_version = Some("0.1.5".into());
+        });
+        stop.store(true, AtomicOrdering::SeqCst);
+        assert!(!result.unwrap().expect("an update").required(), "{running}");
+    }
+}
+
+#[test]
+fn an_update_is_required_below_the_field() {
+    let key = generate_signing_key();
+    let keys = TrustedKeys::of(key.verifying_key());
+    let (result, stop) = signed_check(&key, &keys, "0.1.4", |m| {
+        m.min_supported_version = Some("0.1.5".into());
+    });
+    stop.store(true, AtomicOrdering::SeqCst);
+    let release = result.unwrap().expect("an update");
+    assert!(release.required());
+    assert_eq!(release.version(), "0.2.0");
+}
+
+#[test]
+fn a_launcher_that_cannot_update_itself_is_told_to_install_by_hand() {
+    let key = generate_signing_key();
+    let keys = TrustedKeys::of(key.verifying_key());
+    // Below what may take the update (minimum_version) and below what may keep running.
+    let (result, stop) = signed_check(&key, &keys, "0.1.3", |m| {
+        m.minimum_version = "0.1.5".into();
+        m.min_supported_version = Some("0.1.5".into());
+    });
+    stop.store(true, AtomicOrdering::SeqCst);
+    let error = result.unwrap_err();
+    assert_eq!(error.required_by_hand(), Some("0.2.0"), "{error:?}");
+    // Without the field the same launcher gets the quiet refusal of before.
+    let (result, stop) = signed_check(&key, &keys, "0.1.3", |m| {
+        m.minimum_version = "0.1.5".into();
+    });
+    stop.store(true, AtomicOrdering::SeqCst);
+    let error = result.unwrap_err();
+    assert_eq!(error.required_by_hand(), None);
+    assert!(matches!(
+        error,
+        SelfUpdateError::Manifest(ManifestError::RunningTooOld { .. })
+    ));
+}
+
+#[test]
+fn nothing_is_required_on_an_expired_or_forged_manifest() {
+    let key = generate_signing_key();
+    let keys = TrustedKeys::of(key.verifying_key());
+    let now = OffsetDateTime::now_utc();
+    let (result, stop) = signed_check(&key, &keys, "0.1.4", |m| {
+        m.min_supported_version = Some("0.1.5".into());
+        m.published = anyplay_update_manifest::format_time(now - Span::days(40));
+        m.expires = anyplay_update_manifest::format_time(now - Span::days(10));
+    });
+    stop.store(true, AtomicOrdering::SeqCst);
+    assert!(
+        matches!(
+            result,
+            Err(SelfUpdateError::Manifest(ManifestError::Expired(_)))
+        ),
+        "{result:?}"
+    );
+    // Signed by a key the launcher does not trust: refused before the field is even read.
+    let other = generate_signing_key();
+    let (result, stop) = signed_check(&other, &keys, "0.1.4", |m| {
+        m.min_supported_version = Some("0.1.5".into());
+    });
+    stop.store(true, AtomicOrdering::SeqCst);
+    assert!(
+        matches!(
+            result,
+            Err(SelfUpdateError::Manifest(ManifestError::Signature))
+        ),
+        "{result:?}"
+    );
 }

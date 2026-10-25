@@ -93,7 +93,10 @@ pub fn failure(kind: FailureKind, language: Language) -> &'static str {
             "No toolkit is installed. Install it under Settings > Toolkit, then unlock again."
         }
         (Language::English, FailureKind::DiskFull) => {
-            "The drive of your games folder is full. Free some space on it, then try again."
+            "The drive for your unlocked games is full. Free some space on it, then try again."
+        }
+        (Language::English, FailureKind::LocationMissing) => {
+            "The folder for unlocked games is not there. Connect its drive, or pick another folder in Settings > Library."
         }
         (Language::English, FailureKind::FileInUse) => {
             "Another program holds a file of the game. Close it or pause its scan of the games folder, then try again."
@@ -111,7 +114,10 @@ pub fn failure(kind: FailureKind, language: Language) -> &'static str {
             "Ara\u{e7} seti kurulu de\u{11f}il. Ayarlar > Ara\u{e7} seti b\u{f6}l\u{fc}m\u{fc}nden kur, sonra yeniden kilidi a\u{e7}."
         }
         (Language::Turkish, FailureKind::DiskFull) => {
-            "Oyun klas\u{f6}r\u{fc}n\u{fc}n s\u{fc}r\u{fc}c\u{fc}s\u{fc} dolu. Yer a\u{e7}, sonra yeniden dene."
+            "Kilidi a\u{e7}\u{131}lan oyunlar\u{131}n s\u{fc}r\u{fc}c\u{fc}s\u{fc} dolu. Yer a\u{e7}, sonra yeniden dene."
+        }
+        (Language::Turkish, FailureKind::LocationMissing) => {
+            "Kilidi a\u{e7}\u{131}lan oyunlar\u{131}n klas\u{f6}r\u{fc} bulunamad\u{131}. S\u{fc}r\u{fc}c\u{fc}y\u{fc} tak ya da Ayarlar > K\u{fc}t\u{fc}phane b\u{f6}l\u{fc}m\u{fc}nden ba\u{15f}ka bir klas\u{f6}r se\u{e7}."
         }
         (Language::Turkish, FailureKind::FileInUse) => {
             "Ba\u{15f}ka bir program oyunun bir dosyas\u{131}n\u{131} tutuyor. Onu kapat ya da oyun klas\u{f6}r\u{fc}n\u{fc} taramas\u{131}n\u{131} duraklat, sonra yeniden dene."
@@ -167,7 +173,8 @@ pub fn setting_detail(language: Language) -> &'static str {
 mod tests {
     use super::*;
 
-    const KINDS: [FailureKind; 6] = [
+    const KINDS: [FailureKind; 7] = [
+        FailureKind::LocationMissing,
         FailureKind::ToolkitMissing,
         FailureKind::DiskFull,
         FailureKind::FileInUse,

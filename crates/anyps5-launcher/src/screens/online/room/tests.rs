@@ -56,6 +56,7 @@ fn data(online: &Online) -> OnlineData<'_> {
         now: 0,
         utc_offset: Some(0),
         game_running: false,
+        play_together: None,
     }
 }
 
@@ -158,4 +159,19 @@ fn a_focus_kept_from_a_bigger_party_is_clamped() {
     let plan = Room::new(&data(&online)).plan(4);
     let clamped = plan.clamp(RoomFocus { row: 9, col: 9 });
     assert!(plan.stop(clamped).is_some());
+}
+
+#[test]
+fn play_together_is_the_primary_card_of_a_party_with_company() {
+    let online = online(&[(1, "Mira"), (2, "Lumen")], 1);
+    let mut data = data(&online);
+    data.play_together = Some("Ember Drift");
+    let room = Room::new(&data);
+    assert!(matches!(
+        room.cards[0].action,
+        Some((_, CardAction::PlayTogether))
+    ));
+    assert_eq!(room.primary, Some(Stop::Card(0)));
+    let plan = room.plan(5);
+    assert_eq!(plan.stop(plan.start()), Some(Stop::Card(0)));
 }

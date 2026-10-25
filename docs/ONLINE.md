@@ -29,7 +29,7 @@ Under **Online → Cloud** you can use a cloud of your own or of friends instead
 
 ## What to expect later
 
-A game plays online only with a build that carries the bridge, and only when its online part uses the platform's own services. A game whose online play runs on a publisher's live servers stays offline: the network never stands in for a service that still runs. The [network's design](https://github.com/anyplaynet/network/blob/main/docs/DESIGN.md) has the details and the roadmap.
+A game plays online only with a build that carries the bridge: choose **Settings → Toolkit → Channel → AnyPlay Engine**, which downloads the nightly build of [anyplaynet/AnyPS5](https://github.com/anyplaynet/AnyPS5), checks it against the release's checksum list and offers a newer build when there is one. It changes often and may break games; go back to Stable at any time. A game then plays online only when its online part uses the platform's own services. A game whose online play runs on a publisher's live servers stays offline: the network never stands in for a service that still runs. The [network's design](https://github.com/anyplaynet/network/blob/main/docs/DESIGN.md) has the details and the roadmap.
 
 ## Privacy
 

@@ -1,3 +1,4 @@
+//! Ported from utkuhalis/AnyPS5-ARM (Controls.swift, GPL-2.0-only) and changed since; see README "Credits".
 //! Keyboard and mouse bindings, the tuning values and the text of the per-game `anyps5-input.ini`
 //! (PORT.md 6.7, Controls.swift; file format: upstream `docs/user/INPUT_MAPPING.md`).
 

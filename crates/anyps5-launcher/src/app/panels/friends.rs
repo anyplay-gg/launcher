@@ -1,9 +1,8 @@
 //! The Friends screen in the panel host: what the player asks for becomes a command for the net
 //! service (`Model::online`), and a join first checks the library and the versions.
 
-use anyps5_core::online::api::AccountId;
 use anyps5_core::online::api::MAX_MESSAGE_CHARS;
-use anyps5_core::online::{self as net, Command, Join, Purpose, Status};
+use anyps5_core::online::{self as net, Command, Purpose, Status};
 
 use super::PanelHost;
 use crate::app::model::{Effect, Model};
@@ -53,6 +52,7 @@ impl PanelHost {
                 now: crate::app::clock::unix_seconds(),
                 utc_offset: None,
                 game_running: cx.model.running.is_some(),
+                play_together: crate::app::together::hostable(cx.model).map(|g| g.name.as_str()),
             };
             if wanted && !self.friends.is_open() {
                 if let Some((page, item)) = start {
@@ -202,11 +202,13 @@ pub(super) fn online_action(model: &mut Model, action: OnlineAction) {
                 },
             );
         }
-        OnlineAction::Join(friend) => {
-            if let Some(join) = friend_join(model, friend) {
-                OnlineService::request_join(model, join);
+        OnlineAction::PlayTogether => {
+            if let Some(id) = crate::app::together::hostable(model).map(|g| g.id.clone()) {
+                model.dismiss_overlay();
+                crate::app::together::host_game(model, &id);
             }
         }
+        OnlineAction::Join(friend) => crate::app::together::join_friend(model, friend),
         OnlineAction::Invite(account) => {
             online.send(
                 Purpose::Invite,
@@ -219,17 +221,7 @@ pub(super) fn online_action(model: &mut Model, action: OnlineAction) {
             // Accepting is joining: the net service finds the invitation by its session.
             let invitation = online.invitations.iter().find(|i| i.id == id).cloned();
             if let Some(invitation) = invitation {
-                OnlineService::request_join(
-                    model,
-                    Join {
-                        session: invitation.session,
-                        title_id: invitation.title_id,
-                        title: invitation.title,
-                        version: invitation.version,
-                        build: String::new(),
-                        friend: invitation.from.handle,
-                    },
-                );
+                crate::app::together::join_invitation(model, &invitation);
             }
         }
         OnlineAction::AnswerInvitation { id, accept: false } => {
@@ -319,19 +311,4 @@ pub(super) fn online_action(model: &mut Model, action: OnlineAction) {
         OnlineAction::CopyText(_) => {}
         OnlineAction::Close => model.close_friends(),
     }
-}
-
-/// The session a friend plays in, when friends may join it.
-fn friend_join(model: &Model, friend: AccountId) -> Option<Join> {
-    let friend = model.online.friend(friend)?;
-    let activity = friend.presence.activity.as_ref()?;
-    let session = activity.session.as_ref().filter(|s| s.joinable)?;
-    Some(Join {
-        session: session.id.clone(),
-        title_id: activity.title_id.clone(),
-        title: activity.title.clone(),
-        version: activity.version.clone(),
-        build: String::new(),
-        friend: friend.account.handle.clone(),
-    })
 }

@@ -1,3 +1,4 @@
+//! Ported from utkuhalis/AnyPS5-ARM (SelfUnwrap.swift, GPL-2.0-only) and changed since; see README "Credits".
 //! Turns a decrypted SELF or fSELF container into the plain ELF the relinker reads.
 //!
 //! Byte-exact with `SelfUnwrap.swift` of the macOS launcher (ARM `cb20fd8`), which in turn follows

@@ -17,6 +17,7 @@ use crate::screens::online_strings::OnlineText;
 use crate::screens::phone_strings::PhoneText;
 use crate::screens::run_strings::{RunText, friends_line};
 use crate::screens::strings::{Extra, playtime_text};
+use crate::screens::together_strings::TogetherText;
 use crate::screens::toolkit_pin;
 use crate::screens::update_strings::UpdateText;
 use crate::screens::{
@@ -30,10 +31,11 @@ use crate::ui::components::{
     Variant, hint_bar, hint_bar_size,
 };
 use crate::ui::focus::HomeFocus;
-use crate::ui::i18n::{Arg, Key, Language, byte_text};
+use crate::ui::i18n::{Arg, Key, Language, byte_text, substitute};
 use crate::ui::icons::Icon;
 use crate::ui::input;
 use crate::ui::intro;
+use crate::ui::pad_info;
 use crate::ui::text;
 use crate::ui::theme::{self, Weight, color, pad, size, ty, white};
 
@@ -250,6 +252,23 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
     if response.clicked() {
         presses.push(Press::Focus(HomeFocus::LIBRARY));
     }
+    // A connected controller sits after the phone (or the title), the same way: it only reports,
+    // and it is left out when the strip has no room for it.
+    if pad_info::connected() {
+        let left = if cx.model.phone.connected.is_some() {
+            after_title + size::CONTROL_GAP
+        } else {
+            title.max.x + PHONE_STATUS_GAP
+        };
+        if let Some(right) = pad_status(
+            ui,
+            pos2(left, mid),
+            row.min_rect().min.x - group_gap,
+            language,
+        ) {
+            after_title = right;
+        }
+    }
     // A launcher update that waits sits after the title (and the phone), in the room the strip
     // leaves. It is drawn, and reachable by the pad, only when it fits there.
     update_notice(
@@ -464,6 +483,91 @@ fn phone_status(ui: &mut Ui, left_middle: egui::Pos2, name: &str, language: Lang
     );
     rect.max.x
 }
+
+/// The status of the connected controller: its icon and, where the pad reports one, its battery.
+/// Same surface and height as [`phone_status`]; not a button.
+fn pad_status(
+    ui: &mut Ui,
+    left_middle: egui::Pos2,
+    limit_x: f32,
+    language: Language,
+) -> Option<f32> {
+    let painter = ui.painter().clone();
+    let battery = pad_info::battery();
+    let (shown, label) = match battery {
+        pad_info::Battery::Level { percent, charging } => {
+            let args = [Arg::Int(i64::from(percent))];
+            let extra = if charging {
+                Extra::PadStatusCharging
+            } else {
+                Extra::PadStatusBattery
+            };
+            (
+                Some(format!("{percent}%")),
+                substitute(extra.text(language), &args),
+            )
+        }
+        pad_info::Battery::Unknown => (None, Extra::PadStatus.text(language).to_owned()),
+    };
+    let glyph = 18.0;
+    let charging = matches!(battery, pad_info::Battery::Level { charging: true, .. });
+    // A small bolt after the percent says "charging" to the eye; the label says it to the ear.
+    let bolt = if charging { 6.0 + BOLT_WIDTH } else { 0.0 };
+    let text_width = shown
+        .as_deref()
+        .map_or(0.0, |s| 8.0 + text::width(&painter, ty::CHIP, s) + bolt);
+    let width = 12.0 + glyph + text_width + 14.0;
+    if left_middle.x + width > limit_x {
+        return None;
+    }
+    let rect = Rect::from_min_size(
+        pos2(left_middle.x, left_middle.y - PHONE_STATUS_HEIGHT * 0.5),
+        vec2(width, PHONE_STATUS_HEIGHT),
+    );
+    let response = ui.allocate_rect(rect, Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &label));
+    if !ui.is_rect_visible(rect) {
+        return Some(rect.max.x);
+    }
+    components::paint_capsule(&painter, rect, color::surface());
+    let ink = white(0.92);
+    painter.text(
+        pos2(rect.min.x + 12.0 + glyph * 0.5, rect.center().y),
+        Align2::CENTER_CENTER,
+        Icon::GAME_CONTROLLER.glyph(),
+        Icon::GAME_CONTROLLER.font(text::quantize_size(glyph), false),
+        ink,
+    );
+    if let Some(shown) = shown {
+        let text_rect = text::paint(
+            &painter,
+            pos2(rect.min.x + 12.0 + glyph + 8.0, rect.center().y),
+            Align2::LEFT_CENTER,
+            ty::CHIP,
+            &shown,
+            ink,
+        );
+        if charging {
+            let c = pos2(text_rect.max.x + 6.0 + BOLT_WIDTH * 0.5, rect.center().y);
+            let (w, h) = (BOLT_WIDTH * 0.5, 6.5);
+            painter.add(egui::Shape::closed_line(
+                vec![
+                    c + vec2(w * 0.3, -h),
+                    c + vec2(-w, h * 0.15),
+                    c + vec2(-w * 0.05, h * 0.15),
+                    c + vec2(-w * 0.3, h),
+                    c + vec2(w, -h * 0.15),
+                    c + vec2(w * 0.05, -h * 0.15),
+                ],
+                egui::Stroke::new(1.5, ink),
+            ));
+        }
+    }
+    Some(rect.max.x)
+}
+
+/// Width of the charging bolt in the controller status.
+const BOLT_WIDTH: f32 = 8.0;
 
 /// What the profile button shows.
 struct Profile<'a> {
@@ -1042,7 +1146,10 @@ fn paint_hero(
     let has_trophies = cx.model.trophies.get(&game.id);
     let trophy_text =
         has_trophies.map(|set| format!("{}/{}", set.unlocked_count(), set.trophies.len()));
-    let settings_index = if trophy_text.is_some() { 2 } else { 1 };
+    // Play, then Play Together when the game can be played together, then trophies, then "...".
+    let together = crate::app::together::hostable(cx.model).is_some();
+    let trophies_index = 1 + usize::from(together);
+    let settings_index = trophies_index + usize::from(trophy_text.is_some());
     let (primary_title, primary_icon, primary_fill) = primary_look(&state, language);
     let mut pressed = None;
     let after_buttons = place(ui, row, |ui| {
@@ -1058,16 +1165,25 @@ fn paint_hero(
         if primary.clicked() {
             pressed = Some(HomeFocus::Actions(0));
         }
+        if together {
+            let response = ConsoleButton::new(TogetherText::PlayTogether.text(language))
+                .icon(Icon::USERS)
+                .focused(focused(1))
+                .show(ui);
+            if response.clicked() {
+                pressed = Some(HomeFocus::Actions(1));
+            }
+        }
         if let Some(text) = &trophy_text {
             let response = ConsoleButton::new(text)
                 .accessible_name(format!("{}, {}", language.text(Key::Trophies), text))
                 .icon(Icon::TROPHY)
                 .icon_fill(true)
                 .tabular(true)
-                .focused(focused(1))
+                .focused(focused(trophies_index))
                 .show(ui);
             if response.clicked() {
-                pressed = Some(HomeFocus::Actions(1));
+                pressed = Some(HomeFocus::Actions(trophies_index));
             }
         }
         let more = ConsoleButton::icon_only(Icon::DOTS_THREE, language.text(Key::Options))

@@ -1,3 +1,4 @@
+//! Ported from utkuhalis/AnyPS5-ARM (Diagnosis.swift, GPL-2.0-only) and changed since; see README "Credits".
 //! Why a game stopped, read from what its last start wrote to the log and from how its process
 //! ended (PORT.md 6.11, `Diagnosis.swift`). All regular expressions of the engine's output
 //! formats live here.

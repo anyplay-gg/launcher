@@ -14,6 +14,7 @@ fn manifest(version: &str, expires_in: Duration) -> Manifest {
         published: format_time(now() - Duration::days(1)),
         expires: format_time(now() + expires_in),
         minimum_version: "0.1.0".into(),
+        min_supported_version: None,
         platforms: BTreeMap::from([(
             WINDOWS_X64.into(),
             Artifact {
@@ -379,4 +380,155 @@ fn numeric_prerelease_parts_have_no_leading_zeros() {
     assert!(Version::parse("1.0.0-rc.10").is_some());
     // Alphanumeric parts may start with a zero.
     assert!(Version::parse("1.0.0-0a").is_some());
+}
+
+// --- the version below which a launcher must update ---------------------------------------------
+
+fn required(version: &str, supported: Option<&str>) -> Manifest {
+    let mut m = manifest(version, Duration::days(30));
+    m.min_supported_version = supported.map(str::to_owned);
+    m
+}
+
+#[test]
+fn without_the_field_no_update_is_required() {
+    let m = required("0.5.0", None);
+    assert!(!m.requires_update_from("0.1.0"));
+    assert!(!m.requires_update_from("0.4.9"));
+    // Nothing is written for it, so the bytes of every older manifest stay the same.
+    assert!(
+        !String::from_utf8(bytes(&m))
+            .unwrap()
+            .contains("min_supported_version")
+    );
+}
+
+#[test]
+fn a_running_version_below_the_field_must_update() {
+    let m = required("0.5.0", Some("0.4.0"));
+    assert!(m.requires_update_from("0.3.9"));
+    assert!(
+        m.requires_update_from("0.4.0-rc.1"),
+        "a pre-release is below its release"
+    );
+    assert!(!m.requires_update_from("0.4.0"));
+    assert!(!m.requires_update_from("0.4.1"));
+    assert!(!m.requires_update_from("0.5.0"));
+    // A running version that is no version is not claimed to be required: it is never updated.
+    assert!(!m.requires_update_from("garbage"));
+}
+
+#[test]
+fn the_field_may_equal_the_version_but_not_exceed_it() {
+    assert_eq!(required("0.5.0", Some("0.5.0")).validate(), Ok(()));
+    for bad in ["0.5.1", "v0.4.0", "0.4.0+x", "latest", ""] {
+        assert!(
+            matches!(
+                required("0.5.0", Some(bad)).validate(),
+                Err(ManifestError::Malformed(_))
+            ),
+            "{bad:?}"
+        );
+    }
+}
+
+#[test]
+fn the_signature_covers_the_field() {
+    let key = generate_signing_key();
+    let keys = TrustedKeys::of(key.verifying_key());
+    let want = required("0.5.0", Some("0.4.0"));
+    let (signed_bytes, signature) = signed(&want, &key);
+    let got = verify(&signed_bytes, &signature, &keys, now()).unwrap();
+    assert_eq!(got.min_supported_version.as_deref(), Some("0.4.0"));
+    // Dropping the field, or changing it, breaks the signature: nobody can lower it in transit.
+    let text = String::from_utf8(signed_bytes).unwrap();
+    for tampered in [
+        text.replace("\"min_supported_version\": \"0.4.0\",", ""),
+        text.replace(
+            "\"min_supported_version\": \"0.4.0\"",
+            "\"min_supported_version\": \"0.1.0\"",
+        ),
+    ] {
+        assert_ne!(tampered, text);
+        assert_eq!(
+            verify(tampered.as_bytes(), &signature, &keys, now()),
+            Err(ManifestError::Signature)
+        );
+    }
+}
+
+#[test]
+fn a_manifest_with_and_without_the_field_parses() {
+    let key = generate_signing_key();
+    let keys = TrustedKeys::of(key.verifying_key());
+    for supported in [None, Some("0.3.0")] {
+        let want = required("0.5.0", supported);
+        let (signed_bytes, signature) = signed(&want, &key);
+        let got = verify(&signed_bytes, &signature, &keys, now()).unwrap();
+        assert_eq!(got.min_supported_version.as_deref(), supported);
+    }
+    // A manifest of an older release (the field is simply not there) still reads.
+    let old = r#"{"schema":1,"version":"0.2.0","published":"2027-01-14T07:00:00Z","expires":"2027-02-13T07:00:00Z","minimum_version":"0.1.0","platforms":{}}"#;
+    let parsed: Manifest = serde_json::from_str(old).unwrap();
+    assert_eq!(parsed.min_supported_version, None);
+}
+
+#[test]
+fn an_older_launcher_reads_the_new_manifest() {
+    // The shape of Manifest before the field: unknown fields were never denied.
+    #[derive(serde::Deserialize)]
+    #[allow(dead_code)]
+    struct Before {
+        schema: u32,
+        version: String,
+        minimum_version: String,
+    }
+    let text = serde_json::to_string(&required("0.5.0", Some("0.4.0"))).unwrap();
+    let before: Before = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        before.minimum_version, "0.1.0",
+        "the old field keeps its meaning"
+    );
+}
+
+#[test]
+fn the_supported_version_file_is_a_version_a_comment_or_an_error() {
+    assert_eq!(parse_supported_file(""), Ok(None));
+    assert_eq!(
+        parse_supported_file(
+            "# nothing retired
+
+"
+        ),
+        Ok(None)
+    );
+    assert_eq!(
+        parse_supported_file(
+            "0.4.0
+"
+        ),
+        Ok(Some("0.4.0".into()))
+    );
+    assert_eq!(
+        parse_supported_file(
+            "﻿# why
+  0.4.0-rc.1  
+"
+        ),
+        Ok(Some("0.4.0-rc.1".into()))
+    );
+    for bad in [
+        "v0.4.0",
+        "0.4",
+        "latest",
+        "0.4.0+x",
+        "0.3.0
+0.4.0",
+        "0.4.0 # soon",
+    ] {
+        assert!(
+            matches!(parse_supported_file(bad), Err(ManifestError::Malformed(_))),
+            "{bad:?}"
+        );
+    }
 }

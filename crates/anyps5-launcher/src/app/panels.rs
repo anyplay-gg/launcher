@@ -50,7 +50,7 @@ use crate::app::model::UpdateRequest;
 use crate::app::model::{Effect, GameState, Model};
 use crate::app::overlay::{Overlay, OverlayCx, OverlayHost};
 use crate::app::selfupdate::{Restart, SelfUpdateService};
-use crate::app::toolkit::{NotesState, ToolkitEvent, ToolkitService};
+use crate::app::toolkit::{EngineFailure, NotesState, ToolkitEvent, ToolkitService};
 use crate::screens::advanced::{AdvancedAction, AdvancedData, AdvancedPanel};
 use crate::screens::banner::{BannerHost, BannerTrophy};
 use crate::screens::controls::{ControlsAction, ControlsData, ControlsPanel};
@@ -157,6 +157,8 @@ pub struct PanelHost {
     /// The backup to land on when the list opens again after the question.
     saves_return: Option<usize>,
     whats_new: WhatsNewPanel,
+    /// "Update required" (docs/DESIGN.md 9.5.1).
+    required: crate::screens::required::RequiredScreen,
     /// The release the notes panel is about, without a leading `v`.
     whats_new_tag: String,
     /// The settings category to open on when coming back from the notes.
@@ -167,6 +169,8 @@ pub struct PanelHost {
     catalog: Catalog,
     catalog_asked: bool,
     last_check: Option<std::time::Instant>,
+    /// The build day of the installed engine, read once per version: (version, day).
+    engine_built: Option<(String, Option<String>)>,
     banners: BannerHost,
     toolkit: ToolkitService,
     /// Commands and raw keys routed here by the model, in order.
@@ -242,12 +246,14 @@ impl PanelHost {
             restore_stamp: String::new(),
             saves_return: None,
             whats_new: WhatsNewPanel::default(),
+            required: crate::screens::required::RequiredScreen::default(),
             whats_new_tag: String::new(),
             settings_return: None,
             clips_counted: None,
             catalog: Catalog::embedded(),
             catalog_asked: simulated,
             last_check: None,
+            engine_built: None,
             banners: BannerHost::default(),
             toolkit: ToolkitService::new(ctx, simulated),
             events: Vec::new(),
@@ -317,6 +323,7 @@ impl PanelHost {
         let events = self.take_events(wanted);
         let toolkit_version = cx.model.toolkit.clone();
         let default_screenshots = cx.model.paths.default_screenshots();
+        let engine_built = self.engine_built_of(cx.model);
         if wanted {
             self.toolkit.load_installed(&cx.model.paths);
         }
@@ -339,10 +346,12 @@ impl PanelHost {
                 count
             }
         };
+        cx.model.ask_location();
         let env = SettingsEnv {
             games_found: cx.model.games.len(),
             app_version: env!("CARGO_PKG_VERSION"),
             toolkit_version: toolkit_version.as_deref(),
+            engine_built: engine_built.as_deref(),
             glibc: cx.model.glibc,
             update: self.toolkit.state.clone(),
             recent: &self.toolkit.recent,
@@ -365,6 +374,7 @@ impl PanelHost {
                 count: clips_count,
                 capturing: self.settings.clips_capturing(),
             },
+            location: cx.model.location_env(),
         };
         // Theme, accent, language, motion and sounds reach the shell inside the panel
         // (`apply_preferences`), so the backdrop cross-fades while the choice is made.
@@ -392,10 +402,16 @@ impl PanelHost {
         match action {
             SettingsAction::Close => model.dismiss_overlay(),
             SettingsAction::GamesFolderChosen(_) => {
+                model.games_folder_changed();
                 model.forget_known_games();
                 model.selected = 0;
                 model.rescan();
             }
+            SettingsAction::UnlockedFolderPicked(folder) => model.choose_unlocked_folder(folder),
+            SettingsAction::UseDefaultLocation => model.use_default_location(),
+            SettingsAction::CancelMove => model.cancel_move(),
+            SettingsAction::ContinueMove => model.continue_move(),
+            SettingsAction::LeaveOldCopies => model.leave_old_copies(),
             SettingsAction::Rescan => model.rescan(),
             SettingsAction::ShowScreenshots => {
                 let folder = model.prefs.screenshots_dir(&model.paths);
@@ -408,6 +424,9 @@ impl PanelHost {
                 open_folder(&folder);
             }
             SettingsAction::CheckForUpdates => self.check_toolkit(model),
+            SettingsAction::InstallToolkit if model.prefs.toolkit_engine => {
+                self.install_engine(model);
+            }
             SettingsAction::InstallToolkit => {
                 // The row of the settings shows the download; the toast only confirms the start.
                 let pinned = model.prefs.toolkit_pinned.clone();
@@ -451,6 +470,17 @@ impl PanelHost {
                 model.effects.push(Effect::ReloadToolkit);
                 self.last_check = None;
                 self.check_toolkit(model);
+            }
+            SettingsAction::UseEngineToolkit => {
+                self.resolutions.clear();
+                model.effects.push(Effect::ReloadToolkit);
+                if anyps5_core::toolkit::open_engine(&model.paths).is_some() {
+                    self.last_check = None;
+                    self.check_toolkit(model);
+                } else {
+                    // Nothing to use yet: the download is the switch.
+                    self.install_engine(model);
+                }
             }
             SettingsAction::PinToolkit(tag) => {
                 // Installed already: switch to it. Otherwise fetch it first.
@@ -536,15 +566,46 @@ impl PanelHost {
         self.refresh_links();
     }
 
-    /// Asks for the newest release. Only the stable channel follows it: a pinned release or a
-    /// local build is left alone.
+    /// The day the installed engine was built, for the settings; read from its record when the
+    /// version in use changes, not on every frame.
+    fn engine_built_of(&mut self, model: &Model) -> Option<String> {
+        if !model.prefs.toolkit_engine {
+            return None;
+        }
+        let version = model.toolkit.clone()?;
+        if self
+            .engine_built
+            .as_ref()
+            .is_none_or(|(seen, _)| *seen != version)
+        {
+            let day = toolkit::engine_installed(&model.paths).and_then(|i| i.built);
+            self.engine_built = Some((version, day));
+        }
+        self.engine_built.as_ref().and_then(|(_, day)| day.clone())
+    }
+
+    /// Downloads the nightly build of the AnyPlay engine; the settings row shows the download.
+    fn install_engine(&mut self, model: &mut Model) {
+        if self.toolkit.install_engine(&model.paths) {
+            let text = Extra::ToolkitDownloading.text(model.language());
+            model.toast(text, Icon::DOWNLOAD_SIMPLE);
+        }
+    }
+
+    /// Asks for the newest release. Only the stable channel and the engine channel follow one: a
+    /// pinned release or a local build is left alone.
     fn check_toolkit(&mut self, model: &Model) {
-        if model.prefs.toolkit_channel() != ToolkitChannel::Stable {
+        let channel = model.prefs.toolkit_channel();
+        if !matches!(channel, ToolkitChannel::Stable | ToolkitChannel::Engine) {
             return;
         }
         self.last_check = Some(std::time::Instant::now());
-        self.toolkit
-            .check(&model.paths, &model.prefs.toolkit_repository);
+        if channel == ToolkitChannel::Engine {
+            self.toolkit.check_engine(&model.paths);
+        } else {
+            self.toolkit
+                .check(&model.paths, &model.prefs.toolkit_repository);
+        }
     }
 
     // --- game settings and its pages -----------------------------------------------------------
@@ -652,11 +713,9 @@ impl PanelHost {
             }
             GameSettingsAction::ShowInExplorer => {
                 let target = model
-                    .prefs
-                    .games_folder
-                    .as_deref()
+                    .store_root()
                     .map(|root| {
-                        anyps5_core::paths::unlocked_copy_dir(root, &game.title_id, &game.id)
+                        anyps5_core::paths::unlocked_copy_dir(&root, &game.title_id, &game.id)
                     })
                     .filter(|copy| copy.exists())
                     .unwrap_or_else(|| game.folder.clone());
@@ -700,10 +759,9 @@ impl PanelHost {
                 UninstallAction::Cancel => model.dismiss_overlay(),
                 UninstallAction::Confirm => {
                     model.dismiss_overlay();
-                    if let (Some(game), Some(root)) = (
-                        model.selected_game().cloned(),
-                        model.prefs.games_folder.clone(),
-                    ) {
+                    if let (Some(game), Some(root)) =
+                        (model.selected_game().cloned(), model.store_root())
+                    {
                         let backups = model.paths.game_backups_dir(&game.title_id);
                         self.start_uninstall(&game, root, backups, model.language());
                     }
@@ -869,8 +927,8 @@ impl PanelHost {
 
     /// The save data of `game`: where its copy is and where its backups go.
     fn save_data(model: &Model, game: &Game) -> Option<SaveData> {
-        let root = model.prefs.games_folder.as_deref()?;
-        let copy = anyps5_core::paths::unlocked_copy_dir(root, &game.title_id, &game.id);
+        let root = model.store_root()?;
+        let copy = anyps5_core::paths::unlocked_copy_dir(&root, &game.title_id, &game.id);
         Some(SaveData::for_title(&model.paths, &game.title_id, copy))
     }
 
@@ -1303,6 +1361,44 @@ impl PanelHost {
         }
     }
 
+    /// "Update required": the update is the launcher's ordinary one, shown here and restarted
+    /// from here; Play Offline leaves and keeps the online area closed.
+    fn required_ui(&mut self, cx: &mut OverlayCx<'_>, wanted: bool) {
+        use crate::screens::required::{self as screen, Reason, RequiredAction, RequiredData};
+        let events = self.take_events(wanted);
+        if wanted && !self.required.is_open() {
+            self.required.open();
+        } else if !wanted && self.required.is_open() {
+            self.required.close();
+        }
+        let notes = self
+            .launcher
+            .notes()
+            .map(|notes| screen::note_lines(&notes))
+            .unwrap_or_default();
+        let data = RequiredData {
+            language: cx.model.language(),
+            update: &self.launcher.state,
+            reason: if cx.model.required_online {
+                Reason::OnlineClosed
+            } else {
+                Reason::Retired
+            },
+            notes: &notes,
+        };
+        let actions = self.required.show(cx.shell, cx.ctx, &events, &data);
+        for action in actions {
+            match action {
+                RequiredAction::UpdateNow => self.restart_launcher(cx.model, cx.ctx),
+                RequiredAction::TryAgain => self.launcher.check_now(),
+                RequiredAction::Download => {
+                    open_known_url(crate::screens::update_strings::RELEASES);
+                }
+                RequiredAction::PlayOffline => cx.model.play_offline(),
+            }
+        }
+    }
+
     // --- full-screen panels --------------------------------------------------------------------
 
     fn trophies_ui(&mut self, cx: &mut OverlayCx<'_>, wanted: bool) {
@@ -1662,8 +1758,12 @@ impl PanelHost {
                     model.edit_prefs(|p| p.toolkit_checked_at = Some(stamp));
                     // Told, not installed: the settings offer the download.
                     if let Some(tag) = found.filter(|_| model.toolkit.is_some()) {
-                        let text = Extra::ToolkitAvailable
-                            .format(language, &[Arg::Str(&format!("v{tag}"))]);
+                        let text = if model.prefs.toolkit_engine {
+                            Extra::EngineAvailable.text(language).to_owned()
+                        } else {
+                            Extra::ToolkitAvailable
+                                .format(language, &[Arg::Str(&format!("v{tag}"))])
+                        };
                         model.toast(text, Icon::DOWNLOAD_SIMPLE);
                     }
                 }
@@ -1701,10 +1801,27 @@ impl PanelHost {
                     model.edit_prefs(|p| {
                         p.toolkit = Some(folder);
                         p.toolkit_pinned = None;
+                        p.toolkit_engine = false;
                     });
                     model.effects.push(Effect::ReloadToolkit);
                     let text = Extra::ToolkitReady.format(language, &[Arg::Str(&version)]);
                     model.toast(text, Icon::CHECK_CIRCLE);
+                }
+                ToolkitEvent::EngineInstalled(Ok(version)) => {
+                    self.resolutions.clear();
+                    self.engine_built = None;
+                    model.effects.push(Effect::ReloadToolkit);
+                    let text = Extra::ToolkitReady.format(language, &[Arg::Str(&version)]);
+                    model.toast(text, Icon::CHECK_CIRCLE);
+                }
+                ToolkitEvent::EngineInstalled(Err(error)) => {
+                    let text = match error {
+                        EngineFailure::NoBuild => Extra::EngineNoBuild,
+                        EngineFailure::Unverified => Extra::EngineUnverified,
+                        EngineFailure::Other => Extra::ToolkitFailed,
+                    }
+                    .text(language);
+                    model.toast(text, Icon::WARNING);
                 }
                 ToolkitEvent::Installed(Err(error)) => {
                     tracing::warn!("toolkit install: {error}");
@@ -1726,6 +1843,18 @@ impl PanelHost {
         let model = &mut *cx.model;
         if model.update != self.launcher.state {
             model.update.clone_from(&self.launcher.state);
+        }
+        // The cloud turned this launcher away: the update is required, whatever the manifest said.
+        if std::mem::take(&mut model.cloud_too_old) && !self.launcher.required() {
+            self.launcher.require_from_cloud();
+        }
+        let required = self.launcher.required();
+        if model.update_required != required {
+            model.update_required = required;
+            if required {
+                // The online area closes at once: the net service stops talking to the cloud.
+                model.effects.push(Effect::StopOnline);
+            }
         }
         match model.update_request.take() {
             Some(UpdateRequest::Restart) => self.restart_launcher(model, cx.ctx),
@@ -1811,6 +1940,7 @@ impl OverlayHost for PanelHost {
             Overlay::Log => self.log_ui(cx, wanted),
             Overlay::Recommended => self.recommended_ui(cx, wanted),
             Overlay::WhatsNew => self.whats_new_ui(cx, wanted),
+            Overlay::Required => self.required_ui(cx, wanted),
             Overlay::Friends => self.friends_ui(cx, wanted),
             Overlay::Profile => self.profile_ui(cx, wanted),
             Overlay::Compare => self.compare_ui(cx, wanted),
@@ -1848,17 +1978,25 @@ impl OverlayHost for PanelHost {
         let paths = cx.model.paths.clone();
         self.launcher.tick(&paths, cx.model.prefs.check_for_updates);
         self.poll_launcher(cx);
+        // A retired version meets "Update required" once, as soon as nothing else is going on.
+        if cx.model.required_screen_due() {
+            cx.model.show_required();
+        }
         // No toolkit on this PC: fetch it now, already during the onboarding, so the first unlock
         // needs no visit to the settings. The result shows as a toast (see `poll_toolkit`).
         if !self.toolkit_auto_tried && cx.model.toolkit.is_none() {
             self.toolkit_auto_tried = true;
             let model = &*cx.model;
-            self.toolkit.install(
-                &model.paths,
-                &model.prefs.toolkit_repository,
-                model.prefs.toolkit_pinned.as_deref(),
-                model.prefs.kept_toolkit_tags(),
-            );
+            if model.prefs.toolkit_engine {
+                self.toolkit.install_engine(&model.paths);
+            } else {
+                self.toolkit.install(
+                    &model.paths,
+                    &model.prefs.toolkit_repository,
+                    model.prefs.toolkit_pinned.as_deref(),
+                    model.prefs.kept_toolkit_tags(),
+                );
+            }
         }
         if !self.checked_at_start && cx.model.onboarded() {
             self.checked_at_start = true;
@@ -2146,6 +2284,7 @@ mod tests {
             Overlay::ConfirmRestore,
             Overlay::Recommended,
             Overlay::WhatsNew,
+            Overlay::Required,
         ] {
             rig.app.model.open(overlay);
             rig.frames(3);

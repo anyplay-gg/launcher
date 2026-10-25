@@ -27,6 +27,7 @@ use crate::screens::online_strings::OnlineText as T;
 use crate::screens::online_voice_strings::VoiceText as V;
 use crate::screens::room_strings::RoomText as R;
 use crate::screens::scroll::Follow;
+use crate::screens::together_strings::TogetherText as TT;
 use crate::ui::Shell;
 use crate::ui::anim::{AnimExt, Motion};
 use crate::ui::chrome::{RowAvatar, paint_row_avatar};
@@ -209,6 +210,8 @@ pub(super) struct Tile {
 /// What pressing a card's button does.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum CardAction {
+    /// Start the selected game with a Play Together session.
+    PlayTogether,
     /// Take the party into the session.
     Take(String),
     StopSharing,
@@ -441,7 +444,12 @@ impl Room {
         } else {
             cards
                 .iter()
-                .position(|c| matches!(c.action, Some((_, CardAction::Take(_)))))
+                .position(|c| {
+                    matches!(
+                        c.action,
+                        Some((_, CardAction::Take(_) | CardAction::PlayTogether))
+                    )
+                })
                 .map(Stop::Card)
         };
         Room {
@@ -534,6 +542,18 @@ fn cards(data: &OnlineData<'_>, may_take: bool) -> Vec<Card> {
     let screen = &online.screen;
     let mut cards = Vec::new();
     let me = online.account.as_ref().map_or(AccountId(0), |a| a.id);
+    // The card of Play Together: the selected game, started with a session the party can join.
+    if let Some(title) = data.play_together {
+        cards.push(Card {
+            icon: Icon::GAME_CONTROLLER,
+            title: TT::PlayTogether.text(language).to_owned(),
+            detail: TT::PlayTogetherDetail.format(language, &[Arg::Str(title)]),
+            action: Some((
+                TT::PlayTogether.text(language).to_owned(),
+                CardAction::PlayTogether,
+            )),
+        });
+    }
     if may_take
         && let Some(session) = online.session.as_ref().filter(|s| {
             s.visibility != anyps5_core::online::api::Visibility::Closed
@@ -707,6 +727,7 @@ impl OnlinePanel {
                     return;
                 };
                 match action {
+                    CardAction::PlayTogether => actions.push(OnlineAction::PlayTogether),
                     CardAction::Take(session) => actions.push(OnlineAction::PartyMove(session)),
                     CardAction::StopSharing => {
                         actions.push(OnlineAction::Screen(ScreenCommand::Stop))

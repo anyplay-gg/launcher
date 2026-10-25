@@ -247,6 +247,8 @@ impl CorePipeline {
             Some(folder) => adopt_folder(folder)
                 .ok()
                 .or_else(|| Toolkit::locate(&self.paths, None)),
+            // The engine channel never falls back to another release: no engine, no toolkit.
+            None if prefs.toolkit_engine => anyps5_core::toolkit::open_engine(&self.paths),
             None => Toolkit::locate(&self.paths, pinned.as_ref()),
         };
         self.glibc = self.toolkit.as_ref().and_then(anyps5_core::glibc::check);
@@ -509,6 +511,34 @@ impl Pipeline for CorePipeline {
     fn submit(&mut self, command: PipelineCommand, cx: &PipelineContext<'_>) {
         *self.language.lock().expect("language lock") = ui_language(cx.prefs.language);
         let fresh = matches!(command, PipelineCommand::UnlockAgain(_));
+        // Copies are moving to another place: nothing is unlocked or started until they are there.
+        if cx.prefs.unlocked_moving_from.is_some() {
+            let waits =
+                crate::screens::location_strings::waits_for_move(ui_language(cx.prefs.language));
+            match &command {
+                PipelineCommand::Unlock(game)
+                | PipelineCommand::Retry(game)
+                | PipelineCommand::UnlockAgain(game) => {
+                    self.push(PipelineEvent::UnlockFinished {
+                        game: game.clone(),
+                        result: Err(waits.to_owned()),
+                    });
+                    return;
+                }
+                PipelineCommand::Prepare(game) => {
+                    self.push(PipelineEvent::UnlockCancelled { game: game.clone() });
+                    return;
+                }
+                PipelineCommand::Play(game) => {
+                    self.push(PipelineEvent::StartFailed {
+                        game: game.clone(),
+                        message: waits.to_owned(),
+                    });
+                    return;
+                }
+                _ => {}
+            }
+        }
         match command {
             PipelineCommand::Unlock(_)
             | PipelineCommand::Retry(_)

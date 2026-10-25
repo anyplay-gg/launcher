@@ -449,6 +449,7 @@ jobs:
           tool="$PWD/launcher/target/release/update-sign"
           "$tool" keygen --secret-out "$RUNNER_TEMP/dry-run.key" --public-out "$RUNNER_TEMP/dry-run.line" --label dry-run
           "$tool" manifest --version "$VERSION" --days 30 \
+            --supported-file launcher/MIN_SUPPORTED_VERSION \
             --exe "dist/AnyPlay-Launcher-$VERSION-x64.exe" \
             --appimage "dist/AnyPlay-Launcher-$VERSION-x86_64.AppImage" --out dist/latest.json
           "$tool" sign --manifest dist/latest.json --out dist/latest.json.sig --key-file "$RUNNER_TEMP/dry-run.key"
@@ -505,7 +506,10 @@ jobs:
           set -euo pipefail
           chmod +x tool/update-sign
           # One signed manifest for both platforms: the Windows exe and the Linux AppImage.
+          # MIN_SUPPORTED_VERSION (a file of the tagged commit) retires launchers below it; an empty
+          # one leaves the field out. A typo, or a version above this release, fails the release.
           tool/update-sign manifest --version "$VERSION" --minimum "$MINIMUM_VERSION" --days 30 \
+            --supported-file launcher/MIN_SUPPORTED_VERSION \
             --exe "dist/AnyPlay-Launcher-$VERSION-x64.exe" \
             --appimage "dist/AnyPlay-Launcher-$VERSION-x86_64.AppImage" --out dist/latest.json
       # Without the secret there is no signature, which is right only while data/update-keys.txt
@@ -589,7 +593,8 @@ jobs:
             ${{ needs.sign.outputs.signed == 'true' && 'dist/latest.json' || '' }}
             ${{ needs.sign.outputs.signed == 'true' && 'dist/latest.json.sig' || '' }}
 
-      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+      - id: gh-release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           name: AnyPlay Launcher ${{ needs.windows.outputs.version }}
           body_path: docs/releases/v${{ needs.windows.outputs.version }}.md
@@ -612,3 +617,32 @@ jobs:
             dist/SHA256SUMS.txt
             ${{ needs.sign.outputs.signed == 'true' && 'dist/latest.json' || '' }}
             ${{ needs.sign.outputs.signed == 'true' && 'dist/latest.json.sig' || '' }}
+
+      # The release, announced on Discord: its title, text and link, through the webhook in the
+      # repository secret DISCORD_RELEASES_WEBHOOK. Without the secret the step is skipped. A release
+      # made with GITHUB_TOKEN starts no `release` workflow, so this runs here, after it is published,
+      # and reads the published text back (the notes plus GitHub's list of pull requests).
+      - id: discord
+        name: Discord announcement
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WEBHOOK: ${{ secrets.DISCORD_RELEASES_WEBHOOK }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then echo "no DISCORD_RELEASES_WEBHOOK secret, nothing announced"; exit 0; fi
+          echo "post=true" >> "$GITHUB_OUTPUT"
+          eof=$(openssl rand -hex 16)
+          { echo "body<<$eof"; gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body; echo "$eof"; } >> "$GITHUB_OUTPUT"
+      # A failed announcement leaves the release as it is; the warning on the run says so.
+      - if: steps.discord.outputs.post == 'true'
+        continue-on-error: true
+        uses: SethCohen/github-releases-to-discord@24d166886aee4646d448c8a389ff9e1ebcab3682 # v1.20.0
+        with:
+          webhook_url: ${{ secrets.DISCORD_RELEASES_WEBHOOK }}
+          release_name: AnyPlay Launcher ${{ needs.windows.outputs.version }}
+          release_body: ${{ steps.discord.outputs.body }}
+          release_html_url: ${{ steps.gh-release.outputs.url }}
+          username: AnyPlay Releases
+          footer_timestamp: true
+          remove_github_reference_links: true
+          reduce_headings: true

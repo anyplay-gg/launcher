@@ -706,9 +706,9 @@ The launcher keeps the port's structure but trims what read as noise next to the
   The launch splash's explanation wraps at 460 dp, so it never ends on a lone word. The onboarding
   theme names share one baseline under the resting cards; focus grows the card, not the label.
 - **Toolkit channels, notes and recommendations.** The Toolkit page has one `Channel` choice
-  (Stable, Pinned, Local Build) and shows only the rows of that channel: stable has the update
+  (Stable, AnyPlay Engine, Pinned, Local Build: the choice steps one entry at a time and Local Build opens a folder picker, so it stays last and every other channel is reachable without it) and shows only the rows of that channel: stable has the update
   toggle and "Check Now" (its detail line carries the status or the last check), pinned has a
-  `Version` choice over the last ten releases and no update, local has the folder row. "What's New"
+  `Version` choice over the last ten releases and no update, local has the folder row, and AnyPlay Engine has the update toggle and "Check Now" like stable, with the day the build was made hanging under the version row ("Built on 2026-10-25"; gallery scenes `toolkit-engine`, `toolkit-engine-update`) and no "What's New" (a nightly build has commit messages, not notes). Choosing it downloads the nightly build when none is installed; "Install the Update" fetches a newer one, checked against the release's checksum list, and a refusal is said in a toast. "What's New"
   opens the notes of the release waiting to be installed, else of the installed one, in one
   full-screen panel: header with release, date and count, Highlights (`feat` and `perf` by area,
   the seven busiest areas folded, the rest as "Other areas"), then Everything. Rows are 44 dp, drawn
@@ -1176,6 +1176,8 @@ the log view. (Screenshot S-unlocking shows step "Converting for Mac", 39 %.)
 
 *Faster.* The dump's files are laid out by up to eight threads (hard links, copy only where the volume cannot link). The relinker starts below normal priority; the executable it made is linked, not copied, into the copy. An unlock again whose relink key (release, flags, patches, size and time of every input) matches the copy it replaces keeps that copy's converted files and skips the relinker. The relinker's own output is not changed.
 
+*Where the copies live.* The store is in the games folder unless the player chose another location (Settings, "Unlocked Games Location"); the space check and the link-or-copy rule apply to the drive of the store.
+
 *Preparing.* A game that appears in the games folder after the launcher first looked at it, and a game left outdated by a toolkit update, is unlocked in the background (setting `prepareGames` "Prepare New Games Automatically", on), one at a time, at idle priority, only when the idle gate is open and no game is starting or running. The first scan only notes what is there; it prepares nothing. A preparation that fails is not tried again with the same toolkit and raises the toast "Could not prepare: <game>"; one that finishes raises "<game> · Ready to play".
 
 - Tile: a band at its foot with "Preparing… 40%" (12 medium) and the progress line; paused "Paused · 40%". The selected game's state line says Preparing or Paused; the hero shows the bar, the percentage and the time left, or one sentence while the work has not started.
@@ -1213,7 +1215,7 @@ category's rows (5.8).
 | Category (key) | Glyph | Rows (id, kind, key, notes) |
 |---|---|---|
 | Appearance (`appearance`) | brush | `theme` choice (Cosmic/Aurora/Sunset), `accent` choice (six), `backdrop` choice (`backgroundTheme` / `backgroundImage` / `backgroundVideo`; picking image/video opens a file dialog when no file is set or the kind changed), `file` action `chooseFile` (only when backdrop is not theme; detail = file name), `artwork` toggle `gameArtwork`, `motion` choice (`motionFull` / `motionReduced`) |
-| Library (`storage`) | 2x2 grid | `folder` action `folder` (detail = path or an em dash; opens the folder dialog), `rescan` action `rescan` (detail `gamesFound` with count; sound `select`), info `installedSize` |
+| Library (`storage`) | 2x2 grid | `folder` action `folder` (detail = path or an em dash; opens the folder dialog), `rescan` action `rescan` (detail `gamesFound` with count; sound `select`), then the rows of the unlocked games location ("Unlocked Games Location" below): `unlockedLocation` with its note (`installedSize` by default), `unlockedDefault`, and while copies move `moveCancel`, `moveContinue`, `moveLeave` |
 | Language (`language`) | globe | `language` choice (Türkçe, English; shown in their own language) |
 | Behaviour (`behaviour`) | sliders | `name` text field `profileName` (live edit), `sounds` toggle, `music` toggle (Home Screen Music, 7.3), `hide` toggle `hideWhilePlaying`, `prepare` toggle `prepareGames` (Prepare New Games Automatically), `hiddenTrophies` toggle `showHiddenTrophies` (trophy glyph; detail `showHiddenTrophiesDetail`; the trophy list's only option, 5.11) (+ platform row, see 9) |
 | Phone as Controller (`phone`) | phone | Windows and Linux addition, section 18. Sits between Behaviour and Toolkit. |
@@ -1223,8 +1225,39 @@ category's rows (5.8).
 Settings are persisted per user (`Preferences`): `onboarded`, `language` (system default: Turkish if the OS UI language starts with
 `tr`, else English), `theme` (Cosmic), `accent` (nil = theme default), `backdrop` (theme), `backdropFile`, `gameArtwork` (true),
 `reducedMotion` (false), `showHiddenTrophies` (false), `sounds` (true), `music` (true), `discordPresence` (true), `hideWhilePlaying` (false), `prepareGames` (true), `profileName` (first word of the user's full name, fallback
-"Player"), `gamesFolder`, `screenshotsFolder` (nil = `Pictures/AnyPS5`), `fontsFolder`, per-game settings, `lastPlayed`.
+"Player"), `gamesFolder`, `unlockedFolder` (nil = next to the games), `unlockedMovingFrom` (the store copies are moved out of, while any are left there), `screenshotsFolder` (nil = `Pictures/AnyPS5`), `fontsFolder`, per-game settings, `lastPlayed`.
 Every change saves immediately and re-applies language, motion and sound flags.
+
+#### Unlocked Games Location (Settings > Library)
+
+By default the store (`.AnyPS5`) sits in the games folder, on the dumps' drive, and a copy is made of hard links, so it costs almost no extra space (on exFAT and FAT32 there are no links and it is a full copy). The player can keep the copies on another drive: dumps on a big slow drive, unlocked games on a fast SSD. Stored as `unlockedFolder` (nil = default). The store is then `<folder>\.AnyPS5`, the same layout as before (`Games`, `Work`); the chosen folder itself is never cleaned, only its `.AnyPS5`. Files go in as hard links where the folder happens to be on the dumps' drive and as full copies everywhere else. The dumps are never written to; the launcher's checks write only below the chosen folder.
+
+Rows (after `folder` and `rescan`; the old info row `installedSize` is now the note under the location row):
+
+| State | Rows |
+|---|---|
+| Default | action `unlockedLocation` "Unlocked Games Location" (drive glyph; detail "Next to your games · 312 GB free"), attached note `installedSize` |
+| Another folder | the same row with the path in the detail ("E:\Unlocked · 412 GB free"), attached note "Unlocked games are copied in full into a .AnyPS5 folder here. Your dumps are never changed.", command `unlockedDefault` "Use Default Location" |
+| Network drive or share | as above, the note is a warning: "This is a network location. Copying is slower, and games run over the network." Allowed: a share works, it only costs speed. |
+| Not there (drive unplugged, share down) | detail "<path> · Not found", warning note "This folder is not available, so its games show as locked. Connect the drive, or choose another folder." Nothing is lost: the setting stays, the games show as locked, Unlock fails with "The folder for unlocked games is not there" (no files are written to the wrong disk), and everything is back when the drive is. |
+| Moving | the row is a status (info, detail "Moving 3 of 7 · 42%"), note "Unlocking and playing wait until the move is done. Saves move with their game.", command `moveCancel` "Cancel Move" |
+| Move stopped | action row, warning note "3 unlocked games are still in D:\Games\PS5. Unlocking and playing wait until they are moved.", commands `moveContinue` "Continue Moving" and `moveLeave` "Leave Games Where They Are" (detail: they stay in the old location, unused) |
+
+*Free space.* The free space of the location's drive is looked at on a worker thread (never on the UI thread: a share that is down can take seconds to answer), when the page opens and every 5 s while it is open. The unlock's space check (5.4) measures that drive: "needs 41.2 GB, 12.0 GB free on E:\Unlocked", with the note that the files are copied when the drive cannot link to the dump, and the failure sentence "The drive for your unlocked games is full."
+
+*Choosing a folder.* The native folder dialog opens at the current location. The choice is refused, with a toast and nothing stored, when it is not a folder that exists, when it is inside the games folder ("Choose a folder outside your games folder. Your dumps are never written to."), when it is inside any `.AnyPS5` folder, so inside an unlocked copy ("Choose a folder outside the .AnyPS5 folders."), or when a test file cannot be written there ("Cannot write to that folder. Choose another one."). Picking the games folder itself means the default. The location cannot change while a game runs, an unlock runs or a move runs (toast). If a games folder is picked later that is, or contains, the location, the location returns to the default and the copies stay where they were.
+
+*Changing the location moves the copies.* This is the simpler robust of the two options: preparing them again would lose the saves and cost minutes of relinking per game. A background worker moves every unlocked copy from the old store to the new one, one at a time; the row shows "Moving 3 of 7 · 42%". A copy is either whole at the old place or whole at the new one:
+
+- Same drive: one rename of the copy's folder (instant, hard links stay hard links).
+- Another drive: the copy is written into `<name>.partial` at the new place, its file count and size are checked against the old tree, the folder is renamed to `<name>`, and only then is the old copy removed. Saves and trophies live inside the copy and travel with it. A copy needs its size plus 256 MB free at the new place, else the move stops with "The new drive is full: ...".
+- Cancel stops after the file it is on, removes the `.partial` of that copy and leaves it whole in the old place; copies already moved stay in the new one. The row then offers Continue Moving and Leave Games Where They Are. Leaving forgets the old place: the copies stay on that drive, unused, and can be deleted by hand.
+- A killed launcher leaves at worst a `.partial` (swept by the next scan) or an old copy next to an identical new one (removed when the move continues). `unlockedMovingFrom` keeps the old place in the preferences until nothing is left there, and a move cut off by a restart is taken up again once the library has loaded.
+- A running game's copy is never moved (it stays, and the move reports it). While copies wait in the old place, Unlock, Prepare and Play are refused with "Your unlocked games are being moved. Try again when that is done." and background preparation waits, so a game can never be unlocked at the new place while its old copy still holds the saves.
+- A copy that already exists at the new place is never overwritten unless it is identical to the old one.
+
+*Linux.* The same, with ordinary paths. A mount point that is not mounted exists as an empty folder, so a custom location also needs its `.AnyPS5` to count as there. A network file system (nfs, cifs, smb3, sshfs, 9p) is read from `/proc/mounts` for the network note. On Windows a `\\server\share` path or a mapped drive letter is a network location.
+
 
 ### 5.8 Panel rows (shared by settings, game settings, controls, advanced)
 
@@ -1762,6 +1795,37 @@ Windows.Gaming.Input, which offers vibration to Xbox-style pads only: a DualSens
 is false), the setting then has no effect. Not verified on hardware: the feel of the strengths and the floor, WGI vibration from a
 second thread and the Linux timer.
 
+### 6.9 Finding the controller (2026-10-26)
+
+**Backend.** gilrs 0.11 with its default `wgi` feature: on Windows the launcher reads pads through Windows.Gaming.Input (the Xbox
+family as a `Gamepad`, everything else, a DualSense and a DualShock among them, as a `RawGameController` that gilrs maps from
+the bundled SDL controller database; the DualSense and DualSense Edge, 054C:0CE6 and 054C:0DF2, have Windows entries there, and
+Bluetooth pads are looked up as USB on purpose). On Linux it reads evdev (`/dev/input/event*` must be readable by the player; the
+kernel's `hid-playstation` driver provides the DualSense, SDL's database has its kernel GUIDs). A pad with no database entry is not
+dropped: it gets gilrs' default layout and `MappingSource::Driver`, and the launcher does not look at the mapping source. WGI delivers input only
+while a window of the process has focus, which suits the launcher's own screens; with a game in front only the XInput thread
+(Xbox pads) still hears the Home button.
+
+**What the launcher does about it.**
+- Each pad found at start or plugged in later is written to `launcher.log` with name, VID and PID, SDL GUID, mapping (or "no SDL
+  mapping") and backend; a pad without a mapping is a warning, "no gamepad found at start" and "gamepad removed" are info lines.
+- The pad thread restarts after five seconds when the backend cannot start (one odd device can fail gilrs on Windows) or panics,
+  instead of ending for good.
+- **Pad in use.** One pad counts at a time (`ActivePad`). Another pad's events are dropped while the pad in use spoke less than
+  600 ms ago, so Steam Input or DS4Windows with both the real pad and their virtual Xbox pad visible do not press twice; after 600 ms of quiet the
+  other pad takes over. The family (`ui::pad_info::Family`: PlayStation, Xbox, Nintendo, other) is read from the vendor id, else the name.
+- **Top bar.** A small status after the title (and the phone status) shows a controller icon and, when the pad reports one, its battery
+  in percent (read every 10 s; wired pads and pads without a reading show the icon alone). It is not a button and outside the focus order.
+  Screen readers get "Controller connected, battery 82 percent".
+- **Hints.** With an Xbox or other pad the hint bar and key strings name the buttons A, B, X, Y; a Switch pad swaps A with B and X with Y
+  (the positions). A PlayStation pad keeps the shapes. Before any pad was seen the shapes are used.
+- **Settings > Behaviour** has a note under Controller Vibration: what to try when the controller is not found (Steam Input,
+  DS4Windows).
+
+Not done, on purpose: a direct HID reader for the DualSense and DualShock. WGI and evdev both see them; the cases that make a pad invisible
+(Steam Input holding it, HidHide hiding it) hide it from HID readers as well. The one gap a HID reader would close is the Home button of a PlayStation pad while a game is in front.
+Not verified on hardware: a DualSense or DualShock over USB and Bluetooth through WGI, the battery reading of a Bluetooth DualSense through WGI, the A/B hints on a real Xbox pad.
+
 ## 7. Sounds and media
 
 ### 7.1 Sounds (`Sounds.swift`): synthesized, nothing bundled
@@ -2295,7 +2359,7 @@ are strings that name the macOS app as the product: they take the launcher's own
 | `startingText` | The game is opening, please wait. The first start can take a few minutes while the game gets ready for Windows. | Oyun açılıyor, lütfen bekle. İlk açılış, oyun Windows için hazırlanırken birkaç dakika sürebilir. |
 | `aboutText` | AnyPlay Launcher runs PS5 games natively on Windows with AnyPS5. | AnyPlay Launcher, PS5 oyunlarını AnyPS5 ile Windows'ta yerel olarak çalıştırır. |
 | `settingsFileFailed` | This is not an AnyPlay settings file | Bu dosya bir AnyPlay ayar dosyası değil |
-| `installedSize` | Unlocked games are kept in the .AnyPS5 folder inside your games folder. | Kilidi açılan oyunlar oyun klasörünün içindeki .AnyPS5 klasöründe saklanır. |
+| `installedSize` | Unlocked games sit next to your dumps and share their files where the drive allows. Choose another folder to keep them on a different drive. | Kilidi açılan oyunlar dökümlerinin yanında durur ve sürücü izin verdiği yerde dosyalarını paylaşır. Onları başka bir sürücüde tutmak için başka bir klasör seç. |
 | `showInFinder` | Show in Explorer | Dosya Gezgini'nde Göster |
 | `behaviour` | Behavior | Davranış |
 | `hideWhilePlaying` | Hide Launcher While Playing | Oyun açılınca launcher'ı gizle |
@@ -2326,6 +2390,29 @@ No counterpart in the macOS launcher (Sparkle there). Core module `anyps5_core::
 - **What's New.** The notes of the staged release are taken from the release data the check fetched anyway (display only; nothing is decided by them) and shown in the same full-screen panel as the toolkit's notes: every `###` heading of the release is a group, every bullet a line, all groups unfolded. *Back* returns to About.
 - **Linux.** The AppImage updates itself the same verified way, through the signed manifest only (its `linux-x86_64` entry; Linux has no unsigned path). The running image comes from `APPIMAGE` (checked against `APPDIR`, a regular `.AppImage` file in a writable folder); the verified download is copied beside it, set to 0755, hash-checked once more and renamed over it atomically, which Linux allows while it runs. Restart starts the new file with the same arguments. A launcher from the `.tar.gz` cannot replace itself: About shows "<v> available" with *Download from GitHub*, and nothing is downloaded. A manifest from before the Linux entry offers Linux nothing, quietly. Details in [UPDATES.md](UPDATES.md#linux-the-appimage).
 - **Not done.** The exe is not code-signed (Windows SmartScreen); that costs money and is the owner's decision. Provenance (GitHub attestations) is separate, see UPDATES.md.
+
+### 9.5.1 A required update
+
+An update is *optional* by default and stays so (9.5). It becomes *required* when the version that runs has been retired on purpose: a retired launcher stops going online until it is updated. Two things can retire a version, and either is enough:
+
+- **The signed manifest.** `latest.json` may carry `min_supported_version`. A launcher below it, which has just verified that manifest (signature, expiry, newer version), treats the update as required. The field is covered by the signature, so it cannot be lowered in transit, and an expired or unsigned manifest requires nothing. It is optional: a manifest without it is what every release before this was, and a launcher that does not know the field ignores it. It is **not** `minimum_version`, which keeps its old meaning ("the oldest version that may *take* this update"): reusing that name would have locked every launcher up to v0.2.x out of updating. How to set it: [UPDATES.md, Retiring a version](UPDATES.md#retiring-a-version).
+- **The cloud.** A cloud with `min_launcher_version` set answers a launcher below it with `client_too_old` (HTTP 426, network `spec/cloud-api.md`). The net service passes it on as the control event `client_too_old`; the launcher then requires the update as well, and checks for it at once even when *Check for Updates* is off, because the player cannot go online without it. Old clients, browsers and other programs send no `X-AnyPlay-Client` header and are never turned away.
+
+**What the player sees.** A required update opens one full-screen panel, **Update required**, once per run, as soon as the first-run setup is done and no game starts or runs (a game is never interrupted). It is the quiet kind of screen the launch splash is: glass over the home screen, one column in the middle, nothing red.
+
+- A glyph in ink, the title *Update required*, and **one line** of reason: "AnyPlay Launcher 0.3.0 is needed to play online." (without a known version: "This version of AnyPlay Launcher can no longer play online.").
+- Under it one status line and, while it downloads, a thin progress line: "Downloading 42%", "Verifying", "0.3.0 ready". The download is the ordinary one (9.5): it starts by itself, is checked against the signed hash and size, and the restart opens where the player was.
+- The release notes of the update when they are known: up to three lines under "What's New in 0.3.0". They are display text; the whole notes stay in the *What's New* panel. They are left out when the window is too short for them.
+- **Two buttons, one above the other, 12 apart.** The primary one follows the state of the update (`screens::required::plan`): *Update Now* when the update is ready (it restarts; held while a game runs, as everywhere); the same button waits, disabled, while it downloads (the status line says why); *Try Again* when GitHub could not be reached; *Download from GitHub* when this launcher cannot install itself (a Linux `.tar.gz`, a read-only folder, a launcher too old to update itself, a refused download). Below it, secondary and always there: **Play Offline**.
+- Keys: Up and Down (Tab) move between the two, Enter presses, **Back is Play Offline**. The focus starts on the primary button, or on Play Offline while the primary one cannot be pressed, so Enter always does something. The hint bar names Back as *Play Offline*.
+
+**Offline play stays allowed (decided).** The retirement is about the network: the online services only speak to launchers they can still support, and nobody should lose their own games because a version was retired on a day the PC has no network. *Play Offline* closes the panel, the home screen is the player's as before, and nothing offline changes: library, unlocking, playing, saves, the trophies on this PC, settings.
+
+**The online area is closed.** From the moment the update is required the net service is stopped, and every way into the online area (the profile and friends buttons, a notice, an invitation or `anyps5://join` link, the Home button's friends entry) opens this same panel instead, with the reason "The online area needs the new launcher. Your games still play offline." The panel opens by itself once per run and comes back only when the online area is asked for. A player who has *Check for Updates* off still learns it from the cloud, but only when they go online.
+
+**Linux.** The AppImage updates itself through the same flow. A `.tar.gz` has no self-update: the primary button is *Download from GitHub* and nothing is downloaded.
+
+Code: `anyps5_core::selfupdate` (`Release::required`, `SelfUpdateError::RequiredByHand`), `app::selfupdate` (`SelfUpdateService::required`, `require_from_cloud`), `app::model` (`update_required`, `switch_overlay`), `screens::required` (the panel and its state machine). Gallery pages: `update-required`, `update-required-downloading`, `update-required-failed`, `update-required-download`, `update-required-offline`.
 
 ### 9.6 Deep links, single instance and folder entry
 
@@ -2690,6 +2777,39 @@ Gallery scenes: `friends-screen-ready`, `friends-screen-hosting`, `friends-scree
 Gallery scenes: `friends-muted` (Home with a mute), `friends-restriction` (the mute's page), `friends-paused` (a conversation while muted), `friends-banned` (the Start page after a ban), `friends-signin`, `friends-browser`, `friends`, `friends-friend`, `friends-settings`, `friends-picker`, `friends-party`, `friends-party-picker`, `friends-messages`, `friends-conversation`, `friends-message`, `friends-request`, and `home-messages` (the profile button with unread messages).
 Gallery scenes: `friends-activity` (a card focused), `friends-activity-reaction` (a reaction focused), `friends-activity-empty`, `friends-activity-loading` and `friends-activity-error`; `friends-muted` (Home with a mute), `friends-restriction` (the mute's page), `friends-paused` (a conversation while muted), `friends-banned` (the Start page after a ban), `friends-signin`, `friends-browser`, `friends`, `friends-friend`, `friends-settings`, `friends-picker`, `friends-party`, `friends-party-picker`, `friends-messages`, `friends-conversation`, `friends-message`, `friends-request`, and `home-messages` (the profile button with unread messages).
 Gallery scenes of the Friends screen itself (1600 x 900): `friends` (the default page, the focus on the first request), `friends-busy` (five requests, friends playing), `friends-empty` (no friends yet), `friends-focus` (a friend's row with its quick actions up), `friends-rail` (the focus on the rail), `friends-offline` (the note and Try Again), `friends-connecting`, `friends-party-none` (the Party section without a party), `friends-signin` and `friends-browser` (no rail), `friends-banned`; every page of the table has a `friends-` scene of its own.
+
+### Play Together (2026-10-25, part of section 17)
+
+The launcher's side of [Play Together](https://github.com/anyplaynet/network/blob/main/spec/play-together.md): the owner's picture is "I start Minecraft from the launcher, my friend presses Join, his launcher starts Minecraft in the same session, and my world shows up as a LAN world". Nobody sets up a VPN, a port or an address. The pure rules are `anyps5_core::play_together` (the table, the join check, the presence wording); the flow is `app::together` and `app::online`; the card is `screens::together`; the words are `screens::together_strings`.
+
+**The table.** `data/lan-titles.v1.json` lists the games that can be played together (first entry: PPSA17221, Minecraft, up to 8 players). A copy is built in; an entry with a mode the launcher does not know is left out. Play Together exists only for a game in the table.
+
+**Hosting.** On the game's page the action row reads Play, Play Together, trophies, "...". Play stays the one primary action; Play Together is a secondary control of the same size, shown only for an unlocked game in the table (a game that is locked, starting or running shows no second button). The party page has a row of the same name with the game's name as its detail. Pressing it starts the game through the ordinary start with `game_start` carrying `host` (`max_members` from the table, `visibility` friends, `party` when the player is in a party); a plain Play carries none. When the net service cannot open the session, the game runs anyway and a toast says why nobody can join ("Nobody can join: Play Together could not start. Your game runs anyway."). A start that the net service does not answer within three seconds runs alone and says so.
+
+**Joining.** One function, one card. An invitation of kind `lan`, a friend of the party who plays in a Play Together session, a friend's Join row and an accepted invitation in the panel all end in `together::join`: the local checks first (signed in, online, online play on, owned, version, toolkit, place, not busy, in the order of the spec's table), then the net service's `check_join`, then `game_start` with `join`. A game that is owned but not unlocked is unlocked first and starts in the session when the unlock is done; a failed unlock drops the join and says so. An invitation of kind `lan` is not a toast and not an invitation row: it is the card "Mira is playing Minecraft. Join?".
+
+**The card.** A glass card at the top centre, on the call card's place and below it while a call rings (12 dp apart), entering with the overlay spring. Left a 56 dp lead (the friend's initial, or a quiet warning glyph), right a headline (semibold 16, three lines at most) and one line under it (14, 70 % white). Under both, the answers on one row, 12 dp apart: the quiet one on the left, the primary one (ink fill) on the right, one primary per card.
+
+| State | Headline | Line | Answers |
+|---|---|---|---|
+| Offer | Mira is playing Minecraft. Join? | 2 of 4 places taken (an invitation: Your game starts in their session) | Not now, **Join** |
+| Signed out | Sign in to play together | Play Together uses your AnyPlay account. | Close, **Sign in** |
+| Offline | You are offline | Play Together needs a connection. Try again in a moment. | **Close** |
+| Online play off | Online play is switched off | Switch it on to play together. | Close, **Switch on** |
+| Not owned | You need Minecraft to join | It is not in your library. Add it, then join again. | **Close** |
+| Wrong version | You need Minecraft 01.044.000; you have 01.008.000 | Both of you need the same version to play together. | **Close** |
+| Wrong toolkit | You need toolkit v0.1.5; you have v0.1.4 | Choose it under Toolkit for This Game, then join again. | **Close** |
+| Full | This game is full | Try again when someone leaves. | **Close** |
+| Busy | Another game is running | Close it, then join. | **Close** |
+| Ended | That session has ended | Ask your friend to start a new one. | **Close** |
+
+A friend who plays the game with no session (their online play is off, or they pressed Play) has no Join row; their page says "Online play is off on Mira's PC" above the actions. "Not now" remembers the offer by its session and declines the invitation; the card does not come back for that session. When the host's session ends while the player's game runs, a toast says "Mira's session ended. Your game keeps running." and the game is left alone.
+
+**Presence.** A friend in a Play Together session reads "Playing Minecraft together (2/4)" in the friends list, on the friend's page and in the party; the player's own session caption reads the same. A session of any other kind keeps the wording it had.
+
+**Strings.** `together_strings.rs`, English and Turkish (the Turkish is unreviewed). Headlines say what is the case; the line under says what to do. The wrong-version headline is the owner's sentence.
+
+**Gallery.** `home-together` (the button, focused), `together-offer`, `together-offer-invitation`, one scene for each blocker (`together-signed-out`, `-offline`, `-online-off`, `-not-owned`, `-wrong-version`, `-wrong-build`, `-full`, `-busy`, `-ended`, `-no-session`), and the panel pages `together-friends`, `together-friend`, `together-friend-nosession`, `together-party`.
 
 ## 18. Phone as controller
 

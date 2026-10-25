@@ -148,6 +148,9 @@ pub struct NetProcess {
     lines: Receiver<Line>,
 }
 
+/// The `X-AnyPlay-Client` value the net service sends for this launcher.
+pub const CLIENT_ID: &str = concat!("launcher/", env!("CARGO_PKG_VERSION"));
+
 impl NetProcess {
     /// Where the net service is: `ANYPLAY_NET`, else next to the launcher's own executable.
     pub fn locate() -> Option<PathBuf> {
@@ -178,6 +181,8 @@ impl NetProcess {
             .append(true)
             .open(log)?;
         let mut command = Process::new(binary);
+        // Who is asking, for the cloud's `min_launcher_version` (network spec/cloud-api.md).
+        command.env("ANYPLAY_CLIENT", CLIENT_ID);
         command
             .arg("--data")
             .arg(data)
@@ -464,10 +469,22 @@ pub enum Notice {
     Dialog(Dialog),
     /// The net service ended.
     Ended,
+    /// The cloud turned this launcher away because it is older than the version named: the
+    /// launcher's update is required.
+    ClientTooOld(String),
     /// The browser sign-in finished: the account is signed in.
     SignedIn,
     /// The browser sign-in ran out of time.
     SignInTimedOut,
+    /// A Play Together session closed, or took the player out, while the game runs.
+    SessionEnded {
+        session: String,
+        title_id: String,
+        title: String,
+        host: Account,
+    },
+    /// Play Together could not open its session: the game started all the same and nobody can join.
+    HostFailed(String),
     /// The leader of a party invited the player.
     PartyInvitation(PartyInvitation),
     /// A new message in a conversation, the newest one the player has not read.
@@ -1470,9 +1487,22 @@ impl Online {
                 self.dialog = Some(dialog.clone());
                 notices.push(Notice::Dialog(dialog));
             }
+            Event::SessionEnded {
+                session,
+                title_id,
+                title,
+                host,
+            } => notices.push(Notice::SessionEnded {
+                session,
+                title_id,
+                title,
+                host,
+            }),
             Event::Notice { code, message } => {
                 tracing::info!("net service: {code}: {message}");
-                if code == "sign_in_timed_out" {
+                if code == "host_failed" {
+                    notices.push(Notice::HostFailed(message));
+                } else if code == "sign_in_timed_out" {
                     notices.push(Notice::SignInTimedOut);
                 } else if code == "voice_device" {
                     notices.push(self.voice_failed(&message));
@@ -1483,6 +1513,7 @@ impl Online {
                     notices.push(Notice::Restricted(restriction));
                 }
             }
+            Event::ClientTooOld { minimum } => notices.push(Notice::ClientTooOld(minimum)),
             Event::Banned { restriction } => {
                 self.restrictions.ban(restriction.clone());
                 notices.push(Notice::Banned(restriction));
@@ -1510,11 +1541,8 @@ impl Online {
                 }
             }
             // The request is in the list the cloud gives; reading it announces what is new.
-            // Not used by the launcher yet (network #61 and #62): ignored, as before they existed.
-            Event::SessionEnded { .. }
-            | Event::Delivered { .. }
-            | Event::Typing { .. }
-            | Event::MessageUpdate { .. } => {}
+            // Not used by the launcher yet (network #61): ignored, as before they existed.
+            Event::Delivered { .. } | Event::Typing { .. } | Event::MessageUpdate { .. } => {}
             Event::MessageRequest { .. } | Event::Conversation { .. } => {
                 self.refresh_conversations();
             }
@@ -1784,6 +1812,21 @@ mod tests {
             restrictions: Vec::new(),
         }));
         assert!(online.restrictions.active(10).is_empty());
+    }
+
+    #[test]
+    fn the_cloud_turning_the_launcher_away_is_a_notice_and_the_client_id_is_a_version() {
+        let mut online = Online::default();
+        let notices = online.apply(event(Event::ClientTooOld {
+            minimum: "0.3.0".into(),
+        }));
+        assert_eq!(notices, [Notice::ClientTooOld("0.3.0".into())]);
+        // The header the net service sends: `launcher/<semver>`, which the cloud's gate reads.
+        let version = CLIENT_ID.strip_prefix("launcher/").unwrap();
+        assert!(
+            anyplay_update_manifest::Version::parse(version).is_some(),
+            "{CLIENT_ID}"
+        );
     }
 
     #[test]
@@ -3067,5 +3110,39 @@ mod tests {
                 numbers: vec![3, 5]
             }]
         );
+    }
+
+    #[test]
+    fn a_session_that_ended_and_a_failed_host_become_notices() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        let notices = online.apply(event(Event::SessionEnded {
+            session: "s1".into(),
+            title_id: "PPSA17221".into(),
+            title: "Minecraft".into(),
+            host: account(2, "Mira"),
+        }));
+        assert_eq!(
+            notices,
+            vec![Notice::SessionEnded {
+                session: "s1".into(),
+                title_id: "PPSA17221".into(),
+                title: "Minecraft".into(),
+                host: account(2, "Mira"),
+            }]
+        );
+        let notices = online.apply(event(Event::Notice {
+            code: "host_failed".into(),
+            message: "the network is not ready".into(),
+        }));
+        assert_eq!(
+            notices,
+            vec![Notice::HostFailed("the network is not ready".into())]
+        );
+        let other = online.apply(event(Event::Notice {
+            code: "something_else".into(),
+            message: "x".into(),
+        }));
+        assert!(other.is_empty());
     }
 }

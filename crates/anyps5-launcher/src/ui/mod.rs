@@ -46,6 +46,7 @@ pub mod input;
 pub mod intro;
 pub mod latency;
 pub mod nudge;
+pub mod pad_info;
 pub mod press;
 pub mod shade;
 pub mod sound;

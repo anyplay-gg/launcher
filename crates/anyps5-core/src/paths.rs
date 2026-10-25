@@ -242,9 +242,14 @@ pub fn store_dir(root: &Path) -> PathBuf {
 
 /// Where the unlocked copy of a game lives: `<root>\.AnyPS5\Games\<name>`.
 pub fn unlocked_copy_dir(root: &Path, title_id: &str, id: &GameId) -> PathBuf {
-    store_dir(root)
-        .join("Games")
-        .join(unlocked_copy_name(title_id, id))
+    copies_dir(root).join(unlocked_copy_name(title_id, id))
+}
+
+/// The folder of all unlocked copies of a store: `<root>\.AnyPS5\Games`. `root` is the folder that
+/// holds the store: the games folder, or the player's unlocked-games location
+/// ([`crate::settings::Preferences::store_root`]).
+pub fn copies_dir(root: &Path) -> PathBuf {
+    store_dir(root).join("Games")
 }
 
 #[cfg(test)]

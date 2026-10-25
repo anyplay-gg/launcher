@@ -317,11 +317,11 @@ fn a_friend_says_what_they_play_without_promising_a_join_and_what_you_share() {
         title: "Ember Drift".into(),
         version: "01.000".into(),
         session: Some(anyps5_core::online::api::SessionRef {
+            kind: Default::default(),
             id: "s".into(),
             joinable: true,
             members: 1,
             max_members: 4,
-            kind: Default::default(),
         }),
     });
     let mut p = page(who(2, "Lumen"));

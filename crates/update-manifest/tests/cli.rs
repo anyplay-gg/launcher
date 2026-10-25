@@ -239,3 +239,64 @@ fn the_appimage_is_an_optional_second_platform_with_its_own_name() {
         .join("AnyPlay-Launcher-0.2.0-x86_64.AppImage.gone");
     assert!(!make(&["--appimage", path(&missing)]).status.success());
 }
+
+#[test]
+fn the_supported_version_file_writes_the_field_and_an_empty_one_leaves_it_out() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = dir.path().join("AnyPlay-Launcher-0.5.0-x64.exe");
+    fs::write(&exe, b"MZ-the-new-launcher").unwrap();
+    let file = dir.path().join("MIN_SUPPORTED_VERSION");
+    let make = |content: &str| {
+        fs::write(&file, content).unwrap();
+        let manifest = dir.path().join("latest.json");
+        let _ = fs::remove_file(&manifest);
+        let out = tool(
+            &[
+                "manifest",
+                "--version",
+                "0.5.0",
+                "--exe",
+                path(&exe),
+                "--out",
+                path(&manifest),
+                "--supported-file",
+                path(&file),
+            ],
+            &[],
+        );
+        (out, fs::read_to_string(&manifest).unwrap_or_default())
+    };
+    let (out, json) = make(
+        "# the oldest launcher that may go online
+0.4.0
+",
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(
+        json.contains("\"min_supported_version\": \"0.4.0\""),
+        "{json}"
+    );
+    // Only comments: the mechanism is off and the manifest is what it always was.
+    let (out, json) = make(
+        "# nothing is retired
+",
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    assert!(!json.contains("min_supported_version"), "{json}");
+    // A version above the release, and a typo, stop the release instead of passing as "off".
+    for bad in [
+        "0.6.0
+",
+        "v0.4.0
+",
+        "latest
+",
+        "0.3.0
+0.4.0
+",
+    ] {
+        let (out, json) = make(bad);
+        assert!(!out.status.success(), "{bad:?}");
+        assert!(json.is_empty(), "nothing is written for {bad:?}");
+    }
+}

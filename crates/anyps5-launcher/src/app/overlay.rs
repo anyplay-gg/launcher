@@ -47,6 +47,9 @@ pub enum Overlay {
     InGame,
     /// The question before the running game is closed (a side panel).
     ConfirmCloseGame,
+    /// "Update required": this version is retired, so the update comes before the online area.
+    /// Offline play stays open (a full-screen panel, docs/DESIGN.md 9.5.1).
+    Required,
 }
 
 impl Overlay {
@@ -65,6 +68,11 @@ impl Overlay {
                 | Overlay::InGame
                 | Overlay::ConfirmCloseGame
         )
+    }
+
+    /// The overlays of the online area: closed while the launcher's update is required.
+    pub fn is_online(self) -> bool {
+        matches!(self, Overlay::Friends | Overlay::Profile | Overlay::Compare)
     }
 
     /// Number of categories of a two-level panel (only settings has more than one).
