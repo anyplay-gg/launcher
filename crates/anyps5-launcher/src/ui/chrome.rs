@@ -96,7 +96,13 @@ pub fn paint_tile(painter: &Painter, rect: Rect, style: &TileStyle) {
         return;
     }
     if style.ring {
-        components::paint_focus_glow(painter, rect, r, size::FOCUS_RING_LARGE, style.focus * alpha);
+        components::paint_focus_glow(
+            painter,
+            rect,
+            r,
+            size::FOCUS_RING_LARGE,
+            style.focus * alpha,
+        );
     }
     // Focus is the full ring; the pointer alone draws it at 45 %.
     let ring_t = (if style.ring { style.focus } else { 0.0 }).max(0.45 * style.hover);
