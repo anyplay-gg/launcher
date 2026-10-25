@@ -355,6 +355,7 @@ impl Input {
         let events = ctx.input(|i| i.events.clone());
         for event in events {
             match event {
+                Event::PointerButton { .. } => self.pad_in_use = false,
                 Event::PointerMoved(_) => {
                     set_device(ctx, Device::Keyboard);
                     self.pad_in_use = false;
@@ -405,6 +406,7 @@ impl Input {
                     }
                 }
                 Event::MouseWheel { unit, delta, .. } => {
+                    self.pad_in_use = false;
                     let dominant = if delta.x.abs() > delta.y.abs() {
                         delta.x
                     } else {

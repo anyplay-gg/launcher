@@ -161,6 +161,10 @@ impl Shell {
     pub fn begin_frame(&mut self, ctx: &Context) -> FrameInput {
         self.scale = theme::sync_scale(ctx);
         text::set_pixels_per_point(ctx.pixels_per_point());
+        // The first use of the pad starts the vibration thread, so its first pulse is not late.
+        if self.input.pad_in_use {
+            self.haptics.warm();
+        }
         // A game that takes the pad takes the motors with it, mid-pulse too.
         let has_pad = self.home.accepts_pad();
         if self.had_pad && !has_pad {
@@ -404,5 +408,51 @@ mod shell_tests {
         shell.input.last_direction = Some(input::Command::Left);
         shell.play(Cue::Bump);
         assert!(shell.nudge.is_settled());
+    }
+
+    use self::haptics::Asked;
+
+    fn pad_shell(ctx: &Context) -> Shell {
+        let mut shell = Shell::for_test(ctx, Theme::Cosmic);
+        shell.input.pad_in_use = true;
+        shell
+    }
+
+    #[test]
+    fn the_hand_answers_only_a_pad_that_the_launcher_has() {
+        let ctx = Context::default();
+        // A pad in use: select vibrates.
+        let mut shell = pad_shell(&ctx);
+        shell.play(Cue::Select);
+        assert_eq!(shell.haptics.asked, [Asked::Play(Cue::Select)]);
+        // The keyboard or the mouse is in use: nothing, even with a pad plugged in.
+        let mut shell = Shell::for_test(&ctx, Theme::Cosmic);
+        shell.play(Cue::Select);
+        assert!(shell.haptics.asked.is_empty());
+        // A game has the pad: nothing.
+        let mut shell = pad_shell(&ctx);
+        shell.had_pad = false;
+        shell.play(Cue::Error);
+        assert!(shell.haptics.asked.is_empty());
+        // Moving the focus never vibrates.
+        let mut shell = pad_shell(&ctx);
+        shell.play(Cue::Move);
+        assert!(shell.haptics.asked.is_empty());
+    }
+
+    #[test]
+    fn off_lets_go_at_once_and_a_change_is_felt() {
+        let ctx = Context::default();
+        let mut shell = pad_shell(&ctx);
+        shell.set_vibration(haptics::Level::Off);
+        assert_eq!(shell.haptics.asked, [Asked::Stop]);
+        shell.play(Cue::Select);
+        assert_eq!(shell.haptics.asked, [Asked::Stop], "off stays off");
+        // Back on: the hand gets a sample of the new strength.
+        shell.set_vibration(haptics::Level::Light);
+        assert_eq!(shell.haptics.asked, [Asked::Stop, Asked::Play(Cue::Select)]);
+        // The same value again changes nothing.
+        shell.set_vibration(haptics::Level::Light);
+        assert_eq!(shell.haptics.asked.len(), 2);
     }
 }
