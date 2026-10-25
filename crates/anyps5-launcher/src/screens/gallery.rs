@@ -21,7 +21,7 @@
 //!                           online-muted|online-restriction|online-paused|online-banned|
 //!                           profile-own|profile-other|profile-minimal|profile-minimal-other|
 //!                           feed|feed-reaction|feed-empty|feed-loading|feed-error
-//!                           incoming-call|incoming-call-discord|in-call|in-call-discord|calling|
+//!                           incoming-call|incoming-call-discord|in-call|in-call-open|in-call-discord|calling|
 //!                           missed-call|party-discord
 //!                 [--screenshot=out.png] [--size=WxH] [--tr]
 //! ```
@@ -224,6 +224,9 @@ pub enum OnlineLook {
     InCall,
     /// On a call while the voice is on Discord, the party has a link.
     InCallDiscord,
+    /// On a call with the microphone open and the player on the default Push to Talk: the call
+    /// talks with Voice Activity and the strip says so.
+    InCallOpen,
     /// Waiting for a friend to answer.
     Calling,
     /// The friends list with a missed call.
@@ -387,6 +390,7 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "incoming-call-discord" => ScreenPage::Online(OnlineLook::IncomingCallDiscord),
         "in-call" => ScreenPage::Online(OnlineLook::InCall),
         "in-call-discord" => ScreenPage::Online(OnlineLook::InCallDiscord),
+        "in-call-open" => ScreenPage::Online(OnlineLook::InCallOpen),
         "calling" => ScreenPage::Online(OnlineLook::Calling),
         "missed-call" => ScreenPage::Online(OnlineLook::MissedCall),
         "party-discord" => ScreenPage::Online(OnlineLook::PartyDiscord),
@@ -608,7 +612,7 @@ fn sample_calls(state: &mut anyps5_core::online::Online, look: OnlineLook) {
                 call: true,
             });
         }
-        OnlineLook::InCall | OnlineLook::InCallDiscord => {
+        OnlineLook::InCall | OnlineLook::InCallDiscord | OnlineLook::InCallOpen => {
             state.calls.active = true;
             if look == OnlineLook::InCall {
                 state.voice.muted = true;
@@ -652,6 +656,8 @@ fn sample_calls(state: &mut anyps5_core::online::Online, look: OnlineLook) {
         }
         _ => {}
     }
+    // The looks set the call by hand; the voice mode follows it as it does for a real one.
+    state.sync_voice_mode();
 }
 
 /// Party voice over the invented party: on for the looks that show it, with Lumen speaking.
@@ -1400,7 +1406,10 @@ impl ScreenGallery {
         }
         if matches!(
             look,
-            OnlineLook::InCall | OnlineLook::InCallDiscord | OnlineLook::Calling
+            OnlineLook::InCall
+                | OnlineLook::InCallDiscord
+                | OnlineLook::InCallOpen
+                | OnlineLook::Calling
         ) && let Some(strip) = calls::strip_data(&self.online)
         {
             calls::call_strip(ctx, &strip, language, 1.0, true);
@@ -1700,6 +1709,7 @@ impl ScreenGallery {
                         | OnlineLook::IncomingCallDiscord
                         | OnlineLook::InCall
                         | OnlineLook::InCallDiscord
+                        | OnlineLook::InCallOpen
                         | OnlineLook::Calling
                 ) {
                     return;

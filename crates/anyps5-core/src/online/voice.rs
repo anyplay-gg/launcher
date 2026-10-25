@@ -14,6 +14,7 @@ use anyplay_control::{Command, DeviceKind, VoiceLevel, VoiceMode, VoicePeer, Voi
 use serde::{Deserialize, Serialize};
 
 use super::api::AccountId;
+use super::calls::CallState;
 use super::{Notice, Online, Purpose};
 
 /// How loud a member is heard, in percent of what they send: the net service takes 0 to 200.
@@ -56,6 +57,11 @@ pub struct VoicePrefs {
     pub provider: VoiceProvider,
     #[serde(default)]
     pub mode: VoiceMode,
+    /// The player picked `mode` themselves. Until then it is the default, not a choice, and a
+    /// call talks with Voice Activity instead of asking for a key; an explicit Push to Talk is
+    /// kept in calls too.
+    #[serde(default)]
+    pub mode_chosen: bool,
     /// The microphone by name; `None` is the system's default.
     #[serde(default)]
     pub input: Option<String>,
@@ -200,6 +206,10 @@ pub struct Voice {
     pub deafened: bool,
     /// The last push-to-talk state sent to the service.
     talking: bool,
+    /// The player is calling or on a call (not kept: it follows the party).
+    in_call: bool,
+    /// The mode the service was last told. A new service starts with the default.
+    sent_mode: VoiceMode,
 }
 
 impl Voice {
@@ -208,7 +218,10 @@ impl Voice {
     }
 
     /// Takes the choices from the preferences (at start).
-    pub fn load(&mut self, prefs: VoicePrefs) {
+    pub fn load(&mut self, mut prefs: VoicePrefs) {
+        // Preferences from before the choice was tracked: a mode other than the default can
+        // only have been picked.
+        prefs.mode_chosen |= prefs.mode != VoiceMode::default();
         self.prefs = prefs;
         self.changed = false;
     }
@@ -240,8 +253,24 @@ impl Voice {
         self.prefs.enabled && self.prefs.provider == VoiceProvider::AnyPlay
     }
 
+    /// The mode the player set (or the default). See [`Voice::mode_in_use`].
     pub fn mode(&self) -> VoiceMode {
         self.prefs.mode
+    }
+
+    /// The mode the microphone works in right now. A call uses Voice Activity so nobody has to
+    /// hold a key to talk, unless the player chose Push to Talk themselves.
+    pub fn mode_in_use(&self) -> VoiceMode {
+        if self.in_call && !(self.prefs.mode == VoiceMode::PushToTalk && self.prefs.mode_chosen) {
+            VoiceMode::VoiceActivity
+        } else {
+            self.prefs.mode
+        }
+    }
+
+    /// True while a call talks in a mode other than the one the player set.
+    pub fn call_overrides_mode(&self) -> bool {
+        self.mode_in_use() != self.prefs.mode
     }
 
     pub fn status(&self, in_party: bool) -> Status {
@@ -267,7 +296,7 @@ impl Voice {
         if !matches!(self.status(in_party), Status::On | Status::Connecting) {
             return Mic::Off;
         }
-        match (self.prefs.mode, self.me.speaking) {
+        match (self.mode_in_use(), self.me.speaking) {
             (_, true) => Mic::Talking,
             (VoiceMode::PushToTalk, false) if self.talking => Mic::Open,
             (VoiceMode::PushToTalk, false) => Mic::Muted,
@@ -317,9 +346,8 @@ impl Online {
     /// Sends every choice to a service that just started.
     pub(super) fn voice_hello(&mut self) {
         let prefs = self.voice.prefs.clone();
-        if prefs.mode != VoiceMode::default() {
-            self.send(Purpose::Voice, Command::VoiceMode { mode: prefs.mode });
-        }
+        self.voice.in_call = self.call_state() != CallState::Idle;
+        self.sync_voice_mode();
         for (kind, name) in [
             (DeviceKind::Input, prefs.input.clone()),
             (DeviceKind::Output, prefs.output.clone()),
@@ -395,12 +423,25 @@ impl Online {
         self.send(Purpose::Voice, Command::Voice { on });
     }
 
+    /// The player picks a mode. From now on it is a choice, even when it is the default.
     pub fn set_voice_mode(&mut self, mode: VoiceMode) {
-        if self.voice.prefs.mode == mode {
+        if self.voice.prefs.mode != mode || !self.voice.prefs.mode_chosen {
+            self.voice.prefs.mode = mode;
+            self.voice.prefs.mode_chosen = true;
+            self.voice.changed = true;
+        }
+        self.sync_voice_mode();
+    }
+
+    /// Tells the service the mode in use, when that is not what it was told last. Runs after
+    /// anything that can change it: the player's choice, a call starting or ending.
+    pub fn sync_voice_mode(&mut self) {
+        self.voice.in_call = self.call_state() != CallState::Idle;
+        let mode = self.voice.mode_in_use();
+        if mode == self.voice.sent_mode {
             return;
         }
-        self.voice.prefs.mode = mode;
-        self.voice.changed = true;
+        self.voice.sent_mode = mode;
         if mode == VoiceMode::VoiceActivity {
             // A key that is down means nothing in this mode: the service ignores it, and the next
             // switch back starts with the key up.
@@ -466,7 +507,7 @@ impl Online {
     /// or in voice-activity mode, sends nothing.
     pub fn set_talking(&mut self, held: bool) {
         let wanted =
-            held && self.voice.prefs.enabled && self.voice.prefs.mode == VoiceMode::PushToTalk;
+            held && self.voice.prefs.enabled && self.voice.mode_in_use() == VoiceMode::PushToTalk;
         if wanted != self.voice.talking {
             self.voice.talking = wanted;
             self.send(Purpose::PushToTalk, Command::PushToTalk { talking: wanted });
@@ -675,6 +716,7 @@ mod tests {
         online.voice.load(VoicePrefs {
             enabled: true,
             mode: VoiceMode::VoiceActivity,
+            mode_chosen: true,
             input: Some("Headset".into()),
             output: None,
             key: Some("F".into()),
@@ -810,6 +852,7 @@ mod tests {
         let prefs = VoicePrefs {
             enabled: true,
             mode: VoiceMode::VoiceActivity,
+            mode_chosen: true,
             input: Some("Mic".into()),
             output: None,
             key: Some("F".into()),

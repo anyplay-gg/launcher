@@ -13,7 +13,7 @@ use crate::controls::{Changes, Controls, InputTuning};
 
 /// Where the files live; `index.json` and the layouts' paths are relative to it.
 pub const BASE_URL: &str =
-    "https://raw.githubusercontent.com/anyplay-gg/launcher/main/community/layouts";
+    "https://raw.githubusercontent.com/anyplaynet/launcher/main/community/layouts";
 
 /// The index understood by this launcher. A higher number is a format it does not know.
 pub const INDEX_VERSION: u32 = 1;

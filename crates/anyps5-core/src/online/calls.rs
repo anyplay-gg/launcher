@@ -119,6 +119,7 @@ impl Online {
                 account: Some(friend.id),
             },
         );
+        self.sync_voice_mode();
         true
     }
 
@@ -132,6 +133,7 @@ impl Online {
             .map(|i| i.from.id);
         self.use_voice_for_call();
         self.calls.active = true;
+        self.sync_voice_mode();
         if let Some(from) = from {
             self.calls.forget_missed(from);
         }
@@ -166,6 +168,7 @@ impl Online {
     pub fn hang_up(&mut self) {
         self.calls.ringing = None;
         self.calls.active = false;
+        self.sync_voice_mode();
         self.send(Purpose::PartyLeave, Command::PartyLeave);
     }
 
@@ -289,6 +292,7 @@ impl Online {
 mod tests {
     use super::*;
     use crate::online::{Event, Line, Output, SignedIn, control};
+    use anyplay_control::VoiceMode;
 
     fn event(event: Event) -> Line {
         Line::Output(Output::Event(event))
@@ -519,5 +523,120 @@ mod tests {
         assert_eq!(sent.len(), 2);
         assert!(sent[0].contains("\"do\":\"mic_mute\""));
         assert!(sent[1].contains("\"do\":\"deafen\""));
+    }
+
+    fn mode_commands(online: &mut Online) -> Vec<VoiceMode> {
+        online
+            .take_outbox()
+            .iter()
+            .filter_map(|line| match control::parse_command(line) {
+                Ok((_, Command::VoiceMode { mode })) => Some(mode),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn call_connects(online: &mut Online) {
+        online.start_call(&account(2, "Lumen"));
+        online.apply(event(Event::Party {
+            party: Some(party(&[(1, "Alec"), (2, "Lumen")], 1)),
+        }));
+    }
+
+    #[test]
+    fn a_call_talks_with_voice_activity_while_it_lasts() {
+        let mut online = signed_in();
+        assert_eq!(online.voice.mode_in_use(), VoiceMode::PushToTalk);
+        online.start_call(&account(2, "Lumen"));
+        assert_eq!(mode_commands(&mut online), [VoiceMode::VoiceActivity]);
+        assert!(online.voice.call_overrides_mode());
+        // The setting itself is untouched, and the call lasts: no second command.
+        assert_eq!(online.voice.mode(), VoiceMode::PushToTalk);
+        online.apply(event(Event::Party {
+            party: Some(party(&[(1, "Alec"), (2, "Lumen")], 1)),
+        }));
+        assert!(mode_commands(&mut online).is_empty());
+        assert_eq!(online.voice.mic(true), crate::online::Mic::Listening);
+        // The party goes away with the call: the player's setting is back.
+        online.apply(event(Event::Party { party: None }));
+        assert_eq!(mode_commands(&mut online), [VoiceMode::PushToTalk]);
+        assert!(!online.voice.call_overrides_mode());
+    }
+
+    #[test]
+    fn a_call_that_is_hung_up_restores_the_setting() {
+        let mut online = signed_in();
+        call_connects(&mut online);
+        online.take_outbox();
+        online.hang_up();
+        assert_eq!(mode_commands(&mut online), [VoiceMode::PushToTalk]);
+    }
+
+    #[test]
+    fn an_explicit_push_to_talk_is_kept_in_calls() {
+        let mut online = signed_in();
+        online.set_voice_mode(VoiceMode::PushToTalk);
+        assert!(online.voice.prefs().mode_chosen);
+        online.take_outbox();
+        call_connects(&mut online);
+        assert!(mode_commands(&mut online).is_empty());
+        assert_eq!(online.voice.mode_in_use(), VoiceMode::PushToTalk);
+        assert!(!online.voice.call_overrides_mode());
+    }
+
+    #[test]
+    fn a_chosen_voice_activity_stays_in_calls_and_the_party_after() {
+        let mut online = signed_in();
+        online.set_voice_mode(VoiceMode::VoiceActivity);
+        online.take_outbox();
+        call_connects(&mut online);
+        assert!(mode_commands(&mut online).is_empty());
+        online.apply(event(Event::Party { party: None }));
+        assert!(mode_commands(&mut online).is_empty());
+    }
+
+    #[test]
+    fn an_ordinary_party_keeps_the_players_setting() {
+        let mut online = signed_in();
+        online.apply(event(Event::Party {
+            party: Some(party(&[(1, "Alec"), (2, "Lumen")], 1)),
+        }));
+        assert!(mode_commands(&mut online).is_empty());
+        assert!(!online.voice.call_overrides_mode());
+    }
+
+    #[test]
+    fn a_new_service_hears_the_mode_in_use() {
+        let mut online = signed_in();
+        call_connects(&mut online);
+        online.take_outbox();
+        online.voice.reset();
+        online.voice_hello();
+        assert_eq!(mode_commands(&mut online), [VoiceMode::VoiceActivity]);
+    }
+
+    #[test]
+    fn a_key_held_when_the_call_starts_is_let_go() {
+        let mut online = signed_in();
+        online.set_voice(true);
+        online.set_talking(true);
+        online.take_outbox();
+        online.start_call(&account(2, "Lumen"));
+        let sent = online.take_outbox();
+        assert!(sent.iter().any(|l| l.contains("\"talking\":false")));
+        assert!(!online.is_talking());
+    }
+
+    #[test]
+    fn preferences_from_before_the_choice_was_tracked_keep_a_picked_mode() {
+        let mut voice = crate::online::Voice::default();
+        voice.load(crate::online::VoicePrefs {
+            mode: VoiceMode::VoiceActivity,
+            ..Default::default()
+        });
+        assert!(voice.prefs().mode_chosen);
+        let old: crate::online::VoicePrefs =
+            serde_json::from_str(r#"{"enabled":true,"mode":"push_to_talk"}"#).unwrap();
+        assert!(!old.mode_chosen);
     }
 }

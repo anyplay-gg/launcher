@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Writes the licence file of a release: the licences of every third-party crate in the launcher
-# and in the net service it carries (about.toml here and in anyplay-gg/network).
+# and in the net service it carries (about.toml here and in anyplaynet/network).
 #
 #   notices.sh <output file>
 #
-# Run it from a launcher checkout with anyplay-gg/network beside it. cargo-about is a pinned
+# Run it from a launcher checkout with anyplaynet/network beside it. cargo-about is a pinned
 # download, checked against its SHA-256; to update it, change both lines together. CARGO_ABOUT
 # names a cargo-about binary to use instead, for a machine that is not x86-64 Linux.
 set -euo pipefail

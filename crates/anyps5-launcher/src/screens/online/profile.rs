@@ -74,6 +74,7 @@ fn provider_name(link: &ProfileLink, language: Language) -> String {
 fn provider_icon(link: &ProfileLink) -> Icon {
     match link.provider.as_str() {
         "discord" => Icon::DISCORD_LOGO,
+        "steam" => Icon::STEAM_LOGO,
         _ => Icon::LINK,
     }
 }
@@ -569,6 +570,6 @@ mod tests {
         assert_eq!(provider_name(&link("steam"), Language::English), "Steam");
         assert_eq!(provider_name(&link("gog"), Language::English), "gog");
         assert_eq!(provider_icon(&link("discord")), Icon::DISCORD_LOGO);
-        assert_eq!(provider_icon(&link("steam")), Icon::LINK);
+        assert_eq!(provider_icon(&link("steam")), Icon::STEAM_LOGO);
     }
 }

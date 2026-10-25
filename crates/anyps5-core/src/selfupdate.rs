@@ -64,7 +64,7 @@ use crate::paths::AppPaths;
 use crate::toolkit::{self, Asset, ToolkitError};
 
 /// Where the releases live.
-pub const REPOSITORY: &str = "anyplay-gg/launcher";
+pub const REPOSITORY: &str = "anyplaynet/launcher";
 
 const SUMS_NAME: &str = "SHA256SUMS.txt";
 /// The signed manifest of a release and its signature.

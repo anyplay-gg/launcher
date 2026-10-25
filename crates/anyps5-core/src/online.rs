@@ -1,6 +1,6 @@
 //! The launcher's side of the AnyPlay network.
 //!
-//! The net service (`anyplay-net`, from anyplay-gg/network) is a program of its own that holds the
+//! The net service (`anyplay-net`, from anyplaynet/network) is a program of its own that holds the
 //! account, talks to the cloud and carries game traffic. The launcher starts it, speaks the
 //! control protocol with it over its standard streams (`spec/control-protocol.md` there) and shows
 //! what it reports. Two parts:
@@ -591,6 +591,13 @@ impl Online {
 
     /// Applies one line of the service's output.
     pub fn apply(&mut self, line: Line) -> Vec<Notice> {
+        let notices = self.apply_line(line);
+        // A party that began or ended a call changes the voice mode the call talks in.
+        self.sync_voice_mode();
+        notices
+    }
+
+    fn apply_line(&mut self, line: Line) -> Vec<Notice> {
         match line {
             Line::Ended => {
                 let mut notices = self.stopped(Status::Ended("the net service ended".into()));
@@ -709,9 +716,15 @@ impl Online {
             }
             Purpose::Feed { before } => {
                 if let Ok(page) = serde_json::from_value::<api::Feed>(value.clone()) {
+                    // A page asked for before a reaction was pressed may not know it yet: what
+                    // is on its way stays as shown until the cloud answers or refuses it.
+                    let pending = self.pending_reactions();
                     match before {
                         Some(before) => self.feed.merge_older(*before, page),
                         None => self.feed.merge_newest(page),
+                    }
+                    for (item, shown) in pending {
+                        self.feed.set_reactions(item, shown);
                     }
                 }
             }
@@ -1091,6 +1104,25 @@ impl Online {
     /// True while a page of the feed is on its way.
     pub fn feed_loading(&self) -> bool {
         self.is_waiting(|p| matches!(p, Purpose::Feed { .. }))
+    }
+
+    /// What the items with a reaction on its way show now (the optimistic state).
+    fn pending_reactions(&self) -> Vec<(u64, api::Reactions)> {
+        self.waiting
+            .values()
+            .filter_map(|purpose| match purpose {
+                Purpose::React { item, .. } => self.feed.item(*item).map(|held| {
+                    (
+                        *item,
+                        api::Reactions {
+                            reactions: held.reactions,
+                            mine: held.mine,
+                        },
+                    )
+                }),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Sets the player's reaction to a feed item and shows it at once; the cloud's answer, or its
@@ -1726,6 +1758,38 @@ mod tests {
                 },
             }
         );
+    }
+
+    #[test]
+    fn the_trophy_choice_sends_every_other_part_unchanged() {
+        use api::Audience::{Everyone, Friends, Nobody};
+        let mut online = Online::default();
+        signed_in(&mut online);
+        online.take_outbox();
+        // Every part differs, so a part that is dropped or reset to the default shows.
+        let known = api::Privacy {
+            trophies: Friends,
+            about: Everyone,
+            favourites: Nobody,
+            avatar: Everyone,
+            playtime: Nobody,
+            feed: Nobody,
+        };
+        answer(&mut online, 1, known);
+        online.set_trophy_audience(Everyone);
+        let lines = online.take_outbox();
+        let (_, command) = control::parse_command(&lines[0]).unwrap();
+        assert_eq!(
+            command,
+            Command::SetPrivacy {
+                privacy: api::Privacy {
+                    trophies: Everyone,
+                    ..known
+                },
+            }
+        );
+        assert!(lines[0].contains("\"feed\":\"nobody\""), "{}", lines[0]);
+        assert_eq!(online.privacy.map(|p| p.feed), Some(Nobody));
     }
 
     #[test]
@@ -2392,6 +2456,53 @@ mod tests {
         refuse_last(&mut online, Failure::new("rate_limited", "x"));
         assert_eq!(online.feed.item(2).unwrap().reactions.gg, 0);
         assert_eq!(online.feed.item(2).unwrap().mine, None);
+    }
+
+    #[test]
+    fn a_refresh_keeps_a_reaction_that_is_still_on_its_way() {
+        let mut online = with_feed();
+        online.react(2, Some(api::Reaction::Gg));
+        online.request_feed();
+        // The page was cut before the cloud heard the reaction.
+        answer_last(&mut online, feed_page(&[3, 2, 1], Some(1)));
+        let shown = online.feed.item(2).unwrap();
+        assert_eq!(shown.mine, Some(api::Reaction::Gg));
+        assert_eq!(shown.reactions.gg, 1);
+        // A page of older items does the same.
+        online.request_older_feed();
+        answer_last(&mut online, feed_page(&[2, 1, 0], None));
+        assert_eq!(online.feed.item(2).unwrap().mine, Some(api::Reaction::Gg));
+        // An error rolls it back, nothing else does.
+        let id = online
+            .waiting
+            .iter()
+            .find_map(|(id, p)| matches!(p, Purpose::React { .. }).then_some(*id))
+            .unwrap();
+        refusal(&mut online, id, Failure::new("rate_limited", "x"));
+        assert_eq!(online.feed.item(2).unwrap().mine, None);
+        assert_eq!(online.feed.item(2).unwrap().reactions.gg, 0);
+    }
+
+    #[test]
+    fn a_refresh_leaves_settled_reactions_to_the_cloud() {
+        let mut online = with_feed();
+        online.react(2, Some(api::Reaction::Gg));
+        answer_last(
+            &mut online,
+            api::Reactions {
+                reactions: api::ReactionCounts {
+                    gg: 1,
+                    ..api::ReactionCounts::default()
+                },
+                mine: Some(api::Reaction::Gg),
+            },
+        );
+        online.request_feed();
+        let mut page = feed_page(&[3, 2, 1], Some(1));
+        page.items[1].reactions.gg = 4;
+        page.items[1].mine = Some(api::Reaction::Gg);
+        answer_last(&mut online, page);
+        assert_eq!(online.feed.item(2).unwrap().reactions.gg, 4);
     }
 
     #[test]
