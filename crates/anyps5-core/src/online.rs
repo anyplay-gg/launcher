@@ -1255,6 +1255,8 @@ impl Online {
                     self.request_feed();
                 }
             }
+            // The Discord Social SDK seam (network phase 0): nothing of it is used here yet.
+            Event::Discord(_) => {}
             Event::Unknown => {}
         }
         notices
