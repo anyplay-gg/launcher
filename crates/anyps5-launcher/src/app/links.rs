@@ -122,6 +122,7 @@ impl LauncherApp {
             self.show_link(link);
         }
         poll_join(&mut self.links.join, &mut self.model);
+        crate::app::online::poll_onboarding_sign_in(&mut self.model);
     }
 
     /// Settings need the first-run setup done; the others also need the library to be read.

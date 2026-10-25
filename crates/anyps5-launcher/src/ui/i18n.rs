@@ -74,6 +74,9 @@ impl Language {
         {
             return text;
         }
+        if let Some(text) = ours(self, key) {
+            return text;
+        }
         match self {
             Language::Turkish => key.turkish(),
             Language::English => key.english(),
@@ -94,6 +97,38 @@ impl Language {
     }
 }
 
+/// Strings AnyPlay words its own way, in place of the generated table's: they speak of the
+/// player's games and game dumps, never of a platform's name.
+const fn ours(language: Language, key: Key) -> Option<&'static str> {
+    Some(match (language, key) {
+        (Language::English, Key::WelcomeSubtitle) => {
+            "Play your games on your PC, and with your friends. A few quick steps first."
+        }
+        (Language::English, Key::ChooseFolderSubtitle) => {
+            "Choose the folder that holds your game dumps. Subfolders are scanned too, and new games show up on their own."
+        }
+        (Language::English, Key::EmptyLibraryText) => {
+            "Put game dumps in your games folder and they show up here on their own."
+        }
+        (Language::English, Key::AboutText) => {
+            "AnyPlay Launcher runs your games on Windows with AnyPS5."
+        }
+        (Language::Turkish, Key::WelcomeSubtitle) => {
+            "Oyunlarını PC'nde ve arkadaşlarınla oyna. Önce birkaç kısa adım."
+        }
+        (Language::Turkish, Key::ChooseFolderSubtitle) => {
+            "Oyun dump'larının olduğu klasörü seç. Alt klasörleri de tararım, yeni oyunları kendim bulurum."
+        }
+        (Language::Turkish, Key::EmptyLibraryText) => {
+            "Oyun klasörüne oyun dump'larını koy, burada kendiliğinden görünsünler."
+        }
+        (Language::Turkish, Key::AboutText) => {
+            "AnyPlay Launcher oyunlarını AnyPS5 ile Windows'ta çalıştırır."
+        }
+        _ => return None,
+    })
+}
+
 /// The few strings that name the system. The table is generated with Windows in them; on every
 /// other system these take their place.
 const fn elsewhere(language: Language, key: Key) -> Option<&'static str> {
@@ -105,7 +140,7 @@ const fn elsewhere(language: Language, key: Key) -> Option<&'static str> {
             (Language::English, Key::StepRelink) => Some("Converting for macOS"),
             (Language::English, Key::ShowInFinder) => Some("Show in Finder"),
             (Language::English, Key::AboutText) => {
-                Some("AnyPlay Launcher runs PS5 games on macOS with AnyPS5, Rosetta and MoltenVK.")
+                Some("AnyPlay Launcher runs your games on macOS with AnyPS5, Rosetta and MoltenVK.")
             }
             (Language::Turkish, Key::StartingText) => Some(
                 "Oyun açılıyor, lütfen bekle. İlk açılış, Rosetta oyunu çevirirken ve gölgelendiriciler derlenirken birkaç dakika sürebilir.",
@@ -113,7 +148,7 @@ const fn elsewhere(language: Language, key: Key) -> Option<&'static str> {
             (Language::Turkish, Key::StepRelink) => Some("macOS için çevriliyor"),
             (Language::Turkish, Key::ShowInFinder) => Some("Finder’da göster"),
             (Language::Turkish, Key::AboutText) => Some(
-                "AnyPlay Launcher, PS5 oyunlarını AnyPS5, Rosetta ve MoltenVK ile macOS'ta çalıştırır.",
+                "AnyPlay Launcher oyunlarını AnyPS5, Rosetta ve MoltenVK ile macOS'ta çalıştırır.",
             ),
             _ => None,
         };
@@ -125,7 +160,7 @@ const fn elsewhere(language: Language, key: Key) -> Option<&'static str> {
         (Language::English, Key::StepRelink) => "Converting for Linux",
         (Language::English, Key::ShowInFinder) => "Show in file manager",
         (Language::English, Key::AboutText) => {
-            "AnyPlay Launcher runs PS5 games natively on Linux with AnyPS5."
+            "AnyPlay Launcher runs your games on Linux with AnyPS5."
         }
         (Language::Turkish, Key::StartingText) => {
             "Oyun açılıyor, lütfen bekle. İlk açılış, oyun Linux için hazırlanırken birkaç dakika sürebilir."
@@ -133,7 +168,7 @@ const fn elsewhere(language: Language, key: Key) -> Option<&'static str> {
         (Language::Turkish, Key::StepRelink) => "Linux için çevriliyor",
         (Language::Turkish, Key::ShowInFinder) => "Dosya yöneticisinde göster",
         (Language::Turkish, Key::AboutText) => {
-            "AnyPlay Launcher, PS5 oyunlarını AnyPS5 ile Linux'ta yerel olarak çalıştırır."
+            "AnyPlay Launcher oyunlarını AnyPS5 ile Linux'ta çalıştırır."
         }
         _ => return None,
     })
@@ -287,7 +322,7 @@ mod tests {
     fn windows_replacements_are_applied() {
         assert_eq!(
             Language::English.text(Key::WelcomeSubtitle),
-            "Play PS5 games on your PC. Let's set a few things up first."
+            "Play your games on your PC, and with your friends. A few quick steps first."
         );
         assert_eq!(
             Language::English.text(Key::StepRelink),
@@ -303,7 +338,7 @@ mod tests {
         );
         assert_eq!(
             Language::English.text(Key::AboutText),
-            "AnyPlay Launcher runs PS5 games natively on Windows with AnyPS5."
+            "AnyPlay Launcher runs your games on Windows with AnyPS5."
         );
     }
 
@@ -328,6 +363,20 @@ mod tests {
                         key.name()
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn no_visible_string_names_the_platform() {
+        for key in Key::ALL {
+            for language in Language::ALL {
+                let text = language.text(key).replace("AnyPS5", "");
+                assert!(
+                    !text.contains("PS5") && !text.contains("PlayStation"),
+                    "{} ({language:?}) names the platform: {text}",
+                    key.name()
+                );
             }
         }
     }
