@@ -275,3 +275,21 @@ _Avoid_: Network config, token (alone)
 The setting that has a game write its observation log, the record of what it asks the network for, to `Logs\<TITLEID>-network.jsonl`. Nothing of it leaves the PC.
 _Avoid_: Network log, trace, capture
 
+
+### Phone as controller
+
+**Phone server**:
+The part of the launcher that a phone app talks to over the home network, started only when the player turns Phone as Controller on. It lists the library, starts games and relays the pad. It is not part of the online network and never touches the internet.
+_Avoid_: Remote, remote play (that streams a picture; this does not)
+
+**Paired phone**:
+A phone the player allowed once by comparing a four-digit code on both screens. The launcher keeps its name and a secret key, and welcomes it without a question afterwards. At most eight; the player can remove each.
+_Avoid_: Trusted device, registered phone
+
+**Virtual controller**:
+The controller the operating system sees while a paired phone plays: ViGEmBus on Windows, uinput on Linux. Games read it like a plugged-in pad. It exists only while a game starts or runs.
+_Avoid_: Fake pad, emulated controller
+
+**ViGEmBus**:
+The Windows driver that makes a virtual controller possible. The launcher explains it and links its official download; it never installs it.
+_Avoid_: Driver (alone, there are others)

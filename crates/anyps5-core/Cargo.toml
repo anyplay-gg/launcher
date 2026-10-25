@@ -24,6 +24,12 @@ zip.workspace = true
 anyplay-update-manifest = { path = "../update-manifest" }
 flate2 = "1"
 oozextract = "0.5"
+tungstenite = "0.30"
+mdns-sd = "0.21"
+socket2 = "0.6"
+getrandom = "0.4"
+base64 = "0.22"
+if-addrs = "0.15"
 
 [build-dependencies]
 # build.rs parses data/update-keys.txt with the same parser the launcher uses at run time.
@@ -38,6 +44,7 @@ core-graphics = "0.23"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSRunningApplication", "libc"] }
 
 [target.'cfg(windows)'.dependencies]
+vigem-client = { version = "0.1", features = ["unstable_xtarget_notification"] }
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",

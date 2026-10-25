@@ -50,6 +50,8 @@ pub enum SettingsPage {
     Library,
     Language,
     Behavior,
+    /// Phone as Controller.
+    Phone,
     Toolkit,
     Advanced,
     About,
@@ -62,6 +64,7 @@ impl SettingsPage {
             "library" => SettingsPage::Library,
             "language" => SettingsPage::Language,
             "behavior" | "behaviour" => SettingsPage::Behavior,
+            "phone" => SettingsPage::Phone,
             "toolkit" => SettingsPage::Toolkit,
             "advanced" => SettingsPage::Advanced,
             "about" => SettingsPage::About,

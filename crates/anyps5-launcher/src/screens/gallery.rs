@@ -120,6 +120,24 @@ pub enum ScreenPage {
     Restore,
     /// The online area on one of its pages, over invented friends.
     Online(OnlineLook),
+    /// The Phone as Controller page in one of its states.
+    Phone(PhoneLook),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PhoneLook {
+    Off,
+    Waiting,
+    /// A phone asks to be paired.
+    Pairing,
+    /// A phone plays: two are paired, the pad is ready.
+    Connected,
+    /// Windows without ViGEmBus.
+    DriverMissing,
+    /// Linux that may not open /dev/uinput.
+    NoAccess,
+    /// The server could not start.
+    Failed,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -226,6 +244,62 @@ pub enum ToolkitLook {
     Unused,
 }
 
+/// Invented phones for the Phone as Controller page.
+fn sample_phone(look: PhoneLook) -> crate::app::phone::PhoneState {
+    use anyps5_core::remote::{PairedDevice, PairingRequest, RemoteInfo, VirtualPadStatus};
+    let device = |id: &str, name: &str, added: &str| PairedDevice {
+        added: added.into(),
+        id: id.into(),
+        key: String::new(),
+        name: name.into(),
+    };
+    let mut state = crate::app::phone::PhoneState {
+        windows: look != PhoneLook::NoAccess,
+        info: Some(RemoteInfo {
+            addresses: vec!["192.168.178.20".parse().expect("an address")],
+            control_port: 47700,
+            udp_port: 47702,
+            preferred_port: true,
+            discovery_error: None,
+        }),
+        pad: Some(VirtualPadStatus::Ready),
+        ..Default::default()
+    };
+    match look {
+        PhoneLook::Off => state.info = None,
+        PhoneLook::Waiting => {}
+        PhoneLook::Pairing => {
+            state.connecting = Some("Pixel 8".into());
+            state.pairing = Some(PairingRequest {
+                id: 1,
+                device_name: "Pixel 8".into(),
+                code: "4821".into(),
+            });
+        }
+        PhoneLook::Connected => {
+            state.connected = Some("Pixel 8".into());
+            state.latency_ms = Some(4.0);
+            state.paired = vec![
+                device("a1", "Pixel 8", "2026-10-24T18:14:03Z"),
+                device("b2", "Galaxy S23", "2026-10-25T09:02:41Z"),
+            ];
+        }
+        PhoneLook::DriverMissing => {
+            state.paired = vec![device("a1", "Pixel 8", "2026-10-24T18:14:03Z")];
+            state.pad = Some(VirtualPadStatus::DriverMissing);
+        }
+        PhoneLook::NoAccess => {
+            state.paired = vec![device("a1", "Pixel 8", "2026-10-24T18:14:03Z")];
+            state.pad = Some(VirtualPadStatus::NoAccess("permission denied".into()));
+        }
+        PhoneLook::Failed => {
+            state.info = None;
+            state.failed = true;
+        }
+    }
+    state
+}
+
 /// The page named on the command line.
 pub fn parse(name: &str) -> Option<ScreenPage> {
     Some(match name {
@@ -248,6 +322,13 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "library" => ScreenPage::Library,
         "about-update" => ScreenPage::AboutUpdate,
         "behavior-links" => ScreenPage::BehaviourLinks,
+        "phone-off" => ScreenPage::Phone(PhoneLook::Off),
+        "phone-waiting" => ScreenPage::Phone(PhoneLook::Waiting),
+        "phone-pairing" => ScreenPage::Phone(PhoneLook::Pairing),
+        "phone-connected" => ScreenPage::Phone(PhoneLook::Connected),
+        "phone-driver" => ScreenPage::Phone(PhoneLook::DriverMissing),
+        "phone-access" => ScreenPage::Phone(PhoneLook::NoAccess),
+        "phone-failed" => ScreenPage::Phone(PhoneLook::Failed),
         "toolkit" => ScreenPage::Toolkit(ToolkitLook::Stable),
         "toolkit-update" => ScreenPage::Toolkit(ToolkitLook::Update),
         "toolkit-newer" => ScreenPage::Toolkit(ToolkitLook::Newer),
@@ -1208,6 +1289,7 @@ pub struct ScreenGallery {
     notes: Published,
     update: UpdateState,
     toolkit_version: String,
+    phone: crate::app::phone::PhoneState,
     controls: ControlsPanel,
     /// A game whose files name its controls, for the controls page.
     game_input: GameInput,
@@ -1251,6 +1333,13 @@ impl ScreenGallery {
                 ToolkitLook::Unused => {}
             }
         }
+        let phone = match page {
+            ScreenPage::Phone(look) => {
+                prefs.phone_remote = look != PhoneLook::Off;
+                sample_phone(look)
+            }
+            _ => Default::default(),
+        };
         let mut game_settings = GameSettings::default();
         if page == ScreenPage::GameToolkit {
             game_settings.toolkit = Some("v0.1.2".into());
@@ -1265,6 +1354,7 @@ impl ScreenGallery {
             },
             update,
             toolkit_version,
+            phone,
             page,
             covers: Vec::new(),
             avatars: Vec::new(),
@@ -1423,6 +1513,7 @@ impl ScreenGallery {
                 anyps5_core::linkreg::Handler::Absent
             },
             cjk_fonts: anyps5_core::fonts::CjkState::Missing,
+            phone: &self.phone,
         };
         let icon = Some(self.tile(1));
         self.settings
@@ -1708,7 +1799,7 @@ impl ScreenGallery {
             ScreenPage::Library => self.library.open(1),
             ScreenPage::ControlsEnd => self.controls.open_row(30),
             ScreenPage::Toolkit(look) => {
-                self.settings.open_at(4, true);
+                self.settings.open_at(5, true);
                 // The update page lands on the install row.
                 if look == ToolkitLook::Update {
                     self.settings.focus_row(3);
@@ -1718,10 +1809,17 @@ impl ScreenGallery {
                 }
             }
             ScreenPage::AboutUpdate => {
-                self.settings.open_at(6, true);
+                self.settings.open_at(7, true);
                 self.settings.focus_row(2);
             }
             ScreenPage::BehaviourLinks => self.settings.open_at(3, true),
+            ScreenPage::Phone(look) => {
+                self.settings.open_at(4, true);
+                // The question lands on its first answer.
+                if look == PhoneLook::Pairing {
+                    self.settings.focus_row(4);
+                }
+            }
             ScreenPage::Recommended | ScreenPage::RecommendedWarning => {
                 let plan = sample_plan(matches!(self.page, ScreenPage::RecommendedWarning));
                 self.recommended.open(&plan, shell.language);

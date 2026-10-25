@@ -27,6 +27,7 @@ pub mod platform;
 pub mod process;
 pub mod recommended;
 pub mod releases;
+pub mod remote;
 pub mod report;
 pub mod saves;
 pub mod selfupdate;

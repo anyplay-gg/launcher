@@ -14,7 +14,8 @@ export download-simple arrow-counter-clockwise circle list hand-pointing arrows-
 x-circle arrow-right check question folder-open folder-simple-dashed arrow-up arrow-down arrow-left link
 github-logo floppy-disk clock-counter-clockwise users user-plus user-minus envelope-simple
 paper-plane-right cloud sign-in sign-out prohibit flag key
-microphone microphone-slash speaker-slash headphones`.split(/\s+/);
+microphone microphone-slash speaker-slash headphones
+device-mobile wifi-high plug`.split(/\s+/);
 
 const BS = String.fromCharCode(92);
 const lines = [];

@@ -13,6 +13,7 @@ use egui::{
 use crate::app::model::{GameState, Model, SizeState};
 use crate::screens::online_social_strings::SocialText;
 use crate::screens::online_strings::OnlineText;
+use crate::screens::phone_strings::PhoneText;
 use crate::screens::run_strings::{RunText, friends_line};
 use crate::screens::strings::{Extra, playtime_text};
 use crate::screens::toolkit_pin;
@@ -192,6 +193,16 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
         );
     }
 
+    // A connected phone sits after the title, out of the focus order: it only reports.
+    if let Some(name) = &cx.model.phone.connected {
+        phone_status(
+            ui,
+            pos2(title.max.x + PHONE_STATUS_GAP, mid),
+            name,
+            language,
+        );
+    }
+
     // From the right: clock, profile, then settings, friends and library.
     let mut x = screen.max.x - pad::HOME_X;
     let clock = crate::app::clock::local_time().text();
@@ -261,6 +272,51 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
     if response.clicked() {
         presses.push(Press::Focus(HomeFocus::LIBRARY));
     }
+}
+
+/// Between the title and the phone status; clear of the scanning spinner.
+const PHONE_STATUS_GAP: f32 = 48.0;
+const PHONE_STATUS_HEIGHT: f32 = 32.0;
+const PHONE_STATUS_NAME_MAX: f32 = 150.0;
+
+/// The status of a connected phone: its icon and name on the pills' surface, 32 high so it
+/// reads as a note beside the 44 high buttons. Not a button: nothing happens on a press.
+fn phone_status(ui: &mut Ui, left_middle: egui::Pos2, name: &str, language: Language) {
+    let painter = ui.painter().clone();
+    let shown = text::middle_truncate(&painter, ty::CHIP, name, PHONE_STATUS_NAME_MAX);
+    let glyph = 18.0;
+    let width = 12.0 + glyph + 8.0 + text::width(&painter, ty::CHIP, &shown) + 14.0;
+    let rect = Rect::from_min_size(
+        pos2(left_middle.x, left_middle.y - PHONE_STATUS_HEIGHT * 0.5),
+        vec2(width, PHONE_STATUS_HEIGHT),
+    );
+    let label = PhoneText::BarLabel.format(language, &[Arg::Str(name)]);
+    let response = ui.allocate_rect(rect, Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &label));
+    if !ui.is_rect_visible(rect) {
+        return;
+    }
+    painter.rect_filled(
+        rect,
+        components::corner(PHONE_STATUS_HEIGHT * 0.5),
+        color::surface(),
+    );
+    let ink = white(0.92);
+    painter.text(
+        pos2(rect.min.x + 12.0 + glyph * 0.5, rect.center().y),
+        Align2::CENTER_CENTER,
+        Icon::DEVICE_MOBILE.glyph(),
+        Icon::DEVICE_MOBILE.font(text::quantize_size(glyph), false),
+        ink,
+    );
+    text::paint(
+        &painter,
+        pos2(rect.min.x + 12.0 + glyph + 8.0, rect.center().y),
+        Align2::LEFT_CENTER,
+        ty::CHIP,
+        &shown,
+        ink,
+    );
 }
 
 /// What the profile button shows.

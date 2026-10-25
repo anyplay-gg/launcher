@@ -9,7 +9,7 @@
 //! `home`, `home-actions`, `home-trophies`, `home-locked`, `home-unlocking`, `home-relinking`,
 //! `home-failed`, `home-queued`, `home-running`, `home-outdated`, `home-diagnosis`, `home-messages` (the
 //! profile button with unread messages), `home-friends` (signed in, three friends online),
-//! `home-friends-quiet` (nobody online), `home-friends-focus` and `home-signin-focus` (the top bar's
+//! `home-friends-quiet` (nobody online), `home-phone` (a phone is connected), `home-friends-focus` and `home-signin-focus` (the top bar's
 //! two pills focused), `home-theme1`,
 //! `home-ask` (signed in, a session just ended: "How did it run?"), `home-runs` (the community verdict),
 //! `home-friends-playing` (friends playing the game), `home-theme2`, `home-noartwork`, `home-toolkit`, `home-toolkit-missing`, `home-empty`, `home-scanning`, `home-nofolder`, `starting`,
@@ -63,6 +63,8 @@ pub enum Scene {
     HomeFriends,
     /// Signed in, nobody online: the plain friends button.
     HomeFriendsQuiet,
+    /// A paired phone is connected: its name after the title.
+    HomePhone,
     /// The friends button focused, twelve friends online (two digits).
     HomeFriendsFocus,
     /// Signed out with the sign-in button focused.
@@ -107,6 +109,7 @@ impl Scene {
             "home-messages" => Scene::HomeMessages,
             "home-friends" => Scene::HomeFriends,
             "home-friends-quiet" => Scene::HomeFriendsQuiet,
+            "home-phone" => Scene::HomePhone,
             "home-friends-focus" => Scene::HomeFriendsFocus,
             "home-signin-focus" => Scene::HomeSignInFocus,
             "home-ask" => Scene::HomeAsk,
@@ -126,7 +129,7 @@ impl Scene {
         })
     }
 
-    pub const ALL_NAMES: [&'static str; 33] = [
+    pub const ALL_NAMES: [&'static str; 34] = [
         "onboarding0",
         "onboarding1",
         "onboarding2",
@@ -145,6 +148,7 @@ impl Scene {
         "home-messages",
         "home-friends",
         "home-friends-quiet",
+        "home-phone",
         "home-friends-focus",
         "home-signin-focus",
         "home-ask",
@@ -555,6 +559,9 @@ pub fn apply_scene(app: &mut LauncherApp, scene: Scene, games: Vec<Game>) {
         Scene::HomeFriends => {
             sign_in(m);
             add_friends(m, 3, 1);
+        }
+        Scene::HomePhone => {
+            m.phone.connected = Some("Pixel 8".into());
         }
         Scene::HomeFriendsQuiet => {
             sign_in(m);

@@ -27,6 +27,7 @@ pub mod online_local;
 pub mod online_screen;
 pub mod overlay;
 pub mod panels;
+pub mod phone;
 pub mod pipeline;
 pub mod playtime;
 pub mod preview;
@@ -133,6 +134,8 @@ pub struct LauncherApp {
     pub panels: Box<dyn OverlayHost>,
     /// The net service behind `model.online`.
     pub online: online::OnlineService,
+    /// The phone server behind `model.phone`.
+    pub phone: phone::PhoneService,
     applied: Applied,
     focused: bool,
     /// Overlays that are open or still animating out.
@@ -179,6 +182,7 @@ impl LauncherApp {
         let wake: std::sync::Arc<dyn Fn() + Send + Sync> =
             std::sync::Arc::new(move || repaint.request_repaint());
         Self {
+            phone: phone::PhoneService::new(wake.clone(), simulated),
             online: online::OnlineService::new(wake, simulated),
             shell,
             model,
@@ -290,6 +294,7 @@ impl LauncherApp {
         self.poll_links();
         self.run_effects(ctx);
         self.sync_discord();
+        self.sync_phone(ctx);
         self.watch_trophies();
 
         self.services.set_busy(self.model.busy());

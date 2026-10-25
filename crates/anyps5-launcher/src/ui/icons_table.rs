@@ -104,4 +104,7 @@ impl Icon {
     pub const MICROPHONE_SLASH: Icon = Icon('\u{e328}');
     pub const SPEAKER_SLASH: Icon = Icon('\u{e45a}');
     pub const HEADPHONES: Icon = Icon('\u{e2a6}');
+    pub const DEVICE_MOBILE: Icon = Icon('\u{e1e0}');
+    pub const WIFI_HIGH: Icon = Icon('\u{e4ea}');
+    pub const PLUG: Icon = Icon('\u{e946}');
 }

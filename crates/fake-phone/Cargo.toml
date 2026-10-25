@@ -1,0 +1,17 @@
+[package]
+name = "fake-phone"
+description = "Test helper: stands in for the AnyPS5 Remote phone app (and for a game on the pad bridge). Never shipped."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+anyps5-core = { path = "../anyps5-core" }
+tungstenite = "0.30"
+mdns-sd = "0.21"
+
+[dev-dependencies]
+tempfile.workspace = true

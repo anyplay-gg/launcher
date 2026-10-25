@@ -307,6 +307,7 @@ impl PanelHost {
             default_screenshots: &default_screenshots,
             links: self.links.clone(),
             cjk_fonts: anyps5_core::fonts::cjk_state(&cx.model.paths, &crate::fonts::BUNDLE),
+            phone: &cx.model.phone,
         };
         // Theme, accent, language, motion and sounds reach the shell inside the panel
         // (`apply_preferences`), so the backdrop cross-fades while the choice is made.
@@ -415,6 +416,10 @@ impl PanelHost {
                 }
             }
             SettingsAction::SetLinks(on) => self.set_links(model, on),
+            SettingsAction::Phone(crate::screens::phone::PhoneAction::OpenDriverPage) => {
+                open_known_url(crate::screens::phone::driver_page());
+            }
+            SettingsAction::Phone(action) => model.phone.commands.push(action),
             SettingsAction::Quit => cx.ctx.send_viewport_cmd(ViewportCommand::Close),
         }
     }
@@ -1722,6 +1727,20 @@ fn spawn(name: &str, work: impl FnOnce() + Send + 'static) {
 /// Opens a page of the toolkit's repository in the browser. Nothing else is opened.
 fn open_url(url: &str) {
     if !url.starts_with("https://github.com/boykopovar/AnyPS5/") {
+        return;
+    }
+    if let Err(error) = anyps5_core::platform::open_url(url) {
+        tracing::warn!("cannot open {url}: {error}");
+    }
+}
+
+/// Opens one of the fixed pages the launcher itself points to (the driver for the phone's pad).
+fn open_known_url(url: &str) {
+    let known = [
+        crate::screens::phone::VIGEM_DOWNLOAD,
+        crate::screens::phone::UINPUT_GUIDE,
+    ];
+    if !known.contains(&url) {
         return;
     }
     if let Err(error) = anyps5_core::platform::open_url(url) {

@@ -231,6 +231,10 @@ pub struct Model {
     pub patches_dir: Option<std::path::PathBuf>,
     /// Trophies earned by the running game, waiting for the banner. The banner drains it.
     pub trophy_banners: Vec<(GameId, Trophy)>,
+    /// The same trophies, waiting for the paired phone (`app::phone`).
+    pub phone_trophies: Vec<Trophy>,
+    /// What the phone server is doing (`app::phone`).
+    pub phone: crate::app::phone::PhoneState,
     /// Work for the host; drained after every input pass.
     pub effects: Vec<Effect>,
     /// What the launcher knows of the network. Commands queue here; the host hands them to the
@@ -284,6 +288,8 @@ impl Model {
             toolkit_question: None,
             patches_dir: None,
             trophy_banners: Vec::new(),
+            phone_trophies: Vec::new(),
+            phone: Default::default(),
             effects: Vec::new(),
             online: Online::default(),
             run_prompt: None,
@@ -650,6 +656,7 @@ impl Model {
                 }
             },
             CoreEvent::TrophyUnlocked { game, trophy } => {
+                self.phone_trophies.push(trophy.clone());
                 self.trophy_banners.push((game, trophy));
             }
             CoreEvent::TrophyRecords { title_id, earned } => {

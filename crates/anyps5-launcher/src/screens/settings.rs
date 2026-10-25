@@ -16,10 +16,13 @@ use anyps5_core::settings::{Backdrop, CpuConversion, Preferences, ToolkitChannel
 use anyps5_core::toolkit::InstalledRelease;
 use egui::{Align2, Color32, Context, Rect, Sense, Ui, UiBuilder, pos2, vec2};
 
+use crate::app::phone::PhoneState;
 use crate::screens::convert;
 use crate::screens::dialogs;
 use crate::screens::discord_strings::DiscordText;
 use crate::screens::format::{abbreviate_path, home_dir};
+use crate::screens::phone::{self, PhoneAction};
+use crate::screens::phone_strings::PhoneText;
 use crate::screens::rows::{self, Change, ListOptions, Row};
 use crate::screens::side::{Output, commands};
 use crate::screens::strings::Extra;
@@ -44,17 +47,19 @@ pub enum Category {
     Library,
     Language,
     Behaviour,
+    Phone,
     Toolkit,
     Advanced,
     About,
 }
 
 impl Category {
-    pub const ALL: [Category; 7] = [
+    pub const ALL: [Category; 8] = [
         Category::Appearance,
         Category::Library,
         Category::Language,
         Category::Behaviour,
+        Category::Phone,
         Category::Toolkit,
         Category::Advanced,
         Category::About,
@@ -67,6 +72,7 @@ impl Category {
             SettingsPage::Library => Category::Library,
             SettingsPage::Language => Category::Language,
             SettingsPage::Behavior => Category::Behaviour,
+            SettingsPage::Phone => Category::Phone,
             SettingsPage::Toolkit => Category::Toolkit,
             SettingsPage::Advanced => Category::Advanced,
             SettingsPage::About => Category::About,
@@ -79,6 +85,7 @@ impl Category {
             Category::Library => language.text(Key::Storage),
             Category::Language => language.text(Key::Language),
             Category::Behaviour => language.text(Key::Behaviour),
+            Category::Phone => PhoneText::Title.text(language),
             Category::Toolkit => Extra::Toolkit.text(language),
             Category::Advanced => language.text(Key::Advanced),
             Category::About => language.text(Key::About),
@@ -91,6 +98,7 @@ impl Category {
             Category::Library => Icon::SQUARES_FOUR,
             Category::Language => Icon::GLOBE,
             Category::Behaviour => Icon::SLIDERS_HORIZONTAL,
+            Category::Phone => Icon::DEVICE_MOBILE,
             Category::Toolkit => Icon::HARD_DRIVE,
             Category::Advanced => Icon::WRENCH,
             Category::About => Icon::INFO,
@@ -144,6 +152,8 @@ pub struct SettingsEnv<'a> {
     pub links: Handler,
     /// Whether the built-in fonts have the Japanese, Chinese and Korean set.
     pub cjk_fonts: CjkState,
+    /// What the phone server is doing.
+    pub phone: &'a PhoneState,
 }
 
 /// What the host has to do after a frame.
@@ -174,6 +184,8 @@ pub enum SettingsAction {
     RestartNow,
     /// "Open AnyPlay Links with This Launcher" was switched: write or remove the registration.
     SetLinks(bool),
+    /// A row of the Phone as Controller page asks for something.
+    Phone(PhoneAction),
     Quit,
 }
 
@@ -403,6 +415,9 @@ pub fn build_categories(
             .icon(Icon::LINK),
         );
     }
+
+    // Phone as Controller
+    let phone_rows = phone::rows(prefs, env.phone, language);
 
     // Toolkit
     let channel = prefs.toolkit_channel();
@@ -649,7 +664,7 @@ pub fn build_categories(
     );
 
     [
-        appearance, library, languages, behaviour, toolkit, advanced, about,
+        appearance, library, languages, behaviour, phone_rows, toolkit, advanced, about,
     ]
     .into_iter()
     .zip(Category::ALL)
@@ -735,6 +750,7 @@ pub fn apply_value(prefs: &mut Preferences, change: &Change) -> bool {
             index: 0,
         } => prefs.backdrop = Backdrop::Theme,
         Change::Run { row: "fontsReset" } => prefs.fonts_folder = None,
+        Change::Toggle { row: "phone", on } => prefs.phone_remote = *on,
         _ => {}
     }
     *prefs != before
@@ -927,6 +943,10 @@ impl SettingsPanel {
                 ctx.request_repaint();
             }
             Change::Run { row: "rescan" } => out.actions.push(SettingsAction::Rescan),
+            change if phone::action(env.phone, change).is_some() => {
+                out.actions
+                    .extend(phone::action(env.phone, change).map(SettingsAction::Phone));
+            }
             Change::Run { row: "screenshots" } => {
                 let start = prefs.screenshots_folder.clone();
                 if let Some(folder) = dialogs::pick_folder(
@@ -1199,6 +1219,7 @@ mod tests {
             default_screenshots: std::path::Path::new("C:\\Users\\me\\Pictures\\AnyPS5"),
             links: Handler::Absent,
             cjk_fonts: CjkState::Missing,
+            phone: Box::leak(Box::new(PhoneState::default())),
         }
     }
 

@@ -542,6 +542,10 @@ pub struct Preferences {
     /// Games write an observation log of their network calls (`Logs\<TITLEID>-network.jsonl`).
     #[serde(default)]
     pub record_network: bool,
+    /// The phone server: a paired phone on the home network drives the library and the pad
+    /// (docs/DESIGN.md 18). Off until the player turns it on.
+    #[serde(default)]
+    pub phone_remote: bool,
     /// The run-report questions already answered or dismissed, by [`run_question_key`]: each is
     /// asked once.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
@@ -589,6 +593,7 @@ impl Default for Preferences {
             online_relay_only: false,
             voice: crate::online::VoicePrefs::default(),
             record_network: false,
+            phone_remote: false,
             run_asked: BTreeSet::new(),
             extra: Map::new(),
         }
@@ -1200,6 +1205,10 @@ mod tests {
         assert!(prefs.sounds && prefs.music && prefs.discord_presence && prefs.game_artwork);
         assert!(prefs.discord_join_button, "an old file turns the button on");
         assert!(prefs.fullscreen);
+        assert!(
+            !prefs.phone_remote,
+            "the phone server is off until the player turns it on"
+        );
         assert!(prefs.check_for_updates);
         assert_eq!(prefs.profile_name, "Player");
         assert_eq!(prefs.toolkit_repository, crate::toolkit::DEFAULT_REPOSITORY);
