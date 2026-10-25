@@ -405,6 +405,21 @@ pub fn build_categories(
         .icon(Icon::GAME_CONTROLLER),
     );
     behaviour.push(
+        Row::choice(
+            "vibration",
+            Extra::Vibration.text(language),
+            vec![
+                t(Key::Off),
+                Extra::VibrationLight.text(language).to_owned(),
+                Extra::VibrationMedium.text(language).to_owned(),
+                Extra::VibrationStrong.text(language).to_owned(),
+            ],
+            convert::vibration_index(prefs.vibration),
+        )
+        .detail(Extra::VibrationDetail.text(language))
+        .icon(Icon::WAVE_SINE),
+    );
+    behaviour.push(
         Row::toggle(
             "hiddenTrophies",
             Extra::ShowHiddenTrophies.text(language),
@@ -737,6 +752,7 @@ pub fn apply_preferences(shell: &mut Shell, ctx: &Context, prefs: &Preferences) 
     shell.language = convert::language(prefs.language);
     shell.set_reduced_motion(ctx, prefs.reduced_motion);
     shell.sounds.enabled = prefs.sounds;
+    shell.set_vibration(convert::vibration(prefs.vibration));
 }
 
 /// Writes one change into the preferences. Dialogs (a picture, a folder) are the caller's
@@ -774,6 +790,10 @@ pub fn apply_value(prefs: &mut Preferences, change: &Change) -> bool {
             }
         }
         Change::Toggle { row: "sounds", on } => prefs.sounds = *on,
+        Change::Choice {
+            row: "vibration",
+            index,
+        } => prefs.vibration = convert::vibration_to_core(*index),
         Change::Toggle { row: "music", on } => prefs.music = *on,
         Change::Toggle { row: "discord", on } => prefs.discord_presence = *on,
         Change::Toggle {
@@ -1328,6 +1348,28 @@ mod tests {
             ["theme", "accent", "backdrop", "file", "artwork", "motion"],
             "the file row appears with a picture backdrop"
         );
+    }
+
+    #[test]
+    fn vibration_is_a_choice_that_reaches_the_preferences() {
+        let mut prefs = Preferences::default();
+        assert_eq!(prefs.vibration, anyps5_core::settings::Vibration::Medium);
+        for (index, want) in [
+            (0, anyps5_core::settings::Vibration::Off),
+            (1, anyps5_core::settings::Vibration::Light),
+            (2, anyps5_core::settings::Vibration::Medium),
+            (3, anyps5_core::settings::Vibration::Strong),
+        ] {
+            apply_value(
+                &mut prefs,
+                &Change::Choice {
+                    row: "vibration",
+                    index,
+                },
+            );
+            assert_eq!(prefs.vibration, want);
+            assert_eq!(convert::vibration_index(prefs.vibration), index);
+        }
     }
 
     #[test]

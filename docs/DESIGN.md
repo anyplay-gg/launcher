@@ -1614,6 +1614,31 @@ Reduced" the ring stays and only the sound is left. A held direction bumps **onc
 are silent and still (`Input::repeating`). The sites that bump are the home screen, the panel rows and categories, the library grid and the trophy list; each calls `Shell::play(Cue::Bump)`, and the shell leans the
 ring toward `Input::last_direction`.
 
+### 6.8 Controller vibration (2026-10-25)
+
+A short, soft pulse answers the actions that have a sound, so the hand and the ear get the same answer in the same frame
+(`Shell::play` is the one place that decides both). Setting **Controller Vibration** (Settings > Behaviour): Off, Light (x0.6),
+Medium (x1, the default), Strong (x1.5). Changing it on the pad plays a select pulse at the new strength.
+
+| Action (cue) | Pulse (ms after start: length, light motor / heavy motor) | Feel |
+|---|---|---|
+| select | 0: 16, 0.30 / 0 | very light tap |
+| back | 0: 12, 0.18 / 0 | lighter |
+| error, refused | 0: 24, 0.42 / 0.14; 80: 24, 0.42 / 0.14 | two short taps |
+| trophy | 0: 20, 0.20 / 0; 70: 28, 0.28 / 0.12; 150: 70, 0.32 / 0.26 | three taps that swell |
+| call, invitation (ring) | 0: 60, 0 / 0.24; 110: 36, 0.30 / 0 | a heavy beat, then a light one |
+| edge bump | 0: 10, 0.12 / 0 | barely there |
+| move focus, hover, boot | none | the focus moves dozens of times a minute |
+
+How it runs. `ui::haptics` drives the pad through `gilrs-core` directly: gilrs' own force-feedback server works in 50 ms ticks, which
+cannot make a 12 ms tap and delays every start by up to a tick. A thread of its own holds a pattern as a list of motor states with
+their times, sets each at its moment and ends on zero. Nonzero strengths are lifted to 0.12 (below that no motor shows anything)
+and capped at 1. Safe by construction: a pad without force feedback is skipped; the thread zeroes the motors when a pattern is
+replaced, when it ends, when the setting goes Off, when a game takes the pad (`Shell::begin_frame` sees `HomeButton::accepts_pad`
+turn false and stops mid-pulse), when it ends for any reason (`Drop`), and a Linux pulse carries its own 200 ms timer. It acts only
+while the pad is the device in use (a keyboard or mouse player with a pad plugged in feels nothing) and never while a game is in
+front. Not verified on hardware: the feel of the strengths, WGI vibration from a second thread and the Linux timer.
+
 ## 7. Sounds and media
 
 ### 7.1 Sounds (`Sounds.swift`): synthesized, nothing bundled

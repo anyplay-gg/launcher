@@ -376,6 +376,8 @@ impl LauncherApp {
             self.shell.set_reduced_motion(ctx, reduced);
         }
         self.shell.sounds.enabled = self.model.prefs.sounds;
+        self.shell
+            .set_vibration(screens::convert::vibration(self.model.prefs.vibration));
         if !self.model.prefs.discord_presence {
             self.clear_presence();
         }

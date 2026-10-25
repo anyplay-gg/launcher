@@ -36,6 +36,7 @@ pub mod gallery;
 pub mod gamepad;
 pub mod glass;
 pub mod gpu;
+pub mod haptics;
 pub mod home_button;
 pub mod i18n;
 pub mod icons;
@@ -54,6 +55,7 @@ use egui::{Context, Painter, Rect};
 
 use self::anim::AnimExt;
 use self::background::Backdrop;
+use self::haptics::Haptics;
 use self::home_button::HomeButton;
 use self::i18n::Language;
 use self::input::{Input, InputEvent};
@@ -82,6 +84,10 @@ pub struct Shell {
     reduced: bool,
     /// The hold in progress has bumped already.
     bumped_in_hold: bool,
+    /// Controller vibration (see [`haptics`]).
+    pub haptics: Haptics,
+    /// The launcher had the pad last frame (a game in front takes it).
+    had_pad: bool,
 }
 
 /// What [`Shell::begin_frame`] hands to the screen.
@@ -112,6 +118,8 @@ impl Shell {
             sounds: Sounds::new(),
             hover: HoverGate::default(),
             cue_played: false,
+            haptics: Haptics::new(),
+            had_pad: true,
             backdrop: Backdrop::new(Theme::Cosmic),
             language,
             accent: Theme::Cosmic.default_accent(),
@@ -137,6 +145,8 @@ impl Shell {
             sounds,
             hover: HoverGate::default(),
             cue_played: false,
+            haptics: Haptics::silent(),
+            had_pad: true,
             backdrop: Backdrop::new(theme),
             language: Language::English,
             accent: theme.default_accent(),
@@ -151,6 +161,12 @@ impl Shell {
     pub fn begin_frame(&mut self, ctx: &Context) -> FrameInput {
         self.scale = theme::sync_scale(ctx);
         text::set_pixels_per_point(ctx.pixels_per_point());
+        // A game that takes the pad takes the motors with it, mid-pulse too.
+        let has_pad = self.home.accepts_pad();
+        if self.had_pad && !has_pad {
+            self.haptics.stop();
+        }
+        self.had_pad = has_pad;
         let dt = ctx.input(|i| i.unstable_dt).min(0.05);
         nudge::publish(ctx, self.nudge.step(dt));
         if !self.nudge.is_settled() {
@@ -201,6 +217,23 @@ impl Shell {
             }
         }
         self.sounds.play(cue);
+        // The hand answers only when the pad is what the player is using, and the launcher has it.
+        if self.input.pad_in_use && self.had_pad {
+            self.haptics.play(cue);
+        }
+    }
+
+    /// Sets "Controller Vibration"; off lets go of the motors at once.
+    pub fn set_vibration(&mut self, level: haptics::Level) {
+        let changed = self.haptics.level != level;
+        if level == haptics::Level::Off && changed {
+            self.haptics.stop();
+        }
+        self.haptics.level = level;
+        // Changing it on the pad lets the hand try the new strength.
+        if changed && self.input.pad_in_use && self.had_pad {
+            self.haptics.play(Cue::Select);
+        }
     }
 
     /// Call last in every frame: plays the hover tick when the pointer arrived on a new
@@ -328,6 +361,8 @@ impl Shell {
             sounds,
             hover: HoverGate::default(),
             cue_played: false,
+            haptics: Haptics::silent(),
+            had_pad: true,
             backdrop: Backdrop::new(theme),
             language: Language::English,
             accent: theme.default_accent(),

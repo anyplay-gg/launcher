@@ -259,6 +259,8 @@ pub struct Input {
     /// What fired last was a repeat of a held direction, not a fresh press: an edge is bumped once
     /// per press, not on every repeat.
     pub repeating: bool,
+    /// The pad is the device in use: only then does it vibrate.
+    pub pad_in_use: bool,
     /// True while a native dialog is open: keyboard and wheel are ignored.
     pub blocked: bool,
     /// True while a binding waits for a key: every key press is returned as [`InputEvent::CapturedKey`].
@@ -295,6 +297,7 @@ impl Input {
             while let Ok(message) = pad.try_recv() {
                 if !matches!(message, PadMessage::Direction(None)) {
                     set_device(ctx, Device::Gamepad);
+                    self.pad_in_use = true;
                 }
                 match message {
                     PadMessage::Direction(direction) => {
@@ -352,7 +355,10 @@ impl Input {
         let events = ctx.input(|i| i.events.clone());
         for event in events {
             match event {
-                Event::PointerMoved(_) => set_device(ctx, Device::Keyboard),
+                Event::PointerMoved(_) => {
+                    set_device(ctx, Device::Keyboard);
+                    self.pad_in_use = false;
+                }
                 Event::Key {
                     key,
                     physical_key,
@@ -361,6 +367,7 @@ impl Input {
                     modifiers,
                 } => {
                     set_device(ctx, Device::Keyboard);
+                    self.pad_in_use = false;
                     if self.capture_keys {
                         crate::ui::a11y::consume_activation(ctx);
                         out.push(InputEvent::CapturedKey {
