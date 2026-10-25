@@ -6,6 +6,9 @@
 //! session ends. Nothing is ever installed: [`status`] says whether the driver or the device
 //! node is there, and the launcher tells the player what to do when it is not.
 
+// Without a backend (macOS) the plumbing around it has nothing to carry.
+#![cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
+
 mod map;
 
 #[cfg(target_os = "linux")]
