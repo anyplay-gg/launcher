@@ -119,16 +119,7 @@ pub fn rail(ui: &mut Ui, at: egui::Pos2, entries: &[Entry], focus: Option<usize>
         y += ITEM_HEIGHT + ITEM_GAP;
         let response = ui.interact(rect, Id::unique(("friends-rail", index)), Sense::click());
         response.widget_info(|| {
-            WidgetInfo::selected(
-                if entry.action {
-                    Role::Button
-                } else {
-                    Role::Tab
-                },
-                true,
-                entry.current,
-                entry.name.as_str(),
-            )
+            WidgetInfo::selected(Role::Button, true, entry.current, entry.name.as_str())
         });
         let focused = focus == Some(index);
         crate::ui::a11y::follow(&ctx, response.id, focused);
@@ -227,6 +218,12 @@ pub fn page_title(ui: &mut Ui, at: egui::Pos2, width: f32, title: &str, note: Op
     let painter = ui.painter().clone();
     let title = clamped(&painter, PAGE_TITLE, title, Color32::PLACEHOLDER, width, 1);
     let mut height = title.size().y;
+    ui.interact(
+        Rect::from_min_size(at, vec2(width, height)),
+        Id::unique("friends-page-title"),
+        Sense::hover(),
+    )
+    .widget_info(|| WidgetInfo::labeled(Role::Heading, true, title.text()));
     painter.galley(at, title, Color32::WHITE);
     if let Some(note) = note {
         height += 6.0;

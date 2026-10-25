@@ -313,7 +313,7 @@ pub struct OnlinePanel {
     /// Which answer of a request row the keys would press: 0 Accept, 1 Decline.
     request_answer: usize,
     /// Which quick action of a friend's row the keys would press.
-    friend_action: usize,
+    friend_action: Option<usize>,
     /// The page the player came from.
     previous: Option<Page>,
     /// Where Back from the report page leads, when it did not open from a friend.
@@ -429,7 +429,7 @@ impl OnlinePanel {
                 rows::Control::Choice { selected, .. } | rows::Control::Buttons { selected, .. },
             ) => *selected == 0,
             Some(rows::Control::Stepper { value, min, .. }) => value <= min,
-            Some(rows::Control::Toggle(on)) => !on,
+            Some(rows::Control::Toggle(_)) => true,
             _ => true,
         }
     }
@@ -831,7 +831,7 @@ impl OnlinePanel {
             Change::Choice {
                 row: "friendRow",
                 index,
-            } => self.friend_action = *index,
+            } => self.friend_action = Some(*index),
             Change::Press {
                 row: "friendRow",
                 index,
@@ -1469,7 +1469,15 @@ impl OnlinePanel {
         let language = data.language;
         let acts = friend_actions(data, friend);
         let labels: Vec<String> = acts.iter().map(|a| a.label(language).to_owned()).collect();
-        let selected = self.friend_action.min(labels.len().saturating_sub(1));
+        // Without a choice yet the keys press Message, never a Join the player did not pick.
+        let default = acts
+            .iter()
+            .position(|a| *a == FriendAct::Message)
+            .unwrap_or(0);
+        let selected = self
+            .friend_action
+            .unwrap_or(default)
+            .min(labels.len().saturating_sub(1));
         Row::buttons("friendRow", friend.account.handle.clone(), labels, selected)
             .avatar(self.avatar_of(data, &friend.account, Some(&friend.presence)))
             .detail(friend_detail(data, friend))

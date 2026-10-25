@@ -718,7 +718,10 @@ impl OnlinePanel {
         Some(Some(match &self.page {
             // The first pages of their sections: Back leaves the screen.
             Page::Party | Page::Messages => return Some(None),
-            Page::PartyInvitation(_) => Page::Home,
+            Page::PartyInvitation(_) => match &self.previous {
+                Some(page @ (Page::Party | Page::Home)) => page.clone(),
+                _ => Page::Home,
+            },
             Page::PartyMember(_) | Page::PartyPicker => Page::Party,
             Page::Conversation(_) | Page::MessageRequest(_) => match &self.previous {
                 Some(page @ (Page::Friend(_) | Page::Party | Page::Home)) => page.clone(),

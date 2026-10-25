@@ -218,6 +218,7 @@ impl FriendsScreen {
         let language = data.language;
         let rail_focus = (open && self.focus().zone == Zone::Rail).then_some(self.rail);
         let mut clicked_rail = None;
+        let mut page_pressed = false;
         let mut back_clicked = false;
         let mut page_actions = Vec::new();
         let drawn = fullscreen_panel(
@@ -305,8 +306,15 @@ impl FriendsScreen {
                 );
                 let mut child = ui.new_child(UiBuilder::new().max_rect(list));
                 page_actions = self.panel.draw(shell, ctx, &mut child, data, page_focus);
+                page_pressed = ctx.input(|i| {
+                    i.pointer.primary_pressed()
+                        && i.pointer.interact_pos().is_some_and(|p| list.contains(p))
+                });
             },
         );
+        if open && page_pressed {
+            self.zone = Some(Zone::Page);
+        }
         if drawn.is_none() {
             self.panel.finished();
         }
