@@ -266,12 +266,25 @@ pub fn open_party_link(model: &Model) {
 
 pub fn open_discord_link(link: &str) {
     if !net::api::is_discord_link(link) {
-        tracing::warn!("not opening a link that is not Discord's: {link}");
+        tracing::warn!(
+            "not opening a link that is not Discord's: {}",
+            loggable_host(link)
+        );
         return;
     }
     if let Err(error) = anyps5_core::platform::open_url(link) {
         tracing::warn!("cannot open the Discord link: {error}");
     }
+}
+
+/// The host of a link as a log line may carry it. An invite code is a way in, so the path, query,
+/// fragment and any userinfo are cut; a link without a scheme has no host to name and gives its
+/// first segment, which is escaped like the rest so it cannot start a line of its own.
+fn loggable_host(link: &str) -> String {
+    let rest = link.split_once("://").map_or(link, |(_, rest)| rest);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = authority.rsplit('@').next().unwrap_or_default();
+    format!("{host:?}")
 }
 
 /// The slide and fade of both surfaces: they drop in from 24 dp above and leave the same way.
@@ -662,4 +675,42 @@ pub(crate) fn call_strip(
             }
         });
     action
+}
+
+#[cfg(test)]
+mod log_tests {
+    use super::loggable_host;
+
+    #[test]
+    fn a_logged_link_names_the_host_only() {
+        assert_eq!(
+            loggable_host("https://evil.example/invite/CODE?x=1"),
+            "\"evil.example\""
+        );
+        assert_eq!(
+            loggable_host("https://evil.example?code=CODE"),
+            "\"evil.example\""
+        );
+        assert_eq!(
+            loggable_host("https://evil.example#CODE"),
+            "\"evil.example\""
+        );
+    }
+
+    #[test]
+    fn a_logged_link_without_scheme_never_shows_the_code() {
+        let line = loggable_host("discord.gg/invite/CODE");
+        assert_eq!(line, "\"discord.gg\"");
+        assert!(!line.contains("CODE"));
+    }
+
+    #[test]
+    fn a_logged_link_drops_userinfo_and_control_characters() {
+        assert_eq!(
+            loggable_host("https://user:CODE@evil.example/x"),
+            "\"evil.example\""
+        );
+        let line = loggable_host("https://evil.example\nPANIC fake/x");
+        assert!(!line.contains(['\n', '\r']));
+    }
 }

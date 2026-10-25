@@ -626,7 +626,10 @@ impl OnlineService {
         };
         let base = format!("{}/", cloud.trim_end_matches('/'));
         if !url.starts_with(&base) || url.chars().any(|c| c.is_whitespace() || c.is_control()) {
-            tracing::warn!("not opening a page outside the cloud: {url}");
+            tracing::warn!(
+                "not opening a page outside the cloud: {}",
+                loggable_url(url)
+            );
             return;
         }
         if let Err(error) = anyps5_core::platform::open_url(url) {
@@ -639,6 +642,12 @@ impl OnlineService {
         self.started = None;
         model.cancel_start();
     }
+}
+
+/// An address as a log line may carry it. A sign-in state sits in the query or the fragment, so
+/// both are cut; what is left is escaped, so a newline in the address cannot start a line of its own.
+fn loggable_url(url: &str) -> String {
+    format!("{:?}", url.split(['?', '#']).next().unwrap_or_default())
 }
 
 /// The net service this launcher carries (release builds), written once per version to
@@ -848,6 +857,30 @@ mod tests {
     use anyps5_core::settings::Preferences;
 
     use super::*;
+
+    #[test]
+    fn a_logged_address_loses_query_and_fragment() {
+        assert_eq!(
+            loggable_url("https://cloud.example/sign-in?state=s3cret"),
+            "\"https://cloud.example/sign-in\""
+        );
+        assert_eq!(
+            loggable_url("https://cloud.example/sign-in#state=s3cret"),
+            "\"https://cloud.example/sign-in\""
+        );
+        assert_eq!(
+            loggable_url("https://cloud.example/a#f?q=s3cret"),
+            "\"https://cloud.example/a\""
+        );
+    }
+
+    #[test]
+    fn a_logged_address_cannot_start_a_line() {
+        let line =
+            loggable_url("https://cloud.example/a\nPANIC thread=main at x:1: fake\r\u{1b}[2J");
+        assert!(!line.contains(['\n', '\r', '\u{1b}']));
+        assert!(line.starts_with('"') && line.ends_with('"'));
+    }
 
     fn game() -> Game {
         let folder = PathBuf::from("C:/games/test");

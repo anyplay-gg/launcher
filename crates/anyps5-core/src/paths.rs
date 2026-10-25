@@ -163,6 +163,16 @@ impl AppPaths {
         self.data.join("Logs")
     }
 
+    /// `Logs\launcher.log`: what the launcher itself logs, with panics.
+    pub fn launcher_log(&self) -> PathBuf {
+        self.logs_dir().join("launcher.log")
+    }
+
+    /// `Logs\launcher.log.1`: the previous launcher log, kept when the current one fills up.
+    pub fn launcher_log_old(&self) -> PathBuf {
+        self.logs_dir().join("launcher.log.1")
+    }
+
     pub fn log_file(&self, title_id: &str) -> PathBuf {
         self.logs_dir().join(format!("{title_id}.log"))
     }
@@ -240,6 +250,16 @@ pub fn unlocked_copy_dir(root: &Path, title_id: &str, id: &GameId) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_launcher_log_lives_in_the_logs_folder() {
+        let paths = AppPaths::under(Path::new("data"));
+        assert_eq!(paths.launcher_log(), paths.logs_dir().join("launcher.log"));
+        assert_eq!(
+            paths.launcher_log_old(),
+            paths.logs_dir().join("launcher.log.1")
+        );
+    }
 
     #[test]
     fn spellings_of_one_folder_are_one_id() {
