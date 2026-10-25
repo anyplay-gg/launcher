@@ -1280,6 +1280,8 @@ impl Online {
                     self.request_feed();
                 }
             }
+            // The Discord Social SDK is not used by this launcher yet.
+            Event::Discord(_) => {}
             Event::Unknown => {}
         }
         notices
