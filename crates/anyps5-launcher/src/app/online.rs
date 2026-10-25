@@ -626,7 +626,11 @@ impl OnlineService {
         };
         let base = format!("{}/", cloud.trim_end_matches('/'));
         if !url.starts_with(&base) || url.chars().any(|c| c.is_whitespace() || c.is_control()) {
-            tracing::warn!("not opening a page outside the cloud: {url}");
+            // The address may carry a sign-in state in its query; the log keeps the path only.
+            tracing::warn!(
+                "not opening a page outside the cloud: {}",
+                url.split('?').next().unwrap_or_default()
+            );
             return;
         }
         if let Err(error) = anyps5_core::platform::open_url(url) {

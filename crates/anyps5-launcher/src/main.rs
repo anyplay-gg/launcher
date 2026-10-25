@@ -6,6 +6,7 @@
 mod app;
 mod fonts;
 mod instance;
+mod logging;
 mod screens;
 mod startup;
 mod ui;
@@ -14,7 +15,7 @@ use instance::Join;
 
 fn main() -> eframe::Result {
     startup::begin();
-    tracing_subscriber::fmt().init();
+    logging::init();
     startup::mark("main");
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     instance::wait_after_update(&mut args);

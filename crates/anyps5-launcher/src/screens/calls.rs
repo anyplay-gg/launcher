@@ -266,7 +266,11 @@ pub fn open_party_link(model: &Model) {
 
 pub fn open_discord_link(link: &str) {
     if !net::api::is_discord_link(link) {
-        tracing::warn!("not opening a link that is not Discord's: {link}");
+        // An invite code is a way in; the log keeps the host only.
+        tracing::warn!(
+            "not opening a link that is not Discord's: {}",
+            link.split(['/', '?']).nth(2).unwrap_or_default()
+        );
         return;
     }
     if let Err(error) = anyps5_core::platform::open_url(link) {
