@@ -1017,6 +1017,7 @@ mod tests {
             conversation: "pc".into(),
             created: 0,
             revision: 1,
+            discord: None,
         }
     }
 
@@ -1342,6 +1343,7 @@ mod tests {
             party: "p9".into(),
             members: 3,
             expires: 0,
+            call: false,
         });
         let mut panel = OnlinePanel::default();
         let mut rows = Vec::new();

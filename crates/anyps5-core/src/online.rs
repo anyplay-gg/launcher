@@ -18,6 +18,7 @@ pub mod avatar;
 mod feed;
 mod join;
 mod profile;
+mod calls;
 mod restrictions;
 mod runs;
 mod screen;
@@ -36,7 +37,11 @@ pub use anyplay_control::{
     self as control, Cloud, Command, DeviceKind, Event, Failure, Link, Output, Pending, Session,
     SignedIn, VoiceMode,
 };
-use api::{Account, AccountId, Conversation, FriendLists, Invitation, Message, PartyInvitation};
+use api::{
+    Account, AccountId, CallEnd, Conversation, FriendLists, Invitation, Message, MissedCall,
+    PartyInvitation,
+};
+pub use calls::{CallState, Calls};
 pub use feed::{Ago, FeedState, Rarity, adjusted, party_others, toggled};
 pub use join::{JoinOffer, Step as JoinStep};
 pub use profile::{
@@ -50,7 +55,7 @@ pub use screen::{Screen, ScreenCommand, ScreenNotice};
 pub use social::{Fetch, Ingested, KEPT, Listed, Social, others, plain, read_by_other, snippet};
 pub use voice::{
     DEFAULT_KEY, DEFAULT_PERCENT, Devices, Hardware, MAX_PERCENT, Mic, PERCENT_STEP, PeerPrefs,
-    Problem, Status as VoiceStatus, Voice, VoicePrefs,
+    Problem, Status as VoiceStatus, Voice, VoicePrefs, VoiceProvider,
 };
 
 use crate::events::Notifier;
@@ -343,6 +348,10 @@ pub enum Purpose {
     JoinCode,
     JoinCodeRevoke,
     JoinRedeem,
+    /// A call to this friend.
+    Call(AccountId),
+    CallsSeen,
+    PartyLink,
     Conversations,
     OpenConversation(AccountId),
     /// A fetch of messages; `announce` when a new-message event asked for it, so the player is
@@ -408,6 +417,12 @@ pub enum Notice {
     },
     /// A stranger wrote to the player for the first time.
     MessageRequest(Conversation),
+    /// A friend called and the player did not answer.
+    MissedCall(MissedCall),
+    /// A call the player placed ended unanswered.
+    CallEnded(Account, CallEnd),
+    /// A call could not ring: the friend is busy or cannot be reached right now.
+    CallUnreachable(Account),
     /// The net service could not open the sound devices and switched voice off.
     VoiceFailed(Problem),
     /// A party member started or ended a shared screen, or the player's own ended.
@@ -437,6 +452,8 @@ pub struct Online {
     pub voice: Voice,
     /// Share screen: what the player shares, what is offered to them and what they watch.
     pub screen: Screen,
+    /// Calls: who the player is calling, missed calls.
+    pub calls: Calls,
     /// What limits the account: mutes, a new account's limits, a ban.
     pub restrictions: Restrictions,
     /// Friends' trophy counts by grade; `None` when they hide them from the player.
@@ -574,6 +591,9 @@ impl Online {
 
     /// Keeps what a refusal tells about the account: the restriction that stopped the command.
     fn refused(&mut self, purpose: &Purpose, failure: &Failure) {
+        if let Purpose::Call(friend) = purpose {
+            self.call_failed(*friend);
+        }
         match purpose {
             Purpose::Feed { .. } => self.feed.error = Some(failure.clone()),
             Purpose::React { item, before } => self.feed.set_reactions(*item, *before),
@@ -712,6 +732,7 @@ impl Online {
                     self.voice.devices = Some(devices.into());
                 }
             }
+            Purpose::Call(friend) => self.call_placed(*friend, value, notices),
             Purpose::Party => {
                 if let Ok(state) = serde_json::from_value::<control::PartyState>(value.clone()) {
                     self.party_changed(state.party);
@@ -777,6 +798,7 @@ impl Online {
         {
             self.refresh_conversations();
         }
+        self.call_party_changed();
     }
 
     /// Takes a fresh list of conversations and fetches what loaded threads missed.
@@ -1110,6 +1132,7 @@ impl Online {
                     self.social = Social::default();
                     self.voice.reset();
                     self.screen.reset();
+                    self.calls = Calls::default();
                     self.session = None;
                     self.cards.clear();
                     self.avatars.clear();
@@ -1184,6 +1207,12 @@ impl Online {
                 notices.push(Notice::PartyInvitation(invitation));
             }
             Event::PartyInvitationGone { id } => self.social.drop_party_invitation(&id),
+            Event::MissedCalls(list) => self.missed_calls(list.missed),
+            Event::MissedCall { call } => notices.push(self.missed_call(call)),
+            Event::MissedCallGone { account } => self.missed_call_gone(account),
+            Event::CallEnded { account, reason } => {
+                notices.extend(self.call_ended(account, reason));
+            }
             Event::Conversations(lists) => self.listed(lists, &mut notices),
             Event::Message { conversation, seq } => {
                 if self.social.note_last(&conversation, seq) {
@@ -2077,6 +2106,7 @@ mod tests {
             conversation: "pc".into(),
             created: 0,
             revision,
+            discord: None,
         };
         online.apply(event(Event::Party {
             party: Some(party(2, 1)),
@@ -2112,6 +2142,7 @@ mod tests {
             party: "p9".into(),
             members: 2,
             expires: 0,
+            call: false,
         };
         let notices = online.apply(event(Event::PartyInvitation {
             invitation: invitation.clone(),

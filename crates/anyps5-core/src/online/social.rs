@@ -591,6 +591,7 @@ mod tests {
             conversation: "pc".into(),
             created: 0,
             revision,
+            discord: None,
         }
     }
 
@@ -622,6 +623,7 @@ mod tests {
             party: "p1".into(),
             members,
             expires: 0,
+            call: false,
         };
         social.add_party_invitation(invitation("a", 2));
         social.add_party_invitation(invitation("a", 3));

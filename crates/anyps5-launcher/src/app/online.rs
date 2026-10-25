@@ -21,6 +21,7 @@ use crate::app::model::{Effect, Model};
 use crate::app::overlay::Overlay;
 use crate::screens::discord_strings::redeem_failure;
 use crate::screens::online_feed_strings::FeedText as FT;
+use crate::screens::online_call_strings::CallText as CT;
 use crate::screens::online_restriction_strings as restriction_text;
 use crate::screens::online_social_strings::SocialText as S;
 use crate::screens::online_strings::OnlineText as T;
@@ -300,6 +301,26 @@ impl OnlineService {
                 );
                 model.toast(text, Icon::ENVELOPE_SIMPLE);
             }
+            // A call rings on its own card; the window comes forward so it can be answered.
+            Notice::PartyInvitation(invitation) if invitation.call => {
+                model.effects.push(Effect::RestoreWindow);
+            }
+            Notice::MissedCall(call) => {
+                let text = CT::ToastMissed.format(language, &[Arg::Str(&call.from.handle)]);
+                model.toast(text, Icon::USERS);
+            }
+            Notice::CallEnded(callee, reason) => {
+                let text = match reason {
+                    net::api::CallEnd::Declined => CT::ToastDeclined,
+                    _ => CT::ToastNoAnswer,
+                }
+                .format(language, &[Arg::Str(&callee.handle)]);
+                model.toast(text, Icon::USERS);
+            }
+            Notice::CallUnreachable(account) => {
+                let text = CT::ToastUnreachable.format(language, &[Arg::Str(&account.handle)]);
+                model.toast(text, Icon::USERS);
+            }
             Notice::PartyInvitation(invitation) => {
                 let text = S::PartyInvitationArrived
                     .format(language, &[Arg::Str(&invitation.from.handle)]);
@@ -529,6 +550,14 @@ impl OnlineService {
                 tracing::info!("net service: {}: {}", failure.code, failure.message);
             }
             // Held keys and levels come and go many times a second: a failure is only logged.
+            (Purpose::CallsSeen, Err(failure)) => {
+                tracing::info!("net service: {}: {}", failure.code, failure.message);
+            }
+            (Purpose::PartyLink, Err(failure))
+                if failure.code == ErrorCode::BadRequest.as_str() =>
+            {
+                model.toast(CT::LinkInvalid.text(language), Icon::WARNING);
+            }
             (Purpose::Voice | Purpose::PushToTalk | Purpose::VoiceDevices, Err(failure)) => {
                 tracing::info!("net service: {}: {}", failure.code, failure.message);
             }
@@ -1018,6 +1047,7 @@ mod tests {
                 party: "p".into(),
                 members: 2,
                 expires: 0,
+                call: false,
             }),
             &mut ready,
         );

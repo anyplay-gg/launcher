@@ -4,12 +4,14 @@
 
 use anyps5_core::online::api::AccountId;
 use anyps5_core::online::{
-    DeviceKind, Hardware, MAX_PERCENT, Mic, Online, PERCENT_STEP, VoiceMode, VoiceStatus,
+    DeviceKind, Hardware, MAX_PERCENT, Mic, Online, PERCENT_STEP, VoiceMode, VoiceProvider,
+    VoiceStatus,
 };
 use egui::Key;
 
 use super::{OnlineAction, OnlineData, OnlinePanel, Page};
 use crate::screens::controls::key_name;
+use crate::screens::online_call_strings::CallText as CT;
 use crate::screens::online_voice_strings::VoiceText as V;
 use crate::screens::rows::{Change, Row, source_label};
 use crate::ui::i18n::{Arg, Language};
@@ -67,6 +69,7 @@ fn status_text(status: &VoiceStatus, language: Language) -> &'static str {
         VoiceStatus::NoParty => V::StatusNoParty,
         VoiceStatus::Connecting => V::StatusConnecting,
         VoiceStatus::On => V::StatusOn,
+        VoiceStatus::Discord => return CT::StatusDiscord.text(language),
     }
     .text(language)
 }
@@ -102,6 +105,22 @@ impl OnlinePanel {
         let in_party = online.social.party.is_some();
         let status = voice.status(in_party);
         let t = |text: V| text.text(language);
+        rows.push(
+            Row::choice(
+                "voiceProvider",
+                CT::VoiceOn.text(language),
+                vec![
+                    CT::ProviderAnyPlay.text(language).to_owned(),
+                    CT::ProviderDiscord.text(language).to_owned(),
+                ],
+                usize::from(voice.provider() == VoiceProvider::Discord),
+            )
+            .icon(Icon::DISCORD_LOGO),
+        );
+        if voice.provider() == VoiceProvider::Discord {
+            self.discord_rows(data, rows);
+            return;
+        }
         rows.push(
             Row::toggle("voiceOn", t(V::PartyVoice), voice.enabled())
                 .icon(Icon::MICROPHONE)
@@ -154,6 +173,51 @@ impl OnlinePanel {
         rows.push(Row::info("voiceNote", t(note), None));
     }
 
+    /// With the voice on Discord the party page says so instead of showing the controls: no
+    /// microphone, no mode, no key. The party's link opens Discord; its leader can set it.
+    fn discord_rows(&self, data: &OnlineData<'_>, rows: &mut Vec<Row>) {
+        let language = data.language;
+        let online = data.online;
+        let t = |text: CT| text.text(language);
+        let party = online.social.party.as_ref();
+        let link = party.and_then(|p| p.discord.as_deref());
+        rows.push(Row::info("voiceDiscord", t(CT::VoiceOnDiscord), None).icon(Icon::DISCORD_LOGO));
+        if let Some(link) = link {
+            rows.push(Row::command("openDiscord", t(CT::OpenInDiscord)).icon(Icon::DISCORD_LOGO));
+            rows.push(Row::info(
+                "discordLinkNow",
+                t(CT::DiscordLink),
+                Some(link.to_owned()),
+            ));
+        }
+        rows.push(Row::info("voiceNote", t(CT::ProviderDiscordNote), None));
+        let leads = party
+            .zip(online.account.as_ref())
+            .is_some_and(|(p, me)| p.leader == me.id);
+        if leads && self.page == Page::Party {
+            rows.push(
+                Row::text(
+                    "discordLink",
+                    t(CT::DiscordLinkField),
+                    self.link_text.clone(),
+                )
+                .icon(Icon::LINK)
+                .wide()
+                .group_start(),
+            );
+            let valid = anyps5_core::online::api::is_discord_link(self.link_text.trim());
+            let mut save = Row::command("saveLink", t(CT::SetLink)).icon(Icon::CHECK);
+            if !self.link_text.trim().is_empty() && !valid {
+                save = save.detail(t(CT::LinkInvalid));
+            }
+            rows.push(save);
+            if link.is_some() {
+                rows.push(Row::command("removeLink", t(CT::RemoveLink)).icon(Icon::X));
+            }
+            rows.push(Row::info("linkNote", t(CT::LinkNote), None));
+        }
+    }
+
     /// The voice page: the same toggle and mode, then the key and the devices.
     pub(super) fn voice_page(&self, data: &OnlineData<'_>, rows: &mut Vec<Row>) {
         let language = data.language;
@@ -161,6 +225,9 @@ impl OnlinePanel {
         let voice = &online.voice;
         let t = |text: V| text.text(language);
         self.voice_rows(data, rows, true);
+        if voice.provider() == VoiceProvider::Discord {
+            return;
+        }
         if voice.mode() == VoiceMode::PushToTalk {
             let key = format!("KEY:{}", key_name(talk_key(online)).unwrap_or("V"));
             let mut keys = Row::keys("talkKey", t(V::TalkKey), vec![key], self.capturing)
@@ -291,6 +358,14 @@ impl OnlinePanel {
         match change {
             Change::Toggle { row: "voiceOn", on } => actions.push(OnlineAction::Voice(*on)),
             Change::Choice {
+                row: "voiceProvider",
+                index,
+            } => actions.push(OnlineAction::VoiceProvider(if *index == 0 {
+                VoiceProvider::AnyPlay
+            } else {
+                VoiceProvider::Discord
+            })),
+            Change::Choice {
                 row: "voiceMode",
                 index,
             } => actions.push(OnlineAction::VoiceMode(if *index == 0 {
@@ -338,6 +413,25 @@ impl OnlinePanel {
                 actions.push(OnlineAction::RefreshVoiceDevices);
                 self.go(Page::Voice, data);
             }
+            ("openDiscord", _) => {
+                let link = data
+                    .online
+                    .social
+                    .party
+                    .as_ref()
+                    .and_then(|p| p.discord.clone());
+                if let Some(link) = link {
+                    actions.push(OnlineAction::OpenDiscord(link));
+                }
+            }
+            ("saveLink", Page::Party) => {
+                let link = self.link_text.trim().to_owned();
+                if anyps5_core::online::api::is_discord_link(&link) {
+                    actions.push(OnlineAction::PartyLink(link));
+                    self.link_text.clear();
+                }
+            }
+            ("removeLink", Page::Party) => actions.push(OnlineAction::PartyLink(String::new())),
             ("voiceInput", _) => self.go(Page::VoiceDevices(DeviceKind::Input), data),
             ("voiceOutput", _) => self.go(Page::VoiceDevices(DeviceKind::Output), data),
             ("refreshDevices", _) => actions.push(OnlineAction::RefreshVoiceDevices),

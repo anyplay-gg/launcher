@@ -10,6 +10,7 @@ use crate::app::model::{Effect, Model};
 use crate::app::online::OnlineService;
 use crate::app::overlay::{Overlay, OverlayCx};
 use crate::screens::online::{OnlineAction, OnlineData};
+use crate::screens::online_call_strings::CallText as CT;
 use crate::screens::online_social_strings::SocialText as S;
 use crate::screens::online_strings::OnlineText as T;
 use crate::ui::icons::Icon;
@@ -99,6 +100,18 @@ fn online_action(model: &mut Model, action: OnlineAction) {
         OnlineAction::React(item, reaction) => online.react(item, reaction),
         OnlineAction::Profile(account) => online.request_profile(account),
         OnlineAction::Voice(on) => online.set_voice(on),
+        OnlineAction::VoiceProvider(provider) => online.set_voice_provider(provider),
+        OnlineAction::Call(account) => {
+            let friend = online.known(account).cloned();
+            let started = friend.as_ref().map(|friend| online.start_call(friend));
+            if started == Some(false) {
+                let text = CT::ToastNeedsLeader.text(model.language());
+                model.toast(text, Icon::WARNING);
+            }
+        }
+        OnlineAction::CallsSeen(account) => online.calls_seen(account),
+        OnlineAction::PartyLink(url) => online.set_party_link(&url),
+        OnlineAction::OpenDiscord(link) => crate::screens::calls::open_discord_link(&link),
         OnlineAction::VoiceMode(mode) => online.set_voice_mode(mode),
         OnlineAction::VoiceKey(key) => online.set_voice_key(Some(key)),
         OnlineAction::VoiceDevice(kind, name) => online.set_voice_device(kind, name),
@@ -218,7 +231,12 @@ fn online_action(model: &mut Model, action: OnlineAction) {
             }
         }
         OnlineAction::PartyInvite(accounts) => {
-            online.send(Purpose::PartyInvite, Command::PartyInvite { accounts });
+            // Adding to a call rings; inviting to a party does not.
+            let call = online.calls.active;
+            online.send(
+                Purpose::PartyInvite,
+                Command::PartyInvite { accounts, call },
+            );
         }
         OnlineAction::PartyAnswer { id, accept } => {
             online.send(

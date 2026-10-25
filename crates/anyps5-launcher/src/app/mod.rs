@@ -150,6 +150,8 @@ pub struct LauncherApp {
     /// What Discord shows right now.
     shown: Option<anyps5_core::discord::Playing>,
     start_screen: screens::start::StartScreen,
+    /// The ringing card and the call strip.
+    calls: screens::calls::CallsUi,
     links: links::LinkState,
     scan_on_start: bool,
     /// No scan, size or trophy work (previews and the demo have a made-up library).
@@ -195,6 +197,7 @@ impl LauncherApp {
             playing: None,
             shown: None,
             start_screen: screens::start::StartScreen::default(),
+            calls: screens::calls::CallsUi::default(),
             links: links::LinkState::default(),
             scan_on_start: config.scan_on_start,
             offline: false,
@@ -570,6 +573,7 @@ impl LauncherApp {
         self.paint_overlays(ui, &ctx);
         self.paint_start(&ctx);
         self.paint_toast(&ctx);
+        self.calls.show(&ctx, &mut self.model, &mut self.shell);
         let mut cx = OverlayCx {
             model: &mut self.model,
             shell: &mut self.shell,

@@ -19,16 +19,19 @@ pub enum Cue {
     Error,
     /// The launcher opened: a slow swell under the intro.
     Boot,
+    /// A call rings: two soft stacked fifths, repeated by the caller of the cue.
+    Ring,
 }
 
 impl Cue {
-    pub const ALL: [Cue; 6] = [
+    pub const ALL: [Cue; 7] = [
         Cue::Move,
         Cue::Select,
         Cue::Back,
         Cue::Unlocked,
         Cue::Error,
         Cue::Boot,
+        Cue::Ring,
     ];
 }
 
@@ -120,6 +123,23 @@ fn recipe(cue: Cue) -> (Mix, Draw) {
             |o, r| {
                 tone(o, r, 0.0, A3, 1.0, shape(0.012, 0.09), PURE, 0.0);
                 tone(o, r, 0.0, B_FLAT3, 0.9, shape(0.012, 0.09), PURE, 0.0);
+            },
+        ),
+        // A call: F4 with C5 over it, then the same a step later and softer, slow attacks, a
+        // little room. Warm and low, so it asks without alarming.
+        Cue::Ring => (
+            Mix {
+                peak_db: -14.0,
+                send: 0.22,
+                rt60: 1.4,
+                cutoff: 6500.0,
+                length: 1.3,
+            },
+            |o, r| {
+                for (at, gain) in [(0.0, 1.0), (0.3, 0.7)] {
+                    tone(o, r, at, F4, gain, shape(0.04, 0.2), PURE, 0.0);
+                    tone(o, r, at + 0.01, C5, gain * 0.7, shape(0.04, 0.2), PURE, 0.0);
+                }
             },
         ),
         // The trophy chord's family an octave lower and slower: F3 C4 G4 C5 F5 swelling in

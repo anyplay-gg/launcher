@@ -37,10 +37,23 @@ pub struct PeerPrefs {
     pub muted: bool,
 }
 
+/// Where the player talks with their party: AnyPlay's own voice, or Discord, in which case
+/// AnyPlay never opens the microphone for a party or a call.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceProvider {
+    #[default]
+    AnyPlay,
+    Discord,
+}
+
 /// What the player chose for party voice. Lasts across launches and parties.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VoicePrefs {
     pub enabled: bool,
+    /// AnyPlay (the default) or Discord.
+    #[serde(default)]
+    pub provider: VoiceProvider,
     #[serde(default)]
     pub mode: VoiceMode,
     /// The microphone by name; `None` is the system's default.
@@ -145,6 +158,8 @@ impl Problem {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Status {
     Off,
+    /// The player talks on Discord: AnyPlay opens no microphone.
+    Discord,
     /// Switched on, but the player is in no party: voice starts with the next one.
     NoParty,
     /// The service could not open the devices and switched voice off.
@@ -179,6 +194,10 @@ pub struct Voice {
     pub peers: Vec<VoicePeer>,
     pub devices: Option<Devices>,
     pub problem: Option<Problem>,
+    /// The player muted their own microphone.
+    pub muted: bool,
+    /// The player hears nobody.
+    pub deafened: bool,
     /// The last push-to-talk state sent to the service.
     talking: bool,
 }
@@ -212,11 +231,23 @@ impl Voice {
         self.prefs.enabled
     }
 
+    pub fn provider(&self) -> VoiceProvider {
+        self.prefs.provider
+    }
+
+    /// Voice runs on AnyPlay's side: the player switched it on and does not use Discord.
+    pub fn runs_here(&self) -> bool {
+        self.prefs.enabled && self.prefs.provider == VoiceProvider::AnyPlay
+    }
+
     pub fn mode(&self) -> VoiceMode {
         self.prefs.mode
     }
 
     pub fn status(&self, in_party: bool) -> Status {
+        if self.prefs.provider == VoiceProvider::Discord {
+            return Status::Discord;
+        }
         if !self.prefs.enabled {
             return match &self.problem {
                 Some(problem) => Status::Failed(problem.clone()),
@@ -320,7 +351,7 @@ impl Online {
                 );
             }
         }
-        if prefs.enabled {
+        if prefs.enabled && prefs.provider == VoiceProvider::AnyPlay {
             self.send(Purpose::Voice, Command::Voice { on: true });
         }
         self.request_voice_devices();
@@ -344,6 +375,23 @@ impl Online {
         } else {
             self.voice.talking = false;
         }
+        if on && self.voice.prefs.provider == VoiceProvider::Discord {
+            // On Discord the microphone stays closed whatever the toggle says.
+            return;
+        }
+        self.send(Purpose::Voice, Command::Voice { on });
+    }
+
+    /// Chooses where the player talks. Discord switches AnyPlay's voice off; AnyPlay switches it
+    /// on again if the player had it on.
+    pub fn set_voice_provider(&mut self, provider: VoiceProvider) {
+        if self.voice.prefs.provider == provider {
+            return;
+        }
+        self.voice.prefs.provider = provider;
+        self.voice.changed = true;
+        self.voice.talking = false;
+        let on = provider == VoiceProvider::AnyPlay && self.voice.prefs.enabled;
         self.send(Purpose::Voice, Command::Voice { on });
     }
 
@@ -460,6 +508,8 @@ mod tests {
             state,
             enabled: true,
             mode: VoiceMode::PushToTalk,
+            muted: false,
+            deafened: false,
             me: VoiceLevel {
                 level: 40,
                 speaking,
@@ -503,6 +553,8 @@ mod tests {
             state: VoiceState::Off,
             enabled: false,
             mode: VoiceMode::PushToTalk,
+            muted: false,
+            deafened: false,
             me: VoiceLevel::default(),
             peers: vec![],
         }));
@@ -631,6 +683,7 @@ mod tests {
                 percent: 80,
                 muted: true,
             }],
+            provider: VoiceProvider::default(),
         });
         assert!(!online.voice.take_changed());
         let id = online.send(
@@ -765,6 +818,7 @@ mod tests {
                 percent: 120,
                 muted: false,
             }],
+            provider: VoiceProvider::default(),
         };
         let text = serde_json::to_string(&prefs).unwrap();
         assert_eq!(serde_json::from_str::<VoicePrefs>(&text).unwrap(), prefs);

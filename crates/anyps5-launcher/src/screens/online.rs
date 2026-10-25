@@ -18,9 +18,11 @@ use std::collections::BTreeSet;
 use anyps5_core::online::api::{AccountId, Audience, Count, Reaction, ReportReason};
 use anyps5_core::online::{
     self, Cloud, DeviceKind, Link, Online, Pending, Purpose, ScreenCommand, VoiceMode,
+    VoiceProvider,
 };
 use egui::{Color32, Context};
 
+use crate::screens::online_call_strings::{self as call_text, CallText as CT};
 use crate::screens::online_feed_strings::FeedText as F;
 use crate::screens::online_strings::OnlineText as T;
 use crate::screens::online_voice_strings::VoiceText as V;
@@ -113,8 +115,17 @@ pub enum OnlineAction {
     React(u64, Option<Reaction>),
     /// A profile page opened or asks again: read the profile of this account.
     Profile(AccountId),
+    /// Call a friend, or add the friend to the call the player leads.
+    Call(AccountId),
+    /// The player looked at a friend's missed calls.
+    CallsSeen(AccountId),
+    /// The leader sets the party's Discord link; empty removes it.
+    PartyLink(String),
+    /// Open a Discord link in the system browser.
+    OpenDiscord(String),
     // Party voice
     Voice(bool),
+    VoiceProvider(VoiceProvider),
     VoiceMode(VoiceMode),
     /// The key held to talk, by its egui name.
     VoiceKey(String),
@@ -227,6 +238,8 @@ pub struct OnlinePanel {
     queued: Vec<OnlineAction>,
     /// The row the focus stands on, for a page whose rows change under it.
     anchor: Option<social::Anchor>,
+    /// The Discord link being written for the party.
+    link_text: String,
     /// The talk key row waits for a key.
     capturing: bool,
     /// What the shell's key capture was last set to by this panel.
@@ -302,6 +315,10 @@ impl OnlinePanel {
             self.clear_appeal();
         }
         match &page {
+            // Looking at a friend is seeing their missed calls.
+            Page::Friend(id) if data.online.calls.missed_from(*id).is_some() => {
+                self.queued.push(OnlineAction::CallsSeen(*id));
+            }
             Page::Conversation(id) | Page::MessageRequest(id) => {
                 if self.page != page && !matches!(self.page, Page::Message(..)) {
                     self.shown = social::SHOWN;
@@ -540,6 +557,7 @@ impl OnlinePanel {
             "cloud" => &mut self.cloud_text,
             "friend" => &mut self.friend_text,
             "appeal" => &mut self.appeal_text,
+            "discordLink" => &mut self.link_text,
             "compose" => {
                 if let Page::Conversation(id) = &self.page {
                     actions.push(OnlineAction::Draft {
@@ -718,6 +736,7 @@ impl OnlinePanel {
             ("withdraw", Page::Outgoing(id)) => actions.push(OnlineAction::Decline(*id)),
             ("unblock", Page::Blocked(id)) => actions.push(OnlineAction::Unblock(*id)),
             ("join", Page::Friend(id)) => actions.push(OnlineAction::Join(*id)),
+            ("call", Page::Friend(id)) => actions.push(OnlineAction::Call(*id)),
             ("invite", Page::Friend(id)) => actions.push(OnlineAction::Invite(*id)),
             ("remove", Page::Friend(id)) => actions.push(OnlineAction::RemoveFriend(*id)),
             ("report", Page::Friend(id)) => {
@@ -879,6 +898,7 @@ impl OnlinePanel {
                     );
                 }
                 self.friend_social_rows(data, *id, &mut rows);
+                rows.extend(call_row(data, *id));
                 rows.push(
                     Row::action("viewProfile", F::ViewProfile.text(language))
                         .icon(Icon::USER_CIRCLE),
@@ -1210,7 +1230,7 @@ impl OnlinePanel {
                         (None, true) => Icon::USER_CIRCLE,
                         (None, false) => Icon::CIRCLE_DASHED,
                     })
-                    .detail(presence_text(friend, language)),
+                    .detail(friend_detail(data, friend)),
             );
         }
         rows.push(Row::command("addFriend", t(T::AddFriend)).icon(Icon::USER_PLUS));
@@ -1305,6 +1325,48 @@ fn trophy_row(count: Option<&Count>, language: Language) -> Row {
     Row::info("trophies", title, Some(total.to_string()))
         .icon(Icon::TROPHY)
         .detail(detail)
+}
+
+/// The row that calls a friend, or adds them to the call the player leads. A friend who is offline
+/// is not rung; a player who is in someone else's party cannot add anyone to it.
+fn call_row(data: &OnlineData<'_>, id: AccountId) -> Option<Row> {
+    let online = data.online;
+    let friend = online.friend(id).filter(|f| f.presence.online)?;
+    if online.calls.ringing.is_some() {
+        return None;
+    }
+    let me = online.account.as_ref()?.id;
+    let title = match &online.social.party {
+        Some(party) if party.leader != me => return None,
+        Some(party)
+            if party
+                .members
+                .iter()
+                .any(|m| m.account.id == friend.account.id) =>
+        {
+            return None;
+        }
+        Some(party) if party.members.len() > 1 => CT::AddToCall,
+        _ => CT::CallFriend,
+    };
+    Some(
+        Row::command("call", title.text(data.language))
+            .icon(Icon::SPEAKER_HIGH)
+            .detail(CT::CallFriendDetail.text(data.language)),
+    )
+}
+
+/// The detail of a friend's row: a missed call until it is seen, else what they are doing.
+fn friend_detail(data: &OnlineData<'_>, friend: &online::api::Friend) -> String {
+    match data.online.calls.missed_from(friend.account.id) {
+        Some(missed) => call_text::ago(
+            u64::try_from(data.now)
+                .unwrap_or(0)
+                .saturating_sub(missed.at),
+            data.language,
+        ),
+        None => presence_text(friend, data.language),
+    }
 }
 
 pub fn presence_text(friend: &online::api::Friend, language: Language) -> String {
@@ -1600,6 +1662,7 @@ mod tests {
                 party: "p".into(),
                 members: 2,
                 expires: 0,
+                call: false,
             });
         let mut panel = OnlinePanel::default();
         panel.open(&data(&online));

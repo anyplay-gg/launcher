@@ -21,6 +21,8 @@
 //!                           online-muted|online-restriction|online-paused|online-banned|
 //!                           profile-own|profile-other|profile-minimal|profile-minimal-other|
 //!                           feed|feed-reaction|feed-empty|feed-loading|feed-error
+//!                           incoming-call|incoming-call-discord|in-call|in-call-discord|calling|
+//!                           missed-call|party-discord
 //!                 [--screenshot=out.png] [--size=WxH] [--tr]
 //! ```
 //!
@@ -196,6 +198,20 @@ pub enum OnlineLook {
     FeedEmpty,
     FeedLoading,
     FeedError,
+    /// A friend calls: the ringing card.
+    IncomingCall,
+    /// The same while the player's voice is on Discord.
+    IncomingCallDiscord,
+    /// On a call with two friends, one speaking, the microphone muted.
+    InCall,
+    /// On a call while the voice is on Discord, the party has a link.
+    InCallDiscord,
+    /// Waiting for a friend to answer.
+    Calling,
+    /// The friends list with a missed call.
+    MissedCall,
+    /// The party page while the voice is on Discord, for the leader.
+    PartyDiscord,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -286,6 +302,13 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "feed-empty" => ScreenPage::Online(OnlineLook::FeedEmpty),
         "feed-loading" => ScreenPage::Online(OnlineLook::FeedLoading),
         "feed-error" => ScreenPage::Online(OnlineLook::FeedError),
+        "incoming-call" => ScreenPage::Online(OnlineLook::IncomingCall),
+        "incoming-call-discord" => ScreenPage::Online(OnlineLook::IncomingCallDiscord),
+        "in-call" => ScreenPage::Online(OnlineLook::InCall),
+        "in-call-discord" => ScreenPage::Online(OnlineLook::InCallDiscord),
+        "calling" => ScreenPage::Online(OnlineLook::Calling),
+        "missed-call" => ScreenPage::Online(OnlineLook::MissedCall),
+        "party-discord" => ScreenPage::Online(OnlineLook::PartyDiscord),
         other => {
             let n: usize = other.strip_prefix("settings")?.parse().ok()?;
             (n < crate::screens::settings::Category::ALL.len())
@@ -446,6 +469,7 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
     }
     sample_voice(&mut state, look);
     sample_screen(&mut state, look);
+    sample_calls(&mut state, look);
     if matches!(
         look,
         OnlineLook::Muted | OnlineLook::Restriction | OnlineLook::Paused
@@ -471,6 +495,77 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
     state
 }
 
+/// Calls over the invented state: a ringing call, a call in progress, a missed call.
+fn sample_calls(state: &mut anyps5_core::online::Online, look: OnlineLook) {
+    use anyps5_core::online::api::{Account, AccountId, MissedCall, PartyInvitation};
+    use anyps5_core::online::{VoicePrefs, VoiceProvider};
+    let account = |id: u64, handle: &str| Account {
+        id: AccountId(id),
+        handle: handle.into(),
+    };
+    let discord = matches!(
+        look,
+        OnlineLook::IncomingCallDiscord | OnlineLook::InCallDiscord | OnlineLook::PartyDiscord
+    );
+    if discord {
+        state.voice.load(VoicePrefs {
+            provider: VoiceProvider::Discord,
+            ..VoicePrefs::default()
+        });
+    }
+    match look {
+        OnlineLook::IncomingCall | OnlineLook::IncomingCallDiscord => {
+            // The ringing call comes from a friend who is not in a party with the player.
+            state.social.apply_party(None);
+            state.social.party_invitations.clear();
+            state.social.add_party_invitation(PartyInvitation {
+                id: "call1".into(),
+                from: account(2, "Lumen"),
+                party: "p-call".into(),
+                members: 1,
+                expires: u64::MAX / 2,
+                call: true,
+            });
+        }
+        OnlineLook::InCall | OnlineLook::InCallDiscord => {
+            state.calls.active = true;
+            if look == OnlineLook::InCall {
+                state.voice.muted = true;
+            }
+            if let Some(party) = state.social.party.as_ref().cloned() {
+                let mut party = party;
+                party.revision += 1;
+                if discord {
+                    party.discord = Some("https://discord.com/channels/1/2".into());
+                }
+                state.social.apply_party(Some(party));
+            }
+        }
+        OnlineLook::Calling => {
+            state.calls.ringing = Some(account(2, "Lumen"));
+            if let Some(mut party) = state.social.party.as_ref().cloned() {
+                party.members.truncate(1);
+                party.revision += 1;
+                state.social.apply_party(Some(party));
+            }
+        }
+        OnlineLook::MissedCall => {
+            state.calls.missed.push(MissedCall {
+                from: account(4, "Kit"),
+                at: SAMPLE_NOW as u64 - 300,
+            });
+        }
+        OnlineLook::PartyDiscord => {
+            if let Some(mut party) = state.social.party.as_ref().cloned() {
+                party.revision += 1;
+                party.discord = Some("https://discord.gg/nSHbHBRdS".into());
+                state.social.apply_party(Some(party));
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Party voice over the invented party: on for the looks that show it, with Lumen speaking.
 fn sample_voice(state: &mut anyps5_core::online::Online, look: OnlineLook) {
     use anyps5_core::online::api::AccountId;
@@ -479,6 +574,8 @@ fn sample_voice(state: &mut anyps5_core::online::Online, look: OnlineLook) {
     if !matches!(
         look,
         OnlineLook::PartyVoice
+            | OnlineLook::InCall
+            | OnlineLook::InCallDiscord
             | OnlineLook::PartyMember
             | OnlineLook::Voice
             | OnlineLook::VoiceKey
@@ -661,6 +758,7 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
         conversation: "c-party".into(),
         created: 0,
         revision: 3,
+        discord: None,
     }));
     state.social.add_party_invitation(PartyInvitation {
         id: "pi1".into(),
@@ -668,6 +766,7 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
         party: "p9".into(),
         members: 2,
         expires: 0,
+        call: false,
     });
     state.session = Some(Session {
         id: "s1".into(),
@@ -1190,6 +1289,27 @@ impl ScreenGallery {
         }
     }
 
+    /// The ringing card and the call strip of the call looks.
+    fn call_surfaces(
+        &self,
+        ctx: &Context,
+        look: OnlineLook,
+        accent: Color32,
+        language: crate::ui::i18n::Language,
+    ) {
+        use crate::screens::calls;
+        if let Some(card) = calls::card_data(&self.online, 0) {
+            calls::incoming_card(ctx, accent, &card, language, 1.0, true);
+        }
+        if matches!(
+            look,
+            OnlineLook::InCall | OnlineLook::InCallDiscord | OnlineLook::Calling
+        ) && let Some(strip) = calls::strip_data(&self.online)
+        {
+            calls::call_strip(ctx, &strip, language, 1.0, true);
+        }
+    }
+
     fn ensure_art(&mut self, ctx: &Context) {
         if self.covers.is_empty() {
             self.covers = (0..NAMES.len())
@@ -1357,6 +1477,9 @@ impl ScreenGallery {
             }
             self.online_panel.show(shell, &ctx, &events, &data);
         }
+        if let ScreenPage::Online(look) = self.page {
+            self.call_surfaces(&ctx, look, accent, language);
+        }
         {
             let plan = sample_plan(matches!(self.page, ScreenPage::RecommendedWarning));
             let data = RecommendedData {
@@ -1472,9 +1595,22 @@ impl ScreenGallery {
                 use crate::screens::online::Page;
                 let language = shell.language;
                 let data = online_data(&self.online, language, shell.accent_color());
+                // The call looks show the ringing card or the strip over the bare home screen.
+                if matches!(
+                    look,
+                    OnlineLook::IncomingCall
+                        | OnlineLook::IncomingCallDiscord
+                        | OnlineLook::InCall
+                        | OnlineLook::InCallDiscord
+                        | OnlineLook::Calling
+                ) {
+                    return;
+                }
                 self.online_panel.open(&data);
                 match look {
                     OnlineLook::Requests => self.online_panel.show_page(Page::Requests, &data),
+                    OnlineLook::MissedCall => self.online_panel.show_page(Page::Home, &data),
+                    OnlineLook::PartyDiscord => self.online_panel.show_page(Page::Party, &data),
                     OnlineLook::Friend => self
                         .online_panel
                         .show_page(Page::Friend(anyps5_core::online::api::AccountId(2)), &data),
