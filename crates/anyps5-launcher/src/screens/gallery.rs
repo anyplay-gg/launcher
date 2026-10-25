@@ -4,7 +4,7 @@
 //! ```text
 //! anyplay-launcher --gallery=settings|settings1..6|game-settings|confirm|controls|controls-capture|
 //!                           controls-end|advanced|trophies|trophies-hidden|trophies-revealed|banner|start|unlocking|log|report|library|
-//!                           about-update|behavior-links|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|
+//!                           about-update|behavior-links|behavior-clips-off|behavior-clips|behavior-clips-key|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|
 //!                           toolkit-unused|game-toolkit|
 //!                           recommended|recommended-warning|whats-new|whats-new-loading|
 //!                           saves|saves-empty|restore|
@@ -111,6 +111,10 @@ pub enum ScreenPage {
     AboutUpdate,
     /// Behavior with the AnyPlay links registered to this launcher.
     BehaviourLinks,
+    /// Behavior with Clips off, on at 30 seconds, and waiting for the clip key.
+    BehaviourClipsOff,
+    BehaviourClips,
+    BehaviourClipsKey,
     Recommended,
     RecommendedWarning,
     WhatsNew,
@@ -364,6 +368,9 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "library" => ScreenPage::Library,
         "about-update" => ScreenPage::AboutUpdate,
         "behavior-links" => ScreenPage::BehaviourLinks,
+        "behavior-clips-off" => ScreenPage::BehaviourClipsOff,
+        "behavior-clips" => ScreenPage::BehaviourClips,
+        "behavior-clips-key" => ScreenPage::BehaviourClipsKey,
         "phone-off" => ScreenPage::Phone(PhoneLook::Off),
         "phone-waiting" => ScreenPage::Phone(PhoneLook::Waiting),
         "phone-pairing" => ScreenPage::Phone(PhoneLook::Pairing),
@@ -1662,6 +1669,10 @@ impl ScreenGallery {
             },
             cjk_fonts: anyps5_core::fonts::CjkState::Missing,
             phone: &self.phone,
+            clips: crate::screens::settings::ClipsEnv {
+                count: if self.prefs.clips_seconds > 0 { 3 } else { 0 },
+                capturing: matches!(self.page, ScreenPage::BehaviourClipsKey),
+            },
         };
         let icon = Some(self.tile(1));
         self.settings
@@ -1968,6 +1979,20 @@ impl ScreenGallery {
                 self.settings.focus_row(2);
             }
             ScreenPage::BehaviourLinks => self.settings.open_at(3, true),
+            ScreenPage::BehaviourClipsOff => {
+                self.prefs.clips_seconds = 0;
+                self.settings.open_at(3, true);
+                self.settings.focus_row(7);
+            }
+            ScreenPage::BehaviourClips | ScreenPage::BehaviourClipsKey => {
+                self.prefs.clips_seconds = 30;
+                self.settings.open_at(3, true);
+                self.settings.focus_row(if self.page == ScreenPage::BehaviourClipsKey {
+                    8
+                } else {
+                    7
+                });
+            }
             ScreenPage::Phone(look) => {
                 self.settings.open_at(4, true);
                 // The question lands on its first answer.

@@ -111,6 +111,8 @@ pub enum Effect {
     StopOnline,
     /// Relay only changed in the preferences: the net service hears of it (`app::online`).
     RelayOnlyChanged,
+    /// Save the last seconds of the running game as a clip (`app::clips`).
+    SaveClip,
     /// The player came online: read what they earned in every unlocked game for the network.
     SyncTrophies,
 }

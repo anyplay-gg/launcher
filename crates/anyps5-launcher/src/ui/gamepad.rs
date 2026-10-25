@@ -3,7 +3,7 @@
 //!
 //! D-pad and left stick are directions (stick axis above 0.55, otherwise that axis counts as 0;
 //! the dominant axis wins). A / Cross = select, B / Circle = back, Y / Triangle = options,
-//! Menu / Start = options.
+//! Menu / Start = options. Create / Share / View saves a clip.
 
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
@@ -88,6 +88,8 @@ fn poll(ctx: &egui::Context, tx: &Sender<PadMessage>) {
                     Button::South => send(PadMessage::Button(Command::Select)),
                     Button::East => send(PadMessage::Button(Command::Back)),
                     Button::North | Button::Start => send(PadMessage::Button(Command::Options)),
+                    // Create on a DualSense, Share on a DualShock, View or Back on an Xbox pad.
+                    Button::Select => send(PadMessage::Create),
                     Button::DPadUp => dirs.dpad.1 = 1.0,
                     Button::DPadDown => dirs.dpad.1 = -1.0,
                     Button::DPadLeft => dirs.dpad.0 = -1.0,

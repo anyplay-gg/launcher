@@ -17,6 +17,7 @@
 #![allow(dead_code)]
 
 pub mod avatars;
+pub mod clips;
 pub mod clock;
 pub mod core_pipeline;
 mod discord;
@@ -137,6 +138,8 @@ pub struct LauncherApp {
     pub online: online::OnlineService,
     /// The phone server behind `model.phone`.
     pub phone: phone::PhoneService,
+    /// The recorder and the hotkey of Clips.
+    clips: clips::ClipsService,
     applied: Applied,
     focused: bool,
     /// Overlays that are open or still animating out.
@@ -184,6 +187,7 @@ impl LauncherApp {
             std::sync::Arc::new(move || repaint.request_repaint());
         Self {
             phone: phone::PhoneService::new(wake.clone(), simulated),
+            clips: clips::ClipsService::new(wake.clone(), simulated),
             online: online::OnlineService::new(wake, simulated),
             shell,
             model,
@@ -296,6 +300,7 @@ impl LauncherApp {
         self.run_effects(ctx);
         self.sync_discord();
         self.sync_phone(ctx);
+        self.clips.frame(&mut self.model, &*self.pipeline);
         self.watch_trophies();
 
         self.services.set_busy(self.model.busy());
@@ -408,6 +413,7 @@ impl LauncherApp {
                     self.model.move_selection(delta);
                 }
             }
+            InputEvent::Create => self.model.effects.push(Effect::SaveClip),
             InputEvent::OpenSettings => {
                 if self.model.onboarded() && self.model.starting.is_none() {
                     self.model.open(Overlay::Settings);
@@ -462,6 +468,7 @@ impl LauncherApp {
                 }
             }
             Effect::Pipeline(command) => self.submit(command, None),
+            Effect::SaveClip => self.clips.save(&mut self.model),
             Effect::StartOnline => self.online.start(&mut self.model),
             Effect::StopOnline => self.online.stop(&mut self.model),
             Effect::RelayOnlyChanged => self.online.relay_only_changed(&mut self.model),

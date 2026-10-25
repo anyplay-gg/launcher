@@ -153,6 +153,8 @@ pub struct PanelHost {
     whats_new_tag: String,
     /// The settings category to open on when coming back from the notes.
     settings_return: Option<usize>,
+    /// How many clips the folder held when it was last counted, and when.
+    clips_counted: Option<(std::time::Instant, usize)>,
     /// What the catalogue recommends: the shipped one at first, a newer one once fetched.
     catalog: Catalog,
     catalog_asked: bool,
@@ -220,6 +222,7 @@ impl PanelHost {
             whats_new: WhatsNewPanel::default(),
             whats_new_tag: String::new(),
             settings_return: None,
+            clips_counted: None,
             catalog: Catalog::embedded(),
             catalog_asked: simulated,
             last_check: None,
@@ -304,6 +307,16 @@ impl PanelHost {
             .filter(|release| !in_use.contains(&release.tag))
             .cloned()
             .collect();
+        // The folder is read at most every two seconds, not on every frame.
+        let clips_count = match self.clips_counted {
+            Some((at, count)) if at.elapsed().as_secs() < 2 || !wanted => count,
+            _ => {
+                let folder = cx.model.prefs.screenshots_dir(&cx.model.paths);
+                let count = anyps5_core::clips::list_clips(&folder).len();
+                self.clips_counted = Some((std::time::Instant::now(), count));
+                count
+            }
+        };
         let env = SettingsEnv {
             games_found: cx.model.games.len(),
             app_version: env!("CARGO_PKG_VERSION"),
@@ -316,6 +329,10 @@ impl PanelHost {
             links: self.links.clone(),
             cjk_fonts: anyps5_core::fonts::cjk_state(&cx.model.paths, &crate::fonts::BUNDLE),
             phone: &cx.model.phone,
+            clips: crate::screens::settings::ClipsEnv {
+                count: clips_count,
+                capturing: self.settings.clips_capturing(),
+            },
         };
         // Theme, accent, language, motion and sounds reach the shell inside the panel
         // (`apply_preferences`), so the backdrop cross-fades while the choice is made.
@@ -348,6 +365,11 @@ impl PanelHost {
             }
             SettingsAction::Rescan => model.rescan(),
             SettingsAction::ShowScreenshots => {
+                let folder = model.prefs.screenshots_dir(&model.paths);
+                let _ = std::fs::create_dir_all(&folder);
+                open_folder(&folder);
+            }
+            SettingsAction::ShowClips => {
                 let folder = model.prefs.screenshots_dir(&model.paths);
                 let _ = std::fs::create_dir_all(&folder);
                 open_folder(&folder);

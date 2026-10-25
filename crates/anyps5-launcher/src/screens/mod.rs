@@ -60,6 +60,7 @@ pub mod run_strings;
 pub mod saves;
 pub mod scroll;
 pub mod settings;
+pub mod clips_strings;
 pub mod share_strings;
 mod shared;
 pub mod side;

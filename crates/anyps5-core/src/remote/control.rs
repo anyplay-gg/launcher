@@ -464,6 +464,7 @@ impl Hub {
             | Message::Launch { .. }
             | Message::Close
             | Message::Home
+            | Message::Create
             | Message::SaveLayout { .. } => self.events.request(message),
             _ => {}
         }
