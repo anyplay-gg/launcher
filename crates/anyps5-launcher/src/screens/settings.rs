@@ -30,7 +30,7 @@ use crate::screens::toolkit_pin::{self, REMOVE_ROWS};
 use crate::ui::Shell;
 use crate::ui::anim::{AnimExt, Motion, lerp};
 use crate::ui::chrome::fullscreen_panel;
-use crate::ui::components::corner;
+use crate::ui::components;
 use crate::ui::focus::PanelNav;
 use crate::ui::glass::GlassStyle;
 use crate::ui::i18n::{Arg, Key, Language};
@@ -38,7 +38,7 @@ use crate::ui::icons::Icon;
 use crate::ui::input::InputEvent;
 use crate::ui::sound::Cue;
 use crate::ui::text;
-use crate::ui::theme::{Accent, Theme, color, mix, pad, radius, size, ty, white};
+use crate::ui::theme::{Accent, Theme, pad, radius, size, ty, white};
 
 /// The categories, in the order of the list.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1192,18 +1192,23 @@ fn draw(
         }
         let t_focus = ctx.focus_t(("category-focus", index), focused);
         let t_sel = ctx.focus_t(("category-selected", index), selected);
-        let rest = if response.hovered() && !selected {
-            white(0.06)
-        } else {
-            Color32::TRANSPARENT
-        };
-        let fill = mix(
-            mix(rest, color::selected_category(), t_sel),
-            Color32::WHITE,
-            t_focus,
+        let hover_t = ctx.animate_to(
+            ("category-hover", index),
+            f32::from(response.hovered() && !selected),
+            Motion::Hover,
         );
-        painter.rect_filled(rect, corner(radius::ROW), fill);
-        let ink = mix(white(lerp(0.7, 1.0, t_sel)), Color32::BLACK, t_focus);
+        // The selected category keeps its quiet fill; the one with the focus gets the ring.
+        components::paint_surface(
+            &painter,
+            rect,
+            radius::ROW,
+            white(0.12 * t_sel),
+            hover_t,
+            t_focus,
+            0.0,
+            size::FOCUS_RING,
+        );
+        let ink = white(lerp(0.7, 1.0, t_sel));
         painter.text(
             pos2(rect.min.x + 18.0 + 13.0, rect.center().y),
             Align2::CENTER_CENTER,
