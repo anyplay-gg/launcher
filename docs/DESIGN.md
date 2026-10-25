@@ -409,8 +409,9 @@ Animations 1, 10-15 can share one helper: `focus_t: Spring` per focusable widget
 ## 3. Animated theme backgrounds
 
 Original: `BackgroundRenderer.swift`, one Metal fragment shader with three theme functions, compiled at start. It renders at
-**half the physical pixel size** (`drawableSize = bounds * backingScale * 0.5`) at 60 fps, is soft by design, and leaves the GPU to
-the games.
+**half the physical pixel size** (`drawableSize = bounds * backingScale * 0.5`) at 60 fps on the Mac, is soft by design, and leaves the GPU to
+the games. The launcher draws the idle backdrop and the artwork drift at about 30 Hz (`IDLE_REPAINT`, 30 ms so a
+present lands on every second vsync of a 60 Hz display); the clock advances by real time, so the drift speed is the same.
 
 ### 3.1 Driver
 
@@ -775,7 +776,7 @@ The launcher keeps the port's structure but trims what read as noise next to the
   GPU ready": 571 and 600 ms before (2200 ms on the first run), 369 to 460 ms after (530 ms first
   run). The pipelines take 130 to 170 ms, the first frame about 60 ms. A focused, idle home screen
   used 16.5 % of a core and 30 % GPU (58 threads) before, 11 % and 15 % (26 threads) after; the
-  backdrop is untouched and still draws at 60 Hz while focused. A window without focus, and a game
+  backdrop still drew at 60 Hz while focused then (it draws at about 30 Hz since the idle-rate change; the figures above come from the demo). A window without focus, and a game
   running, stop all drawing (0.2 to 2 % of a core). The gamepad thread polls every 100 ms while no
   pad is connected (4 ms with one). `ANYPS5_GPU=dx12|vulkan|both` and `ANYPS5_POWER=high` undo the
   choice for diagnosis; the log carries `startup t=...ms <step>` lines and the demo an `idle ...
@@ -2376,7 +2377,7 @@ While a game runs, the launcher can keep its last seconds and save them as a vid
 
 - **Immediate mode with retained animation state.** Keep a map `widget id -> Spring` (in `ctx.memory` or the app struct); call
   `ctx.request_repaint()` while any spring or timeline is active, `request_repaint_after(...)` for timed items (clock minute, splash
-  second tick, toast and banner timers) and nothing when idle with the background paused. While the shader animates, cap at 60 fps.
+  second tick, toast and banner timers) and nothing when idle with the background paused. While only the shader animates, repaint every 30 ms (about 30 fps); springs, fades and input still draw at the display rate.
 - **One command pipeline.** Translate egui key events, wheel and `gilrs` events into the seven commands (section 6) in a single
   function that is their only consumer; do not rely on egui's keyboard focus traversal (draw focus from the model: `HomeFocus`,
   `panelRow`, ...). Text fields are the only widgets that see raw keys.

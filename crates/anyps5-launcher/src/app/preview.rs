@@ -917,8 +917,6 @@ struct PreviewApp {
     requested: bool,
     script: std::collections::VecDeque<Step>,
     wait: u32,
-    /// Frames drawn since the last rate line of the demo.
-    rate: (std::time::Instant, u32),
 }
 
 impl PreviewApp {
@@ -1043,7 +1041,6 @@ impl PreviewApp {
             requested: false,
             script: options.script.iter().copied().collect(),
             wait: 0,
-            rate: (std::time::Instant::now(), 0),
             options,
         }
     }
@@ -1103,16 +1100,6 @@ impl eframe::App for PreviewApp {
         self.inner.paint(ui);
         self.inner.finish_frame(&ctx);
         self.frames += 1;
-        if self.options.scene.is_none() {
-            // The demo says how often it draws, to see what an idle launcher costs.
-            self.rate.1 += 1;
-            let seconds = self.rate.0.elapsed().as_secs_f32();
-            if seconds >= 5.0 {
-                let focused = ctx.input(|i| i.viewport().focused).unwrap_or(true);
-                tracing::info!(target: "idle", "{:.1} frames/s, focused={focused}", self.rate.1 as f32 / seconds);
-                self.rate = (std::time::Instant::now(), 0);
-            }
-        }
         // Scenes and screenshots draw every frame; the demo idles like the launcher does.
         if self.options.scene.is_some() || self.options.screenshot.is_some() {
             ctx.request_repaint();
