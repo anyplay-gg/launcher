@@ -96,6 +96,21 @@ pub fn pattern(cue: Cue) -> &'static [Pulse] {
         pulse(90, 24, 0.26, 0.0),
         pulse(150, 24, 0.32, 0.0),
     ];
+    // A switch: a tap, a little firmer for on.
+    const ON: [Pulse; 1] = [pulse(0, 20, 0.26, 0.0)];
+    const OFF: [Pulse; 1] = [pulse(0, 16, 0.20, 0.0)];
+    // A screen opens like a select; it closes like a back.
+    const OPEN: [Pulse; 1] = [pulse(0, 22, 0.30, 0.0)];
+    const CLOSE: [Pulse; 1] = [pulse(0, 16, 0.22, 0.0)];
+    // Something arrived: one soft tap; a message, a lighter one.
+    const NOTIFY: [Pulse; 1] = [pulse(0, 24, 0.22, 0.0)];
+    const MESSAGE: [Pulse; 1] = [pulse(0, 20, 0.22, 0.0)];
+    // An invitation: a soft low beat, then two light taps that rise.
+    const INVITE: [Pulse; 3] = [
+        pulse(0, 40, 0.0, 0.20),
+        pulse(100, 26, 0.28, 0.0),
+        pulse(170, 26, 0.34, 0.0),
+    ];
     // A call: a heavy beat, then a light one, softly.
     const RING: [Pulse; 2] = [pulse(0, 60, 0.0, 0.24), pulse(110, 40, 0.30, 0.0)];
     match cue {
@@ -105,6 +120,13 @@ pub fn pattern(cue: Cue) -> &'static [Pulse] {
         Cue::Bump => &BUMP,
         Cue::Unlocked => &TROPHY,
         Cue::Ring => &RING,
+        Cue::On => &ON,
+        Cue::Off => &OFF,
+        Cue::Open => &OPEN,
+        Cue::Close => &CLOSE,
+        Cue::Notify => &NOTIFY,
+        Cue::Message => &MESSAGE,
+        Cue::Invite => &INVITE,
         Cue::On => &ON,
         Cue::Off => &OFF,
         Cue::Open => &OPEN,

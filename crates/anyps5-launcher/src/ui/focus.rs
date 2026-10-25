@@ -594,7 +594,7 @@ mod tests {
             nav.command(Command::Back, &ROWS),
             PanelStep {
                 effect: PanelEffect::Close,
-                sound: Some(Cue::Back)
+                sound: Some(Cue::Close)
             }
         );
         assert_eq!(

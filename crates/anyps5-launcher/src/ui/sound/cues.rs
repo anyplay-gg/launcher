@@ -574,21 +574,24 @@ mod tests {
             assert!(peak_db(quiet) < peak_db(Cue::Select), "{quiet:?}");
         }
         assert!(peak_db(Cue::Select) < peak_db(Cue::Unlocked));
-        // Nothing is shouting: every cue is at least 8 dB under full scale, and the early
-        // loudness of a cue stays within 16 dB of any other (no cue vanishes next to another).
-        let loudness: Vec<f32> = Cue::ALL
+        // Nothing is shouting, nothing vanishes: the early loudness of the cues that are not
+        // ticks spans at most 12 dB, and every tick is quieter than every other cue.
+        let others: Vec<(Cue, f32)> = Cue::ALL
             .iter()
-            .filter(|&&c| c != Cue::Boot)
-            .map(|&c| early_rms_db(c))
+            .filter(|&&c| c != Cue::Boot && !ticks.contains(&c))
+            .map(|&c| (c, early_rms_db(c)))
             .collect();
-        let (low, high) = loudness
+        let (low, high) = others
             .iter()
-            .fold((f32::MAX, f32::MIN), |(l, h), &v| (l.min(v), h.max(v)));
+            .fold((f32::MAX, f32::MIN), |(l, h), &(_, v)| (l.min(v), h.max(v)));
         assert!(
-            high - low < 16.0,
+            high - low < 12.0,
             "early loudness spans {:.1} dB",
             high - low
         );
+        for tick in ticks {
+            assert!(early_rms_db(tick) < low, "{tick:?} is quieter than the rest");
+        }
     }
 
     /// Writes every cue to `$ANYPS5_CUE_DIR/<name>.wav` (16-bit stereo, 48 kHz) to listen to:
