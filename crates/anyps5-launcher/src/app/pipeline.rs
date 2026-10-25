@@ -14,6 +14,7 @@ use std::path::Path;
 use anyps5_core::library::Game;
 use anyps5_core::paths::GameId;
 use anyps5_core::settings::Preferences;
+use anyps5_core::toolkit::GameToolkit;
 
 use crate::ui::i18n::Key;
 
@@ -163,6 +164,13 @@ pub trait Pipeline {
     fn patches_dir(&self) -> Option<std::path::PathBuf> {
         None
     }
+    /// What a game that stays on the release `pin` finds on this PC: that release, or nothing.
+    /// Never the global toolkit instead. `global` is the version in use, for the games that follow it.
+    fn pinned_toolkit(&mut self, pin: &str, _global: Option<&str>) -> GameToolkit {
+        GameToolkit::Missing {
+            tag: pin.trim_start_matches('v').to_owned(),
+        }
+    }
 }
 
 /// No pipeline: no toolkit, nothing starts. What the launcher runs with until the core's pipeline
@@ -205,6 +213,8 @@ pub struct SimPipeline {
     pub window_seconds: f64,
     /// Make every unlock fail with this message.
     pub fail_with: Option<String>,
+    /// The releases the simulation has beside its own (a game can stay on one of them).
+    pub installed: Vec<String>,
 }
 
 impl SimPipeline {
@@ -218,6 +228,7 @@ impl SimPipeline {
             unlock_seconds: 5.0,
             window_seconds: 2.5,
             fail_with: None,
+            installed: Vec::new(),
         }
     }
 }
@@ -225,6 +236,18 @@ impl SimPipeline {
 impl Pipeline for SimPipeline {
     fn toolkit_version(&self) -> Option<String> {
         Some(self.version.clone())
+    }
+
+    fn pinned_toolkit(&mut self, pin: &str, _global: Option<&str>) -> GameToolkit {
+        let tag = pin.trim_start_matches('v').to_owned();
+        if self.installed.contains(&tag) {
+            GameToolkit::Pinned {
+                version: format!("{tag}-sim"),
+                tag,
+            }
+        } else {
+            GameToolkit::Missing { tag }
+        }
     }
 
     fn submit(&mut self, command: PipelineCommand, _cx: &PipelineContext<'_>) {

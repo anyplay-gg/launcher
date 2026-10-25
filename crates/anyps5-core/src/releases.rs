@@ -172,6 +172,41 @@ pub fn recent(
     parse_releases(&json)
 }
 
+/// The release `tag` (with or without `v`), from the last ones or, for an older one, asked for by
+/// name. Only the configured repository is asked.
+pub fn by_tag(
+    paths: &AppPaths,
+    endpoints: &Endpoints,
+    repo: &str,
+    tag: &str,
+) -> Result<ReleaseInfo, ToolkitError> {
+    let wanted = tag.trim().trim_start_matches('v');
+    if let Some(found) = recent(paths, endpoints, repo, Duration::ZERO)?
+        .into_iter()
+        .find(|r| r.plain_tag() == wanted)
+    {
+        return Ok(found);
+    }
+    // Only a dotted-number tag is put into the address.
+    if crate::toolkit::pin_tag(wanted).as_deref() != Some(wanted) {
+        return Err(ToolkitError::NoRelease);
+    }
+    let json = api_json(
+        paths,
+        endpoints,
+        repo,
+        &format!("releases/tags/v{wanted}"),
+        &format!("tag-{wanted}.json"),
+        Duration::ZERO,
+    )?;
+    let release = parse_release(&json)?;
+    if release.plain_tag() == wanted {
+        Ok(release)
+    } else {
+        Err(ToolkitError::NoRelease)
+    }
+}
+
 /// One release's notes, as the "What's new" panel shows them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Published {

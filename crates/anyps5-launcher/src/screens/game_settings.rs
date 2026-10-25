@@ -11,6 +11,7 @@ use crate::screens::saves;
 use crate::screens::share_strings::Share;
 use crate::screens::side::{self, Output, SideState, SideView};
 use crate::screens::strings::Extra;
+use crate::screens::toolkit_pin::PinChoices;
 use crate::ui::Shell;
 use crate::ui::i18n::{Arg, Key, Language};
 use crate::ui::icons::Icon;
@@ -86,6 +87,8 @@ pub struct GameSettingsData<'a> {
     pub recommended: Option<RecommendedRow>,
     /// Why unlocking again is offered ("Unlocked with v0.1.2. v0.1.3 is installed.").
     pub unlock_note: Option<String>,
+    /// The releases the game can stay on (docs/DESIGN.md 3.8).
+    pub pin: &'a PinChoices,
     pub language: Language,
     pub accent: Color32,
 }
@@ -194,6 +197,19 @@ impl GameSettingsPanel {
     ) {
         if apply_change(data.settings, change, data.resolutions) {
             out.changed = true;
+        }
+        if let Change::Choice {
+            row: "toolkit",
+            index,
+        } = change
+        {
+            let pin = data
+                .pin
+                .pin_at(data.settings.toolkit.as_deref(), *index, data.language);
+            if pin != data.settings.toolkit {
+                data.settings.toolkit = pin;
+                out.changed = true;
+            }
         }
         let action = match change.row() {
             "controls" => Some(GameSettingsAction::OpenControls),
@@ -337,6 +353,8 @@ pub fn build_rows(data: &GameSettingsData<'_>) -> Vec<Row> {
     rows.push(
         Row::choice("language", t(Key::GameLanguage), languages, selected).icon(Icon::TRANSLATE),
     );
+    // Which toolkit the game is made and started with: the global one, or a release of its own.
+    rows.extend(data.pin.row(s.toolkit.as_deref(), data.language));
     let maintenance = rows.len();
     if data.installed {
         let mut reinstall =
@@ -533,10 +551,17 @@ mod tests {
             saves: None,
             recommended: None,
             unlock_note: None,
+            pin: &NO_PINS,
             language: Language::English,
             accent: Color32::WHITE,
         }
     }
+
+    static NO_PINS: PinChoices = PinChoices {
+        installed: Vec::new(),
+        recent: Vec::new(),
+        recommended: None,
+    };
 
     fn ids(rows: &[Row]) -> Vec<&'static str> {
         rows.iter().map(|r| r.id).collect()

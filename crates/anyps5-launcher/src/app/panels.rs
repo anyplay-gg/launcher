@@ -38,6 +38,7 @@ use anyps5_core::recommended::{self, Catalog, Kind, Plan};
 use anyps5_core::report::{self, ReportInput, SystemInfo};
 use anyps5_core::saves::{self, Backup, Reason, SaveData, SavesError};
 use anyps5_core::settings::{GameSettings, ToolkitChannel};
+use anyps5_core::toolkit::{self, GameToolkit};
 use anyps5_core::unlock;
 use egui::{Context, Ui, ViewportCommand};
 
@@ -65,6 +66,7 @@ use crate::screens::saves::{
 use crate::screens::settings::{Category, SettingsAction, SettingsEnv, SettingsPanel};
 use crate::screens::share_strings::Share;
 use crate::screens::strings::Extra;
+use crate::screens::toolkit_pin::{MissingAction, MissingData, MissingPanel, Pin, PinChoices};
 use crate::screens::trophies::{TrophyAction, TrophyData, TrophyListPanel};
 use crate::screens::whatsnew::{NotesView, WhatsNewAction, WhatsNewData, WhatsNewPanel};
 use crate::screens::{ToastRequest, state_label};
@@ -119,6 +121,10 @@ pub struct PanelHost {
     settings: SettingsPanel,
     game_settings: GameSettingsPanel,
     uninstall: UninstallPanel,
+    /// The question when the release a game stays on is gone.
+    toolkit_missing: MissingPanel,
+    /// The tags of the releases on this PC, read when the game sheet opens and after a change.
+    pin_installed: Option<Vec<String>>,
     controls: ControlsPanel,
     advanced: AdvancedPanel,
     trophies: TrophyListPanel,
@@ -187,6 +193,8 @@ impl PanelHost {
             settings: SettingsPanel::default(),
             game_settings: GameSettingsPanel::default(),
             uninstall: UninstallPanel::default(),
+            toolkit_missing: MissingPanel::default(),
+            pin_installed: None,
             controls: ControlsPanel::default(),
             advanced: AdvancedPanel::default(),
             trophies: TrophyListPanel::default(),
@@ -240,8 +248,14 @@ impl PanelHost {
     }
 
     fn resolutions_for(&mut self, game: &Game, patches: Option<&std::path::Path>) -> Vec<String> {
+        // A game on a toolkit of its own has that toolkit's patches.
+        let key = format!(
+            "{}|{}",
+            game.title_id,
+            patches.map_or_else(String::new, |dir| dir.display().to_string())
+        );
         self.resolutions
-            .entry(game.title_id.clone())
+            .entry(key)
             .or_insert_with(|| {
                 patches
                     .map(|dir| anyps5_core::patches::resolution_choices(&game.title_id, dir))
@@ -270,12 +284,25 @@ impl PanelHost {
         let events = self.take_events(wanted);
         let toolkit_version = cx.model.toolkit.clone();
         let default_screenshots = cx.model.paths.default_screenshots();
+        if wanted {
+            self.toolkit.load_installed(&cx.model.paths);
+        }
+        let in_use = Self::toolkits_in_use(cx.model);
+        let unused: Vec<toolkit::InstalledRelease> = self
+            .toolkit
+            .installed
+            .iter()
+            .flatten()
+            .filter(|release| !in_use.contains(&release.tag))
+            .cloned()
+            .collect();
         let env = SettingsEnv {
             games_found: cx.model.games.len(),
             app_version: env!("CARGO_PKG_VERSION"),
             toolkit_version: toolkit_version.as_deref(),
             update: self.toolkit.state.clone(),
             recent: &self.toolkit.recent,
+            unused: &unused,
             launcher: self.launcher.state.clone(),
             default_screenshots: &default_screenshots,
             links: self.links.clone(),
@@ -291,6 +318,14 @@ impl PanelHost {
         for action in out.actions {
             self.settings_action(cx, action);
         }
+    }
+
+    /// The releases that must stay installed: the one in use, the one the pinned channel stays on
+    /// and the ones games stay on.
+    fn toolkits_in_use(model: &Model) -> Vec<String> {
+        let mut tags = model.prefs.kept_toolkit_tags();
+        tags.extend(model.toolkit.as_deref().and_then(compat::release_tag));
+        tags
     }
 
     fn settings_action(&mut self, cx: &mut OverlayCx<'_>, action: SettingsAction) {
@@ -315,6 +350,7 @@ impl PanelHost {
                     &model.paths,
                     &model.prefs.toolkit_repository,
                     pinned.as_deref(),
+                    model.prefs.kept_toolkit_tags(),
                 ) {
                     let text = Extra::ToolkitDownloading.text(model.language());
                     model.toast(text, Icon::DOWNLOAD_SIMPLE);
@@ -341,10 +377,15 @@ impl PanelHost {
                     &model.paths,
                     &model.prefs.toolkit_repository,
                     Some(&tag),
+                    model.prefs.kept_toolkit_tags(),
                 ) {
                     let text = Extra::ToolkitDownloading.text(model.language());
                     model.toast(text, Icon::DOWNLOAD_SIMPLE);
                 }
+            }
+            SettingsAction::RemoveToolkit(tag) => {
+                let in_use = Self::toolkits_in_use(model);
+                self.toolkit.remove(&model.paths, &tag, in_use);
             }
             SettingsAction::OpenWhatsNew(tag) => {
                 self.toolkit.load_notes(
@@ -428,10 +469,27 @@ impl PanelHost {
         let id = game.id.clone();
         if wanted && !self.game_settings.is_open() {
             self.saves_stale = true;
+            self.pin_installed = None;
+            self.toolkit
+                .load_recent(&cx.model.paths, &cx.model.prefs.toolkit_repository);
         }
         self.refresh_saves(cx.model, &game);
         let mut settings = cx.model.prefs.game_settings(&id);
-        let resolutions = self.resolutions_for(&game, cx.model.patches_dir.as_deref());
+        let patches = cx.model.patches_dir_for(&id);
+        let resolutions = self.resolutions_for(&game, patches.as_deref());
+        let pin = PinChoices {
+            installed: self
+                .pin_installed
+                .get_or_insert_with(|| toolkit::installed_tags(&cx.model.paths))
+                .clone(),
+            recent: self
+                .toolkit
+                .recent
+                .iter()
+                .filter_map(|tag| toolkit::pin_tag(tag))
+                .collect(),
+            recommended: self.toolkit_advice(cx.model, &game),
+        };
         let trophies = cx.model.trophies.get(&id).map(TrophyProgress::from);
         let installed = matches!(cx.model.state_of(&game), GameState::Installed { .. });
         let language = cx.model.language();
@@ -453,6 +511,7 @@ impl PanelHost {
                 .flatten(),
             recommended,
             unlock_note,
+            pin: &pin,
             language,
             accent,
         };
@@ -558,6 +617,75 @@ impl PanelHost {
                         let backups = model.paths.game_backups_dir(&game.title_id);
                         self.start_uninstall(&game, root, backups, model.language());
                     }
+                }
+            }
+        }
+    }
+
+    /// The question about a game whose release is gone (docs/DESIGN.md 3.8). It ends when the
+    /// release is back, or the game follows the global setting, or the player cancels.
+    fn toolkit_missing_ui(&mut self, cx: &mut OverlayCx<'_>, wanted: bool) {
+        let events = self.take_events(wanted);
+        let side_next = cx.model.overlay.is_some_and(Overlay::is_side_panel);
+        let asked = cx
+            .model
+            .toolkit_question
+            .clone()
+            .and_then(|id| cx.model.game(&id).cloned());
+        let tag = asked
+            .as_ref()
+            .and_then(|game| match cx.model.toolkit_of(&game.id) {
+                GameToolkit::Missing { tag } => Some(tag),
+                _ => None,
+            });
+        let (Some(game), Some(tag)) = (asked, tag) else {
+            self.toolkit_missing.close();
+            cx.model.toolkit_question = None;
+            if wanted {
+                cx.model.dismiss_overlay();
+            }
+            return;
+        };
+        if wanted && !self.toolkit_missing.is_active() {
+            self.toolkit_missing.open();
+        } else if !wanted && self.toolkit_missing.is_active() {
+            if side_next {
+                self.toolkit_missing.dismiss();
+            } else {
+                self.toolkit_missing.close();
+            }
+        }
+        let data = MissingData {
+            title: &game.name,
+            downloading: self.toolkit.pin_installing.as_deref() == Some(tag.as_str()),
+            tag: &tag,
+            language: cx.model.language(),
+            accent: cx.shell.accent_color(),
+        };
+        for action in self.toolkit_missing.show(cx.shell, cx.ctx, &events, &data) {
+            let model = &mut *cx.model;
+            match action {
+                MissingAction::Download => {
+                    if self.toolkit.install_pinned(
+                        &model.paths,
+                        &model.prefs.toolkit_repository,
+                        &tag,
+                        model.prefs.kept_toolkit_tags(),
+                    ) {
+                        let text = Extra::ToolkitDownloading.text(model.language());
+                        model.toast(text, Icon::DOWNLOAD_SIMPLE);
+                    }
+                }
+                MissingAction::Follow => {
+                    let mut settings = model.prefs.game_settings(&game.id);
+                    settings.toolkit = None;
+                    store_game_settings(model, &game.id, settings);
+                    model.toolkit_question = None;
+                    model.dismiss_overlay();
+                }
+                MissingAction::Cancel => {
+                    model.toolkit_question = None;
+                    model.dismiss_overlay();
                 }
             }
         }
@@ -812,7 +940,8 @@ impl PanelHost {
             return;
         };
         let mut settings = cx.model.prefs.game_settings(&game.id);
-        let resolutions = self.resolutions_for(&game, cx.model.patches_dir.as_deref());
+        let patches = cx.model.patches_dir_for(&game.id);
+        let resolutions = self.resolutions_for(&game, patches.as_deref());
         let mut data = AdvancedData {
             game: &game,
             settings: &mut settings,
@@ -845,7 +974,11 @@ impl PanelHost {
         if entries.is_empty() {
             return Plan::default();
         }
-        let toolkit = model.toolkit.clone().unwrap_or_default();
+        let toolkit = model
+            .toolkit_of(&game.id)
+            .version()
+            .map(str::to_owned)
+            .unwrap_or_default();
         let inherited = |key: &str| std::env::var(key).ok();
         let context = recommended::Context {
             title_id: &game.title_id,
@@ -857,11 +990,36 @@ impl PanelHost {
         recommended::plan(entries, &context, settings)
     }
 
+    /// The release the catalogue recommends for the game (plain, `0.1.2`), when it has a view on
+    /// it for the toolkit the game uses now.
+    fn toolkit_advice(&self, model: &Model, game: &Game) -> Option<String> {
+        let entries = self.catalog.entries(&game.title_id);
+        if entries.is_empty() {
+            return None;
+        }
+        let version = model
+            .toolkit_of(&game.id)
+            .version()
+            .map(str::to_owned)
+            .unwrap_or_default();
+        let inherited = |key: &str| std::env::var(key).ok();
+        let context = recommended::Context {
+            title_id: &game.title_id,
+            content_version: &game.version,
+            toolkit: &version,
+            dump: &game.folder,
+            inherited: &inherited,
+        };
+        recommended::toolkit_advice(entries, &context)
+            .and_then(|advice| toolkit::pin_tag(&advice.tag))
+    }
+
     /// "Unlocked with v0.1.2. v0.1.3 is installed." and why unlocking again is worth it, for a
     /// copy made with another toolkit than the one in use.
     fn unlock_note(&mut self, model: &Model, game: &Game) -> Option<String> {
         let record = game.unlocked_with.as_deref()?;
-        let current = model.toolkit.as_deref()?;
+        let toolkit = model.toolkit_of(&game.id);
+        let current = toolkit.version()?;
         if record == current {
             return None;
         }
@@ -1141,7 +1299,7 @@ impl PanelHost {
             game.title_id.clone(),
             game.version.clone(),
         );
-        let toolkit_version = model.toolkit.clone();
+        let toolkit_version = model.toolkit_of(&game.id).version().map(str::to_owned);
         move || {
             let session = diagnosis::read_last_session(&paths.log_file(&title_id));
             let input = ReportInput {
@@ -1310,7 +1468,28 @@ impl PanelHost {
                     }
                 }
                 ToolkitEvent::Checked(Err(error)) => tracing::warn!("update check: {error}"),
+                ToolkitEvent::PinInstalled(Ok(version)) => {
+                    // The global choice stays as it is; the game that was waiting finds its release.
+                    self.resolutions.clear();
+                    self.pin_installed = None;
+                    let text = Extra::ToolkitReady.format(language, &[Arg::Str(&version)]);
+                    model.toast(text, Icon::CHECK_CIRCLE);
+                }
+                ToolkitEvent::PinInstalled(Err(error)) => {
+                    tracing::warn!("toolkit install for a game: {error}");
+                    model.toast(Extra::ToolkitFailed.text(language), Icon::WARNING);
+                }
+                ToolkitEvent::Removed(Ok(tag)) => {
+                    self.pin_installed = None;
+                    let text = Pin::Removed.format(language, &[Arg::Str(&format!("v{tag}"))]);
+                    model.toast(text, Icon::TRASH);
+                }
+                ToolkitEvent::Removed(Err(error)) => {
+                    tracing::warn!("toolkit removal: {error}");
+                    model.toast(Pin::RemoveFailed.text(language), Icon::WARNING);
+                }
                 ToolkitEvent::Installed(Ok(version)) => {
+                    self.pin_installed = None;
                     self.resolutions.clear();
                     model.edit_prefs(|p| p.toolkit = None);
                     model.effects.push(Effect::ReloadToolkit);
@@ -1388,6 +1567,7 @@ impl OverlayHost for PanelHost {
             Overlay::Settings => self.settings_ui(cx, wanted),
             Overlay::GameSettings => self.game_settings_ui(cx, wanted),
             Overlay::ConfirmUninstall => self.uninstall_ui(cx, wanted),
+            Overlay::ToolkitMissing => self.toolkit_missing_ui(cx, wanted),
             Overlay::Saves => self.saves_ui(cx, wanted),
             Overlay::ConfirmRestore => self.restore_ui(cx, wanted),
             Overlay::Controls => self.controls_ui(cx, wanted),
@@ -1442,6 +1622,7 @@ impl OverlayHost for PanelHost {
                 &model.paths,
                 &model.prefs.toolkit_repository,
                 model.prefs.toolkit_pinned.as_deref(),
+                model.prefs.kept_toolkit_tags(),
             );
         }
         if !self.checked_at_start && cx.model.onboarded() {

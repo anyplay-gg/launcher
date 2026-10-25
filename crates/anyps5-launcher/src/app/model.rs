@@ -15,6 +15,7 @@ use anyps5_core::library::{ExecutableKind, Game};
 use anyps5_core::online::Online;
 use anyps5_core::paths::{AppPaths, GameId};
 use anyps5_core::settings::{self, Preferences};
+use anyps5_core::toolkit::GameToolkit;
 use anyps5_core::trophies::{Trophy, TrophySet};
 
 use crate::app::clock;
@@ -220,6 +221,12 @@ pub struct Model {
     pub toast: Option<Toast>,
     /// The toolkit version on this PC (`None`: no toolkit, nothing can be unlocked).
     pub toolkit: Option<String>,
+    /// The toolkit of each game that stays on a release of its own, as the pipeline found it.
+    /// A game that is not in here follows [`toolkit`](Self::toolkit).
+    pub game_toolkits: HashMap<GameId, GameToolkit>,
+    /// The game whose toolkit is missing and who was just asked to start or unlock: the question
+    /// (`Overlay::ToolkitMissing`) is about this game.
+    pub toolkit_question: Option<GameId>,
     /// The toolkit's patch files, for the resolutions of the game settings.
     pub patches_dir: Option<std::path::PathBuf>,
     /// Trophies earned by the running game, waiting for the banner. The banner drains it.
@@ -271,6 +278,8 @@ impl Model {
             diagnoses: HashMap::new(),
             toast: None,
             toolkit: None,
+            game_toolkits: HashMap::new(),
+            toolkit_question: None,
             patches_dir: None,
             trophy_banners: Vec::new(),
             effects: Vec::new(),
@@ -435,13 +444,46 @@ impl Model {
             return GameState::Failed(message.clone());
         }
         if let Some(record) = &game.unlocked_with {
-            let outdated = self.toolkit.as_ref().is_some_and(|t| t != record);
+            // The toolkit the game would be unlocked with now: its own, or the global one. A game
+            // whose release is missing is not called outdated; starting it asks what to do.
+            let outdated = self.toolkit_of(id).version().is_some_and(|t| t != record);
             return GameState::Installed { outdated };
         }
         if game.executable == ExecutableKind::Unreadable {
             return GameState::Unreadable;
         }
         GameState::Locked
+    }
+
+    /// The toolkit a game is unlocked and started with (docs/DESIGN.md 3.8).
+    pub fn toolkit_of(&self, id: &GameId) -> GameToolkit {
+        self.game_toolkits
+            .get(id)
+            .cloned()
+            .unwrap_or_else(|| GameToolkit::Global(self.toolkit.clone()))
+    }
+
+    /// The patch files of the toolkit a game uses (the resolutions its settings offer).
+    pub fn patches_dir_for(&self, id: &GameId) -> Option<std::path::PathBuf> {
+        match self.game_toolkits.get(id) {
+            Some(GameToolkit::Pinned { tag, version }) => {
+                anyps5_core::compat::supports(anyps5_core::compat::Feature::Patches, version)
+                    .then(|| self.paths.toolkit_dir().join(tag).join("patches"))
+            }
+            Some(GameToolkit::Missing { .. }) => None,
+            _ => self.patches_dir.clone(),
+        }
+    }
+
+    /// Asks what to do about a game whose release is gone, instead of using another one.
+    /// True when the game can go on.
+    fn toolkit_ready(&mut self, id: &GameId) -> bool {
+        if !self.toolkit_of(id).is_missing() {
+            return true;
+        }
+        self.toolkit_question = Some(id.clone());
+        self.open(Overlay::ToolkitMissing);
+        false
     }
 
     pub fn has_trophies(&self) -> bool {
@@ -752,7 +794,10 @@ impl Model {
         if self.prefs.games_folder.is_none() {
             return;
         }
-        if self.toolkit.is_none() {
+        if !self.toolkit_ready(id) {
+            return;
+        }
+        if self.toolkit_of(id).version().is_none() {
             let text = self.text(Key::NoToolkit);
             self.toast(text, Icon::WARNING);
             return;
@@ -787,6 +832,9 @@ impl Model {
         if self.saves_busy.as_ref() == Some(id) {
             let text = Extra::SavesBusy.text(self.language()).to_owned();
             self.toast(text, Icon::WARNING);
+            return;
+        }
+        if !self.toolkit_ready(id) {
             return;
         }
         self.diagnoses.remove(id);
@@ -1137,6 +1185,93 @@ mod tests {
         assert_eq!(m.state_of(&g), GameState::Running);
         m.starting = Some(id);
         assert_eq!(m.state_of(&g), GameState::Starting);
+    }
+
+    #[test]
+    fn a_game_on_its_own_toolkit_is_judged_by_that_one() {
+        let g = game("a", Some("v1"), ExecutableKind::Elf);
+        let id = g.id.clone();
+        let mut m = model_with(vec![g.clone()]);
+        // The global toolkit moved on; the game stays on the release its copy was made with.
+        m.toolkit = Some("v2".into());
+        assert_eq!(m.state_of(&g), GameState::Installed { outdated: true });
+        m.game_toolkits.insert(
+            id.clone(),
+            GameToolkit::Pinned {
+                tag: "1".into(),
+                version: "v1".into(),
+            },
+        );
+        assert_eq!(m.state_of(&g), GameState::Installed { outdated: false });
+        assert_eq!(m.toolkit_of(&id).version(), Some("v1"));
+        // A release that is gone: no judgement, and the global one does not stand in.
+        m.game_toolkits
+            .insert(id.clone(), GameToolkit::Missing { tag: "1".into() });
+        assert_eq!(m.state_of(&g), GameState::Installed { outdated: false });
+        assert_eq!(m.toolkit_of(&id).version(), None);
+    }
+
+    #[test]
+    fn a_missing_release_asks_instead_of_starting_or_unlocking() {
+        let g = game("a", Some("v1"), ExecutableKind::Elf);
+        let locked = game("b", None, ExecutableKind::Elf);
+        let (id, locked_id) = (g.id.clone(), locked.id.clone());
+        let mut m = model_with(vec![g, locked]);
+        for who in [&id, &locked_id] {
+            m.game_toolkits.insert(
+                who.clone(),
+                GameToolkit::Missing {
+                    tag: "0.1.2".into(),
+                },
+            );
+        }
+        m.play(&id);
+        assert_eq!(m.overlay, Some(Overlay::ToolkitMissing));
+        assert_eq!(m.toolkit_question.as_ref(), Some(&id));
+        assert!(m.starting.is_none(), "nothing started");
+        assert!(
+            !m.effects
+                .iter()
+                .any(|e| matches!(e, Effect::Pipeline(PipelineCommand::Play(_))))
+        );
+        m.overlay = None;
+        m.unlock(&locked_id);
+        assert_eq!(m.overlay, Some(Overlay::ToolkitMissing));
+        assert_eq!(m.toolkit_question.as_ref(), Some(&locked_id));
+        assert!(m.queue.is_empty());
+        assert!(
+            !m.effects
+                .iter()
+                .any(|e| matches!(e, Effect::Pipeline(PipelineCommand::Unlock(_))))
+        );
+        // The same game, following the global setting again, goes on.
+        m.overlay = None;
+        m.game_toolkits.clear();
+        m.play(&id);
+        assert!(m.starting.is_some());
+        assert_eq!(m.overlay, None);
+    }
+
+    #[test]
+    fn a_pinned_game_unlocks_without_a_global_toolkit() {
+        let locked = game("b", None, ExecutableKind::Elf);
+        let id = locked.id.clone();
+        let mut m = model_with(vec![locked]);
+        m.toolkit = None;
+        m.unlock(&id);
+        assert!(
+            m.queue.is_empty(),
+            "no toolkit at all: nothing to unlock with"
+        );
+        m.game_toolkits.insert(
+            id.clone(),
+            GameToolkit::Pinned {
+                tag: "0.1.2".into(),
+                version: "0.1.2-abc".into(),
+            },
+        );
+        m.unlock(&id);
+        assert_eq!(m.queue, vec![id]);
     }
 
     #[test]

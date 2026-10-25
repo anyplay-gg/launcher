@@ -5,6 +5,7 @@
 //! anyplay-launcher --gallery=settings|settings1..6|game-settings|confirm|controls|controls-capture|
 //!                           controls-end|advanced|trophies|trophies-hidden|trophies-revealed|banner|start|unlocking|log|report|library|
 //!                           about-update|behavior-links|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|
+//!                           toolkit-unused|game-toolkit|
 //!                           recommended|recommended-warning|whats-new|whats-new-loading|
 //!                           saves|saves-empty|restore|
 //!                           online|online-browser|online-friends|online-friends-busy|
@@ -31,6 +32,7 @@ use anyps5_core::recommended::{Caution, Change, Kind, Plan, Setting};
 use anyps5_core::releases::Published;
 use anyps5_core::report::{ReportInput, SystemInfo};
 use anyps5_core::settings::{GameSettings, Preferences};
+use anyps5_core::toolkit::InstalledRelease;
 use anyps5_core::trophies::{Grade, Trophy, TrophySet};
 use egui::{
     Align2, Color32, ColorImage, Context, Rect, TextureHandle, TextureOptions, Ui, UiBuilder, pos2,
@@ -52,6 +54,7 @@ use crate::screens::settings::{
 };
 use crate::screens::share_strings::Share;
 use crate::screens::start::{StartData, StartScreen};
+use crate::screens::toolkit_pin::PinChoices;
 use crate::screens::trophies::{IconCache, TrophyData, TrophyListPanel};
 use crate::screens::unlock::{UnlockProgress, UnlockStep, hero_progress};
 use crate::screens::whatsnew::{NotesView, SAMPLE_NOTES, WhatsNewData, WhatsNewPanel};
@@ -73,6 +76,8 @@ pub enum ScreenPage {
     /// Settings on a category (0 = Appearance, in its rows; the others at the category level).
     Settings(usize),
     GameSettings,
+    /// The game sheet on "Toolkit for This Game", the game staying on its own release.
+    GameToolkit,
     Confirm,
     Controls,
     ControlsCapture,
@@ -167,6 +172,8 @@ pub enum ToolkitLook {
     Newer,
     Pinned,
     Local,
+    /// Two installed releases nothing uses: the page offers to remove them.
+    Unused,
 }
 
 /// The page named on the command line.
@@ -174,6 +181,7 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
     Some(match name {
         "settings" => ScreenPage::Settings(0),
         "game-settings" => ScreenPage::GameSettings,
+        "game-toolkit" => ScreenPage::GameToolkit,
         "confirm" => ScreenPage::Confirm,
         "controls" => ScreenPage::Controls,
         "controls-capture" => ScreenPage::ControlsCapture,
@@ -195,6 +203,7 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "toolkit-newer" => ScreenPage::Toolkit(ToolkitLook::Newer),
         "toolkit-pinned" => ScreenPage::Toolkit(ToolkitLook::Pinned),
         "toolkit-local" => ScreenPage::Toolkit(ToolkitLook::Local),
+        "toolkit-unused" => ScreenPage::Toolkit(ToolkitLook::Unused),
         "recommended" => ScreenPage::Recommended,
         "recommended-warning" => ScreenPage::RecommendedWarning,
         "whats-new" => ScreenPage::WhatsNew,
@@ -1001,7 +1010,12 @@ impl ScreenGallery {
                     prefs.toolkit = Some("D:\\anyps5\\build".into());
                     toolkit_version = "local-4f2a9c1d7e03".into();
                 }
+                ToolkitLook::Unused => {}
             }
+        }
+        let mut game_settings = GameSettings::default();
+        if page == ScreenPage::GameToolkit {
+            game_settings.toolkit = Some("v0.1.2".into());
         }
         Self {
             recommended: RecommendedPanel::default(),
@@ -1017,7 +1031,7 @@ impl ScreenGallery {
             covers: Vec::new(),
             hero: None,
             prefs,
-            game_settings: GameSettings::default(),
+            game_settings,
             games: (0..NAMES.len()).map(fake_game).collect(),
             set: fake_trophies(),
             settings: SettingsPanel::default(),
@@ -1113,7 +1127,25 @@ impl ScreenGallery {
             .map(str::to_owned)
             .to_vec();
         let progress = TrophyProgress::from(&self.set);
+        let unused: Vec<InstalledRelease> = if self.page == ScreenPage::Toolkit(ToolkitLook::Unused)
+        {
+            [("0.1.2", 412), ("0.1.1", 398)]
+                .map(|(tag, mib)| InstalledRelease {
+                    tag: tag.into(),
+                    bytes: mib * 1024 * 1024,
+                })
+                .to_vec()
+        } else {
+            Vec::new()
+        };
+        // 0.1.2 is installed, 0.1.1 is not: the choice shows both, and the catalogue advises 0.1.2.
+        let pin = PinChoices {
+            installed: vec!["0.1.3".into(), "0.1.2".into()],
+            recent: recent.clone(),
+            recommended: Some("v0.1.2".into()),
+        };
         let env = SettingsEnv {
+            unused: &unused,
             games_found: self.games.len(),
             app_version: "0.1.0",
             toolkit_version: Some(&self.toolkit_version),
@@ -1150,6 +1182,7 @@ impl ScreenGallery {
                     "Unlocked with v0.1.2. v0.1.3 is installed. This update changes how games are converted."
                         .into(),
                 ),
+                pin: &pin,
                 language,
                 accent,
             };
@@ -1290,6 +1323,7 @@ impl ScreenGallery {
         match self.page {
             ScreenPage::Settings(n) => self.settings.open_at(n, n == 0),
             ScreenPage::GameSettings => self.game_panel.open_row(3),
+            ScreenPage::GameToolkit => self.game_panel.open_row(10),
             ScreenPage::Confirm => self.uninstall.open(),
             ScreenPage::Saves | ScreenPage::SavesEmpty => self.saves.open(),
             ScreenPage::Restore => self.restore.open(),
@@ -1364,6 +1398,9 @@ impl ScreenGallery {
                 // The update page lands on the install row.
                 if look == ToolkitLook::Update {
                     self.settings.focus_row(3);
+                }
+                if look == ToolkitLook::Unused {
+                    self.settings.focus_row(7);
                 }
             }
             ScreenPage::AboutUpdate => {

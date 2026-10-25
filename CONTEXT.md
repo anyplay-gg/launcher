@@ -94,6 +94,10 @@ _Avoid_: Libs, DLLs, drivers
 The release tag plus a short fingerprint of the toolkit's files. It changes whenever a file does.
 _Avoid_: Build number
 
+**Game toolkit**:
+The toolkit one game is unlocked and started with: the global one, or the release the player let that game stay on ("pinned"). A pinned release that is not installed is never replaced by the global one; the player decides.
+_Avoid_: Per-game version
+
 ### Launcher updates
 
 **Update manifest**:

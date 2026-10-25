@@ -14,6 +14,7 @@ use crate::app::model::{GameState, Model, SizeState};
 use crate::screens::online_social_strings::SocialText;
 use crate::screens::online_strings::OnlineText;
 use crate::screens::strings::{Extra, playtime_text};
+use crate::screens::toolkit_pin;
 use crate::screens::{
     ScreenCx, StateLabel, paint_gradient_circle, paint_label, paint_spinner, place, state_label,
     wrapped,
@@ -863,6 +864,10 @@ fn paint_hero(
             Extra::Played.text(language),
             playtime_text(played.seconds, language),
         ));
+    }
+    // The toolkit the game is unlocked and started with: the global one, or the release it stays on.
+    if let Some(value) = toolkit_pin::fact_value(&cx.model.toolkit_of(&game.id), language) {
+        facts.push((Extra::Toolkit.text(language), value));
     }
     let mut left = x;
     for (title, value) in &facts {

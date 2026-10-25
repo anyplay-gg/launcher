@@ -13,7 +13,7 @@ use anyps5_core::events::CancelToken;
 use anyps5_core::notes::ReleaseNotes;
 use anyps5_core::paths::AppPaths;
 use anyps5_core::releases::{self, Endpoints, Published};
-use anyps5_core::toolkit::{self, Toolkit, ToolkitError};
+use anyps5_core::toolkit::{self, InstalledRelease, Toolkit, ToolkitError};
 use egui::Context;
 
 use crate::screens::settings::UpdateState;
@@ -28,6 +28,11 @@ pub enum ToolkitEvent {
     Installed(Result<String, String>),
     /// A folder was adopted: the folder and the version.
     Adopted(Result<(std::path::PathBuf, String), String>),
+    /// A release a game stays on was downloaded: the installed version. The global choice is
+    /// not touched.
+    PinInstalled(Result<String, String>),
+    /// An unused release was removed: its tag.
+    Removed(Result<String, String>),
 }
 
 /// The "What's new" notes of one release.
@@ -52,6 +57,7 @@ enum Inbox {
         to: String,
         changed: bool,
     },
+    Installed(Vec<InstalledRelease>),
 }
 
 pub struct ToolkitService {
@@ -74,6 +80,12 @@ pub struct ToolkitService {
     /// Whether the releases between two versions changed the conversion, by (from, to).
     conversion: HashMap<(String, String), bool>,
     conversion_asked: HashSet<(String, String)>,
+    /// The release a game stays on that is downloading now.
+    pub pin_installing: Option<String>,
+    /// The installed releases and their sizes; `None` until the first read.
+    pub installed: Option<Vec<InstalledRelease>>,
+    installed_stale: bool,
+    installed_reading: bool,
 }
 
 impl ToolkitService {
@@ -94,7 +106,58 @@ impl ToolkitService {
             notes_tag: None,
             conversion: HashMap::new(),
             conversion_asked: HashSet::new(),
+            pin_installing: None,
+            installed: None,
+            installed_stale: true,
+            installed_reading: false,
         }
+    }
+
+    /// The folders on disk changed: read the installed releases again when they are next wanted.
+    pub fn invalidate_installed(&mut self) {
+        self.installed_stale = true;
+    }
+
+    /// Reads the installed releases with their sizes, in the background, when that is out of date.
+    pub fn load_installed(&mut self, paths: &AppPaths) {
+        if !self.installed_stale || self.installed_reading {
+            return;
+        }
+        self.installed_stale = false;
+        self.installed_reading = true;
+        let (tx, ctx, paths) = (self.tx.clone(), self.ctx.clone(), paths.clone());
+        let simulated = self.simulated;
+        spawn("toolkit sizes", move || {
+            let list = if simulated {
+                Vec::new()
+            } else {
+                toolkit::installed_with_sizes(&paths, &CancelToken::new())
+            };
+            let _ = tx.send(Inbox::Installed(list));
+            ctx.request_repaint();
+        });
+    }
+
+    /// Deletes an installed release nothing uses (`in_use` are the tags that must stay).
+    pub fn remove(&mut self, paths: &AppPaths, tag: &str, in_use: Vec<String>) {
+        let (tx, ctx, paths, tag) = (
+            self.tx.clone(),
+            self.ctx.clone(),
+            paths.clone(),
+            tag.to_owned(),
+        );
+        let simulated = self.simulated;
+        spawn("toolkit remove", move || {
+            let result = if simulated {
+                Err("the demo does not remove".to_owned())
+            } else {
+                toolkit::remove_release(&paths, &tag, &in_use)
+                    .map(|()| tag)
+                    .map_err(describe)
+            };
+            let _ = tx.send(Inbox::Event(ToolkitEvent::Removed(result)));
+            ctx.request_repaint();
+        });
     }
 
     pub fn installing(&self) -> bool {
@@ -123,7 +186,14 @@ impl ToolkitService {
     }
 
     /// Downloads and installs a release: `tag`, or the latest. False when a download already runs.
-    pub fn install(&mut self, paths: &AppPaths, repository: &str, tag: Option<&str>) -> bool {
+    /// `keep` are the releases games stay on: they survive the clean-up of old ones.
+    pub fn install(
+        &mut self,
+        paths: &AppPaths,
+        repository: &str,
+        tag: Option<&str>,
+        keep: Vec<String>,
+    ) -> bool {
         if self.installing {
             return false;
         }
@@ -136,9 +206,39 @@ impl ToolkitService {
                 std::thread::sleep(Duration::from_millis(900));
                 Err("the demo does not download".to_owned())
             } else {
-                install_release(&paths, &repo, tag.as_deref())
+                install_release(&paths, &repo, tag.as_deref(), &keep)
             };
             let _ = tx.send(Inbox::Event(ToolkitEvent::Installed(result)));
+            ctx.request_repaint();
+        });
+        true
+    }
+
+    /// Downloads the release a game stays on, again. Only the configured repository is asked, and
+    /// the release is checked like any other; the global choice stays as it is. False when a
+    /// download already runs.
+    pub fn install_pinned(
+        &mut self,
+        paths: &AppPaths,
+        repository: &str,
+        tag: &str,
+        keep: Vec<String>,
+    ) -> bool {
+        if self.installing {
+            return false;
+        }
+        self.installing = true;
+        self.pin_installing = Some(tag.to_owned());
+        let (tx, ctx, paths, repo) = self.worker(paths, repository);
+        let (simulated, tag) = (self.simulated, tag.to_owned());
+        spawn("toolkit install", move || {
+            let result = if simulated {
+                std::thread::sleep(Duration::from_millis(900));
+                Err("the demo does not download".to_owned())
+            } else {
+                install_release(&paths, &repo, Some(&tag), &keep)
+            };
+            let _ = tx.send(Inbox::Event(ToolkitEvent::PinInstalled(result)));
             ctx.request_repaint();
         });
         true
@@ -290,7 +390,14 @@ impl ToolkitService {
                             };
                         }
                         ToolkitEvent::Adopted(_) => {}
+                        ToolkitEvent::PinInstalled(_) => {
+                            self.installing = false;
+                            self.pin_installing = None;
+                            self.installed_stale = true;
+                        }
+                        ToolkitEvent::Removed(_) => self.installed_stale = true,
                         ToolkitEvent::Installed(result) => {
+                            self.installed_stale = true;
                             self.installing = false;
                             self.state = if result.is_ok() {
                                 UpdateState::UpToDate
@@ -320,6 +427,10 @@ impl ToolkitService {
                 }
                 Inbox::Conversion { from, to, changed } => {
                     self.conversion.insert((from, to), changed);
+                }
+                Inbox::Installed(list) => {
+                    self.installed_reading = false;
+                    self.installed = Some(list);
                 }
             }
         }
@@ -354,18 +465,13 @@ fn install_release(
     paths: &AppPaths,
     repository: &str,
     tag: Option<&str>,
+    keep: &[String],
 ) -> Result<String, String> {
     let endpoints = Endpoints::github(repository);
     let info = match tag {
         None => toolkit::check_latest(repository).map_err(describe)?,
-        Some(tag) => {
-            let wanted = tag.trim_start_matches('v');
-            releases::recent(paths, &endpoints, repository, Duration::ZERO)
-                .map_err(describe)?
-                .into_iter()
-                .find(|r| r.plain_tag() == wanted)
-                .ok_or_else(|| format!("release {tag} was not found"))?
-        }
+        Some(tag) => releases::by_tag(paths, &endpoints, repository, tag)
+            .map_err(|e| format!("release {tag}: {e}"))?,
     };
     if releases::libs_digest_disagrees(paths, &endpoints, &info) {
         tracing::warn!(
@@ -373,7 +479,8 @@ fn install_release(
         );
     }
     let cancel = CancelToken::new();
-    let installed = toolkit::download_and_install(&info, paths, None, &mut |_, _| {}, &cancel)
-        .map_err(describe)?;
+    let installed =
+        toolkit::download_and_install_keeping(&info, paths, None, keep, &mut |_, _| {}, &cancel)
+            .map_err(describe)?;
     Ok(installed.version().to_owned())
 }

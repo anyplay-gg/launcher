@@ -26,7 +26,8 @@ The launcher accepts only what is listed here. A file with anything else is refu
 
 - `set.env`: `APS5_PLAYGO_UNLISTED_CHUNKS` (`installed` or `absent`). `APS5_TEXTURE_CACHE_MIB` may appear in an `avoid` entry only. Everything else the launcher owns has a setting of its own: use `set.launcher` for language, vsync, overlay and the shader cache, and never name a path.
 - `set.relink`: flag and value pairs for the relinker: `--windows-fixed-base 0x...`, `--module-dir <relative path>`, `--executable <relative path>`. A relinker flag only counts when the game is unlocked again.
-- `set.launcher`: `vsync` (true or false), `overlay` (`off`, `tl`, `tr`, `bl`, `br`), `shaderCache` (true or false), `language` (0 to 30).
+- `set.launcher`: `vsync` (true or false), `overlay` (`off`, `tl`, `tr`, `bl`, `br`), `shaderCache` (true or false), `language` (0 to 30), `toolkit` (like `v0.1.2`).
+- `set.launcher.toolkit` is not a setting that gets applied: it is the toolkit release the game works best on. The game sheet offers it as "Recommended for This Game" in "Toolkit for This Game", and the player chooses. Use `appliesTo.toolkit` for the toolkits the advice is given to: `min` = `v0.1.3` recommends the release to players on v0.1.3 or newer. It is for `required` and `recommended` entries, not `avoid`. Launchers before the one that knows it refuse a file that holds it and keep their shipped catalogue, so add the first one when you want that.
 - `appliesTo`: `contentVersions` (exact strings from the game's `param.json`, or `*`), `toolkit.min` and `toolkit.max` (like `v0.1.3`), and `when.missing`, a list of dump files that must be absent (`sce_sys/playgo-chunk.dat`, `sce_sys/playgo-scenario.json`).
 
 When an upstream release fixes the cause, set `appliesTo.toolkit.max` to the last release that needs the entry instead of deleting it.

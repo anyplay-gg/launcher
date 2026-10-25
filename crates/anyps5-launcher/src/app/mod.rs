@@ -38,6 +38,7 @@ use std::time::{Duration, SystemTime};
 use anyps5_core::discord::Presence;
 use anyps5_core::paths::{AppPaths, GameId};
 use anyps5_core::settings::Preferences;
+use anyps5_core::toolkit::GameToolkit;
 use egui::{Context, Rect, Ui, UiBuilder, ViewportCommand};
 
 use crate::screens::{self, ScreenCx};
@@ -196,6 +197,26 @@ impl LauncherApp {
 
     // --- per frame ----------------------------------------------------------------------------
 
+    /// What the games that stay on a release of their own find on this PC (docs/DESIGN.md 3.8).
+    fn pinned_toolkits(&mut self) -> std::collections::HashMap<GameId, GameToolkit> {
+        let global = self.model.toolkit.clone();
+        let pins: Vec<(String, String)> = self
+            .model
+            .prefs
+            .games
+            .iter()
+            .filter_map(|(id, settings)| Some((id.clone(), settings.toolkit.clone()?)))
+            .collect();
+        pins.into_iter()
+            .map(|(id, pin)| {
+                (
+                    GameId::from_key(id),
+                    self.pipeline.pinned_toolkit(&pin, global.as_deref()),
+                )
+            })
+            .collect()
+    }
+
     /// Everything before painting: finished work, input, effects, preferences.
     pub fn step(&mut self, ctx: &Context) {
         self.shell.input.blocked = self.services.dialog_open();
@@ -219,6 +240,7 @@ impl LauncherApp {
             self.model.on_core(event);
         }
         self.model.toolkit = self.pipeline.toolkit_version();
+        self.model.game_toolkits = self.pinned_toolkits();
         self.model.patches_dir = self.pipeline.patches_dir();
         for event in self.pipeline.poll(now) {
             if let pipeline::PipelineEvent::Exited { game, .. }

@@ -469,8 +469,11 @@ fn import_flow(shell: &mut Shell, data: &mut AdvancedData<'_>) -> Option<(ToastR
             false,
         ));
     };
-    let changed = *data.settings != imported.settings;
-    *data.settings = imported.settings;
+    // Which toolkit a game uses is about this PC: a file never changes it.
+    let mut incoming = imported.settings;
+    incoming.toolkit = data.settings.toolkit.clone();
+    let changed = *data.settings != incoming;
+    *data.settings = incoming;
     let text = match imported.other_game {
         None => language.text(Key::SettingsImported).to_owned(),
         Some(game) => language.format(Key::SettingsImportedOther, &[Arg::Str(&game)]),

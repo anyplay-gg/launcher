@@ -34,6 +34,9 @@ pub enum Overlay {
     WhatsNew,
     /// Sign-in, friends and invitations of the AnyPlay network (a side panel).
     Online,
+    /// The release a game stays on is gone: download it again or follow the global toolkit
+    /// (a side panel).
+    ToolkitMissing,
 }
 
 impl Overlay {
@@ -49,6 +52,7 @@ impl Overlay {
                 | Overlay::Advanced
                 | Overlay::Recommended
                 | Overlay::Online
+                | Overlay::ToolkitMissing
         )
     }
 

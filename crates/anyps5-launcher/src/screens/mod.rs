@@ -51,6 +51,7 @@ mod shared;
 pub mod side;
 pub mod start;
 pub mod strings;
+pub mod toolkit_pin;
 pub mod trophies;
 pub mod unlock;
 pub mod whatsnew;

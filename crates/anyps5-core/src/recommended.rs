@@ -138,6 +138,9 @@ pub struct LauncherSet {
     pub shader_cache: Option<bool>,
     /// A console language number.
     pub language: Option<i32>,
+    /// The toolkit release the game works best on (`v0.1.2`). Not a setting: the game sheet
+    /// offers it as "Recommended for this game" in its toolkit choice (see [`toolkit_advice`]).
+    pub toolkit: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -357,6 +360,14 @@ fn check_entry(entry: &Entry) -> Result<(), String> {
     if launcher.language.is_some_and(|n| !(0..=30).contains(&n)) {
         return Err("`language` must be 0 to 30".into());
     }
+    if let Some(tag) = &launcher.toolkit {
+        if !tag_ok(tag) {
+            return Err(format!("toolkit version {tag} must look like v0.1.3"));
+        }
+        if entry.kind == Kind::Avoid {
+            return Err("an `avoid` entry cannot recommend a toolkit".into());
+        }
+    }
     if setting_count(set) == 0 {
         return Err("the entry sets nothing".into());
     }
@@ -375,6 +386,7 @@ fn setting_count(set: &Set) -> usize {
             l.overlay.is_some(),
             l.shader_cache.is_some(),
             l.language.is_some(),
+            l.toolkit.is_some(),
         ]
         .into_iter()
         .filter(|x| *x)
@@ -673,6 +685,27 @@ pub fn plan(entries: &[Entry], ctx: &Context<'_>, settings: &GameSettings) -> Pl
     plan
 }
 
+/// The toolkit release an entry of this game recommends.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Advice {
+    /// `v0.1.2`.
+    pub tag: String,
+    pub why: String,
+}
+
+/// The toolkit release the catalogue recommends for the game, from the first entry that applies
+/// to the toolkit in `ctx` and names one. The entry's `appliesTo.toolkit` range says on which
+/// toolkits the advice is given: `min` = `v0.1.3` recommends `v0.1.2` to a player on v0.1.3 or
+/// newer.
+pub fn toolkit_advice(entries: &[Entry], ctx: &Context<'_>) -> Option<Advice> {
+    entries.iter().filter(|e| applies(e, ctx)).find_map(|e| {
+        Some(Advice {
+            tag: e.set.launcher.toolkit.clone()?,
+            why: e.why.clone(),
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -791,6 +824,32 @@ mod tests {
             "0x400000".into()
         ]));
         assert!(!relink_allowed(&["--skip-checks".into(), "1".into()]));
+    }
+
+    #[test]
+    fn a_toolkit_recommendation_is_a_valid_entry_that_changes_no_setting() {
+        let dir = tempfile::tempdir().unwrap();
+        let none = |_: &str| None;
+        let e = entries("recommended", r#"{"launcher":{"toolkit":"v0.1.2"}}"#, "{}");
+        let ctx = context(dir.path(), &none);
+        assert!(plan(&e, &ctx, &GameSettings::default()).is_empty());
+        let advice = toolkit_advice(&e, &ctx).unwrap();
+        assert_eq!(advice.tag, "v0.1.2");
+        assert_eq!(advice.why, "Because.");
+        // Only for the toolkits the entry names: this one is for v0.1.4 and newer.
+        let newer = entries(
+            "required",
+            r#"{"launcher":{"toolkit":"v0.1.2"}}"#,
+            r#"{"toolkit":{"min":"v0.1.4","max":null}}"#,
+        );
+        assert_eq!(toolkit_advice(&newer, &ctx), None);
+        // Entries that set something else give no advice.
+        let other = entries("recommended", r#"{"launcher":{"vsync":false}}"#, "{}");
+        assert_eq!(toolkit_advice(&other, &ctx), None);
+        // It is a recommendation, never a warning, and the tag has to be a release tag.
+        assert!(parse("avoid", r#"{"launcher":{"toolkit":"v0.1.2"}}"#).is_err());
+        assert!(parse("recommended", r#"{"launcher":{"toolkit":"latest"}}"#).is_err());
+        assert!(parse("recommended", r#"{"launcher":{"toolkit":"../v0.1.2"}}"#).is_err());
     }
 
     #[test]

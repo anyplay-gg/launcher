@@ -138,6 +138,9 @@ pub struct GameSettings {
     /// `Some(false)` turns the shader and pipeline caches off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shader_cache: Option<bool>,
+    /// The release this game stays on (`v0.1.2`); `None` follows the global toolkit choice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub toolkit: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tuning: Option<InputTuning>,
     #[serde(default = "yes")]
@@ -159,6 +162,7 @@ impl Default for GameSettings {
             relink: Vec::new(),
             resolution: None,
             shader_cache: None,
+            toolkit: None,
             tuning: None,
             vsync: true,
             window_size: 75,
@@ -315,10 +319,13 @@ pub struct SharedSettings {
 
 impl SharedSettings {
     pub fn new(game: &Game, settings: &GameSettings) -> SharedSettings {
+        // Which toolkit is installed is a fact about this PC, not a setting to hand on.
+        let mut settings = settings.clone();
+        settings.toolkit = None;
         SharedSettings {
             format: SHARED_FORMAT.to_string(),
             game: game.name.clone(),
-            settings: settings.clone(),
+            settings,
             title_id: game.title_id.clone(),
             version: 1,
         }
@@ -676,6 +683,22 @@ impl Preferences {
     pub fn save(&self, paths: &AppPaths) -> io::Result<()> {
         let text = serde_json::to_string_pretty(self).map_err(io::Error::other)?;
         write_atomic(&paths.preferences_file(), text.as_bytes())
+    }
+
+    /// The releases that must stay installed: the one the pinned channel stays on and the ones
+    /// games stay on, as plain tags (`0.1.2`), oldest first, without doubles.
+    pub fn kept_toolkit_tags(&self) -> Vec<String> {
+        let mut tags: Vec<String> = self
+            .toolkit_pinned
+            .iter()
+            .chain(self.games.values().filter_map(|g| g.toolkit.as_ref()))
+            .filter_map(|tag| crate::toolkit::pin_tag(tag))
+            .collect();
+        tags.sort_by(|a, b| {
+            crate::toolkit::compare_tags(a, b).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        tags.dedup();
+        tags
     }
 
     /// The settings of a game (defaults when it has none yet).
@@ -1171,6 +1194,59 @@ mod tests {
         let again: Value =
             serde_json::from_slice(&fs::read(paths.preferences_file()).unwrap()).unwrap();
         assert_eq!(again["futureThing"], json!({"a": [1, 2]}));
+    }
+
+    #[test]
+    fn preferences_without_a_game_toolkit_follow_the_global_one() {
+        // A file written before the field existed, with a game that has settings of its own.
+        let prefs: Preferences = serde_json::from_str(
+            r#"{"toolkitPinned": "v0.1.1", "games": {"c:/g": {"vsync": false}, "c:/h": {}}}"#,
+        )
+        .unwrap();
+        assert_eq!(prefs.games["c:/g"].toolkit, None);
+        assert_eq!(prefs.games["c:/h"].toolkit, None);
+        assert_eq!(prefs.kept_toolkit_tags(), ["0.1.1"]);
+        // Following the global choice writes nothing, so the file stays as an old launcher reads it.
+        let text = serde_json::to_string(&prefs.games["c:/g"]).unwrap();
+        assert!(!text.contains("toolkit"), "{text}");
+    }
+
+    #[test]
+    fn a_game_toolkit_survives_a_round_trip_and_is_kept_installed() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::under(dir.path());
+        let mut prefs = Preferences::default();
+        let id = GameId::from_key("c:/games/a");
+        let mut settings = prefs.game_settings(&id);
+        settings.toolkit = Some("v0.1.2".into());
+        prefs.set_game_settings(&id, settings);
+        let other = GameId::from_key("c:/games/b");
+        let mut settings = prefs.game_settings(&other);
+        settings.toolkit = Some("0.1.2".into());
+        prefs.set_game_settings(&other, settings);
+        let third = GameId::from_key("c:/games/c");
+        let mut settings = prefs.game_settings(&third);
+        settings.toolkit = Some("not a tag".into());
+        prefs.set_game_settings(&third, settings);
+        prefs.toolkit_pinned = Some("v0.1.10".into());
+        prefs.save(&paths).unwrap();
+        let loaded = Preferences::load(&paths);
+        assert_eq!(loaded.game_settings(&id).toolkit.as_deref(), Some("v0.1.2"));
+        // One tag per release, oldest first, and nothing that is not a release tag.
+        assert_eq!(loaded.kept_toolkit_tags(), ["0.1.2", "0.1.10"]);
+    }
+
+    #[test]
+    fn a_shared_settings_file_does_not_carry_the_toolkit() {
+        let settings = GameSettings {
+            toolkit: Some("v0.1.2".into()),
+            fullscreen: true,
+            ..Default::default()
+        };
+        let shared = SharedSettings::new(&game(), &settings);
+        assert_eq!(shared.settings.toolkit, None);
+        assert!(shared.settings.fullscreen);
+        assert!(!shared.to_json().contains("toolkit"));
     }
 
     #[test]

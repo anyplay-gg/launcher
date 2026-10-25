@@ -776,6 +776,43 @@ The launcher keeps the port's structure but trims what read as noise next to the
   frames/s` line every 5 s. The demo no longer forces a repaint every frame (it idled at 40 % of a
   core, unlike the launcher).
 
+### 3.8 A toolkit for one game
+
+A newer toolkit can break one game that every other game likes. The game stays on the release it
+works on; the rest follow the global choice (Stable, Pinned, Local Build, 3.7).
+
+- **The choice.** The game sheet has one row, "Toolkit for This Game", after "Game Language" and
+  before the maintenance commands. Its entries: "Follow Global Setting" (the default, and what a
+  game without the setting does); "Recommended for This Game: v0.1.2" when the catalogue names a
+  release for this game and the toolkit it uses now (see `data/README.md`, `set.launcher.toolkit`);
+  then the installed releases and the last releases of the configured repository, newest first.
+  A release that is not on this PC reads "v0.1.1 (not installed)": choosing it is allowed, the
+  first start or unlock then asks (below). The row is left out while there is nothing to choose
+  from. A file of exported settings neither carries nor changes the choice: it is about this PC.
+- **Side by side.** A release a game stays on, or that the pinned channel stays on, is never deleted
+  when a newer one is installed; the clean-up that keeps the newest two skips it. Settings >
+  Toolkit lists every installed release that neither the toolkit in use, nor the pinned channel,
+  nor a game needs, as one command each ("Remove v0.1.2", detail "412 MB · No game uses it"),
+  after the CPU conversion row, at most six at a time. Only the configured repository is asked for
+  a release, and a release is checked on install like any other.
+- **Unlock and start.** An unlock uses the game's release, a start tells the game what that
+  release supports (input file, screenshots) and the "outdated" mark and the note under "Unlock
+  Again" compare the copy with the game's release, not the global one. Resolutions come from the
+  patches of that release.
+- **A release that is gone.** Pressing Play or Unlock for such a game opens a side panel over the
+  home screen (title: the game, one sentence: "This game stays on toolkit v0.1.2, which is not
+  installed. Download it again, or let the game follow the global setting."), rows "Download
+  v0.1.2" (focused first; it shows the download and the panel closes when the release is there),
+  "Follow Global Setting" (removes the game's choice) and "Cancel". Nothing starts by itself
+  afterwards, and the global toolkit never stands in. A start or unlock that did not come from the
+  buttons (an invitation) fails with "the toolkit 0.1.2 chosen for this game is not installed".
+- **The fact.** The facts line gains "Toolkit": "v0.1.3" for a game that follows the global
+  setting, "v0.1.2 (pinned)", "v0.1.2 (not installed)" or "Local Build".
+- **Preferences.** `games.<id>.toolkit` (`"v0.1.2"`). It is written only when set, so a file
+  without it, and every game that follows the global setting, read and write as before.
+- Gallery scenes `game-toolkit` (the row, on a pinned game), `toolkit-unused` (two removable
+  releases) and the home scenes `home-toolkit` and `home-toolkit-missing` (the fact; the question).
+
 ## 4. Materials and blur on the GPU
 
 SwiftUI `.ultraThinMaterial` is a backdrop blur with a light tint and some saturation; it is used under every panel. egui has no

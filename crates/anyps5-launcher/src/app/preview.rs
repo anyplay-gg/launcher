@@ -11,7 +11,7 @@
 //! profile button with unread messages), `home-friends` (signed in, three friends online),
 //! `home-friends-quiet` (nobody online), `home-friends-focus` and `home-signin-focus` (the top bar's
 //! two pills focused), `home-theme1`,
-//! `home-theme2`, `home-noartwork`, `home-empty`, `home-scanning`, `home-nofolder`, `starting`,
+//! `home-theme2`, `home-noartwork`, `home-toolkit`, `home-toolkit-missing`, `home-empty`, `home-scanning`, `home-nofolder`, `starting`,
 //! `toast`. The games, their icons and artwork are generated here (nothing of any real game is in
 //! the repository); the clock of the backdrop is fixed, so a scene always renders the same.
 //!
@@ -65,6 +65,10 @@ pub enum Scene {
     HomeSignInFocus,
     HomeTheme(u32),
     HomeNoArtwork,
+    /// The selected game stays on a release of its own (a fact says so).
+    HomeToolkit,
+    /// The release the selected game stays on is gone: the question.
+    HomeToolkitMissing,
     HomeEmpty,
     HomeScanning,
     HomeNoFolder,
@@ -98,6 +102,8 @@ impl Scene {
             "home-theme1" => Scene::HomeTheme(1),
             "home-theme2" => Scene::HomeTheme(2),
             "home-noartwork" => Scene::HomeNoArtwork,
+            "home-toolkit" => Scene::HomeToolkit,
+            "home-toolkit-missing" => Scene::HomeToolkitMissing,
             "home-empty" => Scene::HomeEmpty,
             "home-scanning" => Scene::HomeScanning,
             "home-nofolder" => Scene::HomeNoFolder,
@@ -107,7 +113,7 @@ impl Scene {
         })
     }
 
-    pub const ALL_NAMES: [&'static str; 28] = [
+    pub const ALL_NAMES: [&'static str; 30] = [
         "onboarding0",
         "onboarding1",
         "onboarding2",
@@ -131,6 +137,8 @@ impl Scene {
         "home-theme1",
         "home-theme2",
         "home-noartwork",
+        "home-toolkit",
+        "home-toolkit-missing",
         "home-empty",
         "home-scanning",
         "home-nofolder",
@@ -503,6 +511,24 @@ pub fn apply_scene(app: &mut LauncherApp, scene: Scene, games: Vec<Game>) {
         }
         Scene::HomeRunning => m.running = Some(ids[at(1)].clone()),
         Scene::HomeOutdated => m.toolkit = Some("0.2.0".to_owned()),
+        Scene::HomeToolkit | Scene::HomeToolkitMissing => {
+            let id = ids[at(1)].clone();
+            // The simulated pipeline has v0.1.2 beside its own toolkit, and not v0.1.1.
+            let pin = if scene == Scene::HomeToolkit {
+                "v0.1.2"
+            } else {
+                "v0.1.1"
+            };
+            m.edit_prefs(|p| {
+                let mut settings = p.game_settings(&id);
+                settings.toolkit = Some(pin.to_owned());
+                p.set_game_settings(&id, settings);
+            });
+            if scene == Scene::HomeToolkitMissing {
+                m.toolkit_question = Some(id);
+                m.switch_overlay(crate::app::overlay::Overlay::ToolkitMissing);
+            }
+        }
         Scene::HomeDiagnosis => {
             m.diagnoses.insert(
                 ids[at(1)].clone(),
@@ -724,7 +750,11 @@ impl PreviewApp {
             prefs,
             paths: AppPaths::under(&dir.join("appdata")),
             persist: false,
-            pipeline: Box::new(SimPipeline::new("0.1.0")),
+            pipeline: Box::new({
+                let mut pipeline = SimPipeline::new("0.1.0");
+                pipeline.installed = vec!["0.1.2".to_owned()];
+                pipeline
+            }),
             panels: Box::new(crate::app::panels::PanelHost::new(&cc.egui_ctx, true)),
             scan_on_start: false,
         };

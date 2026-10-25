@@ -12,6 +12,7 @@ use anyps5_core::compat::{self, Feature, Fit, Since};
 use anyps5_core::linkreg::Handler;
 use anyps5_core::links::SettingsPage;
 use anyps5_core::settings::{Backdrop, CpuConversion, Preferences, ToolkitChannel};
+use anyps5_core::toolkit::InstalledRelease;
 use egui::{Align2, Color32, Context, Rect, Sense, Ui, UiBuilder, pos2, vec2};
 
 use crate::screens::convert;
@@ -20,6 +21,7 @@ use crate::screens::format::{abbreviate_path, home_dir};
 use crate::screens::rows::{self, Change, ListOptions, Row};
 use crate::screens::side::{Output, commands};
 use crate::screens::strings::Extra;
+use crate::screens::toolkit_pin::{self, REMOVE_ROWS};
 use crate::ui::Shell;
 use crate::ui::anim::{AnimExt, Motion, lerp};
 use crate::ui::chrome::fullscreen_panel;
@@ -130,6 +132,9 @@ pub struct SettingsEnv<'a> {
     pub update: UpdateState,
     /// The last releases (`v0.1.3`), for the pinned channel; empty until fetched.
     pub recent: &'a [String],
+    /// Installed releases that neither the toolkit in use nor a game nor the pinned channel needs,
+    /// newest first, with their size: the page offers to remove them.
+    pub unused: &'a [InstalledRelease],
     pub launcher: LauncherUpdate,
     /// The folder screenshots go to when the preference is unset.
     pub default_screenshots: &'a std::path::Path,
@@ -157,6 +162,8 @@ pub enum SettingsAction {
     PinToolkit(String),
     /// Open the notes of this release (`0.1.3`).
     OpenWhatsNew(String),
+    /// Delete this installed release (`0.1.2`); nothing uses it.
+    RemoveToolkit(String),
     /// "Restart Now" on the About page: close, and start the staged launcher.
     RestartNow,
     /// "Open AnyPlay Links with This Launcher" was switched: write or remove the registration.
@@ -501,6 +508,14 @@ pub fn build_categories(
         .icon(Icon::GAUGE)
         .group_start(),
     );
+    for (index, release) in env.unused.iter().take(REMOVE_ROWS.len()).enumerate() {
+        toolkit.push(toolkit_pin::remove_row(
+            index,
+            &release.tag,
+            release.bytes,
+            language,
+        ));
+    }
 
     // Advanced
     let screenshots = prefs
@@ -946,6 +961,16 @@ impl SettingsPanel {
                     out.actions.push(SettingsAction::PinToolkit(tag));
                 }
             }
+            Change::Run { row } if REMOVE_ROWS.contains(row) => {
+                if let Some(release) = REMOVE_ROWS
+                    .iter()
+                    .position(|r| r == row)
+                    .and_then(|index| env.unused.get(index))
+                {
+                    out.actions
+                        .push(SettingsAction::RemoveToolkit(release.tag.clone()));
+                }
+            }
             Change::Run { row: "restartNow" } => out.actions.push(SettingsAction::RestartNow),
             Change::Run {
                 row: "toolkitFolder",
@@ -1115,6 +1140,7 @@ mod tests {
 
     fn env<'a>(toolkit: Option<&'a str>, update: UpdateState) -> SettingsEnv<'a> {
         SettingsEnv {
+            unused: &[],
             recent: &[],
             games_found: 9,
             app_version: "0.1.0",
@@ -1382,6 +1408,49 @@ mod tests {
             Language::English,
         );
         ids(&cats, Category::Toolkit)
+    }
+
+    #[test]
+    fn unused_releases_can_be_removed_from_the_toolkit_page() {
+        let prefs = Preferences::default();
+        let unused = [
+            InstalledRelease {
+                tag: "0.1.2".into(),
+                bytes: 412 * 1024 * 1024,
+            },
+            InstalledRelease {
+                tag: "0.1.1".into(),
+                bytes: 300 * 1024 * 1024,
+            },
+        ];
+        let mut with = env(Some("0.1.3-abc"), UpdateState::UpToDate);
+        with.unused = &unused;
+        let cats = build_categories(&prefs, &with, Language::English);
+        let rows = &cats
+            .iter()
+            .find(|c| c.category == Category::Toolkit)
+            .unwrap()
+            .rows;
+        let remove: Vec<&Row> = rows
+            .iter()
+            .filter(|r| REMOVE_ROWS.contains(&r.id))
+            .collect();
+        assert_eq!(remove.len(), 2);
+        assert_eq!(remove[0].title, "Remove v0.1.2");
+        assert!(remove[0].group_start && !remove[1].group_start);
+        assert!(
+            remove[0]
+                .detail
+                .as_deref()
+                .unwrap()
+                .contains("No game uses it")
+        );
+        assert!(
+            !toolkit_ids(&prefs, Some("0.1.3-abc"))
+                .iter()
+                .any(|id| REMOVE_ROWS.contains(id)),
+            "nothing to remove, no row"
+        );
     }
 
     #[test]

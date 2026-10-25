@@ -14,7 +14,9 @@ use anyps5_core::hostcpu::{CpuConversion, HostCpu};
 use anyps5_core::launch::{LaunchEvent, LaunchRequest, Launcher, RunHandle, WindowPrefs};
 use anyps5_core::paths::{self, AppPaths, GameId};
 use anyps5_core::settings::{self, EnvContext, Preferences};
-use anyps5_core::toolkit::{Toolkit, ToolkitChoice, adopt_folder};
+use anyps5_core::toolkit::{
+    self, GameToolkit, Toolkit, ToolkitChoice, adopt_folder, open_for_game,
+};
 use anyps5_core::unlock::{self, UnlockError, UnlockEvent, UnlockQueue, UnlockRequest};
 
 use crate::app::model::ui_language;
@@ -26,6 +28,11 @@ type Shared = Arc<Mutex<Vec<PipelineEvent>>>;
 pub struct CorePipeline {
     paths: AppPaths,
     toolkit: Option<Toolkit>,
+    /// What the releases games stay on look like on disk, by the pin as the preferences hold it.
+    /// Cleared when a toolkit was installed, removed or chosen, so no frame reads the disk.
+    pinned: HashMap<String, GameToolkit>,
+    /// The releases games stay on, opened (hashing them takes a moment), by plain tag.
+    opened: HashMap<String, Toolkit>,
     queue: UnlockQueue,
     runs: HashMap<GameId, RunHandle>,
     events: Shared,
@@ -102,6 +109,8 @@ impl CorePipeline {
         };
         let mut pipeline = Self {
             toolkit: None,
+            pinned: HashMap::new(),
+            opened: HashMap::new(),
             queue: UnlockQueue::new(sink),
             runs: HashMap::new(),
             events,
@@ -115,6 +124,8 @@ impl CorePipeline {
 
     /// Looks for the toolkit again (after a download or a changed folder).
     pub fn locate_toolkit(&mut self, prefs: &Preferences) {
+        self.pinned.clear();
+        self.opened.clear();
         let pinned = prefs
             .toolkit_pinned
             .clone()
@@ -149,14 +160,54 @@ impl CorePipeline {
             .is_none_or(|t| compat::supports(feature, t.version()))
     }
 
+    /// The version of the toolkit a game uses, `Err` with the release it stays on when that is gone.
+    fn version_for(&mut self, pin: Option<&str>) -> Result<Option<String>, String> {
+        let global = self.toolkit.as_ref().map(|t| t.version().to_owned());
+        match pin {
+            None => Ok(global),
+            Some(pin) => match self.pinned_toolkit(pin, global.as_deref()) {
+                GameToolkit::Pinned { version, .. } => Ok(Some(version)),
+                GameToolkit::Missing { tag } => Err(tag),
+                GameToolkit::Global(version) => Ok(version),
+            },
+        }
+    }
+
     fn push(&self, event: PipelineEvent) {
         self.events.lock().expect("events lock").push(event);
         (self.wake)();
     }
 
-    fn unlock(&self, game: &anyps5_core::library::Game, root: &Path, prefs: &Preferences) {
-        let Some(toolkit) = self.toolkit.clone() else {
-            return;
+    /// The toolkit to unlock a game with: its own release, else the global one. A release that is
+    /// gone is an error: the global toolkit never stands in for it.
+    fn toolkit_for(&mut self, pin: Option<&str>) -> Result<Option<Toolkit>, toolkit::ToolkitError> {
+        let Some(pin) = pin else {
+            return Ok(self.toolkit.clone());
+        };
+        let tag = toolkit::pin_tag(pin)
+            .ok_or_else(|| toolkit::ToolkitError::PinMissing(pin.to_owned()))?;
+        if let Some(opened) = self.opened.get(&tag) {
+            return Ok(Some(opened.clone()));
+        }
+        let opened = open_for_game(&self.paths, None, Some(&tag))?;
+        if let Some(opened) = &opened {
+            self.opened.insert(tag, opened.clone());
+        }
+        Ok(opened)
+    }
+
+    fn unlock(&mut self, game: &anyps5_core::library::Game, root: &Path, prefs: &Preferences) {
+        let pin = prefs.game_settings(&game.id).toolkit;
+        let toolkit = match self.toolkit_for(pin.as_deref()) {
+            Ok(Some(toolkit)) => toolkit,
+            Ok(None) => return,
+            Err(error) => {
+                self.push(PipelineEvent::UnlockFinished {
+                    game: game.id.clone(),
+                    result: Err(error.to_string()),
+                });
+                return;
+            }
         };
         let mut request = UnlockRequest::new(
             game.folder.clone(),
@@ -192,14 +243,29 @@ impl CorePipeline {
         let copy = paths::unlocked_copy_dir(root, &game.title_id, &game.id);
         let name = paths::unlocked_copy_name(&game.title_id, &game.id);
         let settings = prefs.game_settings(&game.id);
+        // What the game was made for decides what it is told: its own release, else the global one.
+        let version = match self.version_for(settings.toolkit.as_deref()) {
+            Ok(version) => version,
+            Err(tag) => {
+                self.push(PipelineEvent::StartFailed {
+                    game: game.id.clone(),
+                    message: toolkit::ToolkitError::PinMissing(tag).to_string(),
+                });
+                return;
+            }
+        };
         // Without the input file the game keeps the engine's built-in keys.
         let input_file = self.paths.input_file(&name);
         let written = settings
-            .write_input_file(&input_file, self.toolkit.as_ref().and_then(|t| t.tag()))
+            .write_input_file(
+                &input_file,
+                version.as_deref().and_then(compat::release_tag).as_deref(),
+            )
             .is_ok();
         // F12 screenshots exist only in builds newer than v0.1.3; older toolkits ignore the folder.
-        let screenshots = self
-            .supports(Feature::Screenshots)
+        let screenshots = version
+            .as_deref()
+            .is_none_or(|v| compat::supports(Feature::Screenshots, v))
             .then(|| prefs.screenshots_dir(&self.paths));
         let shader_cache = self.paths.shader_cache_dir(&game.title_id);
         let launcher_language = match prefs.language {
@@ -324,6 +390,19 @@ impl Pipeline for CorePipeline {
 
     fn reload_toolkit(&mut self, prefs: &Preferences) {
         self.locate_toolkit(prefs);
+    }
+
+    fn pinned_toolkit(&mut self, pin: &str, global: Option<&str>) -> GameToolkit {
+        let paths = &self.paths;
+        if let Some(found) = self.pinned.get(pin) {
+            return found.clone();
+        }
+        let found = toolkit::game_toolkit(paths, global, Some(pin));
+        // A release that is missing is looked for again every time: it may arrive any moment.
+        if matches!(found, GameToolkit::Pinned { .. }) {
+            self.pinned.insert(pin.to_owned(), found.clone());
+        }
+        found
     }
 
     fn patches_dir(&self) -> Option<std::path::PathBuf> {

@@ -19,6 +19,12 @@ use crate::paths::AppPaths;
 use crate::platform::Os;
 
 mod macos;
+mod pins;
+
+pub use pins::{
+    GameToolkit, InstalledRelease, game_toolkit, installed_tags, installed_version,
+    installed_with_sizes, open_for_game, pin_tag, remove_release,
+};
 
 /// The MinGW runtime the libraries need beside them (without it `LoadLibrary` fails with 126).
 pub const MINGW_DLLS: [&str; 3] = [
@@ -57,6 +63,12 @@ pub enum ToolkitError {
     NoRelease,
     #[error("cancelled")]
     Cancelled,
+    /// The release a game stays on is not installed (or not usable).
+    #[error("the toolkit {0} chosen for this game is not installed")]
+    PinMissing(String),
+    /// An installed release that a game or the preferences still use cannot be removed.
+    #[error("the toolkit {0} is in use")]
+    InUse(String),
 }
 
 /// What the preferences remember about the player's toolkit choice.
@@ -736,6 +748,19 @@ pub fn download_and_install(
     progress: &mut dyn FnMut(DownloadStage, f64),
     cancel: &CancelToken,
 ) -> Result<Toolkit, ToolkitError> {
+    download_and_install_keeping(info, paths, patches_source, &[], progress, cancel)
+}
+
+/// [`download_and_install`] that leaves the releases in `keep` (the tags games stay on) alone
+/// when it deletes the old ones.
+pub fn download_and_install_keeping(
+    info: &ReleaseInfo,
+    paths: &AppPaths,
+    patches_source: Option<&Path>,
+    keep: &[String],
+    progress: &mut dyn FnMut(DownloadStage, f64),
+    cancel: &CancelToken,
+) -> Result<Toolkit, ToolkitError> {
     let tag = info.plain_tag().to_string();
     if parse_tag(&tag).is_none() {
         return Err(ToolkitError::NoRelease);
@@ -774,7 +799,7 @@ pub fn download_and_install(
             previous.display()
         );
     }
-    prune_old_releases(paths, &tag);
+    prune_old_releases(paths, &tag, keep);
     Toolkit::open_for(info.os, &final_dir)
 }
 
@@ -1078,16 +1103,21 @@ fn extract_libs(
     Ok(())
 }
 
-/// Keeps the newest two installed releases (the one just installed and its predecessor).
-fn prune_old_releases(paths: &AppPaths, keep_tag: &str) {
+/// Keeps the newest two installed releases (the one just installed and its predecessor), and
+/// every release in `keep`: the ones games stay on.
+fn prune_old_releases(paths: &AppPaths, keep_tag: &str, keep: &[String]) {
     let mut found = installed_releases(paths);
     found.retain(|(_, dir)| {
         dir.file_name()
             .is_some_and(|n| n.to_string_lossy() != keep_tag)
     });
+    let kept: Vec<String> = keep.iter().filter_map(|tag| pin_tag(tag)).collect();
     // `found` is newest first and no longer holds the new one: keep one predecessor.
     for (_, dir) in found.into_iter().skip(1) {
-        let _ = crate::fsx::remove_tree(&dir);
+        let name = dir.file_name().map(|n| n.to_string_lossy().into_owned());
+        if !name.is_some_and(|name| kept.contains(&name)) {
+            let _ = crate::fsx::remove_tree(&dir);
+        }
     }
 }
 
@@ -1926,7 +1956,7 @@ mod tests {
         for tag in ["0.1.0", "0.1.1", "0.1.2", "0.1.3"] {
             make_toolkit(&paths.toolkit_dir().join(tag), true);
         }
-        prune_old_releases(&paths, "0.1.3");
+        prune_old_releases(&paths, "0.1.3", &[]);
         let left: Vec<String> = installed_releases(&paths)
             .into_iter()
             .map(|(_, d)| d.file_name().unwrap().to_string_lossy().into_owned())
