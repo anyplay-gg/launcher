@@ -489,6 +489,18 @@ pub fn list(
     rows: &mut [Row],
     options: &ListOptions,
 ) -> Vec<ListEvent> {
+    list_with_header(ui, id_salt, rows, options, |_| {})
+}
+
+/// [`list`] with something above the first row, scrolling with the rows (the profile page's
+/// banner). The follower counts its height, so the focus still centres the right row.
+pub fn list_with_header(
+    ui: &mut Ui,
+    id_salt: impl std::hash::Hash + std::fmt::Debug,
+    rows: &mut [Row],
+    options: &ListOptions,
+    header: impl FnOnce(&mut Ui),
+) -> Vec<ListEvent> {
     let ctx = ui.ctx().clone();
     let id = ui.make_persistent_id(id_salt);
     let (follow, scroll_to) = Follow::begin(&ctx, id, options.focus);
@@ -516,6 +528,7 @@ pub fn list(
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = size::ROW_GAP;
                 let origin = ui.cursor().min.y;
+                header(ui);
                 for index in 0..rows.len() {
                     // The gap after a row is the next row's to give: none before an attached note.
                     let next_attached = rows.get(index + 1).is_some_and(|next| next.attached);

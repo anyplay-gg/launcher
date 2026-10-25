@@ -94,6 +94,17 @@ pub fn message_time(unix: i64, now: i64, offset_seconds: i32, language: Language
     }
 }
 
+/// The day without a year, for times too old to tell in hours: `Oct 21` in English and `21 Eki` in
+/// Turkish. `unix` is in seconds, `offset_seconds` is the local UTC offset.
+pub fn short_date(unix: i64, offset_seconds: i32, language: Language) -> String {
+    let local = unix + i64::from(offset_seconds);
+    let (_, month, day) = civil_from_days(local.div_euclid(86_400));
+    match language {
+        Language::English => format!("{} {day}", MONTHS_EN[month as usize - 1]),
+        Language::Turkish => format!("{day} {}", MONTHS_TR[month as usize - 1]),
+    }
+}
+
 /// `m:ss` of the start timer.
 pub fn elapsed_text(seconds: u64) -> String {
     format!("{}:{:02}", seconds / 60, seconds % 60)

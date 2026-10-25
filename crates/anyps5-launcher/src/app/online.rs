@@ -19,6 +19,7 @@ use anyps5_core::paths::GameId;
 
 use crate::app::model::{Effect, Model};
 use crate::app::overlay::Overlay;
+use crate::screens::online_feed_strings::FeedText as FT;
 use crate::screens::online_restriction_strings as restriction_text;
 use crate::screens::online_social_strings::SocialText as S;
 use crate::screens::online_strings::OnlineText as T;
@@ -500,6 +501,8 @@ impl OnlineService {
                 | Purpose::UploadTrophies { .. }
                 | Purpose::UploadPlaytime(_)
                 | Purpose::Cards
+                | Purpose::Feed { .. }
+                | Purpose::Profile(_)
                 | Purpose::Privacy
                 | Purpose::Party
                 | Purpose::Conversations
@@ -528,6 +531,16 @@ impl OnlineService {
                 | Purpose::ScreenLeave,
                 Err(failure),
             ) => super::online_screen::failed(model, &failure),
+            // The count went back by itself; the player is told why it did.
+            (Purpose::React { .. }, Err(failure)) => {
+                tracing::info!("net service: {}: {}", failure.code, failure.message);
+                let text = if failure.is(ErrorCode::RateLimited) {
+                    failure_text(&failure, language)
+                } else {
+                    FT::ReactFailed.text(language).to_owned()
+                };
+                model.toast(text, Icon::WARNING);
+            }
             (Purpose::SetPrivacy, Err(failure)) => {
                 // The choice the panel shows goes back to what the cloud keeps.
                 model.online.send(Purpose::Privacy, Command::Privacy);

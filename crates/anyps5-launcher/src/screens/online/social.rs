@@ -1769,7 +1769,14 @@ mod tests {
         let rows = panel.rows(&data(&online)).2;
         assert_eq!(
             ids(&rows),
-            ["sendMessage", "inviteToParty", "remove", "block", "report"]
+            [
+                "sendMessage",
+                "inviteToParty",
+                "viewProfile",
+                "remove",
+                "block",
+                "report"
+            ]
         );
         let mut actions = Vec::new();
         panel.run("sendMessage", &data(&online), &mut actions);

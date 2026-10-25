@@ -16,11 +16,13 @@
 // Parts of the model, pipeline and overlay API are for the panel modules and the pipeline adapter.
 #![allow(dead_code)]
 
+pub mod avatars;
 pub mod clock;
 pub mod core_pipeline;
 pub mod links;
 pub mod model;
 pub mod online;
+pub mod online_local;
 pub mod online_screen;
 pub mod overlay;
 pub mod panels;

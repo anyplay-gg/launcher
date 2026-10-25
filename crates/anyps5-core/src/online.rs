@@ -14,6 +14,9 @@
 //! Nothing here goes online by itself: the launcher starts the process only once the player asks
 //! to sign in, or when they signed in on this PC before.
 
+pub mod avatar;
+mod feed;
+mod profile;
 mod restrictions;
 mod runs;
 mod screen;
@@ -33,6 +36,12 @@ pub use anyplay_control::{
     SignedIn, VoiceMode,
 };
 use api::{Account, AccountId, Conversation, FriendLists, Invitation, Message, PartyInvitation};
+pub use feed::{Ago, FeedState, Rarity, adjusted, party_others, toggled};
+pub use profile::{
+    BANNER_CONTRAST, BANNER_TEXT_ALPHA, BANNER_TEXT_CONTRAST, ProfileEntry, banner_colour,
+    contrast_of_text, contrast_with_white, dominant_colour, hours_minutes, most_played, page_of,
+    readable_banner,
+};
 pub use restrictions::{Blocked, Restrictions, in_force};
 pub use runs::Runs;
 pub use screen::{Screen, ScreenCommand, ScreenNotice};
@@ -290,6 +299,17 @@ pub enum Purpose {
     Cards,
     Privacy,
     SetPrivacy,
+    /// A page of the feed: the newest, or the one that starts before an item.
+    Feed {
+        before: Option<u64>,
+    },
+    /// The player's reaction to a feed item, with what the item showed before it.
+    React {
+        item: u64,
+        before: api::Reactions,
+    },
+    /// The profile page of an account.
+    Profile(AccountId),
     /// Minutes per title and day, as sent.
     UploadPlaytime(Vec<api::PlaytimeEntry>),
     /// A run report ("How did it run?").
@@ -408,6 +428,13 @@ pub struct Online {
     pub restrictions: Restrictions,
     /// Friends' trophy counts by grade; `None` when they hide them from the player.
     pub cards: BTreeMap<AccountId, Option<api::Count>>,
+    /// The avatar hash of every account the launcher heard of in a card or a profile; `None` when
+    /// the account has none or hides it.
+    pub avatars: BTreeMap<AccountId, Option<String>>,
+    /// What the player and their friends did, once the Feed page asked for it.
+    pub feed: FeedState,
+    /// The profiles the player looked at, by account.
+    pub profiles: BTreeMap<AccountId, ProfileEntry>,
     /// Who sees the player's trophies; `None` until the cloud said.
     pub privacy: Option<api::Privacy>,
     /// What players found per title (run reports).
@@ -511,6 +538,16 @@ impl Online {
 
     /// Keeps what a refusal tells about the account: the restriction that stopped the command.
     fn refused(&mut self, purpose: &Purpose, failure: &Failure) {
+        match purpose {
+            Purpose::Feed { .. } => self.feed.error = Some(failure.clone()),
+            Purpose::React { item, before } => self.feed.set_reactions(*item, *before),
+            Purpose::Profile(account) => {
+                // A page that is shown stays; only a profile without one is a failure.
+                let entry = self.profiles.entry(*account).or_default();
+                entry.failed = entry.page.is_none();
+            }
+            _ => {}
+        }
         let Some(restriction) = &failure.restriction else {
             return;
         };
@@ -574,6 +611,7 @@ impl Online {
             Purpose::Cards => {
                 if let Ok(cards) = serde_json::from_value::<api::Cards>(value.clone()) {
                     for card in cards.cards {
+                        self.avatars.insert(card.account.id, card.avatar);
                         self.cards.insert(card.account.id, card.trophies);
                     }
                 }
@@ -581,6 +619,31 @@ impl Online {
             Purpose::RunSummary { title_id, version } => {
                 if let Ok(summary) = serde_json::from_value::<api::RunSummary>(value.clone()) {
                     self.runs.keep(title_id, version.as_deref(), summary);
+                }
+            }
+            Purpose::Feed { before } => {
+                if let Ok(page) = serde_json::from_value::<api::Feed>(value.clone()) {
+                    match before {
+                        Some(before) => self.feed.merge_older(*before, page),
+                        None => self.feed.merge_newest(page),
+                    }
+                }
+            }
+            Purpose::React { item, .. } => {
+                if let Ok(now) = serde_json::from_value::<api::Reactions>(value.clone()) {
+                    self.feed.set_reactions(*item, now);
+                }
+            }
+            Purpose::Profile(account) => {
+                if let Ok(page) = serde_json::from_value::<api::ProfilePage>(value.clone()) {
+                    self.avatars.insert(*account, page.profile.avatar.clone());
+                    self.profiles.insert(
+                        *account,
+                        ProfileEntry {
+                            page: Some(page),
+                            failed: false,
+                        },
+                    );
                 }
             }
             Purpose::Privacy | Purpose::SetPrivacy => {
@@ -900,6 +963,69 @@ impl Online {
         }
     }
 
+    /// Asks for the newest page of the feed, unless that question waits already.
+    pub fn request_feed(&mut self) {
+        if !self.is_signed_in() || self.is_waiting(|p| *p == Purpose::Feed { before: None }) {
+            return;
+        }
+        self.send(
+            Purpose::Feed { before: None },
+            Command::Feed {
+                before: None,
+                limit: None,
+            },
+        );
+    }
+
+    /// Asks for the page older than the items held, when there is one and none is on its way.
+    pub fn request_older_feed(&mut self) {
+        let Some(before) = self.feed.next else {
+            return;
+        };
+        if !self.is_signed_in() || self.is_waiting(|p| matches!(p, Purpose::Feed { .. })) {
+            return;
+        }
+        self.send(
+            Purpose::Feed {
+                before: Some(before),
+            },
+            Command::Feed {
+                before: Some(before),
+                limit: None,
+            },
+        );
+    }
+
+    /// True while a page of the feed is on its way.
+    pub fn feed_loading(&self) -> bool {
+        self.is_waiting(|p| matches!(p, Purpose::Feed { .. }))
+    }
+
+    /// Sets the player's reaction to a feed item and shows it at once; the cloud's answer, or its
+    /// refusal, settles it. A press on an item whose last reaction is still on its way is ignored.
+    pub fn react(&mut self, item: u64, reaction: Option<api::Reaction>) {
+        if !self.is_signed_in()
+            || self.is_waiting(|p| matches!(p, Purpose::React { item: i, .. } if *i == item))
+        {
+            return;
+        }
+        let Some(before) = self.feed.react(item, reaction) else {
+            return;
+        };
+        self.send(
+            Purpose::React { item, before },
+            Command::React { item, reaction },
+        );
+    }
+
+    /// Asks for the profile page of an account, unless that question waits already.
+    pub fn request_profile(&mut self, account: AccountId) {
+        if !self.is_signed_in() || self.is_waiting(|p| *p == Purpose::Profile(account)) {
+            return;
+        }
+        self.send(Purpose::Profile(account), Command::Profile { account });
+    }
+
     /// Changes who sees the player's trophies. The cloud replaces the whole setting, so the other
     /// parts go back as the cloud last said; before it said anything, the launcher asks again
     /// instead of guessing them. The choice shows at once and comes back with the answer.
@@ -941,6 +1067,9 @@ impl Online {
                     self.screen.reset();
                     self.session = None;
                     self.cards.clear();
+                    self.avatars.clear();
+                    self.feed = FeedState::default();
+                    self.profiles.clear();
                     self.privacy = None;
                     self.uploaded.clear();
                     self.playtime_sent.clear();
@@ -954,6 +1083,10 @@ impl Online {
                 if !was_online && self.is_online() {
                     self.send(Purpose::Privacy, Command::Privacy);
                     self.request_cards(true);
+                    // The page the player left open catches up with what happened offline.
+                    if self.feed.loaded {
+                        self.request_feed();
+                    }
                 }
             }
             Event::Friends(lists) => {
@@ -1041,8 +1174,12 @@ impl Online {
                 offers,
                 watching,
             } => notices.extend(self.screen_event(can_share, can_watch, hosting, offers, watching)),
-            // The feed has changed: the feed views fetch it with `feed` when they open.
-            Event::Feed => {}
+            // News, not data: the page that was looked at reads the feed again.
+            Event::Feed => {
+                if self.feed.loaded {
+                    self.request_feed();
+                }
+            }
             Event::Unknown => {}
         }
         notices
@@ -1176,6 +1313,11 @@ mod tests {
         online.apply(Line::Output(Output::Answer(control::Answer::error(
             id, failure,
         ))))
+    }
+
+    fn refuse_last(online: &mut Online, failure: Failure) -> Vec<Notice> {
+        let id = online.next;
+        refusal(online, id, failure)
     }
 
     fn restricted(kind: &str, until: Option<u64>) -> Failure {
@@ -2064,5 +2206,187 @@ mod tests {
         assert!(!env.contains_key("PATH"));
         assert_eq!(env["ANYPS5_NET_OBSERVE"], "C:/Logs/X-network.jsonl");
         assert!(game_environment(None, None).is_empty());
+    }
+
+    fn feed_item(id: u64) -> api::FeedItem {
+        api::FeedItem {
+            id,
+            account: account(2, "Lumen"),
+            at: 1_000 + id,
+            event: api::FeedEvent::FirstPlayed {
+                title_id: "GAME00001".into(),
+            },
+            reactions: api::ReactionCounts::default(),
+            mine: None,
+        }
+    }
+
+    fn feed_page(ids: &[u64], next: Option<u64>) -> api::Feed {
+        api::Feed {
+            items: ids.iter().map(|id| feed_item(*id)).collect(),
+            next,
+        }
+    }
+
+    /// A signed-in player whose feed holds items 3, 2 and 1, with nothing waiting.
+    fn with_feed() -> Online {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        online.take_outbox();
+        online.request_feed();
+        answer_last(&mut online, feed_page(&[3, 2, 1], Some(1)));
+        online.take_outbox();
+        online
+    }
+
+    #[test]
+    fn the_feed_is_asked_for_once_and_kept() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        online.take_outbox();
+        online.request_feed();
+        online.request_feed();
+        let lines = online.take_outbox();
+        assert_eq!(lines.len(), 1, "the question waits already");
+        assert!(lines[0].contains("\"do\":\"feed\""));
+        assert!(online.feed_loading());
+        answer_last(&mut online, feed_page(&[3, 2, 1], Some(1)));
+        assert!(!online.feed_loading() && online.feed.loaded);
+        assert_eq!(online.feed.items.len(), 3);
+        // The next page starts before the oldest item held.
+        online.request_older_feed();
+        let lines = online.take_outbox();
+        assert!(lines[0].contains("\"before\":1"), "{}", lines[0]);
+        answer_last(&mut online, feed_page(&[0], None));
+        assert_eq!(online.feed.next, None);
+        online.request_older_feed();
+        assert!(online.take_outbox().is_empty(), "nothing older");
+    }
+
+    #[test]
+    fn a_failed_feed_says_so_until_it_loads() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        online.take_outbox();
+        online.request_feed();
+        refuse_last(&mut online, Failure::new("unavailable", "x"));
+        assert!(online.feed.error.is_some() && !online.feed.loaded);
+        online.request_feed();
+        answer_last(&mut online, feed_page(&[], None));
+        assert!(online.feed.error.is_none() && online.feed.loaded);
+    }
+
+    #[test]
+    fn a_reaction_shows_at_once_and_goes_back_when_refused() {
+        let mut online = with_feed();
+        online.react(2, Some(api::Reaction::Gg));
+        assert_eq!(online.feed.item(2).unwrap().reactions.gg, 1);
+        assert_eq!(online.feed.item(2).unwrap().mine, Some(api::Reaction::Gg));
+        let lines = online.take_outbox();
+        assert!(lines[0].contains("\"do\":\"react\"") && lines[0].contains("\"item\":2"));
+        assert!(lines[0].contains("\"reaction\":\"gg\""));
+        refuse_last(&mut online, Failure::new("rate_limited", "x"));
+        assert_eq!(online.feed.item(2).unwrap().reactions.gg, 0);
+        assert_eq!(online.feed.item(2).unwrap().mine, None);
+    }
+
+    #[test]
+    fn the_answer_to_a_reaction_is_what_the_item_shows() {
+        let mut online = with_feed();
+        online.react(2, Some(api::Reaction::Wow));
+        online.take_outbox();
+        // Somebody else reacted in the meantime: the cloud's counts win.
+        answer_last(
+            &mut online,
+            api::Reactions {
+                reactions: api::ReactionCounts {
+                    wow: 4,
+                    ..Default::default()
+                },
+                mine: Some(api::Reaction::Wow),
+            },
+        );
+        assert_eq!(online.feed.item(2).unwrap().reactions.wow, 4);
+        // Taking it back sends null.
+        online.react(2, None);
+        let lines = online.take_outbox();
+        assert!(lines[0].contains("\"reaction\":null"), "{}", lines[0]);
+        assert_eq!(online.feed.item(2).unwrap().reactions.wow, 3);
+    }
+
+    #[test]
+    fn a_second_press_waits_for_the_first_on_the_same_item() {
+        let mut online = with_feed();
+        online.react(2, Some(api::Reaction::Gg));
+        online.react(2, Some(api::Reaction::Wow));
+        online.react(3, Some(api::Reaction::Nice));
+        assert_eq!(online.take_outbox().len(), 2, "one per item on its way");
+        assert_eq!(online.feed.item(2).unwrap().mine, Some(api::Reaction::Gg));
+        // An item the player does not hold is not sent at all.
+        online.react(99, Some(api::Reaction::Nice));
+        assert!(online.take_outbox().is_empty());
+    }
+
+    #[test]
+    fn news_reads_the_feed_again_only_once_it_was_looked_at() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        online.take_outbox();
+        online.apply(event(Event::Feed));
+        assert!(online.take_outbox().is_empty(), "nobody looked");
+        let mut online = with_feed();
+        online.apply(event(Event::Feed));
+        online.apply(event(Event::Feed));
+        let lines = online.take_outbox();
+        assert_eq!(lines.len(), 1, "one question at a time");
+        assert!(lines[0].contains("\"do\":\"feed\""));
+    }
+
+    #[test]
+    fn a_profile_page_teaches_the_avatar_and_a_failure_is_remembered() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        online.take_outbox();
+        online.request_profile(AccountId(2));
+        online.request_profile(AccountId(2));
+        assert_eq!(online.take_outbox().len(), 1);
+        let hash = "ab".repeat(32);
+        answer_last(
+            &mut online,
+            api::ProfilePage {
+                profile: api::Profile {
+                    account: account(2, "Lumen"),
+                    about: Some("Hi".into()),
+                    favourites: None,
+                    avatar: Some(hash.clone()),
+                    playtime: None,
+                },
+                trophies: None,
+                links: Vec::new(),
+            },
+        );
+        let page = page_of(&online.profiles, AccountId(2)).unwrap();
+        assert_eq!(page.profile.about.as_deref(), Some("Hi"));
+        assert_eq!(online.avatars[&AccountId(2)], Some(hash));
+        // A later failure keeps the page that is shown and does not mark it failed.
+        online.request_profile(AccountId(2));
+        refuse_last(&mut online, Failure::new("unavailable", "x"));
+        assert!(online.profiles[&AccountId(2)].page.is_some());
+        online.request_profile(AccountId(7));
+        refuse_last(&mut online, Failure::new("not_found", "x"));
+        assert!(online.profiles[&AccountId(7)].failed);
+    }
+
+    #[test]
+    fn signing_out_forgets_the_feed_and_the_profiles() {
+        let mut online = with_feed();
+        online.request_profile(AccountId(2));
+        online.apply(event(Event::State {
+            cloud: Cloud::Online,
+            account: None,
+            pending: None,
+        }));
+        assert!(!online.feed.loaded && online.feed.items.is_empty());
+        assert!(online.profiles.is_empty() && online.avatars.is_empty());
     }
 }

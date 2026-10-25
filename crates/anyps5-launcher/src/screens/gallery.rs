@@ -17,8 +17,10 @@
 //!                           online-voice-devices|online-voice-denied|
 //!                           online-screen-ready|online-screen-hosting|online-screen-offer|
 //!                           online-screen-cannot|online-screen-watching|online-screen-stalled|
-//!                           online-screen-home
-//!                           online-muted|online-restriction|online-paused|online-banned
+//!                           online-screen-home|
+//!                           online-muted|online-restriction|online-paused|online-banned|
+//!                           profile-own|profile-other|profile-minimal|profile-minimal-other|
+//!                           feed|feed-reaction|feed-empty|feed-loading|feed-error
 //!                 [--screenshot=out.png] [--size=WxH] [--tr]
 //! ```
 //!
@@ -179,6 +181,21 @@ pub enum OnlineLook {
     Paused,
     /// The Start page after a ban.
     Banned,
+    /// The player's own profile, everything set.
+    ProfileOwn,
+    /// A friend's profile with trophies and playtime hidden.
+    ProfileOther,
+    /// The player's own profile of a new account: nothing set.
+    ProfileMinimal,
+    /// Another player's profile with nothing shown but the handle.
+    ProfileMinimalOther,
+    /// The feed with items of every kind, the focus on a card.
+    Feed,
+    /// The feed with the focus on a reaction.
+    FeedReaction,
+    FeedEmpty,
+    FeedLoading,
+    FeedError,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -260,6 +277,15 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "online-restriction" => ScreenPage::Online(OnlineLook::Restriction),
         "online-paused" => ScreenPage::Online(OnlineLook::Paused),
         "online-banned" => ScreenPage::Online(OnlineLook::Banned),
+        "profile-own" => ScreenPage::Online(OnlineLook::ProfileOwn),
+        "profile-other" => ScreenPage::Online(OnlineLook::ProfileOther),
+        "profile-minimal" => ScreenPage::Online(OnlineLook::ProfileMinimal),
+        "profile-minimal-other" => ScreenPage::Online(OnlineLook::ProfileMinimalOther),
+        "feed" => ScreenPage::Online(OnlineLook::Feed),
+        "feed-reaction" => ScreenPage::Online(OnlineLook::FeedReaction),
+        "feed-empty" => ScreenPage::Online(OnlineLook::FeedEmpty),
+        "feed-loading" => ScreenPage::Online(OnlineLook::FeedLoading),
+        "feed-error" => ScreenPage::Online(OnlineLook::FeedError),
         other => {
             let n: usize = other.strip_prefix("settings")?.parse().ok()?;
             (n < crate::screens::settings::Category::ALL.len())
@@ -396,6 +422,7 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         (AccountId(4), Some(count(0, 0, 0, 0))),
     ]);
     state.privacy = Some(Privacy::default());
+    crate::screens::gallery_feed::sample(&mut state, look);
     if matches!(look, OnlineLook::FriendsBusy | OnlineLook::Requests) {
         state.friends.incoming = [
             (6, "Vale"),
@@ -1057,6 +1084,7 @@ fn fake_trophies() -> TrophySet {
 pub struct ScreenGallery {
     page: ScreenPage,
     covers: Vec<TextureHandle>,
+    avatars: Vec<TextureHandle>,
     hero: Option<TextureHandle>,
     prefs: Preferences,
     game_settings: GameSettings,
@@ -1133,6 +1161,7 @@ impl ScreenGallery {
             toolkit_version,
             page,
             covers: Vec::new(),
+            avatars: Vec::new(),
             hero: None,
             prefs,
             game_settings,
@@ -1174,6 +1203,7 @@ impl ScreenGallery {
                 .collect();
             self.hero =
                 Some(ctx.load_texture("hero", cover_image(1, 640, 360), TextureOptions::LINEAR));
+            self.avatars = crate::screens::gallery_feed::avatar_textures(ctx);
         }
     }
 
@@ -1317,6 +1347,14 @@ impl ScreenGallery {
         }
         {
             let data = online_data(&self.online, language, accent);
+            if self.online_panel.wants_local() {
+                self.online_panel
+                    .set_local(crate::screens::gallery_feed::local(
+                        &self.covers,
+                        &self.avatars,
+                        &NAMES,
+                    ));
+            }
             self.online_panel.show(shell, &ctx, &events, &data);
         }
         {
@@ -1486,6 +1524,29 @@ impl ScreenGallery {
                         .online_panel
                         .show_page(Page::Conversation("c-lumen".into()), &data),
                     OnlineLook::Banned => self.online_panel.show_page(Page::Start, &data),
+                    OnlineLook::ProfileOwn | OnlineLook::ProfileMinimal => self
+                        .online_panel
+                        .show_page(Page::Profile(anyps5_core::online::api::AccountId(1)), &data),
+                    OnlineLook::ProfileOther => self
+                        .online_panel
+                        .show_page(Page::Profile(anyps5_core::online::api::AccountId(2)), &data),
+                    OnlineLook::ProfileMinimalOther => self
+                        .online_panel
+                        .show_page(Page::Profile(anyps5_core::online::api::AccountId(5)), &data),
+                    OnlineLook::Feed
+                    | OnlineLook::FeedReaction
+                    | OnlineLook::FeedEmpty
+                    | OnlineLook::FeedLoading
+                    | OnlineLook::FeedError => {
+                        self.online_panel.show_page(Page::Feed, &data);
+                        match look {
+                            OnlineLook::Feed => self.online_panel.set_feed_focus(1, None),
+                            OnlineLook::FeedReaction => {
+                                self.online_panel.set_feed_focus(1, Some(1))
+                            }
+                            _ => {}
+                        }
+                    }
                     _ => {}
                 }
             }
