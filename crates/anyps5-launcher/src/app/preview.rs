@@ -99,6 +99,14 @@ pub enum Scene {
     HomeNoFolder,
     Starting,
     Toast,
+    /// A verified launcher update waits: the notice after the title.
+    HomeUpdate,
+    /// The same with the notice's first button focused.
+    HomeUpdateFocus,
+    /// "Restart Now" was pressed while a game runs: the restart waits.
+    HomeUpdateHolding,
+    /// "Later" was pressed: no notice, a dot on the settings button.
+    HomeUpdateLater,
 }
 
 impl Scene {
@@ -144,6 +152,10 @@ impl Scene {
             "home-nofolder" => Scene::HomeNoFolder,
             "starting" => Scene::Starting,
             "toast" => Scene::Toast,
+            "home-update" => Scene::HomeUpdate,
+            "home-update-focus" => Scene::HomeUpdateFocus,
+            "home-update-holding" => Scene::HomeUpdateHolding,
+            "home-update-later" => Scene::HomeUpdateLater,
             _ => return None,
         })
     }
@@ -755,6 +767,10 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
             m.starting = Some(ids[at(1)].clone());
             m.running = Some(ids[at(1)].clone());
         }
+        Scene::HomeUpdateFocus => m.focus = HomeFocus::Update(0),
+        // The restart waits because a game runs.
+        Scene::HomeUpdateHolding => m.running = Some(ids[at(1)].clone()),
+        Scene::HomeUpdateLater => m.update_dismissed = Some("0.1.4".to_owned()),
         Scene::Toast => {
             m.toast("Lanternfall · Ready to play", Icon::LOCK_OPEN);
             if let Some(toast) = m.toast.as_mut() {
@@ -939,7 +955,23 @@ impl PreviewApp {
                 }
                 pipeline
             }),
-            panels: Box::new(crate::app::panels::PanelHost::new(&cc.egui_ctx, true)),
+            panels: Box::new({
+                use crate::screens::settings::LauncherUpdate;
+                let host = crate::app::panels::PanelHost::new(&cc.egui_ctx, true);
+                match options.scene {
+                    Some(Scene::HomeUpdate | Scene::HomeUpdateFocus | Scene::HomeUpdateLater) => {
+                        host.showing_launcher_update(
+                            &cc.egui_ctx,
+                            LauncherUpdate::Ready("0.1.4".into()),
+                        )
+                    }
+                    Some(Scene::HomeUpdateHolding) => host.showing_launcher_update(
+                        &cc.egui_ctx,
+                        LauncherUpdate::Holding("0.1.4".into()),
+                    ),
+                    _ => host,
+                }
+            }),
             scan_on_start: false,
         };
         let mut inner = LauncherApp::from_shell(shell, &cc.egui_ctx, config);

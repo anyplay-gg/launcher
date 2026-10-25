@@ -142,11 +142,22 @@ impl TrophySet {
             .collect()
     }
 
-    /// The numbers of the first set's hidden trophies, the ones the network is told are secret.
+    /// The numbers of the first set's hidden trophies the player has not earned: the ones the
+    /// network is told are secret. An earned trophy is never secret.
     pub fn hidden(&self) -> Vec<u32> {
+        self.hidden_where(false)
+    }
+
+    /// The numbers of the first set's hidden trophies the player has earned: the network shows
+    /// them, as consoles do.
+    pub fn hidden_earned(&self) -> Vec<u32> {
+        self.hidden_where(true)
+    }
+
+    fn hidden_where(&self, earned: bool) -> Vec<u32> {
         self.trophies
             .iter()
-            .filter(|t| t.service_label == 0 && t.hidden)
+            .filter(|t| t.service_label == 0 && t.hidden && t.is_unlocked() == earned)
             .map(|t| t.number)
             .collect()
     }
@@ -1134,5 +1145,33 @@ mod tests {
             CoreEvent::Trophies { .. }
         ));
         assert!(rx.recv_timeout(Duration::from_millis(300)).is_err());
+    }
+
+    #[test]
+    fn hidden_trophies_split_by_whether_they_were_earned() {
+        let t = |number: u32, hidden: bool, unlocked: Option<i64>, label: u32| Trophy {
+            service_label: label,
+            number,
+            grade: Grade::Bronze,
+            hidden,
+            name: String::new(),
+            detail: String::new(),
+            icon: None,
+            unlocked,
+            progress: None,
+        };
+        let set = TrophySet {
+            title: String::new(),
+            icon: None,
+            trophies: vec![
+                t(0, false, None, 0),
+                t(1, true, None, 0),
+                t(2, true, Some(5), 0),
+                t(3, true, None, 1),
+            ],
+        };
+        // Only the first set is the network's; an earned trophy is never secret.
+        assert_eq!(set.hidden(), [1]);
+        assert_eq!(set.hidden_earned(), [2]);
     }
 }

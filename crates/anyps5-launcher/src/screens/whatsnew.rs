@@ -14,6 +14,7 @@ use egui::{
 
 use crate::screens::side::commands;
 use crate::screens::strings::Extra;
+use crate::screens::update_strings::UpdateText;
 use crate::ui::Shell;
 use crate::ui::anim::{AnimExt, Motion};
 use crate::ui::chrome::fullscreen_panel;
@@ -31,6 +32,8 @@ const AREAS: usize = 7;
 const ROW_HEIGHT: f32 = 44.0;
 const ROW_GAP: f32 = 4.0;
 const RELEASE_PAGE: &str = "https://github.com/boykopovar/AnyPS5/releases/tag";
+/// The same for the launcher's own notes.
+const LAUNCHER_RELEASE_PAGE: &str = "https://github.com/anyplaynet/launcher/releases/tag";
 
 /// Release notes for the demo and the previews, in the shape of upstream's.
 pub const SAMPLE_NOTES: &str = "## What's Changed\n\
@@ -61,6 +64,9 @@ pub struct WhatsNewData<'a> {
     pub tag: &'a str,
     pub view: NotesView<'a>,
     pub language: Language,
+    /// The notes are the launcher's own (an update), not the toolkit's: the groups keep the names
+    /// the release gave them, nothing repeats below, and the release page is the launcher's.
+    pub launcher: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -132,13 +138,23 @@ fn highlight_groups<'a>(
     notes: &'a ReleaseNotes,
     other: &str,
     language: Language,
+    launcher: bool,
 ) -> Vec<(String, Vec<&'a Change>, bool)> {
-    let groups: Vec<Group<'a>> = notes.highlights();
+    // A launcher's notes keep the order its author gave them; the toolkit's put the busiest area first.
+    let groups: Vec<Group<'a>> = if launcher {
+        notes.highlights_in_order()
+    } else {
+        notes.highlights()
+    };
     let mut out: Vec<(String, Vec<&Change>, bool)> = Vec::new();
     let mut rest: Vec<&Change> = Vec::new();
     for (index, group) in groups.into_iter().enumerate() {
-        if index < AREAS {
-            let title = area_title(group.scope, language);
+        if index < AREAS || launcher {
+            let title = if launcher {
+                group.scope.to_owned()
+            } else {
+                area_title(group.scope, language)
+            };
             match out.iter_mut().find(|(known, ..)| *known == title) {
                 Some((_, changes, _)) => changes.extend(group.changes),
                 None => out.push((title, group.changes, false)),
@@ -157,10 +173,11 @@ fn lines<'a>(
     notes: &'a ReleaseNotes,
     expanded: &HashSet<String>,
     language: Language,
+    launcher: bool,
 ) -> Vec<Line<'a>> {
     let mut out = vec![Line::Section(Extra::NotesHighlights.text(language))];
     let other = Extra::NotesOther.text(language);
-    for (key, changes, mixed) in highlight_groups(notes, other, language) {
+    for (key, changes, mixed) in highlight_groups(notes, other, language, launcher) {
         let open = expanded.contains(&key);
         out.push(Line::Group {
             key,
@@ -174,11 +191,14 @@ fn lines<'a>(
             }));
         }
     }
-    out.push(Line::Section(Extra::NotesEverything.text(language)));
-    out.extend(notes.changes.iter().map(|change| Line::Change {
-        change,
-        with_scope: true,
-    }));
+    // A launcher's notes are only highlights: a list below would say everything twice.
+    if !launcher {
+        out.push(Line::Section(Extra::NotesEverything.text(language)));
+        out.extend(notes.changes.iter().map(|change| Line::Change {
+            change,
+            with_scope: true,
+        }));
+    }
     out
 }
 
@@ -202,11 +222,21 @@ impl WhatsNewPanel {
         self.follow = true;
     }
 
+    /// Opens on a launcher's notes: every group unfolded, since there are few.
+    pub fn open_launcher(&mut self, notes: &ReleaseNotes, language: Language) {
+        self.open();
+        let other = Extra::NotesOther.text(language);
+        self.expanded = highlight_groups(notes, other, language, true)
+            .into_iter()
+            .map(|(key, ..)| key)
+            .collect();
+    }
+
     /// Opens with some areas already unfolded (previews).
     pub fn open_expanded(&mut self, notes: &ReleaseNotes, language: Language, count: usize) {
         self.open();
         let other = Extra::NotesOther.text(language);
-        self.expanded = highlight_groups(notes, other, language)
+        self.expanded = highlight_groups(notes, other, language, false)
             .into_iter()
             .take(count)
             .map(|(key, ..)| key)
@@ -261,10 +291,12 @@ impl WhatsNewPanel {
                     }
                     Pick::Release => {
                         shell.play(Cue::Select);
-                        actions.push(WhatsNewAction::OpenUrl(format!(
-                            "{RELEASE_PAGE}/v{}",
-                            data.tag
-                        )));
+                        let page = if data.launcher {
+                            LAUNCHER_RELEASE_PAGE
+                        } else {
+                            RELEASE_PAGE
+                        };
+                        actions.push(WhatsNewAction::OpenUrl(format!("{page}/v{}", data.tag)));
                     }
                     Pick::Line(index) => {
                         self.cursor = index;
@@ -278,7 +310,12 @@ impl WhatsNewPanel {
 
     fn current_lines<'a>(&self, data: &'a WhatsNewData<'_>) -> Vec<Line<'a>> {
         match &data.view {
-            NotesView::Ready(published) => lines(&published.notes, &self.expanded, data.language),
+            NotesView::Ready(published) => lines(
+                &published.notes,
+                &self.expanded,
+                data.language,
+                data.launcher,
+            ),
             _ => Vec::new(),
         }
     }
@@ -347,12 +384,17 @@ impl WhatsNewPanel {
         let area = ui.max_rect().shrink2(vec2(pad::LOG, pad::PANEL_TOP));
         // Header: title on the left, the two buttons on the right.
         let header = Rect::from_min_size(area.min, vec2(area.width(), 54.0));
+        let title = if data.launcher {
+            UpdateText::WhatsNewIn.format(language, &[Arg::Str(data.tag)])
+        } else {
+            Extra::WhatsNew.text(language).to_owned()
+        };
         text::paint(
             &painter,
             pos2(header.min.x, header.center().y),
             Align2::LEFT_CENTER,
             ty::LOG_TITLE,
-            Extra::WhatsNew.text(language),
+            &title,
             Color32::WHITE,
         );
         let mut buttons = ui.new_child(
@@ -648,7 +690,7 @@ mod tests {
     #[test]
     fn the_list_is_highlights_then_everything() {
         let notes = ReleaseNotes::parse(NOTES);
-        let list = lines(&notes, &HashSet::new(), Language::English);
+        let list = lines(&notes, &HashSet::new(), Language::English, false);
         let kinds: Vec<&str> = list
             .iter()
             .map(|l| match l {
@@ -665,7 +707,7 @@ mod tests {
         );
         let open: HashSet<String> = ["a".to_owned()].into();
         assert_eq!(
-            lines(&notes, &open, Language::English).len(),
+            lines(&notes, &open, Language::English, false).len(),
             list.len() + 2
         );
     }
@@ -680,7 +722,7 @@ mod tests {
             }))
             .collect();
         let notes = ReleaseNotes::parse(&text);
-        let groups = highlight_groups(&notes, "Other", Language::English);
+        let groups = highlight_groups(&notes, "Other", Language::English, false);
         assert_eq!(groups.len(), AREAS + 1);
         let (name, changes, mixed) = groups.last().unwrap();
         assert_eq!(
@@ -701,7 +743,7 @@ mod tests {
         ]
         .join("\n");
         let notes = ReleaseNotes::parse(&text);
-        let names: Vec<String> = highlight_groups(&notes, "Other", Language::English)
+        let names: Vec<String> = highlight_groups(&notes, "Other", Language::English, false)
             .into_iter()
             .map(|(name, ..)| name)
             .collect();

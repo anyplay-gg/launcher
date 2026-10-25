@@ -36,6 +36,7 @@ pub mod gallery;
 pub mod gamepad;
 pub mod glass;
 pub mod gpu;
+pub mod haptics;
 pub mod home_button;
 pub mod i18n;
 pub mod icons;
@@ -54,6 +55,7 @@ use egui::{Context, Painter, Rect};
 
 use self::anim::AnimExt;
 use self::background::Backdrop;
+use self::haptics::Haptics;
 use self::home_button::HomeButton;
 use self::i18n::Language;
 use self::input::{Input, InputEvent};
@@ -82,6 +84,10 @@ pub struct Shell {
     reduced: bool,
     /// The hold in progress has bumped already.
     bumped_in_hold: bool,
+    /// Controller vibration (see [`haptics`]).
+    pub haptics: Haptics,
+    /// The launcher had the pad last frame (a game in front takes it).
+    had_pad: bool,
 }
 
 /// What [`Shell::begin_frame`] hands to the screen.
@@ -112,6 +118,8 @@ impl Shell {
             sounds: Sounds::new(),
             hover: HoverGate::default(),
             cue_played: false,
+            haptics: Haptics::new(),
+            had_pad: true,
             backdrop: Backdrop::new(Theme::Cosmic),
             language,
             accent: Theme::Cosmic.default_accent(),
@@ -137,6 +145,8 @@ impl Shell {
             sounds,
             hover: HoverGate::default(),
             cue_played: false,
+            haptics: Haptics::silent(),
+            had_pad: true,
             backdrop: Backdrop::new(theme),
             language: Language::English,
             accent: theme.default_accent(),
@@ -151,6 +161,16 @@ impl Shell {
     pub fn begin_frame(&mut self, ctx: &Context) -> FrameInput {
         self.scale = theme::sync_scale(ctx);
         text::set_pixels_per_point(ctx.pixels_per_point());
+        // The first use of the pad starts the vibration thread, so its first pulse is not late.
+        if self.input.pad_in_use {
+            self.haptics.warm();
+        }
+        // A game that takes the pad takes the motors with it, mid-pulse too.
+        let has_pad = self.home.accepts_pad();
+        if self.had_pad && !has_pad {
+            self.haptics.stop();
+        }
+        self.had_pad = has_pad;
         let dt = ctx.input(|i| i.unstable_dt).min(0.05);
         nudge::publish(ctx, self.nudge.step(dt));
         if !self.nudge.is_settled() {
@@ -201,6 +221,23 @@ impl Shell {
             }
         }
         self.sounds.play(cue);
+        // The hand answers only when the pad is what the player is using, and the launcher has it.
+        if self.input.pad_in_use && self.had_pad {
+            self.haptics.play(cue);
+        }
+    }
+
+    /// Sets "Controller Vibration"; off lets go of the motors at once.
+    pub fn set_vibration(&mut self, level: haptics::Level) {
+        let changed = self.haptics.level != level;
+        if level == haptics::Level::Off && changed {
+            self.haptics.stop();
+        }
+        self.haptics.level = level;
+        // Changing it on the pad lets the hand try the new strength.
+        if changed && self.input.pad_in_use && self.had_pad {
+            self.haptics.play(Cue::Select);
+        }
     }
 
     /// Call last in every frame: plays the hover tick when the pointer arrived on a new
@@ -328,6 +365,8 @@ impl Shell {
             sounds,
             hover: HoverGate::default(),
             cue_played: false,
+            haptics: Haptics::silent(),
+            had_pad: true,
             backdrop: Backdrop::new(theme),
             language: Language::English,
             accent: theme.default_accent(),
@@ -369,5 +408,51 @@ mod shell_tests {
         shell.input.last_direction = Some(input::Command::Left);
         shell.play(Cue::Bump);
         assert!(shell.nudge.is_settled());
+    }
+
+    use self::haptics::Asked;
+
+    fn pad_shell(ctx: &Context) -> Shell {
+        let mut shell = Shell::for_test(ctx, Theme::Cosmic);
+        shell.input.pad_in_use = true;
+        shell
+    }
+
+    #[test]
+    fn the_hand_answers_only_a_pad_that_the_launcher_has() {
+        let ctx = Context::default();
+        // A pad in use: select vibrates.
+        let mut shell = pad_shell(&ctx);
+        shell.play(Cue::Select);
+        assert_eq!(shell.haptics.asked, [Asked::Play(Cue::Select)]);
+        // The keyboard or the mouse is in use: nothing, even with a pad plugged in.
+        let mut shell = Shell::for_test(&ctx, Theme::Cosmic);
+        shell.play(Cue::Select);
+        assert!(shell.haptics.asked.is_empty());
+        // A game has the pad: nothing.
+        let mut shell = pad_shell(&ctx);
+        shell.had_pad = false;
+        shell.play(Cue::Error);
+        assert!(shell.haptics.asked.is_empty());
+        // Moving the focus never vibrates.
+        let mut shell = pad_shell(&ctx);
+        shell.play(Cue::Move);
+        assert!(shell.haptics.asked.is_empty());
+    }
+
+    #[test]
+    fn off_lets_go_at_once_and_a_change_is_felt() {
+        let ctx = Context::default();
+        let mut shell = pad_shell(&ctx);
+        shell.set_vibration(haptics::Level::Off);
+        assert_eq!(shell.haptics.asked, [Asked::Stop]);
+        shell.play(Cue::Select);
+        assert_eq!(shell.haptics.asked, [Asked::Stop], "off stays off");
+        // Back on: the hand gets a sample of the new strength.
+        shell.set_vibration(haptics::Level::Light);
+        assert_eq!(shell.haptics.asked, [Asked::Stop, Asked::Play(Cue::Select)]);
+        // The same value again changes nothing.
+        shell.set_vibration(haptics::Level::Light);
+        assert_eq!(shell.haptics.asked.len(), 2);
     }
 }
