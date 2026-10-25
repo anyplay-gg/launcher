@@ -135,7 +135,7 @@ The online part is in development. This is what works today and what does not.
 
 ## Building
 
-You need Rust 1.95 or newer ([rustup](https://rustup.rs)), and a clone of [anyplay-gg/network](https://github.com/anyplay-gg/network) next to this repository for the online crates. `rust-toolchain.toml` selects 1.95.0 for local builds.
+You need Rust 1.95 or newer ([rustup](https://rustup.rs)), and a clone of [anyplay-gg/network](https://github.com/anyplay-gg/network) next to this repository for the online crates. The egui/eframe 0.37 dependencies require Rust 1.95. The repository does not override your selected toolchain; CI uses stable, and the release workflow selects its own compiler.
 
 ```sh
 cargo fmt --all -- --check
@@ -166,6 +166,8 @@ tools/macos/package.sh 0.1.3 target/release/anyplay-launcher /tmp/THIRD-PARTY-LI
 ```
 
 The app is signed ad hoc for local use. Publishing a notarized release needs a Developer ID signing workflow. macOS CI checks formatting, Clippy and tests, builds and packages the launcher, and renders Metal screenshots alongside the existing Windows and Linux jobs.
+
+The Mac package does not yet embed `anyplay-net`, so online integration needs a follow-up. Publishing Mac release assets and adding macOS to the signed self-update manifest are also separate work; this change provides local and CI app packages.
 
 Two toolchains are used on Windows:
 
