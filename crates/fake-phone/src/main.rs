@@ -291,6 +291,7 @@ fn phone(options: &BTreeMap<String, String>) -> Result<(), String> {
             }
             "close" => send(&mut ws, Message::Close)?,
             "home" => send(&mut ws, Message::Home)?,
+            "create" => send(&mut ws, Message::Create)?,
             "command" => send(&mut ws, Message::Command { name: rest.into() })?,
             "art" => send(&mut ws, Message::WantArt { id: rest.into() })?,
             "layout" => {

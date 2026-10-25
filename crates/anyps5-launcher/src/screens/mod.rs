@@ -28,6 +28,7 @@ pub mod about_strings;
 pub mod advanced;
 pub mod banner;
 pub mod calls;
+pub mod clips_strings;
 pub mod compare;
 pub mod compare_strings;
 pub mod controls;

@@ -176,6 +176,12 @@ _Avoid_: Snapshot, save game
 Put a backup back in place of the game's save data. It refuses while the game runs, checks the zip before it changes anything, and backs up the current state first, so it can be undone.
 _Avoid_: Load, roll back, import
 
+### Clips
+
+**Clip**:
+The last seconds of the running game, kept in memory while Clips is on and saved as an MP4 file beside the screenshots when the player asks (hotkey, the controller's Create button or the phone's). Video only for now; it never leaves the PC.
+_Avoid_: Recording, replay, capture
+
 ### Trophies
 
 **Trophy**:

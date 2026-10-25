@@ -570,6 +570,13 @@ pub struct Preferences {
     /// (docs/DESIGN.md 18). Off until the player turns it on.
     #[serde(default)]
     pub phone_remote: bool,
+    /// Clips: how many seconds of the running game the launcher keeps for a clip (one of
+    /// [`crate::clips::LENGTHS`]); 0 is Off, and nothing is recorded.
+    #[serde(default)]
+    pub clips_seconds: u32,
+    /// The hotkey that saves a clip, like `Alt+F12`; `None` is [`crate::clips::DEFAULT_HOTKEY`].
+    #[serde(default)]
+    pub clips_hotkey: Option<String>,
     /// The run-report questions already answered or dismissed, by [`run_question_key`]: each is
     /// asked once.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
@@ -621,6 +628,8 @@ impl Default for Preferences {
             voice: crate::online::VoicePrefs::default(),
             record_network: false,
             phone_remote: false,
+            clips_seconds: 0,
+            clips_hotkey: None,
             run_asked: BTreeSet::new(),
             extra: Map::new(),
         }

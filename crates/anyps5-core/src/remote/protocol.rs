@@ -91,6 +91,8 @@ pub enum Message {
     Close,
     /// Phone: the PS button.
     Home,
+    /// Phone: the Create button; the launcher saves a clip of the running game.
+    Create,
     SaveLayout {
         id: String,
         layout: Option<String>,
@@ -529,6 +531,7 @@ mod tests {
             ),
             (Message::Close, r#"{"type":"close"}"#),
             (Message::Home, r#"{"type":"home"}"#),
+            (Message::Create, r#"{"type":"create"}"#),
             (
                 Message::SaveLayout {
                     id: "g".into(),
