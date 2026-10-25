@@ -591,6 +591,7 @@ fn online_data(
         now: SAMPLE_NOW,
         utc_offset: Some(0),
         game_running: false,
+        play_together: None,
     }
 }
 
@@ -614,6 +615,7 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
             title: title.into(),
             version: "01.000".into(),
             session: joinable.then(|| SessionRef {
+                kind: Default::default(),
                 id: "s1".into(),
                 joinable: true,
                 members: 2,
@@ -681,6 +683,7 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         blocked: vec![account(8, "Spamford")],
     };
     state.invitations = vec![Invitation {
+        kind: Default::default(),
         id: "i1".into(),
         from: account(3, "Juno"),
         session: "s2".into(),
@@ -1048,6 +1051,7 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
         call: false,
     });
     state.session = Some(Session {
+        kind: Default::default(),
         id: "s1".into(),
         title_id: "TEST00001".into(),
         title: NAMES[1].into(),

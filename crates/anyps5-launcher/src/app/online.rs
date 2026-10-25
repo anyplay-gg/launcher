@@ -11,13 +11,14 @@ use std::time::{Duration, Instant};
 
 use anyps5_core::events::Notifier;
 use anyps5_core::library::Game;
-use anyps5_core::online::api::{ErrorCode, FriendState};
+use anyps5_core::online::api::{ErrorCode, FriendState, SessionKind};
 use anyps5_core::online::{
     self as net, Command, Failure, Join, NetProcess, Notice, Purpose, Status,
 };
 use anyps5_core::paths::GameId;
+use anyps5_core::play_together::Blocker;
 
-use crate::app::model::{Effect, Model};
+use crate::app::model::{Effect, GameState, Model};
 use crate::app::overlay::Overlay;
 use crate::screens::discord_strings::redeem_failure;
 use crate::screens::online_call_strings::CallText as CT;
@@ -26,6 +27,7 @@ use crate::screens::online_restriction_strings as restriction_text;
 use crate::screens::online_social_strings::SocialText as S;
 use crate::screens::online_strings::OnlineText as T;
 use crate::screens::online_voice_strings::VoiceText as VT;
+use crate::screens::together_strings::TogetherText as TT;
 use crate::ui::focus::HomeFocus;
 use crate::ui::i18n::{Arg, Language};
 use crate::ui::icons::Icon;
@@ -43,6 +45,8 @@ struct WaitingStart {
     number: u64,
     since: Instant,
     joining: bool,
+    /// Play Together: the start asked for a session of the player's own.
+    hosting: bool,
 }
 
 pub struct OnlineService {
@@ -54,6 +58,8 @@ pub struct OnlineService {
     starts: u64,
     /// The session the next start of this title joins.
     join: Option<Join>,
+    /// A join waiting for its game to be unlocked.
+    unlocking: Option<Join>,
     /// The game the net service was told about and that has not ended yet.
     started: Option<GameId>,
     /// Relay only changed while that game played: the net service hears of it at the end.
@@ -77,6 +83,7 @@ impl OnlineService {
             waiting: None,
             starts: 0,
             join: None,
+            unlocking: None,
             started: None,
             relay_only_later: false,
             was_online: false,
@@ -131,6 +138,7 @@ impl OnlineService {
     pub fn stop(&mut self, model: &mut Model) {
         self.process = None;
         self.waiting = None;
+        self.unlocking = None;
         self.started = None;
         self.relay_only_later = false;
         model.online.stopped(Status::Off);
@@ -200,12 +208,17 @@ impl OnlineService {
                 let text = T::Offline.text(model.language()).to_owned();
                 model.toast(text, Icon::WARNING);
             } else {
+                if waiting.hosting {
+                    let text = TT::ToastHostTimedOut.text(model.language());
+                    model.toast(text, Icon::WARNING);
+                }
                 ready.push(ReadyStart {
                     env: record_env(model, &waiting.game),
                     game: waiting.game,
                 });
             }
         }
+        self.continue_unlocking(model);
         ready
     }
 
@@ -213,6 +226,11 @@ impl OnlineService {
     /// until the net service answers (see [`OnlineService::frame`]).
     pub fn on_play(&mut self, model: &mut Model, game: &Game) -> Option<BTreeMap<String, String>> {
         let join = self.join.take().filter(|j| j.title_id == game.title_id);
+        // A join wins over a host plan, as in the net service; the plan is spent either way.
+        let host = model
+            .together
+            .take_host(&game.id)
+            .filter(|_| join.is_none());
         if model.online.status != Status::Running || !model.online.is_signed_in() {
             return Some(record_env(model, &game.id));
         }
@@ -225,7 +243,7 @@ impl OnlineService {
                 version: game.version.clone(),
                 build: build(model),
                 join: join.as_ref().map(|j| j.session.clone()),
-                host: None,
+                host: host.clone(),
             },
         );
         self.waiting = Some(WaitingStart {
@@ -233,6 +251,7 @@ impl OnlineService {
             number: self.starts,
             since: Instant::now(),
             joining: join.is_some(),
+            hosting: host.is_some(),
         });
         self.started = Some(game.id.clone());
         None
@@ -246,6 +265,7 @@ impl OnlineService {
                 self.waiting = None;
             }
             model.online.send(Purpose::GameEnd, Command::GameEnd);
+            model.together.game_ended();
             model.session_ended(game);
             if std::mem::take(&mut self.relay_only_later) {
                 send_relay_only(model);
@@ -253,41 +273,70 @@ impl OnlineService {
         }
     }
 
-    /// Asks the net service whether the player may join `join`; the answer starts the game.
-    pub fn request_join(model: &mut Model, join: Join) {
+    /// The net service agreed to the join: the game starts in the session, unlocked first when it
+    /// is owned but not yet unlocked.
+    fn begin_join(&mut self, model: &mut Model, join: Join) {
         let language = model.language();
-        let Some(game) = model
-            .games
-            .iter()
-            .find(|g| g.title_id == join.title_id)
-            .cloned()
-        else {
-            let text = T::NotOwned.format(language, &[Arg::Str(&join.title)]);
-            model.toast(text, Icon::WARNING);
+        let Some(index) = model.games.iter().position(|g| g.title_id == join.title_id) else {
             return;
         };
-        if !matches!(
-            model.state_of(&game),
-            crate::app::model::GameState::Installed { .. }
-        ) {
-            let text = T::NotUnlocked.format(language, &[Arg::Str(&game.name)]);
-            model.toast(text, Icon::LOCK);
-            return;
+        let game = model.games[index].clone();
+        model.together.dismiss(&join.session);
+        model.selected = index;
+        model.focus = HomeFocus::Tiles;
+        model.dismiss_overlay();
+        match model.state_of(&game) {
+            GameState::Installed { .. } => {
+                let text =
+                    T::Joining.format(language, &[Arg::Str(&join.friend), Arg::Str(&join.title)]);
+                model.toast(text, Icon::GAME_CONTROLLER);
+                self.start_join(model, join, &game.id);
+            }
+            GameState::Locked | GameState::Failed(_) => {
+                let text = TT::ToastUnlocking.format(language, &[Arg::Str(&game.name)]);
+                model.toast(text, Icon::LOCK);
+                if matches!(model.state_of(&game), GameState::Failed(_)) {
+                    model.retry(&game.id);
+                } else {
+                    model.unlock(&game.id);
+                }
+                self.unlocking = Some(join);
+            }
+            GameState::Installing { .. } | GameState::Queued => {
+                let text = TT::ToastUnlocking.format(language, &[Arg::Str(&game.name)]);
+                model.toast(text, Icon::LOCK);
+                self.unlocking = Some(join);
+            }
+            _ => {}
         }
-        let command = Command::CheckJoin {
-            session: join.session.clone(),
-            title_id: join.title_id.clone(),
-            version: game.version.clone(),
-            build: build(model),
+    }
+
+    fn start_join(&mut self, model: &mut Model, join: Join, id: &GameId) {
+        self.join = Some(join);
+        model.play(id);
+        // `play` refuses while another game starts: the join is not kept for a later Play.
+        if model.starting.as_ref() != Some(id) {
+            self.join = None;
+        }
+    }
+
+    /// Once per frame: a join that waited for the unlock goes on when the game is unlocked, and
+    /// is dropped when the unlock stopped.
+    fn continue_unlocking(&mut self, model: &mut Model) {
+        let Some(join) = self.unlocking.take() else {
+            return;
         };
-        model.online.send(
-            Purpose::CheckJoin(Join {
-                version: game.version.clone(),
-                build: build(model),
-                ..join
-            }),
-            command,
-        );
+        let Some(game) = super::together::game_of(model, &join).cloned() else {
+            return;
+        };
+        match model.state_of(&game) {
+            GameState::Installed { .. } => self.start_join(model, join, &game.id),
+            GameState::Installing { .. } | GameState::Queued => self.unlocking = Some(join),
+            _ => {
+                let text = TT::ToastUnlockFailed.text(model.language());
+                model.toast(text, Icon::WARNING);
+            }
+        }
     }
 
     fn notice(&mut self, model: &mut Model, notice: Notice, ready: &mut Vec<ReadyStart>) {
@@ -297,6 +346,18 @@ impl OnlineService {
             Notice::Request(account) => {
                 let text = T::RequestArrived.format(language, &[Arg::Str(&account.handle)]);
                 model.toast_with(text, Icon::USER_PLUS, Cue::Notify);
+            }
+            // A Play Together invitation is the card's: "Mira is playing Minecraft. Join?".
+            Notice::Invitation(invitation) if invitation.kind == SessionKind::Lan => {}
+            Notice::SessionEnded { session, host, .. } => {
+                model.together.dismiss(&session);
+                let text = TT::ToastSessionEnded.format(language, &[Arg::Str(&host.handle)]);
+                model.toast(text, Icon::USERS);
+            }
+            Notice::HostFailed(reason) => {
+                tracing::info!("Play Together could not open its session: {reason}");
+                let text = TT::ToastHostFailed.text(language).to_owned();
+                model.toast(text, Icon::WARNING);
             }
             Notice::Invitation(invitation) => {
                 let text = T::InvitationArrived.format(
@@ -417,9 +478,13 @@ impl OnlineService {
                 };
                 match result {
                     Ok(value) => {
-                        let bridge = serde_json::from_value::<net::control::GameStarted>(value)
-                            .map(|g| g.env)
-                            .ok();
+                        let started =
+                            serde_json::from_value::<net::control::GameStarted>(value).ok();
+                        model.together.hosting = started
+                            .as_ref()
+                            .and_then(|g| g.session.clone())
+                            .filter(|_| waiting.hosting);
+                        let bridge = started.map(|g| g.env);
                         let mut env = record_env(model, &waiting.game);
                         env.extend(net::game_environment(bridge.as_ref(), None));
                         ready.push(ReadyStart {
@@ -429,11 +494,24 @@ impl OnlineService {
                     }
                     Err(failure) if waiting.joining => {
                         self.call_off_start(model);
-                        let text = failure_text(&failure, language);
-                        model.toast(text, Icon::WARNING);
+                        let (title, version) = model
+                            .game(&waiting.game)
+                            .map(|g| (g.name.clone(), g.version.clone()))
+                            .unwrap_or_default();
+                        match Blocker::from_failure(&failure, &title, &version, &build(model)) {
+                            Some(blocker) => model.together.block(blocker),
+                            None => {
+                                let text = failure_text(&failure, language);
+                                model.toast(text, Icon::WARNING);
+                            }
+                        }
                     }
                     Err(failure) => {
                         tracing::info!("game start without the network: {}", failure.message);
+                        if waiting.hosting {
+                            let text = TT::ToastHostFailed.text(language).to_owned();
+                            model.toast(text, Icon::WARNING);
+                        }
                         ready.push(ReadyStart {
                             env: record_env(model, &waiting.game),
                             game: waiting.game,
@@ -441,37 +519,16 @@ impl OnlineService {
                     }
                 }
             }
-            (Purpose::CheckJoin(join), Ok(_)) => {
-                let Some(index) = model.games.iter().position(|g| g.title_id == join.title_id)
-                else {
-                    return;
-                };
-                let text =
-                    T::Joining.format(language, &[Arg::Str(&join.friend), Arg::Str(&join.title)]);
-                model.toast(text, Icon::GAME_CONTROLLER);
-                let id = model.games[index].id.clone();
-                model.selected = index;
-                model.focus = HomeFocus::Tiles;
-                model.dismiss_overlay();
-                self.join = Some(join);
-                model.play(&id);
-            }
+            (Purpose::CheckJoin(join), Ok(_)) => self.begin_join(model, join),
             (Purpose::CheckJoin(join), Err(failure)) => {
-                let text = match &failure.expected {
-                    Some(expected) if failure.is(ErrorCode::VersionMismatch) => T::VersionMismatch
-                        .format(
-                            language,
-                            &[
-                                Arg::Str(&join.friend),
-                                Arg::Str(&expected.version),
-                                Arg::Str(&expected.build),
-                                Arg::Str(&join.version),
-                                Arg::Str(&join.build),
-                            ],
-                        ),
-                    _ => failure_text(&failure, language),
-                };
-                model.toast(text, Icon::WARNING);
+                // `join.version` and `join.build` are the player's own.
+                match Blocker::from_failure(&failure, &join.title, &join.version, &join.build) {
+                    Some(blocker) => model.together.block(blocker),
+                    None => {
+                        let text = failure_text(&failure, language);
+                        model.toast(text, Icon::WARNING);
+                    }
+                }
             }
             (Purpose::BrowserSignIn { .. }, Ok(_)) => {
                 if let Some(url) = model.online.sign_in_url.clone() {
@@ -792,7 +849,7 @@ fn send_relay_only(model: &mut Model) {
         .send(Purpose::RelayOnly, Command::RelayOnly { on });
 }
 
-fn build(model: &Model) -> String {
+pub(crate) fn build(model: &Model) -> String {
     model
         .toolkit
         .clone()
@@ -1081,8 +1138,9 @@ mod tests {
         assert!(ready.is_empty());
         assert!(model.starting.is_none());
         assert_eq!(
-            model.toast.as_ref().map(|t| t.text.as_str()),
-            Some("The game is full.")
+            model.together.blocked,
+            Some(anyps5_core::play_together::Blocker::Full),
+            "a full session is a blocker on the card, not a toast"
         );
 
         // Without a join, a start the network refuses goes ahead offline.
@@ -1442,5 +1500,256 @@ mod tests {
             ),
             "That did not work: Too many friends."
         );
+    }
+
+    // --- Play Together ---------------------------------------------------------------------
+
+    fn lan_game() -> Game {
+        let folder = PathBuf::from("C:/games/mc");
+        Game {
+            id: GameId::from_path(&folder),
+            folder,
+            title_id: "PPSA17221".to_owned(),
+            name: "Minecraft".to_owned(),
+            version: "01.044.000".to_owned(),
+            ..game()
+        }
+    }
+
+    fn lan_model() -> Model {
+        let mut model = signed_in_model();
+        model.games = vec![lan_game()];
+        model.online.cloud = Some(anyps5_core::online::Cloud::Online);
+        model
+    }
+
+    fn offer(version: &str) -> anyps5_core::play_together::Offer {
+        anyps5_core::play_together::Offer {
+            session: "s1".into(),
+            title_id: "PPSA17221".into(),
+            title: "Minecraft".into(),
+            version: version.into(),
+            kind: anyps5_core::online::api::SessionKind::Lan,
+            host: "Mira".into(),
+            places: Some((2, 4)),
+            build: None,
+        }
+    }
+
+    fn mira() -> net::api::Account {
+        net::api::Account {
+            id: AccountId(2),
+            handle: "Mira".into(),
+        }
+    }
+
+    #[test]
+    fn a_start_carries_a_host_plan_only_for_play_together() {
+        let mut model = lan_model();
+        let mut online = service();
+        // A plain Play hosts nothing.
+        online.on_play(&mut model, &lan_game());
+        let sent = model.online.take_outbox();
+        assert!(sent[0].contains("\"do\":\"game_start\""));
+        assert!(!sent[0].contains("\"host\""), "{}", sent[0]);
+        online.on_exited(&mut model, &lan_game().id);
+        model.online.take_outbox();
+
+        // Play Together does, with the table's players and no party.
+        crate::app::together::host_game(&mut model, &lan_game().id);
+        assert!(model.starting.is_some());
+        online.on_play(&mut model, &lan_game());
+        let sent = model.online.take_outbox();
+        assert!(sent[0].contains("\"max_members\":8"), "{}", sent[0]);
+        assert!(sent[0].contains("\"visibility\":\"friends\""));
+        assert!(sent[0].contains("\"party\":false"));
+
+        let mut ready = Vec::new();
+        let answer = serde_json::json!({"env": {}, "session": "s9"});
+        online.answered(&mut model, Purpose::GameStart(2), Ok(answer), &mut ready);
+        assert_eq!(ready.len(), 1);
+        assert_eq!(model.together.hosting.as_deref(), Some("s9"));
+        online.on_exited(&mut model, &lan_game().id);
+        assert_eq!(model.together.hosting, None);
+    }
+
+    #[test]
+    fn play_together_is_refused_outside_the_table_and_while_offline() {
+        let mut model = signed_in_model();
+        model.online.cloud = Some(anyps5_core::online::Cloud::Online);
+        crate::app::together::host_game(&mut model, &game().id);
+        assert!(matches!(
+            model.together.blocked,
+            Some(anyps5_core::play_together::Blocker::NotSupported { .. })
+        ));
+        assert!(model.starting.is_none());
+
+        let mut model = lan_model();
+        model.online.cloud = None;
+        crate::app::together::host_game(&mut model, &lan_game().id);
+        assert_eq!(
+            model.together.blocked,
+            Some(anyps5_core::play_together::Blocker::Offline)
+        );
+        assert!(model.starting.is_none());
+    }
+
+    #[test]
+    fn a_blocked_join_sends_nothing_and_says_what_is_missing() {
+        use anyps5_core::play_together::Blocker;
+        // Not owned.
+        let mut model = lan_model();
+        model.games = vec![game()];
+        crate::app::together::join(&mut model, offer("01.044.000"));
+        assert_eq!(
+            model.together.blocked,
+            Some(Blocker::NotOwned {
+                title: "Minecraft".into()
+            })
+        );
+        assert!(model.online.take_outbox().is_empty());
+
+        // Wrong version.
+        let mut model = lan_model();
+        crate::app::together::join(&mut model, offer("01.100.000"));
+        assert_eq!(
+            model.together.blocked,
+            Some(Blocker::WrongVersion {
+                title: "Minecraft".into(),
+                need: "01.100.000".into(),
+                have: "01.044.000".into()
+            })
+        );
+        assert!(model.online.take_outbox().is_empty());
+
+        // Busy.
+        let mut model = lan_model();
+        model.starting = Some(lan_game().id);
+        crate::app::together::join(&mut model, offer("01.044.000"));
+        assert_eq!(model.together.blocked, Some(Blocker::Busy));
+        assert!(model.online.take_outbox().is_empty());
+    }
+
+    fn mc_join(version: &str) -> Join {
+        Join {
+            session: "s1".into(),
+            title_id: "PPSA17221".into(),
+            title: "Minecraft".into(),
+            version: version.into(),
+            build: "v1".into(),
+            friend: "Mira".into(),
+        }
+    }
+
+    #[test]
+    fn a_passing_join_asks_the_net_service_then_starts_in_the_session() {
+        let mut model = lan_model();
+        let mut online = service();
+        crate::app::together::join(&mut model, offer("01.044.000"));
+        assert!(model.together.blocked.is_none());
+        let sent = model.online.take_outbox();
+        assert!(sent[0].contains("\"do\":\"check_join\""), "{}", sent[0]);
+        let mut ready = Vec::new();
+        online.answered(
+            &mut model,
+            Purpose::CheckJoin(mc_join("01.044.000")),
+            Ok(serde_json::json!({})),
+            &mut ready,
+        );
+        assert!(model.starting.is_some());
+        online.on_play(&mut model, &lan_game());
+        let sent = model.online.take_outbox();
+        assert!(sent[0].contains("\"join\":\"s1\""), "{}", sent[0]);
+        assert!(!sent[0].contains("\"host\""));
+    }
+
+    #[test]
+    fn the_net_services_refusals_become_the_same_blockers() {
+        use anyps5_core::play_together::Blocker;
+        let mut model = lan_model();
+        let mut online = service();
+        let mut ready = Vec::new();
+        let mut mismatch = Failure::new("version_mismatch", "x");
+        mismatch.expected = Some(anyps5_core::online::api::Expected {
+            version: "01.044.000".into(),
+            build: "v1".into(),
+        });
+        online.answered(
+            &mut model,
+            Purpose::CheckJoin(mc_join("01.008.000")),
+            Err(mismatch),
+            &mut ready,
+        );
+        assert_eq!(
+            model.together.blocked,
+            Some(Blocker::WrongVersion {
+                title: "Minecraft".into(),
+                need: "01.044.000".into(),
+                have: "01.008.000".into()
+            })
+        );
+        online.answered(
+            &mut model,
+            Purpose::CheckJoin(mc_join("01.044.000")),
+            Err(Failure::new("not_found", "x")),
+            &mut ready,
+        );
+        assert_eq!(model.together.blocked, Some(Blocker::Ended));
+    }
+
+    #[test]
+    fn an_ended_session_and_a_failed_host_are_told_and_the_game_goes_on() {
+        let mut model = lan_model();
+        let mut online = service();
+        let mut ready = Vec::new();
+        online.notice(
+            &mut model,
+            Notice::SessionEnded {
+                session: "s1".into(),
+                title_id: "PPSA17221".into(),
+                title: "Minecraft".into(),
+                host: mira(),
+            },
+            &mut ready,
+        );
+        let text = model.toast.as_ref().map(|t| t.text.clone()).unwrap();
+        assert!(text.starts_with("Mira\u{2019}s session ended"), "{text}");
+        assert!(ready.is_empty());
+
+        online.notice(&mut model, Notice::HostFailed("x".into()), &mut ready);
+        let text = model.toast.as_ref().map(|t| t.text.clone()).unwrap();
+        assert!(text.starts_with("Nobody can join"), "{text}");
+    }
+
+    #[test]
+    fn a_lan_invitation_is_a_card_not_a_toast_and_not_now_declines_it() {
+        let mut model = lan_model();
+        let mut online = service();
+        let invitation = net::api::Invitation {
+            id: "i1".into(),
+            from: mira(),
+            session: "s1".into(),
+            kind: net::api::SessionKind::Lan,
+            title_id: "PPSA17221".into(),
+            title: "Minecraft".into(),
+            version: "01.044.000".into(),
+            expires: 0,
+        };
+        model.online.invitations.push(invitation.clone());
+        let mut ready = Vec::new();
+        online.notice(&mut model, Notice::Invitation(invitation), &mut ready);
+        assert!(model.toast.is_none());
+        let Some(crate::app::together::Card::Offer {
+            key, invitation, ..
+        }) = crate::app::together::card(&model)
+        else {
+            panic!("an offer card");
+        };
+        crate::app::together::apply(
+            &mut model,
+            crate::app::together::Action::Dismiss { key, invitation },
+        );
+        assert!(crate::app::together::card(&model).is_none());
+        assert!(model.online.take_outbox()[0].contains("answer_invitation"));
     }
 }

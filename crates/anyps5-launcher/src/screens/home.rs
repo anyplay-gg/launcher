@@ -17,6 +17,7 @@ use crate::screens::online_strings::OnlineText;
 use crate::screens::phone_strings::PhoneText;
 use crate::screens::run_strings::{RunText, friends_line};
 use crate::screens::strings::{Extra, playtime_text};
+use crate::screens::together_strings::TogetherText;
 use crate::screens::toolkit_pin;
 use crate::screens::update_strings::UpdateText;
 use crate::screens::{
@@ -1042,7 +1043,10 @@ fn paint_hero(
     let has_trophies = cx.model.trophies.get(&game.id);
     let trophy_text =
         has_trophies.map(|set| format!("{}/{}", set.unlocked_count(), set.trophies.len()));
-    let settings_index = if trophy_text.is_some() { 2 } else { 1 };
+    // Play, then Play Together when the game can be played together, then trophies, then "...".
+    let together = crate::app::together::hostable(cx.model).is_some();
+    let trophies_index = 1 + usize::from(together);
+    let settings_index = trophies_index + usize::from(trophy_text.is_some());
     let (primary_title, primary_icon, primary_fill) = primary_look(&state, language);
     let mut pressed = None;
     let after_buttons = place(ui, row, |ui| {
@@ -1058,16 +1062,25 @@ fn paint_hero(
         if primary.clicked() {
             pressed = Some(HomeFocus::Actions(0));
         }
+        if together {
+            let response = ConsoleButton::new(TogetherText::PlayTogether.text(language))
+                .icon(Icon::USERS)
+                .focused(focused(1))
+                .show(ui);
+            if response.clicked() {
+                pressed = Some(HomeFocus::Actions(1));
+            }
+        }
         if let Some(text) = &trophy_text {
             let response = ConsoleButton::new(text)
                 .accessible_name(format!("{}, {}", language.text(Key::Trophies), text))
                 .icon(Icon::TROPHY)
                 .icon_fill(true)
                 .tabular(true)
-                .focused(focused(1))
+                .focused(focused(trophies_index))
                 .show(ui);
             if response.clicked() {
-                pressed = Some(HomeFocus::Actions(1));
+                pressed = Some(HomeFocus::Actions(trophies_index));
             }
         }
         let more = ConsoleButton::icon_only(Icon::DOTS_THREE, language.text(Key::Options))

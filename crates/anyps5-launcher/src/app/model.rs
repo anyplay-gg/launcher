@@ -295,6 +295,8 @@ pub struct Model {
     /// What the launcher knows of the network. Commands queue here; the host hands them to the
     /// net service and its answers back (`app::online`).
     pub online: Online,
+    /// Play Together: the blocker on the card, the host plan of the next start (`app::together`).
+    pub together: crate::app::together::Together,
     /// The profile the profile screen is on and where Back leads (`app::profile`).
     pub profile: Option<crate::app::profile::Target>,
     /// The comparison the trophy compare screen is on (`app::compare`).
@@ -368,6 +370,7 @@ impl Model {
             share_codec: None,
             effects: Vec::new(),
             online: Online::default(),
+            together: Default::default(),
             profile: None,
             compare: None,
             profile_returning: false,
@@ -601,9 +604,10 @@ impl Model {
             .is_some_and(|g| self.trophies.contains_key(&g.id))
     }
 
-    /// Buttons in the hero's action row: primary, trophies (if the game has any), "...".
+    /// Buttons in the hero's action row: primary, Play Together and trophies (if the game has
+    /// them), "...".
     pub fn action_count(&self) -> usize {
-        if self.has_trophies() { 3 } else { 2 }
+        self.home_context().action_count()
     }
 
     fn home_context(&self) -> HomeContext {
@@ -611,6 +615,7 @@ impl Model {
             games: self.games.len(),
             selected: self.selected,
             has_trophies: self.has_trophies(),
+            together: crate::app::together::hostable(self).is_some(),
             asking: self.run_question().is_some(),
             notice: self.update_notice().map_or(0, |n| n.buttons),
         }
@@ -1179,6 +1184,11 @@ impl Model {
             HomeIntent::PrimaryAction => self.primary_action(),
             HomeIntent::AnswerRun(i) => self.answer_run(i),
             HomeIntent::UpdateAction(i) => self.update_action(i),
+            HomeIntent::PlayTogether => {
+                if let Some(id) = crate::app::together::hostable(self).map(|g| g.id.clone()) {
+                    crate::app::together::host_game(self, &id);
+                }
+            }
             HomeIntent::OpenTrophies => self.open(Overlay::Trophies),
             HomeIntent::OpenGameSettings => self.open(Overlay::GameSettings),
             HomeIntent::OpenLibrary => self.open(Overlay::Library),
@@ -1248,9 +1258,7 @@ impl Model {
         self.focus = focus;
         let intent = match focus {
             HomeFocus::Top(index) => HomeFocus::top_intent(index),
-            HomeFocus::Actions(0) => HomeIntent::PrimaryAction,
-            HomeFocus::Actions(1) if self.has_trophies() => HomeIntent::OpenTrophies,
-            HomeFocus::Actions(_) => HomeIntent::OpenGameSettings,
+            HomeFocus::Actions(i) => self.home_context().action_intent(i),
             HomeFocus::Tiles => HomeIntent::PrimaryAction,
             HomeFocus::Ask(i) => HomeIntent::AnswerRun(i),
             HomeFocus::Update(i) => HomeIntent::UpdateAction(usize::from(i)),

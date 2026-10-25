@@ -468,6 +468,15 @@ pub enum Notice {
     SignedIn,
     /// The browser sign-in ran out of time.
     SignInTimedOut,
+    /// A Play Together session closed, or took the player out, while the game runs.
+    SessionEnded {
+        session: String,
+        title_id: String,
+        title: String,
+        host: Account,
+    },
+    /// Play Together could not open its session: the game started all the same and nobody can join.
+    HostFailed(String),
     /// The leader of a party invited the player.
     PartyInvitation(PartyInvitation),
     /// A new message in a conversation, the newest one the player has not read.
@@ -1470,9 +1479,22 @@ impl Online {
                 self.dialog = Some(dialog.clone());
                 notices.push(Notice::Dialog(dialog));
             }
+            Event::SessionEnded {
+                session,
+                title_id,
+                title,
+                host,
+            } => notices.push(Notice::SessionEnded {
+                session,
+                title_id,
+                title,
+                host,
+            }),
             Event::Notice { code, message } => {
                 tracing::info!("net service: {code}: {message}");
-                if code == "sign_in_timed_out" {
+                if code == "host_failed" {
+                    notices.push(Notice::HostFailed(message));
+                } else if code == "sign_in_timed_out" {
                     notices.push(Notice::SignInTimedOut);
                 } else if code == "voice_device" {
                     notices.push(self.voice_failed(&message));
@@ -3067,5 +3089,39 @@ mod tests {
                 numbers: vec![3, 5]
             }]
         );
+    }
+
+    #[test]
+    fn a_session_that_ended_and_a_failed_host_become_notices() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        let notices = online.apply(event(Event::SessionEnded {
+            session: "s1".into(),
+            title_id: "PPSA17221".into(),
+            title: "Minecraft".into(),
+            host: account(2, "Mira"),
+        }));
+        assert_eq!(
+            notices,
+            vec![Notice::SessionEnded {
+                session: "s1".into(),
+                title_id: "PPSA17221".into(),
+                title: "Minecraft".into(),
+                host: account(2, "Mira"),
+            }]
+        );
+        let notices = online.apply(event(Event::Notice {
+            code: "host_failed".into(),
+            message: "the network is not ready".into(),
+        }));
+        assert_eq!(
+            notices,
+            vec![Notice::HostFailed("the network is not ready".into())]
+        );
+        let other = online.apply(event(Event::Notice {
+            code: "something_else".into(),
+            message: "x".into(),
+        }));
+        assert!(other.is_empty());
     }
 }
