@@ -13,6 +13,7 @@
 //! `home-friends-quiet` (nobody online), `home-phone` (a phone is connected), `home-friends-focus` and `home-signin-focus` (the top bar's
 //! two pills focused), `home-theme1`,
 //! `home-ask` (signed in, a session just ended: "How did it run?"), `home-runs` (the community verdict),
+//! `home-glibc` and `home-glibc-locked` (the system's glibc is older than the libraries ask for),
 //! `home-friends-playing` (friends playing the game), `home-theme2`, `home-noartwork`, `home-toolkit`, `home-toolkit-missing`, `home-empty`, `home-scanning`, `home-nofolder`, `starting`,
 //! `toast`. The games, their icons and artwork are generated here (nothing of any real game is in
 //! the repository); the clock of the backdrop is fixed, so a scene always renders the same.
@@ -86,6 +87,10 @@ pub enum Scene {
     HomeToolkit,
     /// The release the selected game stays on is gone: the question.
     HomeToolkitMissing,
+    /// Linux with a glibc older than the libraries ask for, on an unlocked game (the Play button).
+    HomeGlibc,
+    /// The same on a locked game (the Unlock button).
+    HomeGlibcLocked,
     HomeEmpty,
     HomeScanning,
     HomeNoFolder,
@@ -128,6 +133,8 @@ impl Scene {
             "home-noartwork" => Scene::HomeNoArtwork,
             "home-toolkit" => Scene::HomeToolkit,
             "home-toolkit-missing" => Scene::HomeToolkitMissing,
+            "home-glibc" => Scene::HomeGlibc,
+            "home-glibc-locked" => Scene::HomeGlibcLocked,
             "home-empty" => Scene::HomeEmpty,
             "home-scanning" => Scene::HomeScanning,
             "home-nofolder" => Scene::HomeNoFolder,
@@ -170,6 +177,8 @@ impl Scene {
         "home-noartwork",
         "home-toolkit",
         "home-toolkit-missing",
+        "home-glibc",
+        "home-glibc-locked",
         "home-empty",
         "home-scanning",
         "home-nofolder",
@@ -527,6 +536,11 @@ pub fn apply_scene(app: &mut LauncherApp, scene: Scene, games: Vec<Game>) {
         Scene::HomeActions => m.focus = HomeFocus::Actions(0),
         Scene::HomeTrophies => m.focus = HomeFocus::Actions(1),
         Scene::HomeLocked => m.selected = 2,
+        Scene::HomeGlibc => m.focus = HomeFocus::Actions(0),
+        Scene::HomeGlibcLocked => {
+            m.selected = 2;
+            m.focus = HomeFocus::Actions(0);
+        }
         Scene::HomeUnlocking => {
             m.selected = at(2);
             m.progress
@@ -867,6 +881,15 @@ impl PreviewApp {
             pipeline: Box::new({
                 let mut pipeline = SimPipeline::new("0.1.0");
                 pipeline.installed = vec!["0.1.2".to_owned()];
+                if matches!(
+                    options.scene,
+                    Some(Scene::HomeGlibc | Scene::HomeGlibcLocked)
+                ) {
+                    pipeline.glibc = Some(anyps5_core::glibc::Shortfall {
+                        needed: anyps5_core::glibc::Version::new(2, 38),
+                        system: anyps5_core::glibc::Version::new(2, 35),
+                    });
+                }
                 pipeline
             }),
             panels: Box::new(crate::app::panels::PanelHost::new(&cc.egui_ctx, true)),

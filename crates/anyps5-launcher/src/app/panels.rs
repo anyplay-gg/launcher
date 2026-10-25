@@ -314,6 +314,7 @@ impl PanelHost {
             games_found: cx.model.games.len(),
             app_version: env!("CARGO_PKG_VERSION"),
             toolkit_version: toolkit_version.as_deref(),
+            glibc: cx.model.glibc,
             update: self.toolkit.state.clone(),
             recent: &self.toolkit.recent,
             unused: &unused,

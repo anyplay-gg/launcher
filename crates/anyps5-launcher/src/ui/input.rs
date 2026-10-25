@@ -249,6 +249,7 @@ impl Input {
         let events = ctx.input(|i| i.events.clone());
         for event in events {
             match event {
+                Event::PointerMoved(_) => set_device(ctx, Device::Keyboard),
                 Event::Key {
                     key,
                     physical_key,

@@ -357,13 +357,6 @@ pub mod color {
     pub fn text_inactive() -> Color32 {
         white(0.4)
     }
-    /// Text on a focused (white) surface and its detail line.
-    pub fn text_on_focus() -> Color32 {
-        Color32::BLACK
-    }
-    pub fn text_on_focus_detail() -> Color32 {
-        black(0.55)
-    }
     // Surfaces
     pub fn surface() -> Color32 {
         white(0.10)
@@ -382,9 +375,6 @@ pub mod color {
     }
     pub fn surface_hover() -> Color32 {
         white(0.16)
-    }
-    pub fn surface_focused() -> Color32 {
-        Color32::WHITE
     }
     /// A control that has the focus: one step above hover (the ring is the indicator, DESIGN.md 3.9).
     pub fn surface_focus() -> Color32 {
@@ -461,8 +451,9 @@ pub mod color {
     pub fn switch_track_off() -> Color32 {
         white(0.18)
     }
+    /// The off track of a switch whose row has the focus: one step above the lifted row.
     pub fn switch_track_off_on_focus() -> Color32 {
-        black(0.18)
+        white(0.30)
     }
     // Status
     pub fn destructive_text() -> Color32 {
@@ -470,10 +461,6 @@ pub mod color {
     }
     pub fn destructive_icon() -> Color32 {
         rgb(1.0, 0.55, 0.50)
-    }
-    /// Destructive text and glyph on a focused (white) row: 6.5:1 on white.
-    pub fn destructive_on_focus() -> Color32 {
-        rgb(0.72, 0.11, 0.09)
     }
     pub fn error_text() -> Color32 {
         rgb(1.0, 0.70, 0.65)
@@ -658,18 +645,6 @@ pub mod shadows {
     /// Halo behind a focus ring: white 0.14, radius 8, scaled by the focus amount.
     pub fn focus_glow(t: f32) -> Shadow {
         shadow(white(0.14 * t.clamp(0.0, 1.0)), 8.0, 0.0)
-    }
-    pub fn console_button(t: f32) -> Shadow {
-        shadow(white(0.10 * t.clamp(0.0, 1.0)), 12.0, 0.0)
-    }
-    pub fn icon_button(t: f32) -> Shadow {
-        shadow(white(0.12 * t.clamp(0.0, 1.0)), 8.0, 0.0)
-    }
-    pub fn settings_row(t: f32) -> Shadow {
-        shadow(white(0.07 * t.clamp(0.0, 1.0)), 10.0, 0.0)
-    }
-    pub fn language_card(t: f32) -> Shadow {
-        shadow(white(0.10 * t.clamp(0.0, 1.0)), 14.0, 0.0)
     }
     pub fn toast() -> Shadow {
         shadow(black(0.30), 16.0, 6.0)

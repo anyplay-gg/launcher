@@ -20,14 +20,12 @@ use super::view::{ActivityRow, Body, GameRow, Press, ProfileView, Ready, Stat, T
 use crate::screens::online::paint_avatar;
 use crate::screens::profile_strings::ProfileText as P;
 use crate::screens::{clamped, right_aligned_hints};
-use crate::ui::anim::{AnimExt, lerp};
-use crate::ui::components::{ConsoleButton, corner, paint_shadow, paint_spinner_arc};
+use crate::ui::anim::AnimExt;
+use crate::ui::components::{ConsoleButton, corner, paint_spinner_arc};
 use crate::ui::i18n::Language;
 use crate::ui::icons::Icon;
 use crate::ui::text;
-use crate::ui::theme::{
-    self, Grade, TextStyle, Weight, black, color, fade, mix, pad, radius, shadows, ty, white,
-};
+use crate::ui::theme::{self, Grade, TextStyle, Weight, color, fade, pad, radius, ty, white};
 
 // Sizes in dp.
 const AVATAR: f32 = 120.0;
@@ -839,18 +837,26 @@ fn surface(
     let t = ctx.focus_t((response.id, "focus"), focused);
     let painter = ui.painter();
     if ui.is_rect_visible(rect) {
-        let card = rect.expand(lerp(0.0, 3.0, t));
-        paint_shadow(painter, card, radius::ROW, shadows::settings_row(t));
-        let rest = if hovered {
-            color::surface_row()
-        } else {
-            Color32::TRANSPARENT
-        };
-        painter.rect_filled(card, corner(radius::ROW), mix(rest, Color32::WHITE, t));
+        // The ring system of DESIGN.md 3.9: lifted under the pointer, lifted more and ringed with the focus.
+        let hover_t = ctx.animate_to(
+            (response.id, "hover"),
+            f32::from(hovered),
+            crate::ui::anim::Motion::Hover,
+        );
+        crate::ui::components::paint_surface(
+            painter,
+            rect,
+            radius::ROW,
+            Color32::TRANSPARENT,
+            hover_t,
+            t,
+            0.0,
+            crate::ui::theme::size::FOCUS_RING,
+        );
     }
     Surface {
         response,
-        ink: mix(Color32::WHITE, Color32::BLACK, t),
+        ink: Color32::WHITE,
         t,
     }
 }
@@ -934,8 +940,8 @@ fn paint_game(
                 ),
                 vec2(bar_width, 4.0),
             );
-            painter.rect_filled(bar, corner(2.0), mix(white(0.16), black(0.14), s.t));
-            let fill = mix(settings.accent, Color32::BLACK, s.t * 0.7);
+            painter.rect_filled(bar, corner(2.0), white(0.16));
+            let fill = settings.accent;
             paint_progress_fill(&painter, bar, fraction, fill);
         }
     }
@@ -977,16 +983,8 @@ fn paint_trophy(
         pos2(rect.min.x + ROW_PAD + TROPHY_TILE * 0.5, rect.center().y),
         vec2(TROPHY_TILE, TROPHY_TILE),
     );
-    let glyph = mix(
-        row.grade.color(),
-        mix(row.grade.color(), Color32::BLACK, 0.5),
-        s.t,
-    );
-    painter.rect_filled(
-        tile,
-        corner(radius::ROW),
-        fade(glyph, lerp(0.16, 0.14, s.t)),
-    );
+    let glyph = row.grade.color();
+    painter.rect_filled(tile, corner(radius::ROW), fade(glyph, 0.16));
     painter.text(
         tile.center(),
         Align2::CENTER_CENTER,

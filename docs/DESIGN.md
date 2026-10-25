@@ -1439,6 +1439,12 @@ leaves the link on the clipboard.
 
 ---
 
+### 5.20 The glibc the libraries need (Linux)
+
+The relinker and the `.prx` libraries are ELF files that link against glibc. Their `.gnu.version_r` sections list the symbol versions they need (`GLIBC_2.38`); the newest over all of them is the oldest glibc the toolkit runs on (`anyps5-core::glibc`, reads section headers only, every offset bounded, 32- and 64-bit little-endian; `GLIBC_PRIVATE` and other families such as `GLIBCXX` do not count). The launcher compares it with `gnu_get_libc_version()` once when the toolkit is located. The idea of such a check came from the macOS and desktop launchers of the AnyPS5 community; the design and code here are our own.
+
+When the system is older it says one sentence, the same in three places: "Games need glibc 2.38 or newer; this system has 2.35." A note under the version row in Settings > Toolkit (like the "newer than tested" note, gallery scene `toolkit-glibc`), and a warning line under the primary button of the hero, in the states Locked, Queued, Installing, Failed and Installed (scenes `home-glibc`, `home-glibc-locked`; it takes the line the friends playing use, since it says why a start may fail). It is a notice and never a block: Unlock and Play work as before. Nothing is shown when the system is new enough, when a version cannot be read, on Windows and on macOS.
+
 ## 6. Input
 
 Original: `Input.swift`, `AppModel.handle`, `panelCommand`, `onboardingCommand`. One handler consumes seven abstract **commands**:
