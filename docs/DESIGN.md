@@ -1766,7 +1766,7 @@ trophy chord. New cues, on the voice of the navigation tick of 7.3:
 | Cue | Notes | Peak | Heard when |
 |---|---|---|---|
 | `on` / `off` | C5 then F5, 55 ms apart / the same down | -18 / -19 dBFS | a switch turned on / off |
-| `open` / `close` | F4 with C5 28 ms later / the fifth falling | -16 / -17 dBFS | a screen or panel opened / closed |
+| `open` / `close` | F4 then C5 70 ms later / the fifth falling | -16 / -17 dBFS | a screen or panel opened / closed |
 | `notify` | G5, C6 40 ms later, long soft tail | -16 dBFS | a toast that is not a warning |
 | `message` | A4, D5 90 ms later | -17 dBFS | a message or message request arrived (also while the panel shows it) |
 | `invite` | F4 C5 F5, 70 ms apart | -15 dBFS | a friend or party invitation arrived |
@@ -1796,7 +1796,7 @@ calls. Screens never choose a sound and a vibration separately.
 | Close a screen or panel | close | close tap | the same, reversed |
 | One step back in a screen | back | back tap | list reflow |
 | End of a row or list | bump (once per hold) | barely-there tap | ring leans 3 dp (off when reduced) |
-| Warning, refused action | error | two taps | toast, 0.42 s spring |
+| Warning, refused action, a failure toast | error | two taps | toast, 0.42 s spring |
 | Other toast | notify | soft tap | toast |
 | Message arrived | message | light tap | toast when the panel is closed |
 | Invitation arrived | invite | beat and two rising taps | toast |

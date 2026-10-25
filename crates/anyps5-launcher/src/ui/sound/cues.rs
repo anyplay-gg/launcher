@@ -186,7 +186,7 @@ fn recipe(cue: Cue) -> (Mix, Draw) {
             },
             |o, r| {
                 tone(o, r, 0.0, F4, 1.0, shape(0.018, 0.14), ROUND, 0.0);
-                tone(o, r, 0.028, C5, 0.7, shape(0.018, 0.14), ROUND, 0.0);
+                tone(o, r, 0.07, C5, 0.7, shape(0.018, 0.14), ROUND, 0.0);
             },
         ),
         // ... and closes: the same two notes the other way round, a little quieter.
@@ -200,7 +200,7 @@ fn recipe(cue: Cue) -> (Mix, Draw) {
             },
             |o, r| {
                 tone(o, r, 0.0, C5, 0.7, shape(0.014, 0.11), ROUND, 0.0);
-                tone(o, r, 0.028, F4, 1.0, shape(0.014, 0.11), ROUND, 0.0);
+                tone(o, r, 0.07, F4, 1.0, shape(0.014, 0.11), ROUND, 0.0);
             },
         ),
         // A chime: G5 and C6, the C a moment later, a long soft tail.

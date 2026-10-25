@@ -291,7 +291,7 @@ impl OnlineService {
             Notice::Answered(purpose, result) => self.answered(model, purpose, result, ready),
             Notice::Request(account) => {
                 let text = T::RequestArrived.format(language, &[Arg::Str(&account.handle)]);
-                model.toast(text, Icon::USER_PLUS);
+                model.toast_with(text, Icon::USER_PLUS, Cue::Notify);
             }
             Notice::Invitation(invitation) => {
                 let text = T::InvitationArrived.format(
@@ -309,7 +309,7 @@ impl OnlineService {
             }
             Notice::MissedCall(call) => {
                 let text = CT::ToastMissed.format(language, &[Arg::Str(&call.from.handle)]);
-                model.toast(text, Icon::USERS);
+                model.toast_with(text, Icon::USERS, Cue::Notify);
             }
             Notice::CallEnded(callee, reason) => {
                 let text = match reason {
@@ -317,11 +317,11 @@ impl OnlineService {
                     _ => CT::ToastNoAnswer,
                 }
                 .format(language, &[Arg::Str(&callee.handle)]);
-                model.toast(text, Icon::USERS);
+                model.toast_with(text, Icon::USERS, Cue::Notify);
             }
             Notice::CallUnreachable(account) => {
                 let text = CT::ToastUnreachable.format(language, &[Arg::Str(&account.handle)]);
-                model.toast(text, Icon::USERS);
+                model.toast_with(text, Icon::USERS, Cue::Notify);
             }
             Notice::PartyInvitation(invitation) => {
                 let text = S::PartyInvitationArrived

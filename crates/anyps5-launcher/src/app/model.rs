@@ -464,17 +464,25 @@ impl Model {
 
     /// Shows a toast; a warning plays the error cue, every other one the soft chime.
     pub fn toast(&mut self, text: impl Into<String>, icon: Icon) {
-        let cue = if icon == Icon::WARNING {
-            Cue::Error
+        // Only a failure sounds by itself: the other toasts answer an action that has its own cue,
+        // or choose one with `toast_with` (an unasked-for event: a request, a missed call).
+        if matches!(
+            icon,
+            Icon::WARNING | Icon::X_CIRCLE | Icon::MICROPHONE_SLASH | Icon::PROHIBIT | Icon::CLOCK
+        ) {
+            self.toast_with(text, icon, Cue::Error);
         } else {
-            Cue::Notify
-        };
-        self.toast_with(text, icon, cue);
+            self.toast_silent(text, icon);
+        }
     }
 
     /// A toast with its own cue: a message, an invitation.
     pub fn toast_with(&mut self, text: impl Into<String>, icon: Icon, cue: Cue) {
         self.sound(cue);
+        self.toast_silent(text, icon);
+    }
+
+    fn toast_silent(&mut self, text: impl Into<String>, icon: Icon) {
         self.toast_counter += 1;
         self.toast = Some(Toast {
             id: self.toast_counter,
@@ -1054,7 +1062,7 @@ impl Model {
         }
         // The launcher is in front because of the Home button: Back goes back to the game.
         if self.summoned && self.running.is_some() && command == Command::Back {
-            self.sound(Cue::Back);
+            self.sound(Cue::Close);
             self.return_to_game();
             return Routed::Done;
         }
