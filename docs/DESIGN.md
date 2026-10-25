@@ -1837,6 +1837,52 @@ Latency: the first cue, the boot cue, opens the device and renders every cue, an
 `select`, `back` and `error` 3 dB for 0.25 s, `unlocked` 6 dB for 1.2 s (15 ms down, 400 ms back up). It plays only while the
 `music` preference (Home Screen Music, on by default) is on, no game is starting or running, and the launcher window has focus.
 
+### 7.5 The sound map (2026-10-25)
+
+Sixteen cues, all synthesised, one family: sines with an octave, rounded attacks, a little room, the F-C-G fifths of the
+trophy chord. New cues, on the voice of the navigation tick of 7.3:
+
+| Cue | Notes | Peak | Heard when |
+|---|---|---|---|
+| `on` / `off` | C5 then F5, 55 ms apart / the same down | -18 / -19 dBFS | a switch turned on / off |
+| `open` / `close` | F4 then C5 70 ms later / the fifth falling | -16 / -17 dBFS | a screen or panel opened / closed |
+| `notify` | G5, C6 40 ms later, long soft tail | -16 dBFS | a toast that is not a warning |
+| `message` | A4, D5 90 ms later | -17 dBFS | a message or message request arrived (also while the panel shows it) |
+| `invite` | F4 C5 F5, 70 ms apart | -15 dBFS | a friend or party invitation arrived |
+
+`back` now means one step back inside a screen (a category, a capture, a cancelled start); leaving a screen is `close`. The test
+`the_sound_map_is_balanced` holds the levels: ticks (hover, move, bump) are quieter than every other cue, switches and messages sit
+under select, select under the trophy, and the early loudness of the non-tick cues spans less than 12 dB. Every cue is checked to
+start and end at zero (no clicks). `ANYPS5_CUE_DIR=<dir> cargo test render_the_cues_to_wav -- --ignored --nocapture` writes every cue as a 48 kHz WAV
+and prints peak and early RMS. Interface Sounds and the hover gate decide whether any of it plays; the music dips under each cue (3 dB
+for the longer ones).
+
+### 7.6 Feedback: one function, every action (2026-10-25)
+
+`Shell::play(cue)` is the one place an action is answered: it plays the sound, vibrates the pad (6.8) when the pad is the device in use
+and the launcher has it, and leans the ring for a bump (6.7). A select from key or pad also presses the focused control for 0.09 s
+(`ui::press`). Hover ticks come from `input::hovered`, which every hover surface (controls, rows, tiles, trophy rows, window buttons)
+calls. Screens never choose a sound and a vibration separately.
+
+| Action | Sound | Haptic | Motion |
+|---|---|---|---|
+| Move focus | move | none | ring glides (Motion.focus) |
+| Pointer arrives | hover | none | hover fill 120 ms |
+| Select, run an action | select | select tap | press 0.97 for 0.09 s |
+| Choice or stepper changed | move | none | value eases |
+| Switch on / off | on / off | tap, firmer for on | knob spring |
+| Open a screen or panel | open | open tap | overlay spring (fade only when reduced) |
+| Close a screen or panel | close | close tap | the same, reversed |
+| One step back in a screen | back | back tap | list reflow |
+| End of a row or list | bump (once per hold) | barely-there tap | ring leans 3 dp (off when reduced) |
+| Warning, refused action, a failure toast | error | two taps | toast, 0.42 s spring |
+| Other toast | notify | soft tap | toast |
+| Message arrived | message | light tap | toast when the panel is closed |
+| Invitation arrived | invite | beat and two rising taps | toast |
+| Call rings | ring | beat and tap | call card |
+| Trophy, unlock finished | unlocked | three swelling taps | banner slide and pop |
+| Launcher starts | boot | none | intro |
+
 ### 6.5 Key binding names (controls panel)
 
 Bindings are stored as `KEY:<SDL scancode name>`, `MOUSE:<Left|Right|Middle|X1|X2>`, `WHEEL:<Up|Down>`. The original maps macOS virtual key

@@ -215,7 +215,7 @@ impl CompareScreen {
         let count = self.rows.len();
         match command {
             Command::Back | Command::Options => {
-                shell.play(Cue::Back);
+                shell.play(Cue::Close);
                 actions.push(CompareAction::Close);
             }
             Command::Select => {

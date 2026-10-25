@@ -376,7 +376,7 @@ impl PanelNav {
                     self.row = Self::first_focusable(rows);
                     step(PanelEffect::None, Some(Cue::Move))
                 }
-                Command::Back | Command::Options => step(PanelEffect::Close, Some(Cue::Back)),
+                Command::Back | Command::Options => step(PanelEffect::Close, Some(Cue::Close)),
                 Command::Left => step(PanelEffect::None, None),
             };
         }
@@ -430,10 +430,10 @@ impl PanelNav {
                     self.in_rows = false;
                     step(PanelEffect::None, Some(Cue::Back))
                 } else {
-                    step(PanelEffect::Close, Some(Cue::Back))
+                    step(PanelEffect::Close, Some(Cue::Close))
                 }
             }
-            Command::Options => step(PanelEffect::Close, Some(Cue::Back)),
+            Command::Options => step(PanelEffect::Close, Some(Cue::Close)),
         }
     }
 }
@@ -696,7 +696,7 @@ mod tests {
             nav.command(Command::Back, &ROWS),
             PanelStep {
                 effect: PanelEffect::Close,
-                sound: Some(Cue::Back)
+                sound: Some(Cue::Close)
             }
         );
         assert_eq!(

@@ -402,7 +402,7 @@ impl AdvancedPanel {
                     self.apply(shell, data, change, &mut out);
                 }
                 if drawn.scrim_clicked {
-                    shell.play(Cue::Back);
+                    shell.play(Cue::Close);
                     self.side.close();
                     out.actions.push(AdvancedAction::Close);
                 }

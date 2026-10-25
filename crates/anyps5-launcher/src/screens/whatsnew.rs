@@ -285,7 +285,7 @@ impl WhatsNewPanel {
             for pick in clicked {
                 match pick {
                     Pick::Close => {
-                        shell.play(Cue::Back);
+                        shell.play(Cue::Close);
                         self.close();
                         actions.push(WhatsNewAction::Close);
                     }
@@ -329,7 +329,7 @@ impl WhatsNewPanel {
     ) {
         match command {
             Command::Back => {
-                shell.play(Cue::Back);
+                shell.play(Cue::Close);
                 self.close();
                 actions.push(WhatsNewAction::Close);
             }
