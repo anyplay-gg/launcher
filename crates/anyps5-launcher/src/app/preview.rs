@@ -597,6 +597,12 @@ pub fn apply_scene(app: &mut LauncherApp, scene: Scene, games: Vec<Game>) {
         Scene::HomeAsk | Scene::HomeRuns | Scene::HomeFriendsPlaying => {
             sign_in(m);
             let game = m.games[at(1)].clone();
+            // The game stays on a toolkit release of its own, so the Toolkit fact stands beside Runs.
+            m.edit_prefs(|p| {
+                let mut settings = p.game_settings(&game.id);
+                settings.toolkit = Some("v0.1.2".to_owned());
+                p.set_game_settings(&game.id, settings);
+            });
             if scene != Scene::HomeFriendsPlaying {
                 m.online.runs.keep(
                     &game.title_id,
