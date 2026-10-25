@@ -141,6 +141,7 @@ fn signed_check(
     let result = parse_signed(
         &json,
         current,
+        Platform::Windows,
         trusted,
         OffsetDateTime::now_utc(),
         &mut |url, max| {
@@ -193,6 +194,7 @@ fn a_bad_signature_and_a_wrong_key_are_refused() {
     let result = parse_signed(
         &json,
         "0.1.3",
+        Platform::Windows,
         &TrustedKeys::of(key.verifying_key()),
         OffsetDateTime::now_utc(),
         &mut |url, _| {
@@ -274,6 +276,7 @@ fn a_release_without_a_manifest_or_signature_is_refused_with_no_fallback() {
         let result = parse_signed(
             &json,
             "0.1.3",
+            Platform::Windows,
             &keys,
             OffsetDateTime::now_utc(),
             &mut |_, _| panic!("nothing is fetched without both files"),
@@ -293,10 +296,12 @@ fn check_with_keys_requires_the_manifest_and_without_keys_runs_the_old_path() {
     let json = release_json("v0.2.0", "http://127.0.0.1:9", false, false);
     let (base, stop) = serve(vec![("/repos/o/r/releases/latest", json.into_bytes())]);
     let none = TrustedKeys::default();
-    let old = check_with(&base, "o/r", "0.1.3", &none).unwrap().unwrap();
+    let old = check_with(&base, "o/r", "0.1.3", &none, Platform::Windows)
+        .unwrap()
+        .unwrap();
     assert!(matches!(old.vouch, Vouch::Checksums(_)));
     assert_eq!(old.tag, "v0.2.0");
-    let signed = check_with(&base, "o/r", "0.1.3", &keys);
+    let signed = check_with(&base, "o/r", "0.1.3", &keys, Platform::Windows);
     stop.store(true, AtomicOrdering::SeqCst);
     assert!(
         matches!(signed, Err(SelfUpdateError::NoManifest)),
@@ -311,7 +316,9 @@ fn a_signed_release_is_found_through_the_api_staged_and_found_again() {
     let (_base, stop, json) = serve_signed(&key, PROGRAM, |_| {});
     // The API answers on a second server; the assets come from the first.
     let (api, api_stop) = serve(vec![("/repos/o/r/releases/latest", json.into_bytes())]);
-    let release = check_with(&api, "o/r", "0.1.3", &keys).unwrap().unwrap();
+    let release = check_with(&api, "o/r", "0.1.3", &keys, Platform::Windows)
+        .unwrap()
+        .unwrap();
     let (_root, paths, exe) = fixture();
     let staged = stage(&release, &exe, &paths, &mut |_| {}, &CancelToken::new()).unwrap();
     assert_eq!(staged.version, "0.2.0");
@@ -319,7 +326,14 @@ fn a_signed_release_is_found_through_the_api_staged_and_found_again() {
     assert!(sidecar(&staged.path, MANIFEST_SUFFIX).is_file());
     assert!(sidecar(&staged.path, SIGNATURE_SUFFIX).is_file());
     assert_eq!(
-        pending_with(&paths, "0.1.3", Some(&keys), OffsetDateTime::now_utc()).map(|s| s.version),
+        pending_with(
+            &paths,
+            "0.1.3",
+            Platform::Windows,
+            Some(&keys),
+            OffsetDateTime::now_utc()
+        )
+        .map(|s| s.version),
         Some("0.2.0".into())
     );
     // A second stage reuses the file without the network.
@@ -330,10 +344,25 @@ fn a_signed_release_is_found_through_the_api_staged_and_found_again() {
 
     // A staged file that changed afterwards is no longer offered, and the swap removes the proof.
     fs::write(&staged.path, b"MZ-something-else!!").unwrap();
-    assert!(pending_with(&paths, "0.1.3", Some(&keys), OffsetDateTime::now_utc()).is_none());
+    assert!(
+        pending_with(
+            &paths,
+            "0.1.3",
+            Platform::Windows,
+            Some(&keys),
+            OffsetDateTime::now_utc()
+        )
+        .is_none()
+    );
     fs::write(&staged.path, PROGRAM).unwrap();
-    let again = pending_with(&paths, "0.1.3", Some(&keys), OffsetDateTime::now_utc())
-        .expect("restored file is vouched for again");
+    let again = pending_with(
+        &paths,
+        "0.1.3",
+        Platform::Windows,
+        Some(&keys),
+        OffsetDateTime::now_utc(),
+    )
+    .expect("restored file is vouched for again");
     again.swap_in(&exe).unwrap();
     assert!(!sidecar(&staged.path, MANIFEST_SUFFIX).exists());
     assert!(!sidecar(&staged.path, SIGNATURE_SUFFIX).exists());
@@ -352,14 +381,25 @@ fn a_download_with_another_hash_is_refused_and_leaves_nothing() {
     });
     let _ = base;
     let (api, api_stop) = serve(vec![("/repos/o/r/releases/latest", json.into_bytes())]);
-    let release = check_with(&api, "o/r", "0.1.3", &keys).unwrap().unwrap();
+    let release = check_with(&api, "o/r", "0.1.3", &keys, Platform::Windows)
+        .unwrap()
+        .unwrap();
     let (_root, paths, exe) = fixture();
     let result = stage(&release, &exe, &paths, &mut |_| {}, &CancelToken::new());
     stop.store(true, AtomicOrdering::SeqCst);
     api_stop.store(true, AtomicOrdering::SeqCst);
     assert!(matches!(result, Err(SelfUpdateError::Digest)), "{result:?}");
     assert_eq!(fs::read_dir(updates_dir(&paths)).unwrap().count(), 0);
-    assert!(pending_with(&paths, "0.1.3", Some(&keys), OffsetDateTime::now_utc()).is_none());
+    assert!(
+        pending_with(
+            &paths,
+            "0.1.3",
+            Platform::Windows,
+            Some(&keys),
+            OffsetDateTime::now_utc()
+        )
+        .is_none()
+    );
 }
 
 #[test]
@@ -371,7 +411,9 @@ fn a_download_with_another_size_is_refused_and_leaves_nothing() {
         m.platforms.get_mut(WINDOWS_X64).unwrap().size += 1;
     });
     let (api, api_stop) = serve(vec![("/repos/o/r/releases/latest", json.into_bytes())]);
-    let release = check_with(&api, "o/r", "0.1.3", &keys).unwrap().unwrap();
+    let release = check_with(&api, "o/r", "0.1.3", &keys, Platform::Windows)
+        .unwrap()
+        .unwrap();
     let (_root, paths, exe) = fixture();
     let result = stage(&release, &exe, &paths, &mut |_| {}, &CancelToken::new());
     stop.store(true, AtomicOrdering::SeqCst);
@@ -386,7 +428,9 @@ fn a_download_cancelled_because_the_launcher_closes_leaves_nothing() {
     let keys = TrustedKeys::of(key.verifying_key());
     let (_base, stop, json) = serve_signed(&key, PROGRAM, |_| {});
     let (api, api_stop) = serve(vec![("/repos/o/r/releases/latest", json.into_bytes())]);
-    let release = check_with(&api, "o/r", "0.1.3", &keys).unwrap().unwrap();
+    let release = check_with(&api, "o/r", "0.1.3", &keys, Platform::Windows)
+        .unwrap()
+        .unwrap();
     let (_root, paths, exe) = fixture();
     // The host cancels the token when the window closes (`SelfUpdateService::finish`).
     let cancel = CancelToken::new();
@@ -460,10 +504,10 @@ fn a_planted_exe_with_a_forged_marker_or_manifest_is_not_offered() {
     let path = updates_dir(&paths).join(exe_name("0.2.0"));
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, PROGRAM).unwrap();
-    let offered = || pending_with(&paths, "0.1.3", Some(&keys), later());
+    let offered = || pending_with(&paths, "0.1.3", Platform::Windows, Some(&keys), later());
 
     // What an unsigned launcher left: offered while signing is off, never once it is on.
-    assert!(pending_with(&paths, "0.1.3", None, later()).is_some());
+    assert!(pending_with(&paths, "0.1.3", Platform::Windows, None, later()).is_some());
     assert!(offered().is_none());
     // The old marker with the right hash, which was all that vouched for a file before.
     fs::write(sidecar(&path, LEGACY_MARKER_SUFFIX), sha_hex(PROGRAM)).unwrap();
@@ -502,19 +546,30 @@ fn a_staged_update_is_checked_again_for_expiry_and_for_a_newer_running_version()
     let keys = TrustedKeys::of(key.verifying_key());
     let (_base, stop, json) = serve_signed(&key, PROGRAM, |_| {});
     let (api, api_stop) = serve(vec![("/repos/o/r/releases/latest", json.into_bytes())]);
-    let release = check_with(&api, "o/r", "0.1.3", &keys).unwrap().unwrap();
+    let release = check_with(&api, "o/r", "0.1.3", &keys, Platform::Windows)
+        .unwrap()
+        .unwrap();
     let (_root, paths, exe) = fixture();
     stage(&release, &exe, &paths, &mut |_| {}, &CancelToken::new()).unwrap();
     stop.store(true, AtomicOrdering::SeqCst);
     api_stop.store(true, AtomicOrdering::SeqCst);
-    assert!(pending_with(&paths, "0.1.3", Some(&keys), later()).is_some());
+    assert!(pending_with(&paths, "0.1.3", Platform::Windows, Some(&keys), later()).is_some());
     // The manifest was made for 29 days from now: 40 days on it has lapsed.
-    assert!(pending_with(&paths, "0.1.3", Some(&keys), later() + Span::days(40)).is_none());
+    assert!(
+        pending_with(
+            &paths,
+            "0.1.3",
+            Platform::Windows,
+            Some(&keys),
+            later() + Span::days(40)
+        )
+        .is_none()
+    );
     // Already running that version: nothing to offer.
-    assert!(pending_with(&paths, "0.2.0", Some(&keys), later()).is_none());
+    assert!(pending_with(&paths, "0.2.0", Platform::Windows, Some(&keys), later()).is_none());
     // The key was rotated out of the list.
     let other = TrustedKeys::of(generate_signing_key().verifying_key());
-    assert!(pending_with(&paths, "0.1.3", Some(&other), later()).is_none());
+    assert!(pending_with(&paths, "0.1.3", Platform::Windows, Some(&other), later()).is_none());
 }
 
 #[test]
@@ -523,14 +578,17 @@ fn a_staged_file_swapped_after_the_check_is_not_installed() {
     let keys = TrustedKeys::of(key.verifying_key());
     let (_base, stop, json) = serve_signed(&key, PROGRAM, |_| {});
     let (api, api_stop) = serve(vec![("/repos/o/r/releases/latest", json.into_bytes())]);
-    let release = check_with(&api, "o/r", "0.1.3", &keys).unwrap().unwrap();
+    let release = check_with(&api, "o/r", "0.1.3", &keys, Platform::Windows)
+        .unwrap()
+        .unwrap();
     let (_root, paths, exe) = fixture();
     stage(&release, &exe, &paths, &mut |_| {}, &CancelToken::new()).unwrap();
     stop.store(true, AtomicOrdering::SeqCst);
     api_stop.store(true, AtomicOrdering::SeqCst);
 
     // Checked and offered ...
-    let offered = pending_with(&paths, "0.1.3", Some(&keys), later()).expect("offered");
+    let offered =
+        pending_with(&paths, "0.1.3", Platform::Windows, Some(&keys), later()).expect("offered");
     // ... and replaced by something else before the swap happens (even keeping the length).
     let evil = vec![b'M'; PROGRAM.len()];
     fs::write(&offered.path, &evil).unwrap();
@@ -575,7 +633,7 @@ fn cleanup_removes_proofs_with_their_exes() {
         )
         .unwrap();
     }
-    cleanup(&exe, &paths, "0.2.0");
+    cleanup_for(Platform::Windows, &exe, &paths, "0.2.0");
     for suffix in [MANIFEST_SUFFIX, SIGNATURE_SUFFIX, LEGACY_MARKER_SUFFIX] {
         assert!(!sidecar(&old, suffix).exists());
         assert!(
@@ -597,10 +655,17 @@ fn an_up_to_date_launcher_does_not_call_a_stale_manifest_an_error() {
     let (base, stop, json) = serve_signed(&key, PROGRAM, |_| {});
     let long_after = OffsetDateTime::now_utc() + Span::days(400);
     let check = |current: &str| {
-        parse_signed(&json, current, &keys, long_after, &mut |url, max| {
-            assert!(url.starts_with(&base));
-            get_small(url, max)
-        })
+        parse_signed(
+            &json,
+            current,
+            Platform::Windows,
+            &keys,
+            long_after,
+            &mut |url, max| {
+                assert!(url.starts_with(&base));
+                get_small(url, max)
+            },
+        )
     };
     // Running the version the manifest offers (or a later one): nothing to do, and no error.
     assert!(matches!(check("0.2.0"), Ok(None)));
@@ -700,6 +765,7 @@ fn the_urls_of_the_manifest_and_signature_must_be_github_https() {
         let result = parse_signed(
             &json,
             "0.1.3",
+            Platform::Windows,
             &keys,
             OffsetDateTime::now_utc(),
             &mut |_, _| panic!("nothing is fetched from an address that fails the check"),
@@ -783,7 +849,9 @@ fn a_download_longer_than_the_manifest_size_is_cut_off() {
     // The manifest vouches for PROGRAM; the server never stops sending.
     let (_base, stop, json) = serve_signed(&key, PROGRAM, |_| {});
     let (api, api_stop) = serve(vec![("/repos/o/r/releases/latest", json.into_bytes())]);
-    let mut release = check_with(&api, "o/r", "0.1.3", &keys).unwrap().unwrap();
+    let mut release = check_with(&api, "o/r", "0.1.3", &keys, Platform::Windows)
+        .unwrap()
+        .unwrap();
     stop.store(true, AtomicOrdering::SeqCst);
     let (endless, endless_stop) = serve_with(|request| {
         let _ = request.respond(chunked(Endless));

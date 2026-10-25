@@ -1837,6 +1837,52 @@ Latency: the first cue, the boot cue, opens the device and renders every cue, an
 `select`, `back` and `error` 3 dB for 0.25 s, `unlocked` 6 dB for 1.2 s (15 ms down, 400 ms back up). It plays only while the
 `music` preference (Home Screen Music, on by default) is on, no game is starting or running, and the launcher window has focus.
 
+### 7.5 The sound map (2026-10-25)
+
+Sixteen cues, all synthesised, one family: sines with an octave, rounded attacks, a little room, the F-C-G fifths of the
+trophy chord. New cues, on the voice of the navigation tick of 7.3:
+
+| Cue | Notes | Peak | Heard when |
+|---|---|---|---|
+| `on` / `off` | C5 then F5, 55 ms apart / the same down | -18 / -19 dBFS | a switch turned on / off |
+| `open` / `close` | F4 then C5 70 ms later / the fifth falling | -16 / -17 dBFS | a screen or panel opened / closed |
+| `notify` | G5, C6 40 ms later, long soft tail | -16 dBFS | a toast that is not a warning |
+| `message` | A4, D5 90 ms later | -17 dBFS | a message or message request arrived (also while the panel shows it) |
+| `invite` | F4 C5 F5, 70 ms apart | -15 dBFS | a friend or party invitation arrived |
+
+`back` now means one step back inside a screen (a category, a capture, a cancelled start); leaving a screen is `close`. The test
+`the_sound_map_is_balanced` holds the levels: ticks (hover, move, bump) are quieter than every other cue, switches and messages sit
+under select, select under the trophy, and the early loudness of the non-tick cues spans less than 12 dB. Every cue is checked to
+start and end at zero (no clicks). `ANYPS5_CUE_DIR=<dir> cargo test render_the_cues_to_wav -- --ignored --nocapture` writes every cue as a 48 kHz WAV
+and prints peak and early RMS. Interface Sounds and the hover gate decide whether any of it plays; the music dips under each cue (3 dB
+for the longer ones).
+
+### 7.6 Feedback: one function, every action (2026-10-25)
+
+`Shell::play(cue)` is the one place an action is answered: it plays the sound, vibrates the pad (6.8) when the pad is the device in use
+and the launcher has it, and leans the ring for a bump (6.7). A select from key or pad also presses the focused control for 0.09 s
+(`ui::press`). Hover ticks come from `input::hovered`, which every hover surface (controls, rows, tiles, trophy rows, window buttons)
+calls. Screens never choose a sound and a vibration separately.
+
+| Action | Sound | Haptic | Motion |
+|---|---|---|---|
+| Move focus | move | none | ring glides (Motion.focus) |
+| Pointer arrives | hover | none | hover fill 120 ms |
+| Select, run an action | select | select tap | press 0.97 for 0.09 s |
+| Choice or stepper changed | move | none | value eases |
+| Switch on / off | on / off | tap, firmer for on | knob spring |
+| Open a screen or panel | open | open tap | overlay spring (fade only when reduced) |
+| Close a screen or panel | close | close tap | the same, reversed |
+| One step back in a screen | back | back tap | list reflow |
+| End of a row or list | bump (once per hold) | barely-there tap | ring leans 3 dp (off when reduced) |
+| Warning, refused action, a failure toast | error | two taps | toast, 0.42 s spring |
+| Other toast | notify | soft tap | toast |
+| Message arrived | message | light tap | toast when the panel is closed |
+| Invitation arrived | invite | beat and two rising taps | toast |
+| Call rings | ring | beat and tap | call card |
+| Trophy, unlock finished | unlocked | three swelling taps | banner slide and pop |
+| Launcher starts | boot | none | intro |
+
 ### 6.5 Key binding names (controls panel)
 
 Bindings are stored as `KEY:<SDL scancode name>`, `MOUSE:<Left|Right|Middle|X1|X2>`, `WHEEL:<Up|Down>`. The original maps macOS virtual key
@@ -2230,7 +2276,7 @@ list still updates.
 
 ### 9.5 The launcher updates itself
 
-No counterpart in the macOS launcher (Sparkle there). Core module `anyps5_core::selfupdate`, host `app::selfupdate`. Windows only for now: a Linux build is replaced from the releases page.
+No counterpart in the macOS launcher (Sparkle there). Core module `anyps5_core::selfupdate`, host `app::selfupdate`. The Windows exe and the Linux AppImage update themselves; a Linux `.tar.gz` is replaced from the releases page.
 
 - **Check.** At the start and then every 6 hours while the launcher stays open (after a check that could not reach GitHub, every 30 minutes), in the background, when the *Check for Updates* preference is on. *Check Now* on the About page checks once whatever the preference says. The request is conditional: the release data of `anyplaynet/launcher` is asked for with the ETag of the last answer, so a check that finds nothing new costs one small reply that GitHub does not count against its rate limit. The last copy is never taken for an answer when the network fails: an offline launcher does not call itself up to date. A newer semver (pre-release tags sort below their release) is downloaded and verified at once; garbage tags are never newer. Previews, the demo, the gallery and the tests never check.
 - **Verify.** From the first trusted key on (`data/update-keys.txt` holds "anyplay 2026" since 0.2.0) the launcher takes updates only through the release's signed `latest.json` and `latest.json.sig`: an Ed25519 signature by a trusted key, an unexpired manifest, a version newer than the running one, a running version not below the manifest's `minimum_version`, and a download with exactly the manifest's SHA-256 and size. The portable `AnyPlay-Launcher-<v>-x64.exe` (or `AnyPS5-Launcher-<v>-x64.exe`, which every release also carries, 9.7) goes to `%LOCALAPPDATA%\AnyPS5\Updates` under its final name only after that. There is no fallback to the unsigned `SHA256SUMS.txt` flow. The format, the rules, the migration and the key ceremony are in [UPDATES.md](UPDATES.md).
@@ -2240,6 +2286,7 @@ No counterpart in the macOS launcher (Sparkle there). Core module `anyps5_core::
   - *The notice on the home screen*, after the title, only while a verified update waits and the player has not sent it away: "Launcher 0.2.5 is ready" with *Restart Now* (the one primary button) and *Later*. *Later* hides it until the next start; the About row stays. While a restart waits for a game, the notice says "Restarts when your game closes" with *Cancel Restart*. The pad reaches it from the library button (left of it), so every action has a key and a pad path. It is out of the way of the top bar and only appears where it fits.
 - **Restart Now.** Closes the launcher, swaps, starts the new exe with the same flags and **opens where the player was**: the link of the selected game (`anyps5://game/<TITLEID>`, which selects it again) or, from the settings, `anyps5://settings/about`. It never interrupts a running game: while a game runs or starts, the restart is held, the About row and the notice say so, and it goes ahead the moment no game runs. Closing the launcher by hand still installs the update, without starting it again.
 - **What's New.** The notes of the staged release are taken from the release data the check fetched anyway (display only; nothing is decided by them) and shown in the same full-screen panel as the toolkit's notes: every `###` heading of the release is a group, every bullet a line, all groups unfolded. *Back* returns to About.
+- **Linux.** The AppImage updates itself the same verified way, through the signed manifest only (its `linux-x86_64` entry; Linux has no unsigned path). The running image comes from `APPIMAGE` (checked against `APPDIR`, a regular `.AppImage` file in a writable folder); the verified download is copied beside it, set to 0755, hash-checked once more and renamed over it atomically, which Linux allows while it runs. Restart starts the new file with the same arguments. A launcher from the `.tar.gz` cannot replace itself: About shows "<v> available" with *Download from GitHub*, and nothing is downloaded. A manifest from before the Linux entry offers Linux nothing, quietly. Details in [UPDATES.md](UPDATES.md#linux-the-appimage).
 - **Not done.** The exe is not code-signed (Windows SmartScreen); that costs money and is the owner's decision. Provenance (GitHub attestations) is separate, see UPDATES.md.
 
 ### 9.6 Deep links, single instance and folder entry

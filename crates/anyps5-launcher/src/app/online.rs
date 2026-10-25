@@ -29,6 +29,7 @@ use crate::screens::online_voice_strings::VoiceText as VT;
 use crate::ui::focus::HomeFocus;
 use crate::ui::i18n::{Arg, Language};
 use crate::ui::icons::Icon;
+use crate::ui::sound::Cue;
 
 /// How much of a message a toast shows.
 const MESSAGE_TOAST_CHARS: usize = 60;
@@ -290,7 +291,7 @@ impl OnlineService {
             Notice::Answered(purpose, result) => self.answered(model, purpose, result, ready),
             Notice::Request(account) => {
                 let text = T::RequestArrived.format(language, &[Arg::Str(&account.handle)]);
-                model.toast(text, Icon::USER_PLUS);
+                model.toast_with(text, Icon::USER_PLUS, Cue::Notify);
             }
             Notice::Invitation(invitation) => {
                 let text = T::InvitationArrived.format(
@@ -300,7 +301,7 @@ impl OnlineService {
                         Arg::Str(&invitation.title),
                     ],
                 );
-                model.toast(text, Icon::ENVELOPE_SIMPLE);
+                model.toast_with(text, Icon::ENVELOPE_SIMPLE, Cue::Invite);
             }
             // A call rings on its own card; the window comes forward so it can be answered.
             Notice::PartyInvitation(invitation) if invitation.call => {
@@ -308,7 +309,7 @@ impl OnlineService {
             }
             Notice::MissedCall(call) => {
                 let text = CT::ToastMissed.format(language, &[Arg::Str(&call.from.handle)]);
-                model.toast(text, Icon::USERS);
+                model.toast_with(text, Icon::USERS, Cue::Notify);
             }
             Notice::CallEnded(callee, reason) => {
                 let text = match reason {
@@ -316,16 +317,16 @@ impl OnlineService {
                     _ => CT::ToastNoAnswer,
                 }
                 .format(language, &[Arg::Str(&callee.handle)]);
-                model.toast(text, Icon::USERS);
+                model.toast_with(text, Icon::USERS, Cue::Notify);
             }
             Notice::CallUnreachable(account) => {
                 let text = CT::ToastUnreachable.format(language, &[Arg::Str(&account.handle)]);
-                model.toast(text, Icon::USERS);
+                model.toast_with(text, Icon::USERS, Cue::Notify);
             }
             Notice::PartyInvitation(invitation) => {
                 let text = S::PartyInvitationArrived
                     .format(language, &[Arg::Str(&invitation.from.handle)]);
-                model.toast(text, Icon::USERS);
+                model.toast_with(text, Icon::USERS, Cue::Invite);
             }
             // A message toast only tells what the open panel does not already show.
             Notice::Message { message, .. } if model.overlay != Some(Overlay::Online) => {
@@ -336,7 +337,7 @@ impl OnlineService {
                         Arg::Str(&net::snippet(&message.text, MESSAGE_TOAST_CHARS)),
                     ],
                 );
-                model.toast(text, Icon::ENVELOPE_SIMPLE);
+                model.toast_with(text, Icon::ENVELOPE_SIMPLE, Cue::Message);
             }
             Notice::MessageRequest(request) if model.overlay != Some(Overlay::Online) => {
                 let me = model.online.account.as_ref().map(|a| a.id);
@@ -345,9 +346,10 @@ impl OnlineService {
                     .map(|a| a.handle.clone())
                     .unwrap_or_default();
                 let text = S::MessageRequestArrived.format(language, &[Arg::Str(&from)]);
-                model.toast(text, Icon::ENVELOPE_SIMPLE);
+                model.toast_with(text, Icon::ENVELOPE_SIMPLE, Cue::Message);
             }
-            Notice::Message { .. } | Notice::MessageRequest(_) => {}
+            // The open panel shows it; the sound still says it arrived.
+            Notice::Message { .. } | Notice::MessageRequest(_) => model.sound(Cue::Message),
             Notice::Dialog(_) => {
                 // The game asked to invite friends: the launcher comes forward with the picker.
                 model.effects.push(Effect::RestoreWindow);

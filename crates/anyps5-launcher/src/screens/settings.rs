@@ -142,6 +142,9 @@ pub enum LauncherUpdate {
     Holding(String),
     /// A newer version exists but this folder cannot be written to: its version.
     ReadOnly(String),
+    /// A newer version exists but this launcher cannot install it itself (the Linux `.tar.gz`):
+    /// its version. The player takes it from the releases page.
+    Manual(String),
     /// The check or the download failed.
     Failed(UpdateFailure),
 }
@@ -833,6 +836,11 @@ fn launcher_update_rows(
         LauncherUpdate::ReadOnly(v) => vec![
             status(U::Available.format(language, &version(v))),
             note(U::NoteReadOnly.text(language).to_owned()),
+            download(),
+        ],
+        LauncherUpdate::Manual(v) => vec![
+            status(U::Available.format(language, &version(v))),
+            note(U::NoteManual.text(language).to_owned()),
             download(),
         ],
         LauncherUpdate::Failed(UpdateFailure::Offline) => vec![
@@ -1657,6 +1665,7 @@ mod tests {
         // A folder that cannot be written to and a refused release lead to the download page.
         for failed in [
             LauncherUpdate::ReadOnly("0.2.0".into()),
+            LauncherUpdate::Manual("0.2.0".into()),
             LauncherUpdate::Failed(UpdateFailure::Refused),
             LauncherUpdate::Failed(UpdateFailure::Other),
         ] {

@@ -32,6 +32,8 @@ pub enum UpdateText {
     /// `%@` = the version.
     NoteHolding,
     NoteReadOnly,
+    /// This launcher cannot install updates itself (a Linux `.tar.gz`).
+    NoteManual,
     NoteOffline,
     NoteRefused,
     NoteOther,
@@ -55,7 +57,7 @@ pub enum UpdateText {
 }
 
 impl UpdateText {
-    pub const ALL: [UpdateText; 26] = [
+    pub const ALL: [UpdateText; 27] = [
         UpdateText::Row,
         UpdateText::Checking,
         UpdateText::UpToDate,
@@ -70,6 +72,7 @@ impl UpdateText {
         UpdateText::NoteReady,
         UpdateText::NoteHolding,
         UpdateText::NoteReadOnly,
+        UpdateText::NoteManual,
         UpdateText::NoteOffline,
         UpdateText::NoteRefused,
         UpdateText::NoteOther,
@@ -105,6 +108,9 @@ impl UpdateText {
             }
             UpdateText::NoteReadOnly => {
                 "The launcher cannot update itself in this read-only folder. Download it from GitHub."
+            }
+            UpdateText::NoteManual => {
+                "This launcher cannot update itself. Download the new version from GitHub, or use the AppImage, which updates itself."
             }
             UpdateText::NoteOffline => "Could not reach GitHub. The launcher tries again later.",
             UpdateText::NoteRefused => {
@@ -146,6 +152,9 @@ impl UpdateText {
             }
             UpdateText::NoteReadOnly => {
                 "Başlatıcı bu salt okunur klasörde kendini güncelleyemez. GitHub'dan indir."
+            }
+            UpdateText::NoteManual => {
+                "Bu başlatıcı kendini güncelleyemez. Yeni sürümü GitHub'dan indir ya da kendini güncelleyen AppImage'i kullan."
             }
             UpdateText::NoteOffline => "GitHub'a ulaşılamadı. Başlatıcı daha sonra yeniden dener.",
             UpdateText::NoteRefused => {

@@ -402,7 +402,8 @@ jobs:
           tool="$PWD/launcher/target/release/update-sign"
           "$tool" keygen --secret-out "$RUNNER_TEMP/dry-run.key" --public-out "$RUNNER_TEMP/dry-run.line" --label dry-run
           "$tool" manifest --version "$VERSION" --days 30 \
-            --exe "dist/AnyPlay-Launcher-$VERSION-x64.exe" --out dist/latest.json
+            --exe "dist/AnyPlay-Launcher-$VERSION-x64.exe" \
+            --appimage "dist/AnyPlay-Launcher-$VERSION-x86_64.AppImage" --out dist/latest.json
           "$tool" sign --manifest dist/latest.json --out dist/latest.json.sig --key-file "$RUNNER_TEMP/dry-run.key"
           "$tool" verify --manifest dist/latest.json --sig dist/latest.json.sig --keys "$RUNNER_TEMP/dry-run.line"
 
@@ -456,8 +457,10 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x tool/update-sign
+          # One signed manifest for both platforms: the Windows exe and the Linux AppImage.
           tool/update-sign manifest --version "$VERSION" --minimum "$MINIMUM_VERSION" --days 30 \
-            --exe "dist/AnyPlay-Launcher-$VERSION-x64.exe" --out dist/latest.json
+            --exe "dist/AnyPlay-Launcher-$VERSION-x64.exe" \
+            --appimage "dist/AnyPlay-Launcher-$VERSION-x86_64.AppImage" --out dist/latest.json
       # Without the secret there is no signature, which is right only while data/update-keys.txt
       # holds no key; once it holds one, launchers refuse a release without a manifest, so this
       # step fails the release instead of publishing one nobody can install. The list was parsed

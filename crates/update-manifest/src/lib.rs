@@ -33,8 +33,11 @@ pub use version::{Version, is_newer};
 
 /// The manifest format this code reads and writes.
 pub const SCHEMA: u32 = 1;
-/// The platform key of the portable Windows exe, the only thing the launcher updates itself to.
+/// The platform key of the portable Windows exe.
 pub const WINDOWS_X64: &str = "windows-x86_64";
+/// The platform key of the Linux AppImage. A manifest from before it existed has no such entry,
+/// which means "nothing for Linux", not an error.
+pub const LINUX_X64: &str = "linux-x86_64";
 /// Prefixed to the manifest bytes before signing.
 pub const DOMAIN: &[u8] = b"anyplay-launcher-update-manifest-v1\n";
 /// A manifest is a few hundred bytes; the client reads at most this much.
@@ -89,7 +92,7 @@ pub struct Manifest {
     pub expires: String,
     /// The oldest running version that may update from this manifest.
     pub minimum_version: String,
-    /// Per platform ([`WINDOWS_X64`]).
+    /// Per platform ([`WINDOWS_X64`], [`LINUX_X64`]).
     pub platforms: BTreeMap<String, Artifact>,
 }
 
