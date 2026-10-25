@@ -220,6 +220,9 @@ pub struct Model {
     /// The game from the press of Play until its first window shows.
     pub starting: Option<GameId>,
     pub running: Option<GameId>,
+    /// The Home button brought the launcher in front of the running game: Back returns to the
+    /// game (`Model::show_in_game`).
+    pub summoned: bool,
     pub sizes: HashMap<GameId, SizeState>,
     pub trophies: HashMap<GameId, TrophySet>,
     /// Why each game stopped the last time it was started, when it stopped on an error.
@@ -291,6 +294,7 @@ impl Model {
             failures: HashMap::new(),
             starting: None,
             running: None,
+            summoned: false,
             sizes: HashMap::new(),
             trophies: HashMap::new(),
             diagnoses: HashMap::new(),
@@ -757,6 +761,7 @@ impl Model {
                     return;
                 }
                 self.running = None;
+                self.leave_in_game();
                 let had_window = self.sessions.running() == Some(&game);
                 self.end_session(&game, Instant::now());
                 if had_window && diagnosis.is_none() {
@@ -904,6 +909,48 @@ impl Model {
             .push(Effect::Pipeline(PipelineCommand::Stop(id.clone())));
     }
 
+    // --- the Home button -----------------------------------------------------------------------
+
+    /// The Home button brought the launcher in front of the running game: its quick panel opens,
+    /// on the game's own page so trophies and settings are the game's.
+    pub fn show_in_game(&mut self) {
+        let Some(id) = self.running.clone() else {
+            return;
+        };
+        if self.starting.is_some() || !self.onboarded() {
+            return;
+        }
+        if let Some(index) = self.games.iter().position(|g| g.id == id) {
+            self.selected = index;
+            self.measure_selected();
+        }
+        self.summoned = true;
+        self.switch_overlay(Overlay::InGame);
+    }
+
+    /// The game is in front again (or gone): the quick panel and the question close.
+    pub fn leave_in_game(&mut self) {
+        self.summoned = false;
+        if matches!(
+            self.overlay,
+            Some(Overlay::InGame | Overlay::ConfirmCloseGame)
+        ) {
+            self.overlay = None;
+        }
+    }
+
+    /// Back to the game from the launcher: the window of the game comes forward (where the
+    /// launcher cannot find it, the launcher steps aside instead).
+    pub fn return_to_game(&mut self) {
+        self.leave_in_game();
+        if let Some(id) = self.running.clone() {
+            self.effects
+                .push(Effect::Pipeline(PipelineCommand::Activate(id)));
+            #[cfg(not(windows))]
+            self.effects.push(Effect::MinimizeWindow);
+        }
+    }
+
     // --- overlays ----------------------------------------------------------------------------
 
     pub fn open(&mut self, overlay: Overlay) {
@@ -954,6 +1001,12 @@ impl Model {
         }
         if let Some(overlay) = self.overlay {
             return Routed::Overlay(overlay);
+        }
+        // The launcher is in front because of the Home button: Back goes back to the game.
+        if self.summoned && self.running.is_some() && command == Command::Back {
+            self.sound(Cue::Back);
+            self.return_to_game();
+            return Routed::Done;
         }
         // The question line may have gone (answered, signed out) while the focus was on it.
         if matches!(self.focus, HomeFocus::Ask(_)) && self.run_question().is_none() {
@@ -1882,5 +1935,97 @@ mod tests {
         m.tick(13.3);
         assert!(!m.toast_visible());
         assert!(m.toast.is_some());
+    }
+
+    /// A model with one game that runs and shows its window.
+    fn playing() -> (Model, GameId) {
+        let g = game("a", Some("v1"), ExecutableKind::Elf);
+        let id = g.id.clone();
+        let mut m = model_with(vec![g]);
+        m.play(&id);
+        m.on_pipeline(PipelineEvent::Spawned { game: id.clone() });
+        m.on_pipeline(PipelineEvent::WindowShown { game: id.clone() });
+        (m, id)
+    }
+
+    #[test]
+    fn the_home_button_opens_the_quick_panel_of_the_running_game() {
+        let (mut m, _) = playing();
+        m.show_in_game();
+        assert_eq!(m.overlay, Some(Overlay::InGame));
+        assert!(m.summoned);
+    }
+
+    #[test]
+    fn the_quick_panel_needs_a_running_game() {
+        let g = game("a", Some("v1"), ExecutableKind::Elf);
+        let id = g.id.clone();
+        let mut m = model_with(vec![g]);
+        m.show_in_game();
+        assert_eq!(m.overlay, None);
+        m.play(&id);
+        m.show_in_game();
+        assert_eq!(m.overlay, None, "still starting");
+        assert!(!m.summoned);
+    }
+
+    #[test]
+    fn back_on_the_home_screen_returns_to_the_game_after_the_home_button() {
+        let (mut m, id) = playing();
+        m.show_in_game();
+        m.dismiss_overlay();
+        m.effects.clear();
+        m.handle(Command::Back);
+        assert!(!m.summoned);
+        assert!(
+            m.effects
+                .contains(&Effect::Pipeline(PipelineCommand::Activate(id)))
+        );
+    }
+
+    #[test]
+    fn back_does_nothing_special_without_the_home_button() {
+        let (mut m, _) = playing();
+        m.effects.clear();
+        m.handle(Command::Back);
+        assert!(
+            !m.effects
+                .iter()
+                .any(|e| matches!(e, Effect::Pipeline(PipelineCommand::Activate(_))))
+        );
+    }
+
+    #[test]
+    fn returning_to_the_game_closes_the_panel_and_the_question() {
+        for overlay in [Overlay::InGame, Overlay::ConfirmCloseGame] {
+            let (mut m, _) = playing();
+            m.show_in_game();
+            m.switch_overlay(overlay);
+            m.return_to_game();
+            assert_eq!(m.overlay, None, "{overlay:?}");
+            assert!(!m.summoned);
+        }
+    }
+
+    #[test]
+    fn another_panel_stays_when_the_game_comes_back() {
+        let (mut m, _) = playing();
+        m.show_in_game();
+        m.open(Overlay::Settings);
+        m.leave_in_game();
+        assert_eq!(m.overlay, Some(Overlay::Settings));
+    }
+
+    #[test]
+    fn the_end_of_the_game_closes_the_quick_panel() {
+        let (mut m, id) = playing();
+        m.show_in_game();
+        m.switch_overlay(Overlay::ConfirmCloseGame);
+        m.on_pipeline(PipelineEvent::Exited {
+            game: id,
+            diagnosis: None,
+        });
+        assert_eq!(m.overlay, None);
+        assert!(!m.summoned);
     }
 }

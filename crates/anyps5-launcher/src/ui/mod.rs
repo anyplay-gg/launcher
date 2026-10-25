@@ -33,6 +33,7 @@ pub mod components;
 pub mod focus;
 pub mod gallery;
 pub mod gamepad;
+pub mod home_button;
 pub mod glass;
 pub mod gpu;
 pub mod i18n;
@@ -43,11 +44,14 @@ pub mod sound;
 pub mod text;
 pub mod theme;
 
+use std::sync::Arc;
+
 use eframe::egui_wgpu;
 use egui::{Context, Painter, Rect};
 
 use self::anim::AnimExt;
 use self::background::Backdrop;
+use self::home_button::HomeButton;
 use self::i18n::Language;
 use self::input::{Input, InputEvent};
 use self::sound::{Cue, Sounds};
@@ -56,6 +60,8 @@ use self::theme::{Accent, Theme};
 /// Long-lived UI state every screen needs: input pipeline, sounds, backdrop, language and accent.
 pub struct Shell {
     pub input: Input,
+    /// The Home button while a game runs (read by the input threads).
+    pub home: Arc<HomeButton>,
     pub sounds: Sounds,
     pub backdrop: Backdrop,
     pub language: Language,
@@ -82,10 +88,13 @@ impl Shell {
         } else {
             tracing::warn!("no wgpu render state: backdrop and glass are unavailable");
         }
-        let pad = gamepad::spawn(cc.egui_ctx.clone());
+        let home = Arc::new(HomeButton::new(&cc.egui_ctx));
+        let pad = gamepad::spawn(cc.egui_ctx.clone(), home.clone());
+        home_button::spawn_xinput(home.clone());
         let language = Language::system();
         Self {
             input: Input::new(Some(pad)),
+            home,
             sounds: Sounds::new(),
             backdrop: Backdrop::new(Theme::Cosmic),
             language,
@@ -105,6 +114,7 @@ impl Shell {
         let sounds = Sounds::silent();
         Self {
             input: Input::new(None),
+            home: Arc::new(HomeButton::new(&cc.egui_ctx)),
             sounds,
             backdrop: Backdrop::new(theme),
             language: Language::English,
@@ -226,6 +236,7 @@ impl Shell {
         let sounds = Sounds::silent();
         Self {
             input: Input::new(None),
+            home: Arc::new(HomeButton::new(ctx)),
             sounds,
             backdrop: Backdrop::new(theme),
             language: Language::English,

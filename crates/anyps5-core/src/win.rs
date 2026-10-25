@@ -17,15 +17,16 @@ use windows::Win32::System::JobObjects::{
     JobObjectBasicProcessIdList, JobObjectExtendedLimitInformation, QueryInformationJobObject,
     SetInformationJobObject, TerminateJobObject,
 };
+use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, SendInput,
     VIRTUAL_KEY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AllowSetForegroundWindow, EnumWindows, GW_OWNER, GWL_EXSTYLE, GetWindow, GetWindowLongW,
-    GetWindowRect, GetWindowThreadProcessId, IsIconic, IsWindowVisible, SW_RESTORE,
-    SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER, SetForegroundWindow, SetWindowPos,
-    ShowWindow, WS_EX_TOOLWINDOW,
+    AllowSetForegroundWindow, BringWindowToTop, EnumWindows, GW_OWNER, GWL_EXSTYLE,
+    GetForegroundWindow, GetWindow, GetWindowLongW, GetWindowRect, GetWindowThreadProcessId,
+    IsIconic, IsWindow, IsWindowVisible, SW_RESTORE, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE,
+    SWP_NOZORDER, SetForegroundWindow, SetWindowPos, ShowWindow, WS_EX_TOOLWINDOW,
 };
 use windows::core::PCWSTR;
 
@@ -204,14 +205,65 @@ pub fn allow_foreground(pid: u32) {
     }
 }
 
-/// Brings a window to the front (restoring it when minimised).
-pub fn activate_window(handle: isize) {
-    // SAFETY: plain calls on a window handle; failure is harmless.
+/// Brings a window to the front (restoring it when minimised) and says whether it got there.
+///
+/// Windows lets a process take the foreground only in a few cases (it owns the foreground, it
+/// started the foreground process, it got the last input event). A gamepad press is none of them,
+/// so after the plain call the foreground window's input thread is attached to this one for the
+/// moment of the call: the system then treats the caller as part of the foreground input queue.
+/// That is the documented `AttachThreadInput` route; it sends no key to the game, unlike the
+/// Alt-key trick, and it changes no system setting.
+pub fn activate_window(handle: isize) -> bool {
+    let target = hwnd(handle);
+    // SAFETY: plain calls on window handles; every failure is harmless.
     unsafe {
-        if IsIconic(hwnd(handle)).as_bool() {
-            let _ = ShowWindow(hwnd(handle), SW_RESTORE);
+        if !IsWindow(Some(target)).as_bool() {
+            return false;
         }
-        let _ = SetForegroundWindow(hwnd(handle));
+        if IsIconic(target).as_bool() {
+            let _ = ShowWindow(target, SW_RESTORE);
+        }
+        let _ = SetForegroundWindow(target);
+        // The switch can lose a race with the system (a window that is just closing or
+        // opening): three tries, a few milliseconds apart.
+        for attempt in 0..3 {
+            if attempt > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(30));
+            }
+            let front = GetForegroundWindow();
+            if front == target {
+                return true;
+            }
+            let front_thread = if front.0.is_null() {
+                0
+            } else {
+                GetWindowThreadProcessId(front, None)
+            };
+            let own_thread = GetCurrentThreadId();
+            let attached = front_thread != 0
+                && front_thread != own_thread
+                && AttachThreadInput(own_thread, front_thread, true).as_bool();
+            let _ = BringWindowToTop(target);
+            let _ = SetForegroundWindow(target);
+            if attached {
+                let _ = AttachThreadInput(own_thread, front_thread, false);
+            }
+        }
+        GetForegroundWindow() == target
+    }
+}
+
+/// The window that has the foreground (0: none) and the process that owns it.
+pub fn foreground() -> (isize, u32) {
+    // SAFETY: plain calls.
+    unsafe {
+        let window = GetForegroundWindow();
+        if window.0.is_null() {
+            return (0, 0);
+        }
+        let mut pid = 0;
+        GetWindowThreadProcessId(window, Some(&mut pid));
+        (window.0 as isize, pid)
     }
 }
 

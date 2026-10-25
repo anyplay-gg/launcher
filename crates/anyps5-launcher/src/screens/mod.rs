@@ -38,6 +38,7 @@ pub mod gallery;
 pub mod gallery_feed;
 pub mod game_settings;
 pub mod home;
+pub mod ingame;
 pub mod library;
 pub mod log;
 pub mod onboarding;
