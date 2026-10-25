@@ -237,6 +237,7 @@ impl LauncherApp {
     /// Everything before painting: finished work, input, effects, preferences.
     pub fn step(&mut self, ctx: &Context) {
         self.shell.input.blocked = self.services.dialog_open();
+        self.shell.input.tab_for_egui = crate::screens::calls::on_screen(&self.model.online);
         let frame = self.shell.begin_frame(ctx);
         let now = ctx.clock();
         self.model.tick(now);
@@ -430,6 +431,27 @@ impl LauncherApp {
                 }
                 Routed::Done => {}
             },
+            InputEvent::Tab { backwards } => {
+                if !self.model.onboarded() {
+                    // The onboarding steps lay their choices out side by side.
+                    let command = if backwards {
+                        crate::ui::input::Command::Left
+                    } else {
+                        crate::ui::input::Command::Right
+                    };
+                    self.model.onboarding_command(command);
+                } else if self.model.overlay.is_some() {
+                    // A panel is a column of rows: reading order is down and up.
+                    let command = if backwards {
+                        crate::ui::input::Command::Up
+                    } else {
+                        crate::ui::input::Command::Down
+                    };
+                    self.handle_event(ctx, InputEvent::Command(command));
+                } else {
+                    self.model.tab_home(backwards);
+                }
+            }
             InputEvent::Scroll(command) => {
                 if self.model.onboarded()
                     && self.model.overlay.is_none()

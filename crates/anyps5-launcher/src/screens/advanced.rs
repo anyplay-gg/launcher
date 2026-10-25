@@ -387,6 +387,7 @@ impl AdvancedPanel {
         let view = SideView {
             title: &data.game.name,
             subtitle: Some(data.language.text(Key::AdvancedTitle)),
+            question: false,
             list_id: "advanced-rows",
             nav: &self.side.nav,
             accent: data.accent,

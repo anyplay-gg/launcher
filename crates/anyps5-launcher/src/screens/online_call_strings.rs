@@ -89,7 +89,7 @@ impl CallText {
             CallText::Unmute => "Unmute",
             CallText::Deafen => "Deafen",
             CallText::Undeafen => "Undeafen",
-            CallText::Leave => "Leave call",
+            CallText::Leave => "Leave Call",
             CallText::SpeakingSuffix => "speaking",
             CallText::YouMuted => "You are muted",
             CallText::YouDeafened => "You are deafened",

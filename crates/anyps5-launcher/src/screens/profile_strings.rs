@@ -170,7 +170,7 @@ impl ProfileText {
                 "Çevrimdışısın. Etkinliğin tekrar çevrimiçi olunca geri gelir."
             }
             ProfileText::SharedGames => "Onların oyunlarından %@ tanesi sende de var",
-            ProfileText::ScreenName => "%@ kullanıcısının profili",
+            ProfileText::ScreenName => "%@ Kullanıcısının Profili",
             ProfileText::StatName => "%@ %@",
         }
     }

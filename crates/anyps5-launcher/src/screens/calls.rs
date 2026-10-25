@@ -199,6 +199,11 @@ impl CallsUi {
     }
 }
 
+/// A call card or the in-call strip is on screen: their buttons keep Tab.
+pub fn on_screen(online: &net::Online) -> bool {
+    card_data(online, unix_now()).is_some() || strip_data(online).is_some()
+}
+
 /// The call that rings now, if any.
 pub fn card_data(online: &net::Online, now: u64) -> Option<CardData> {
     let invitation = online.incoming_call(now)?;

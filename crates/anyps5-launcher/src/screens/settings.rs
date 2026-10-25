@@ -463,8 +463,15 @@ pub fn build_categories(
                 None,
             )
             .attached()
-            // On a note, `destructive` is the amber warning ink (the line under Play on the home screen).
-            .destructive(),
+            // The amber ink of the warning line under Play on the home screen.
+            .warning(),
+        );
+        toolkit.push(
+            Row::command(
+                "toolkitGlibcGuide",
+                crate::screens::glibc_strings::guide_title(language),
+            )
+            .icon(Icon::FILE_TEXT),
         );
     }
     toolkit.push(
@@ -717,12 +724,13 @@ pub fn build_categories(
 
 /// The page an About row opens.
 fn about_page(row: &str) -> Option<&'static str> {
-    use crate::screens::about_strings::{DISCORD, PRIVACY, TERMS, WEBSITE};
+    use crate::screens::about_strings::{DISCORD, INSTALL_GUIDE, PRIVACY, TERMS, WEBSITE};
     Some(match row {
         "aboutWebsite" => WEBSITE,
         "aboutDiscord" => DISCORD,
         "aboutPrivacy" => PRIVACY,
         "aboutTerms" => TERMS,
+        "toolkitGlibcGuide" => INSTALL_GUIDE,
         _ => return None,
     })
 }

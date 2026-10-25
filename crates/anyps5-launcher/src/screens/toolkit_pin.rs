@@ -62,16 +62,16 @@ impl Pin {
 
     pub const fn turkish(self) -> &'static str {
         match self {
-            Pin::Title => "Bu oyun için araç seti",
-            Pin::FollowGlobal => "Genel ayarı izle",
+            Pin::Title => "Bu Oyun İçin Araç Seti",
+            Pin::FollowGlobal => "Genel Ayarı İzle",
             Pin::Recommended => "Önerilen: %@",
             Pin::NotInstalled => "%@ (kurulu değil)",
             Pin::Pinned => "%@ (sabitlenmiş)",
             Pin::MissingAsk => {
                 "Bu oyun %@ araç setinde kalıyor, ama kurulu değil. Yeniden indir ya da oyun genel ayarı izlesin."
             }
-            Pin::Download => "%@ indir",
-            Pin::Remove => "%@ kaldır",
+            Pin::Download => "%@ İndir",
+            Pin::Remove => "%@ Kaldır",
             Pin::RemoveDetail => "%@ · Hiçbir oyun kullanmıyor",
             Pin::Removed => "%@ kaldırıldı",
             Pin::RemoveFailed => "Araç seti kaldırılamadı.",
@@ -340,6 +340,7 @@ impl MissingPanel {
         let view = SideView {
             title: data.title,
             subtitle: Some(&ask),
+            question: true,
             list_id: "toolkit-missing-rows",
             nav: &self.side.nav,
             accent: data.accent,

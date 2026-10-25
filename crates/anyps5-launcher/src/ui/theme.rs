@@ -200,10 +200,10 @@ impl Accent {
 
     pub fn color(self) -> Color32 {
         match self {
-            Accent::Blue => rgb(0.31, 0.58, 1.0),
+            Accent::Blue => rgb(0.40, 0.64, 1.0),
             Accent::Mint => rgb(0.36, 0.92, 0.74),
             Accent::Coral => rgb(1.0, 0.50, 0.40),
-            Accent::Violet => rgb(0.66, 0.52, 1.0),
+            Accent::Violet => rgb(0.70, 0.57, 1.0),
             Accent::Gold => rgb(1.0, 0.80, 0.36),
             Accent::White => rgb(0.94, 0.94, 0.94),
         }
@@ -327,32 +327,48 @@ pub mod color {
     }
     /// The key name or face button inside a hint keycap.
     pub fn text_hint_key() -> Color32 {
-        white(0.92)
+        white(1.0)
     }
     pub fn text_hint() -> Color32 {
-        white(0.72)
+        white(0.78)
     }
     pub fn text_subtitle() -> Color32 {
-        white(0.7)
+        white(0.72)
     }
     pub fn text_empty() -> Color32 {
-        white(0.65)
+        white(0.72)
     }
     pub fn text_detail() -> Color32 {
-        white(0.6)
+        white(0.70)
     }
     pub fn text_overline() -> Color32 {
+        white(0.70)
+    }
+    /// The line under a row's title.
+    pub fn text_row_detail() -> Color32 {
+        white(0.70)
+    }
+    /// A note under rows, bare on the panel.
+    pub fn text_note() -> Color32 {
+        white(0.5)
+    }
+    /// A section caption over a group of rows.
+    pub fn text_caption() -> Color32 {
         white(0.55)
+    }
+    /// The title of a row that cannot be focused (a fact, not a control).
+    pub fn text_inert() -> Color32 {
+        white(0.70)
     }
     /// The clock in the top bar: a status, quieter than the controls beside it.
     pub fn text_clock() -> Color32 {
-        white(0.78)
+        white(0.88)
     }
     pub fn text_count() -> Color32 {
         white(0.5)
     }
     pub fn text_path() -> Color32 {
-        white(0.45)
+        white(0.5)
     }
     pub fn text_inactive() -> Color32 {
         white(0.4)
@@ -457,16 +473,16 @@ pub mod color {
     }
     // Status
     pub fn destructive_text() -> Color32 {
-        rgb(1.0, 0.60, 0.55)
+        rgb(1.0, 0.72, 0.67)
     }
     pub fn destructive_icon() -> Color32 {
-        rgb(1.0, 0.55, 0.50)
+        rgb(1.0, 0.62, 0.57)
     }
     pub fn error_text() -> Color32 {
-        rgb(1.0, 0.70, 0.65)
+        rgb(1.0, 0.73, 0.68)
     }
     pub fn error_state() -> Color32 {
-        rgb(1.0, 0.60, 0.55)
+        rgb(1.0, 0.72, 0.67)
     }
     pub fn warning_text() -> Color32 {
         rgb(1.0, 0.78, 0.50)
@@ -477,6 +493,11 @@ pub mod color {
     /// Secondary state label colour ("ready", "locked", "queued").
     pub fn state_neutral() -> Color32 {
         white(0.75)
+    }
+    /// A state in progress ("Starting", "Installing", "Playing"): ink, not the accent. The accent
+    /// is the player's pick and can sit on its own colour; the glyph and the word are the cue.
+    pub fn text_active() -> Color32 {
+        white(0.92)
     }
     /// Window caption glyphs (minimise, maximise, close) at rest; white on hover.
     pub fn caption_glyph() -> Color32 {
@@ -814,6 +835,8 @@ pub mod ty {
     pub const CATEGORY_SELECTED: TextStyle = TextStyle::new(19.0, Weight::SemiBold);
     pub const ONBOARDING_SUBTITLE: TextStyle = TextStyle::new(19.0, Weight::Regular);
     pub const ROW_TITLE: TextStyle = TextStyle::new(17.0, Weight::Medium);
+    /// The question of a confirmation, under the panel title: body text.
+    pub const QUESTION: TextStyle = TextStyle::new(17.0, Weight::Regular);
     pub const TROPHY_NAME: TextStyle = TextStyle::new(18.0, Weight::SemiBold);
     pub const ONBOARDING_STATUS: TextStyle = TextStyle::new(18.0, Weight::Medium);
     pub const INFO_VALUE: TextStyle = TextStyle::new(17.0, Weight::SemiBold);
@@ -952,7 +975,7 @@ mod tests {
     #[test]
     fn accent_and_grade_hex_match_the_spec() {
         let hex = |c: Color32| format!("{:02X}{:02X}{:02X}", c.r(), c.g(), c.b());
-        let accents = ["4F94FF", "5CEBBD", "FF8066", "A885FF", "FFCC5C", "F0F0F0"];
+        let accents = ["66A3FF", "5CEBBD", "FF8066", "B391FF", "FFCC5C", "F0F0F0"];
         for (accent, want) in Accent::ALL.iter().zip(accents) {
             assert_eq!(hex(accent.color()), want, "{accent:?}");
         }

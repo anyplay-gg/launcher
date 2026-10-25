@@ -346,7 +346,7 @@ impl Extra {
             Extra::ChangesCount => "%@ changes",
             Extra::ChangeOne => "1 change",
             Extra::NotesHighlights => "Highlights",
-            Extra::NotesOther => "Other areas",
+            Extra::NotesOther => "Other Areas",
             Extra::NotesEverything => "Everything",
             Extra::NotesLoading => "Loading the notes…",
             Extra::NotesUnavailable => "The notes could not be loaded.",
@@ -363,8 +363,8 @@ impl Extra {
             Extra::RecOn => "On",
             Extra::RecOff => "Off",
             Extra::RecPlayGo => "Missing PlayGo Data",
-            Extra::RecPlayGoInstalled => "Report as installed",
-            Extra::RecPlayGoAbsent => "Report as absent",
+            Extra::RecPlayGoInstalled => "Report as Installed",
+            Extra::RecPlayGoAbsent => "Report as Absent",
             Extra::RecImageBase => "Image Base",
             Extra::RecModuleFolder => "Module Folder",
             Extra::RecExecutable => "Executable",
@@ -424,23 +424,23 @@ impl Extra {
 
     pub const fn turkish(self) -> &'static str {
         match self {
-            Extra::Toolkit => "Araç seti",
-            Extra::UpdateCheck => "Güncellemeleri denetle",
+            Extra::Toolkit => "Araç Seti",
+            Extra::UpdateCheck => "Güncellemeleri Denetle",
             Extra::UpdateCheckDetail => {
                 "Başlatıcı açılırken daha yeni bir araç seti arar. Yalnızca sürüm numarası istenir."
             }
-            Extra::CheckNow => "Şimdi denetle",
+            Extra::CheckNow => "Şimdi Denetle",
             Extra::Checking => "Denetleniyor…",
             Extra::UpToDate => "Güncel",
             Extra::UpdateAvailable => "Güncelleme var: %@",
             Extra::CheckFailed => "Denetlenemedi",
-            Extra::LastChecked => "Son denetleme",
+            Extra::LastChecked => "Son Denetleme",
             Extra::NeverChecked => "Hiç",
             Extra::ToolkitMissing => "Kurulu değil",
-            Extra::ToolkitInstall => "Araç setini indir",
-            Extra::ToolkitInstallUpdate => "Güncellemeyi kur",
-            Extra::ToolkitChooseFolder => "Araç seti klasörü kullan",
-            Extra::CpuConversion => "CPU dönüştürme",
+            Extra::ToolkitInstall => "Araç Setini İndir",
+            Extra::ToolkitInstallUpdate => "Güncellemeyi Kur",
+            Extra::ToolkitChooseFolder => "Araç Seti Klasörü Kullan",
+            Extra::CpuConversion => "CPU Dönüştürme",
             Extra::CpuConversionDetail => {
                 "Oyunların işlemcine göre nasıl hazırlanacağı. Otomatik çoğu bilgisayara uyar."
             }
@@ -451,7 +451,7 @@ impl Extra {
             Extra::DiagnosisNoUdmabuf => {
                 "Oyun /dev/udmabuf dosyasını açamıyor. Kullanıcını kvm grubuna ekleyip yeniden oturum aç."
             }
-            Extra::SaveReport => "Raporu kaydet",
+            Extra::SaveReport => "Raporu Kaydet",
             Extra::ToolkitDownloading => "Araç seti indiriliyor…",
             Extra::FontsBuiltIn => "Yerleşik Noto (Latin, Tayca, Arapça)",
             Extra::FontsCjkReady => "Japonca, Çince ve Korece dahil",
@@ -480,18 +480,18 @@ impl Extra {
             }
             Extra::Layout => "Düzen",
             Extra::LayoutLauncher => "Başlatıcı",
-            Extra::LayoutMouse => "Fare ve klavye",
+            Extra::LayoutMouse => "Fare ve Klavye",
             Extra::LayoutGame => "Oyundan",
             Extra::LayoutCustom => "Özel",
             Extra::LayoutGameDetail => "Oyunun kendi PC tuşları %@ düğme için bulundu.",
             Extra::LauncherReady => "%@ hazır",
             Extra::LauncherToast => "Başlatıcı %@ hazır. Başlatıcıyı kapattığında kurulur.",
-            Extra::RestartNow => "Şimdi yeniden başlat",
+            Extra::RestartNow => "Şimdi Yeniden Başlat",
             Extra::LauncherReadOnly => "%@ var, ama bu klasör salt okunur",
             Extra::LauncherUpdateFailed => {
                 "Başlatıcı güncellemesi kurulamadı. Bunun yerine GitHub'dan indir."
             }
-            Extra::Links => "AnyPlay bağlantılarını bu başlatıcıyla aç",
+            Extra::Links => "AnyPlay Bağlantılarını Bu Başlatıcıyla Aç",
             Extra::LinksDetail => {
                 "Web sitelerindeki ve mesajlardaki bağlantılar burada açılır, klasörlere \"AnyPlay Launcher ile aç\" girişi eklenir."
             }
@@ -508,7 +508,7 @@ impl Extra {
             Extra::ChannelTitle => "Kanal",
             Extra::ChannelStable => "Kararlı",
             Extra::ChannelPinned => "Sabit",
-            Extra::ChannelLocal => "Yerel yapı",
+            Extra::ChannelLocal => "Yerel Yapı",
             Extra::ChannelStableDetail => "En yeni sürümü izler.",
             Extra::ChannelPinnedDetail => "Tek bir sürümde kalır. Güncelleme önerilmez.",
             Extra::ChannelLocalDetail => {
@@ -527,37 +527,37 @@ impl Extra {
             Extra::NotesHeader => "%@, yayın tarihi %@",
             Extra::ChangesCount => "%@ değişiklik",
             Extra::ChangeOne => "1 değişiklik",
-            Extra::NotesHighlights => "Öne çıkanlar",
-            Extra::NotesOther => "Diğer alanlar",
+            Extra::NotesHighlights => "Öne Çıkanlar",
+            Extra::NotesOther => "Diğer Alanlar",
             Extra::NotesEverything => "Tümü",
             Extra::NotesLoading => "Notlar yükleniyor…",
             Extra::NotesUnavailable => "Notlar yüklenemedi.",
-            Extra::NotesOpenRelease => "GitHub'da aç",
+            Extra::NotesOpenRelease => "GitHub'da Aç",
             Extra::UnlockedWith => "%@ ile açıldı. %@ kurulu.",
             Extra::ConversionChanged => {
                 "Bu güncelleme oyunların dönüştürülme şeklini değiştiriyor."
             }
             Extra::UnlockOptional => "Yeniden açmak isteğe bağlı.",
             Extra::UnlockEarlierBuild => "Bu araç setinin önceki bir yapısıyla açıldı.",
-            Extra::RecTitle => "Bu oyun için önerilenler",
+            Extra::RecTitle => "Bu Oyun İçin Önerilenler",
             Extra::RecNeeded => "Başlamak için gerekli",
             Extra::RecWorthALook => "Göz atmaya değer",
             Extra::RecApply => "Uygula",
             Extra::RecDefault => "Varsayılan",
             Extra::RecOn => "Açık",
             Extra::RecOff => "Kapalı",
-            Extra::RecPlayGo => "Eksik PlayGo verisi",
-            Extra::RecPlayGoInstalled => "Kurulu say",
-            Extra::RecPlayGoAbsent => "Yok say",
-            Extra::RecImageBase => "Yükleme adresi",
-            Extra::RecModuleFolder => "Modül klasörü",
-            Extra::RecExecutable => "Çalıştırılabilir dosya",
-            Extra::RecTextureCache => "Doku önbelleği",
-            Extra::RecShaderCache => "Gölgelendirici önbelleği",
+            Extra::RecPlayGo => "Eksik PlayGo Verisi",
+            Extra::RecPlayGoInstalled => "Kurulu Say",
+            Extra::RecPlayGoAbsent => "Yok Say",
+            Extra::RecImageBase => "Yükleme Adresi",
+            Extra::RecModuleFolder => "Modül Klasörü",
+            Extra::RecExecutable => "Çalıştırılabilir Dosya",
+            Extra::RecTextureCache => "Doku Önbelleği",
+            Extra::RecShaderCache => "Gölgelendirici Önbelleği",
             Extra::RecUnlockHint => "Bunun geçerli olması için oyunun kilidini yeniden aç.",
             Extra::RecApplied => "Uygulandı",
             Extra::RecAppliedUnlock => "Kaydedildi. Kullanmak için oyunun kilidini yeniden aç.",
-            Extra::Played => "Oynama süresi",
+            Extra::Played => "Oynama Süresi",
             Extra::PlayedUnderMinute => "1 dk altı",
             Extra::PlayedMinutes => "%@ dk",
             Extra::PlayedHours => "%@ sa",
