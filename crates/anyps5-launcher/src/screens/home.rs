@@ -59,7 +59,7 @@ const ACTION_ROW: f32 = size::BUTTON_MIN_HEIGHT;
 const MESSAGE_WIDTH: f32 = 520.0;
 
 /// Darkness of the shade under the top bar and in the hero's corner.
-const SCRIM_TOP: f32 = 0.30;
+const SCRIM_TOP: f32 = 0.40;
 const SCRIM_HERO: f32 = 0.46;
 
 /// A press the model has to hear about, collected while painting.

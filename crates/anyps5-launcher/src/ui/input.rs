@@ -326,6 +326,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_pointer_lights_nothing_while_a_pad_is_in_use() {
+        let ctx = Context::default();
+        assert!(pointer_in_use(&ctx));
+        set_device(&ctx, Device::Gamepad);
+        assert!(!pointer_in_use(&ctx));
+        set_device(&ctx, Device::Keyboard);
+        assert!(pointer_in_use(&ctx));
+    }
+
+    #[test]
     fn keys_map_to_commands() {
         let none = Modifiers::NONE;
         assert_eq!(command_for_key(Key::ArrowLeft, none), Some(Command::Left));

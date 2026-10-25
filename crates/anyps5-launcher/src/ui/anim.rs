@@ -729,6 +729,16 @@ mod tests {
     }
 
     #[test]
+    fn a_press_is_a_short_ease_never_a_spring() {
+        for reduced in [false, true] {
+            assert!(matches!(
+                Motion::Press.curve(reduced),
+                Curve::Ease { duration, .. } if duration <= 0.12
+            ));
+        }
+    }
+
+    #[test]
     fn reduced_motion_swaps_the_curves() {
         assert!(matches!(Motion::Focus.curve(false), Curve::Spring(_)));
         assert_eq!(

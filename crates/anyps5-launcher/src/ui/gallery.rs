@@ -40,6 +40,8 @@ use crate::ui::theme::{self, Accent, Theme, color, radius, size, ty, white};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Page {
     Components,
+    /// Destructive buttons, switches and rows in every state.
+    States,
     Panels,
     Artwork,
     Themes,
@@ -59,6 +61,8 @@ pub struct Options {
     pub live: bool,
     /// `--theme=aurora|sunset|cosmic` for the component and panel pages.
     pub theme: Option<Theme>,
+    /// `--frames=N`: frames drawn before the screenshot (the real home loads its pictures meanwhile).
+    pub frames: u32,
 }
 
 /// Returns the gallery options when `--gallery` is on the command line.
@@ -71,6 +75,7 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Option<Options> {
         language: Language::English,
         live: false,
         theme: None,
+        frames: 30,
     };
     let mut seen = false;
     for arg in args {
@@ -80,6 +85,7 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Option<Options> {
             seen = true;
             options.page = match page {
                 "panels" => Page::Panels,
+                "states" => Page::States,
                 "artwork" => Page::Artwork,
                 "themes" => Page::Themes,
                 "bg0" | "cosmic" => Page::Background(Theme::Cosmic),
@@ -104,6 +110,8 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Option<Options> {
             options.theme = Theme::ALL
                 .into_iter()
                 .find(|t| t.title(Language::English).eq_ignore_ascii_case(name));
+        } else if let Some(n) = arg.strip_prefix("--frames=") {
+            options.frames = n.parse().unwrap_or(30);
         } else if arg == "--live" {
             options.live = true;
         }
@@ -222,6 +230,7 @@ impl eframe::App for Gallery {
             }
             Page::Themes => themes_page(&ctx, ui, &self.shell, self.options.time),
             Page::Components => components_page(ui, &self.shell),
+            Page::States => states_page(ui, &self.shell),
             Page::Panels => {
                 let art = self.art(&ctx);
                 panels_page(ui, &self.shell, &art);
@@ -244,7 +253,7 @@ impl eframe::App for Gallery {
         self.frames += 1;
         ctx.request_repaint();
         if let Some(path) = self.options.screenshot.clone()
-            && self.frames >= 30
+            && self.frames >= self.options.frames
             && !self.shot_requested
         {
             self.shot_requested = true;
@@ -481,6 +490,89 @@ fn components_page(ui: &mut Ui, shell: &Shell) {
         "tabular figures",
         color::text_detail(),
     );
+}
+
+/// Every state of the controls the components page leaves out: the destructive variant, rows and
+/// the switch (`--gallery=states`). Hover and press are forced, as no pointer is there.
+fn states_page(ui: &mut Ui, shell: &Shell) {
+    let language = shell.language;
+    let accent = shell.accent_color();
+    let rect = ui.max_rect().shrink2(vec2(64.0, 40.0));
+    let mut ui = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+    let ui = &mut ui;
+    ui.label(ty::SCREEN_TITLE.colored("States", Color32::WHITE));
+    ui.add_space(14.0);
+
+    heading(
+        ui,
+        "Destructive: rest, hover, press, focus, disabled, at three heights; icon only",
+    );
+    for size_ in [
+        components::ControlSize::Large,
+        components::ControlSize::Medium,
+        components::ControlSize::Small,
+    ] {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = size::CONTROL_GAP;
+            for (force, focused, enabled) in [
+                (None, false, true),
+                (Some(Force::Hover), false, true),
+                (Some(Force::Press), false, true),
+                (None, true, true),
+                (None, false, false),
+            ] {
+                ConsoleButton::new(language.text(Key::Uninstall))
+                    .icon(Icon::TRASH)
+                    .destructive(true)
+                    .size(size_)
+                    .force(force)
+                    .focused(focused)
+                    .enabled(enabled)
+                    .show(ui);
+            }
+            ConsoleButton::icon_only(Icon::TRASH, "Remove")
+                .destructive(true)
+                .size(size_)
+                .show(ui);
+        });
+        ui.add_space(8.0);
+    }
+    ui.add_space(14.0);
+
+    heading(
+        ui,
+        "Switch: off, on, focused row, disabled off, disabled on",
+    );
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 24.0;
+        Switch::new(false, accent).show(ui);
+        Switch::new(true, accent).show(ui);
+        Switch::new(false, accent).focused(true).show(ui);
+        Switch::new(false, accent).enabled(false).show(ui);
+        Switch::new(true, accent).enabled(false).show(ui);
+    });
+    ui.add_space(26.0);
+
+    heading(ui, "Rows: rest, hover, press, focus, destructive focus");
+    let mut col = ui.new_child(
+        egui::UiBuilder::new().max_rect(Rect::from_min_size(ui.cursor().min, vec2(560.0, 380.0))),
+    );
+    let col = &mut col;
+    col.spacing_mut().item_spacing.y = size::ROW_GAP;
+    for (force, focused, destructive) in [
+        (None, false, false),
+        (Some(Force::Hover), false, false),
+        (Some(Force::Press), false, false),
+        (None, true, false),
+        (None, true, true),
+    ] {
+        PanelRow::new(language.text(Key::Folder), RowControl::Action)
+            .icon(Icon::FOLDER)
+            .force(force)
+            .focused(focused)
+            .destructive(destructive)
+            .show(col);
+    }
 }
 
 fn panels_page(ui: &mut Ui, shell: &Shell, art: &TextureHandle) {

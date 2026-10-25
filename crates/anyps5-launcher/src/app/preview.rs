@@ -1021,6 +1021,12 @@ impl eframe::App for PreviewApp {
         }
         self.run_script(&ctx);
         self.inner.step(&ctx);
+        // With `--pad` the pointer rests where `--hover` says, like a mouse nobody touches: the pad
+        // stays the device in use (the injected move would hand it back) and the hover must light
+        // nothing (see `ui::input::hovered`).
+        if self.options.pad {
+            crate::ui::input::set_device(&ctx, crate::ui::input::Device::Gamepad);
+        }
         self.inner.paint(ui);
         self.frames += 1;
         if self.options.scene.is_none() {

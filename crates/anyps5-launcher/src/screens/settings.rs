@@ -462,7 +462,8 @@ pub fn build_categories(
                 crate::screens::glibc_strings::shortfall_text(&short, language),
                 None,
             )
-            .attached(),
+            .attached()
+            .destructive(),
         );
     }
     toolkit.push(

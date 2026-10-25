@@ -114,7 +114,7 @@ fn rows_of(data: &InGameData<'_>) -> Vec<Row> {
     let mut rows = vec![
         Row::command("resume", InGameText::BackToGame.text(language)).icon(Icon::PLAY_CIRCLE),
         Row::command("trophies", language.text(Key::Trophies)).icon(Icon::TROPHY),
-        Row::command("settings", language.text(Key::GameSettings)).icon(Icon::DOTS_THREE),
+        Row::command("settings", language.text(Key::GameSettings)).icon(Icon::SLIDERS_HORIZONTAL),
     ];
     if data.online {
         rows.push(Row::command("friends", InGameText::Friends.text(language)).icon(Icon::USERS));

@@ -1962,7 +1962,7 @@ mod tests {
     fn the_quick_panel_of_the_home_button_stays_open_and_acts() {
         let mut rig = Rig::new("in-game");
         let games = make_games(&rig.dir.join("art"));
-        apply_scene(&mut rig.app, Scene::HomeInGame, games);
+        apply_scene(&mut rig.app.model, Scene::HomeInGame, games);
         rig.frames(5);
         assert_eq!(rig.app.model.overlay, Some(Overlay::InGame));
         // Close Game asks first.

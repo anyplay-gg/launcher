@@ -458,7 +458,12 @@ impl<'a> PanelRow<'a> {
         } else {
             (ty::NOTE, 0.5, (if self.attached { 0.0 } else { 4.0 }, 4.0))
         };
-        let ink = fade(Color32::WHITE, alpha);
+        // A note marked destructive is a warning: the ink of the warning line under Play on the home screen.
+        let ink = if self.destructive && !caption {
+            color::warning_text()
+        } else {
+            fade(Color32::WHITE, alpha)
+        };
         let galley = text::layout(&painter, style, self.title, ink, inner);
         let height = space.0 + galley.size().y + space.1;
         let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
@@ -654,7 +659,11 @@ impl<'a> PanelRow<'a> {
         );
         let press_t = ctx.animate_to(
             (out.response.id, "press"),
-            f32::from(focusable && out.response.is_pointer_button_down_on()),
+            f32::from(
+                focusable
+                    && (out.response.is_pointer_button_down_on()
+                        || self.force == Some(Force::Press)),
+            ),
             Motion::Press,
         );
         components::paint_surface(
