@@ -21,6 +21,7 @@ use crate::screens::convert;
 use crate::screens::dialogs;
 use crate::screens::discord_strings::DiscordText;
 use crate::screens::format::{abbreviate_path, home_dir};
+use crate::screens::ingame::InGameText;
 use crate::screens::phone::{self, PhoneAction};
 use crate::screens::phone_strings::PhoneText;
 use crate::screens::rows::{self, Change, ListOptions, Row};
@@ -393,6 +394,15 @@ pub fn build_categories(
     behaviour.push(
         Row::toggle("hide", t(Key::HideWhilePlaying), prefs.hide_while_playing)
             .icon(Icon::EYE_SLASH),
+    );
+    behaviour.push(
+        Row::toggle(
+            "homeButton",
+            InGameText::Setting.text(language),
+            prefs.ps_button,
+        )
+        .detail(InGameText::SettingDetail.text(language))
+        .icon(Icon::GAME_CONTROLLER),
     );
     behaviour.push(
         Row::toggle(
@@ -769,6 +779,10 @@ pub fn apply_value(prefs: &mut Preferences, change: &Change) -> bool {
             on,
         } => prefs.discord_join_button = *on,
         Change::Toggle { row: "hide", on } => prefs.hide_while_playing = *on,
+        Change::Toggle {
+            row: "homeButton",
+            on,
+        } => prefs.ps_button = *on,
         Change::Toggle {
             row: "hiddenTrophies",
             on,

@@ -29,6 +29,7 @@ use crate::app::LauncherApp;
 use crate::app::model::{Effect, GameState, Model};
 use crate::screens::phone::PhoneAction;
 use crate::screens::phone_strings::PhoneText;
+use crate::ui::home_button::{HomeButton, Route};
 use crate::ui::i18n::Arg;
 use crate::ui::icons::Icon;
 use crate::ui::input::{Command, InputEvent};
@@ -90,6 +91,7 @@ enum Ev {
 struct Events {
     tx: Mutex<Sender<Ev>>,
     wake: Arc<dyn Fn() + Send + Sync>,
+    home: Arc<HomeButton>,
 }
 
 impl Events {
@@ -121,6 +123,12 @@ impl RemoteEvents for Events {
         self.push(Ev::Latency(milliseconds));
     }
     fn request(&self, message: Message) {
+        // The Home button of the phone switches between the game and the launcher right here:
+        // a minimised launcher draws no frames to do it in. Without a game, or switched off, it
+        // is the plain request below.
+        if matches!(message, Message::Home) && self.home.press() != Route::Ignore {
+            return;
+        }
         self.push(Ev::Request(message));
     }
     fn pad_ready(&self, _ready: bool) {}
@@ -130,6 +138,7 @@ impl RemoteEvents for Events {
 /// model's [`PhoneState`].
 pub struct PhoneService {
     wake: Arc<dyn Fn() + Send + Sync>,
+    home: Arc<HomeButton>,
     /// Previews and tests never open a port.
     simulated: bool,
     tx: Sender<Ev>,
@@ -152,10 +161,11 @@ const LIBRARY_EVERY: f64 = 0.4;
 const PAD_CHECK_EVERY: f64 = 2.0;
 
 impl PhoneService {
-    pub fn new(wake: Arc<dyn Fn() + Send + Sync>, simulated: bool) -> Self {
+    pub fn new(wake: Arc<dyn Fn() + Send + Sync>, simulated: bool, home: Arc<HomeButton>) -> Self {
         let (tx, rx) = channel();
         Self {
             wake,
+            home,
             simulated,
             tx,
             rx,
@@ -179,6 +189,7 @@ impl PhoneService {
         let events = Arc::new(Events {
             tx: Mutex::new(self.tx.clone()),
             wake: self.wake.clone(),
+            home: self.home.clone(),
         });
         match RemoteServer::start(config, events) {
             Ok(server) => {
@@ -422,7 +433,9 @@ impl LauncherApp {
         self.run_pending_launch();
 
         // The pad goes to the virtual controller from the start of a game to its end.
-        let playing = self.model.running.is_some() || self.model.starting.is_some();
+        // The launcher in front of the game (Home button) takes the pad back from the game.
+        let playing =
+            (self.model.running.is_some() || self.model.starting.is_some()) && !self.model.summoned;
         if playing && self.model.phone.connected.is_some() {
             self.phone.attach_pad();
         } else {
@@ -541,7 +554,8 @@ impl LauncherApp {
     /// The phone asked for something. Navigation does not reach a hidden launcher while a game
     /// runs, and nothing starts a second game.
     fn phone_request(&mut self, ctx: &Context, message: Message) {
-        let playing = self.model.running.is_some() || self.model.starting.is_some();
+        let playing =
+            (self.model.running.is_some() || self.model.starting.is_some()) && !self.model.summoned;
         match message {
             Message::Command { name } if !playing => {
                 if let Some(event) = command_for(&name) {

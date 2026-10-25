@@ -1522,6 +1522,54 @@ Sounds: category/row moves and value changes `move`; actions `select`; leaving `
 
 ---
 
+### 6.6 The Home button, game and launcher (2026-10-25)
+
+The idea of switching between a running game and the launcher with the controller's Home button comes from the
+macOS launcher; the design and the code here are our own. The button is the PS button of a PlayStation pad, the Guide
+button of an Xbox pad, and the PS button of the phone controller (`Message::Home`). It acts only while a game runs and has
+shown its window (`running`, not `starting`), and only when the preference `ps_button` is on (default on; Settings >
+Behaviour, "Home Button Opens the Launcher").
+
+| Where the foreground is | Home button | Any other button or direction |
+|---|---|---|
+| the game (or any window but the launcher) | brings the launcher in front, restoring it when minimised, and opens the game's quick panel | dropped, the game has the pad |
+| the launcher | brings the game window back, closes the panel | as usual |
+| no game runs | nothing (the phone's button keeps its old job: close the panel, restore the window) | as usual |
+
+**Where it is read.** `ui::home_button::HomeButton` holds the state the input threads need (running, game window,
+preference, focus) as atomics; the UI fills it every frame (`LauncherApp::sync_home_button`). Three sources press it, each on its
+own thread, because a minimised launcher draws no frames: the gilrs thread (`Button::Mode`), a thread polling `XInputGetStateEx`
+for the Guide bit (Windows; Windows.Gaming.Input, which gilrs uses, hands a pad to the focused window only and never shows
+Guide), and the phone server. Presses within 350 ms count once (gilrs and XInput can both see one press). The pure `route`
+function is the state machine and carries the tests. The UI takes two flags once per frame, `take_summoned` and `take_returned`,
+and opens or closes the panel.
+
+**The quick panel** is a side panel (`Overlay::InGame`, `screens::ingame`) in the family of 3.9 and 5.9: the game's name, the line
+"The game keeps running behind the launcher.", and the rows *Back to Game* (the focused row on open), *Trophies*, *Game
+Settings* (the game's own sheet), *Friends and Party* (only when signed in) and *Close Game* (destructive). *Close Game* opens the
+question `Overlay::ConfirmCloseGame` on *Keep Playing*, so Enter never ends a game. The panel selects the running game first, so
+trophies and settings are that game's. Back on the panel, a click beside it and *Back to Game* all return to the game. Back on the
+home screen does the same while the launcher is there because of the Home button (`Model::summoned`); it is cleared when the
+launcher loses the focus, and when the game ends the panel closes.
+While the panel is up, the phone's navigation reaches the launcher and its virtual pad is detached from the game.
+
+*Windows.* A background process may not simply take the foreground, and a gamepad press counts as no input event.
+`win::activate_window` restores the window if minimised, calls `SetForegroundWindow`, and when that does not take, attaches the input
+queue of the foreground window's thread to its own for one `BringWindowToTop` plus `SetForegroundWindow` (`AttachThreadInput`), with
+three tries. It sends no key to the game and changes no setting. The same function serves the second-launch hand-off.
+
+*Linux.* The launcher asks its own window to show and take focus. X11 window managers may honour that or only flash the window;
+a Wayland compositor ignores it. The game's window is not found there, so the way back minimises the launcher and leaves the
+game what is behind it.
+
+*The game's own use of the button.* The mapping of AnyPS5 v0.1.3 names no PS or Guide button, so nothing the game gets is taken
+away. If a later AnyPS5 maps it to the PS5 home button, both would react; the preference turns the launcher's side off.
+
+*Not verified with hardware:* that Windows delivers a physical pad's Guide button to the launcher behind a game, and the
+foreground switch against a real game window. The test hook is `--demo` with `ANYPS5_INSTANCE=<name>` and
+`ANYPS5_PS_TEST_WINDOW=<hwnd>`: that window becomes the running game, each line `ps` on stdin is a press, and the log prints
+the foreground window before and after (`ps-test: ...`).
+
 ## 7. Sounds and media
 
 ### 7.1 Sounds (`Sounds.swift`): synthesized, nothing bundled

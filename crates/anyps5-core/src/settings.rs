@@ -484,6 +484,10 @@ pub struct Preferences {
     pub discord_join_button: bool,
     #[serde(default)]
     pub hide_while_playing: bool,
+    /// The Home button (PS button) of a controller or the phone switches between a running game
+    /// and the launcher.
+    #[serde(default = "yes")]
+    pub ps_button: bool,
     /// Hidden trophies that are not earned show their name and description in the trophy list.
     /// Local only: the network never sees it.
     #[serde(default)]
@@ -578,6 +582,7 @@ impl Default for Preferences {
             discord_presence: true,
             discord_join_button: true,
             hide_while_playing: false,
+            ps_button: true,
             show_hidden_trophies: false,
             fullscreen: true,
             profile_name: default_profile_name(),

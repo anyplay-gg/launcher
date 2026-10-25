@@ -128,7 +128,7 @@ fn wait_for_exit(_pid: u32, timeout: std::time::Duration) {
 }
 
 #[cfg(windows)]
-pub use windows_impl::join;
+pub use windows_impl::{bring_to_front, join};
 
 #[cfg(unix)]
 pub use unix_impl::join;
@@ -285,8 +285,7 @@ mod windows_impl {
     use windows_sys::Win32::System::Threading::{CreateMutexW, GetCurrentProcessId};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         AllowSetForegroundWindow, EnumWindows, GW_OWNER, GWL_EXSTYLE, GetWindow, GetWindowLongW,
-        GetWindowThreadProcessId, IsIconic, IsWindowVisible, SW_RESTORE, SetForegroundWindow,
-        ShowWindow, WS_EX_TOOLWINDOW,
+        GetWindowThreadProcessId, IsWindowVisible, WS_EX_TOOLWINDOW,
     };
     use windows_sys::core::BOOL;
 
@@ -454,7 +453,7 @@ mod windows_impl {
 
     /// Restores and focuses the launcher's window: visible, not owned, not a tool window (the
     /// trophy banner is one).
-    fn bring_to_front() {
+    pub fn bring_to_front() {
         unsafe extern "system" fn each(window: HWND, found: LPARAM) -> BOOL {
             // SAFETY: `found` is the address of the `Option<HWND>` below, alive during the call.
             unsafe {
@@ -476,10 +475,7 @@ mod windows_impl {
         unsafe {
             EnumWindows(Some(each), &mut found as *mut Option<HWND> as LPARAM);
             if let Some(window) = found {
-                if IsIconic(window) != 0 {
-                    ShowWindow(window, SW_RESTORE);
-                }
-                SetForegroundWindow(window);
+                anyps5_core::win::activate_window(window as isize);
             }
         }
     }

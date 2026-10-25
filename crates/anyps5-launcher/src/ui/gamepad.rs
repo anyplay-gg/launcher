@@ -3,14 +3,18 @@
 //!
 //! D-pad and left stick are directions (stick axis above 0.55, otherwise that axis counts as 0;
 //! the dominant axis wins). A / Cross = select, B / Circle = back, Y / Triangle = options,
-//! Menu / Start = options.
+//! Menu / Start = options. The Home / Guide button (`Button::Mode`) never becomes a command: it
+//! switches between the game and the launcher (`ui::home_button`), and while a game is in front
+//! it is the only button that counts.
 
+use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
 use gilrs::{Axis, Button, EventType, Gilrs};
 
+use crate::ui::home_button::HomeButton;
 use crate::ui::input::{Command, PadMessage};
 
 /// Stick deflection that counts as a direction.
@@ -55,18 +59,18 @@ impl Directions {
 
 /// Starts the poll loop and returns the receiving end. A missing gamepad backend is logged once
 /// and is not fatal (the receiver then simply stays silent).
-pub fn spawn(ctx: egui::Context) -> Receiver<PadMessage> {
+pub fn spawn(ctx: egui::Context, home: Arc<HomeButton>) -> Receiver<PadMessage> {
     let (tx, rx) = mpsc::channel();
     let spawned = thread::Builder::new()
         .name("gamepad".into())
-        .spawn(move || poll(&ctx, &tx));
+        .spawn(move || poll(&ctx, &tx, &home));
     if let Err(err) = spawned {
         tracing::warn!("gamepad thread not started: {err}");
     }
     rx
 }
 
-fn poll(ctx: &egui::Context, tx: &Sender<PadMessage>) {
+fn poll(ctx: &egui::Context, tx: &Sender<PadMessage>, home: &HomeButton) {
     let mut gilrs = match Gilrs::new() {
         Ok(gilrs) => gilrs,
         Err(err) => {
@@ -83,7 +87,14 @@ fn poll(ctx: &egui::Context, tx: &Sender<PadMessage>) {
                     ctx.request_repaint();
                 }
             };
+            // With a game in front the launcher hears the Home button and nothing else; the held
+            // directions are kept up to date but not passed on.
+            let mine = home.accepts_pad();
             match event.event {
+                EventType::ButtonPressed(Button::Mode, _) => {
+                    home.press();
+                }
+                EventType::ButtonPressed(..) if !mine => {}
                 EventType::ButtonPressed(button, _) => match button {
                     Button::South => send(PadMessage::Button(Command::Select)),
                     Button::East => send(PadMessage::Button(Command::Back)),
@@ -111,7 +122,7 @@ fn poll(ctx: &egui::Context, tx: &Sender<PadMessage>) {
                 }
                 _ => {}
             }
-            let now = dirs.current();
+            let now = if mine { dirs.current() } else { None };
             if now != last {
                 last = now;
                 send(PadMessage::Direction(now));
