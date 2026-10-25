@@ -43,6 +43,7 @@ pub mod online_strings;
 pub mod online_voice_strings;
 pub mod recommended;
 pub mod rows;
+pub mod run_strings;
 pub mod saves;
 pub mod scroll;
 pub mod settings;

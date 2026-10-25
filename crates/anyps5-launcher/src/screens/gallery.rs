@@ -43,7 +43,7 @@ use crate::screens::advanced::{AdvancedData, AdvancedPanel};
 use crate::screens::banner::{self, BannerLook, BannerTrophy};
 use crate::screens::controls::{ControlsData, ControlsPanel};
 use crate::screens::game_settings::{
-    GameSettingsData, GameSettingsPanel, RecommendedRow, TrophyProgress, UninstallPanel,
+    GameSettingsData, GameSettingsPanel, RecommendedRow, UninstallPanel,
 };
 use crate::screens::library::{LibraryData, LibraryEntry, LibraryGrid, StateText};
 use crate::screens::log::{LogData, LogView, ReviewData};
@@ -1126,7 +1126,6 @@ impl ScreenGallery {
         let recent: Vec<String> = ["v0.1.3", "v0.1.2", "v0.1.1", "v0.1.0"]
             .map(str::to_owned)
             .to_vec();
-        let progress = TrophyProgress::from(&self.set);
         let unused: Vec<InstalledRelease> = if self.page == ScreenPage::Toolkit(ToolkitLook::Unused)
         {
             [("0.1.2", 412), ("0.1.1", 398)]
@@ -1172,7 +1171,6 @@ impl ScreenGallery {
                 title: name,
                 settings: &mut self.game_settings,
                 resolutions: &resolutions,
-                trophies: Some(progress),
                 installed: true,
                 saves: Some(3),
                 recommended: Some(RecommendedRow {

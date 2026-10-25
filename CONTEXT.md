@@ -186,6 +186,10 @@ _Avoid_: Trophy list (the screen)
 What the engine writes into an unlocked copy when the game earns a trophy.
 _Avoid_: Save
 
+**Run report**:
+A signed-in player's answer to "How did it run?" after a session: doesn't start, menus, in game or playable, with the game version and the toolkit version it ran with. The launcher asks once per game version and toolkit version, in one quiet line on the game page, and sends the title ID, the two versions, the verdict and the system, nothing else. The game page shows the community verdict as the Runs fact once three players reported.
+_Avoid_: Rating, review, compatibility report (the Report a Problem flow is another thing)
+
 ### Patches
 
 **Patch**:

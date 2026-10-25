@@ -178,6 +178,7 @@ impl OnlineService {
         if online && !self.was_online {
             model.effects.push(Effect::SyncTrophies);
             model.sync_playtime();
+            model.request_selected_runs();
         }
         self.was_online = online;
         if let Some(waiting) = &self.waiting
@@ -235,6 +236,7 @@ impl OnlineService {
                 self.waiting = None;
             }
             model.online.send(Purpose::GameEnd, Command::GameEnd);
+            model.session_ended(game);
             if std::mem::take(&mut self.relay_only_later) {
                 send_relay_only(model);
             }
@@ -769,6 +771,77 @@ mod tests {
         let ends = model.online.take_outbox();
         assert_eq!(ends.len(), 1);
         assert!(ends[0].contains("game_end"));
+    }
+
+    /// Plays the game and ends the session, as the launcher sees it.
+    fn play_and_end(model: &mut Model, online: &mut OnlineService) {
+        online.on_play(model, &game());
+        online.on_exited(model, &game().id);
+        model.online.take_outbox();
+    }
+
+    #[test]
+    fn a_session_end_asks_how_it_ran_once_and_the_answer_goes_out() {
+        let mut model = signed_in_model();
+        model.online.cloud = Some(anyps5_core::online::Cloud::Online);
+        let mut online = service();
+        play_and_end(&mut model, &mut online);
+        assert!(model.run_question().is_some(), "asked after the session");
+
+        model.answer_run(3);
+        let sent = model.online.take_outbox();
+        let report = sent
+            .iter()
+            .find(|line| line.contains("\"do\":\"run_report\""))
+            .expect("the answer is sent");
+        for part in [
+            "\"title_id\":\"TEST00001\"",
+            "\"version\":\"01.000\"",
+            "\"toolkit\":\"v1\"",
+            "\"verdict\":\"playable\"",
+        ] {
+            assert!(report.contains(part), "{report}");
+        }
+        assert!(model.run_question().is_none());
+
+        // The same game version with the same toolkit is not asked again.
+        play_and_end(&mut model, &mut online);
+        assert!(model.run_prompt.is_none());
+        // A new toolkit version asks again.
+        model.games[0].unlocked_with = Some("v2".to_owned());
+        play_and_end(&mut model, &mut online);
+        assert!(model.run_question().is_some());
+    }
+
+    #[test]
+    fn a_dismiss_sends_nothing_and_counts_as_asked() {
+        let mut model = signed_in_model();
+        let mut online = service();
+        play_and_end(&mut model, &mut online);
+        model.answer_run(crate::ui::focus::ASK_LAST);
+        assert!(model.online.take_outbox().is_empty());
+        assert!(model.run_prompt.is_none());
+        play_and_end(&mut model, &mut online);
+        assert!(model.run_prompt.is_none(), "dismissed once, done");
+    }
+
+    #[test]
+    fn signed_out_nothing_is_asked_or_sent() {
+        let mut model = signed_in_model();
+        let mut online = service();
+        online.on_play(&mut model, &game());
+        model.online.take_outbox();
+        model.online.account = None;
+        online.on_exited(&mut model, &game().id);
+        assert!(model.run_prompt.is_none());
+        model.answer_run(3);
+        assert!(
+            model
+                .online
+                .take_outbox()
+                .iter()
+                .all(|line| !line.contains("run_report"))
+        );
     }
 
     #[test]

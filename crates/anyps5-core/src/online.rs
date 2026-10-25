@@ -15,6 +15,7 @@
 //! to sign in, or when they signed in on this PC before.
 
 mod restrictions;
+mod runs;
 mod social;
 mod voice;
 
@@ -32,6 +33,7 @@ pub use anyplay_control::{
 };
 use api::{Account, AccountId, Conversation, FriendLists, Invitation, Message, PartyInvitation};
 pub use restrictions::{Blocked, Restrictions, in_force};
+pub use runs::Runs;
 pub use social::{Fetch, Ingested, KEPT, Listed, Social, others, plain, read_by_other, snippet};
 pub use voice::{
     DEFAULT_KEY, DEFAULT_PERCENT, Devices, Hardware, MAX_PERCENT, Mic, PERCENT_STEP, PeerPrefs,
@@ -288,6 +290,13 @@ pub enum Purpose {
     SetPrivacy,
     /// Minutes per title and day, as sent.
     UploadPlaytime(Vec<api::PlaytimeEntry>),
+    /// A run report ("How did it run?").
+    RunReport,
+    /// What players found for a title; `version` is the game version asked for first.
+    RunSummary {
+        title_id: String,
+        version: Option<String>,
+    },
     // Parties and messages
     Party,
     PartyInvite,
@@ -390,6 +399,8 @@ pub struct Online {
     pub cards: BTreeMap<AccountId, Option<api::Count>>,
     /// Who sees the player's trophies; `None` until the cloud said.
     pub privacy: Option<api::Privacy>,
+    /// What players found per title (run reports).
+    pub runs: Runs,
     /// How many trophies of each title the cloud has recorded since this sign-in.
     uploaded: BTreeMap<String, usize>,
     /// The minutes the cloud has recorded per title and day since this sign-in.
@@ -554,6 +565,11 @@ impl Online {
                     for card in cards.cards {
                         self.cards.insert(card.account.id, card.trophies);
                     }
+                }
+            }
+            Purpose::RunSummary { title_id, version } => {
+                if let Ok(summary) = serde_json::from_value::<api::RunSummary>(value.clone()) {
+                    self.runs.keep(title_id, version.as_deref(), summary);
                 }
             }
             Purpose::Privacy | Purpose::SetPrivacy => {

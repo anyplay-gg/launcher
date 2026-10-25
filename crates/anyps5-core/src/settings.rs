@@ -6,7 +6,7 @@
 //! so settings files can be exchanged with the macOS launcher.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs, io,
     path::{Path, PathBuf},
 };
@@ -539,6 +539,10 @@ pub struct Preferences {
     /// Games write an observation log of their network calls (`Logs\<TITLEID>-network.jsonl`).
     #[serde(default)]
     pub record_network: bool,
+    /// The run-report questions already answered or dismissed, by [`run_question_key`]: each is
+    /// asked once.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub run_asked: BTreeSet<String>,
     /// Fields written by a newer launcher survive a round trip.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -581,6 +585,7 @@ impl Default for Preferences {
             online_relay_only: false,
             voice: crate::online::VoicePrefs::default(),
             record_network: false,
+            run_asked: BTreeSet::new(),
             extra: Map::new(),
         }
     }
@@ -595,6 +600,11 @@ pub enum ToolkitChannel {
     Pinned,
     /// A folder the player built or picked.
     Local,
+}
+
+/// What "How did it run?" is asked once per: a title, its game version and the toolkit version.
+pub fn run_question_key(title_id: &str, version: &str, toolkit: &str) -> String {
+    format!("{title_id}|{version}|{toolkit}")
 }
 
 impl Preferences {

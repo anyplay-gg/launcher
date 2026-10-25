@@ -236,6 +236,8 @@ pub struct Model {
     /// What the launcher knows of the network. Commands queue here; the host hands them to the
     /// net service and its answers back (`app::online`).
     pub online: Online,
+    /// A session that ended and whose "How did it run?" has not been answered ([`Model::run_question`]).
+    pub run_prompt: Option<crate::app::run_question::RunPrompt>,
 
     /// The clock of the running game's playtime.
     sessions: Sessions,
@@ -284,6 +286,7 @@ impl Model {
             trophy_banners: Vec::new(),
             effects: Vec::new(),
             online: Online::default(),
+            run_prompt: None,
             sessions: Sessions::default(),
             saves_busy: None,
             trophies_read: HashSet::new(),
@@ -501,6 +504,7 @@ impl Model {
             games: self.games.len(),
             selected: self.selected,
             has_trophies: self.has_trophies(),
+            asking: self.run_question().is_some(),
         }
     }
 
@@ -554,6 +558,7 @@ impl Model {
             self.sizes.insert(id.clone(), SizeState::Measuring);
             self.effects.push(Effect::MeasureSize(id));
         }
+        self.request_selected_runs();
     }
 
     /// Reloads the trophies of a game (it may have earned some).
@@ -916,6 +921,10 @@ impl Model {
         if let Some(overlay) = self.overlay {
             return Routed::Overlay(overlay);
         }
+        // The question line may have gone (answered, signed out) while the focus was on it.
+        if matches!(self.focus, HomeFocus::Ask(_)) && self.run_question().is_none() {
+            self.focus = HomeFocus::Actions(0);
+        }
         let step = self.focus.navigate(command, self.home_context());
         self.focus = step.focus;
         let moved = step.selected != self.selected;
@@ -936,6 +945,7 @@ impl Model {
     pub fn apply_intent(&mut self, intent: HomeIntent) {
         match intent {
             HomeIntent::PrimaryAction => self.primary_action(),
+            HomeIntent::AnswerRun(i) => self.answer_run(i),
             HomeIntent::OpenTrophies => self.open(Overlay::Trophies),
             HomeIntent::OpenGameSettings => self.open(Overlay::GameSettings),
             HomeIntent::OpenLibrary => self.open(Overlay::Library),
@@ -955,6 +965,7 @@ impl Model {
             HomeFocus::Actions(1) if self.has_trophies() => HomeIntent::OpenTrophies,
             HomeFocus::Actions(_) => HomeIntent::OpenGameSettings,
             HomeFocus::Tiles => HomeIntent::PrimaryAction,
+            HomeFocus::Ask(i) => HomeIntent::AnswerRun(i),
         };
         self.apply_intent(intent);
     }

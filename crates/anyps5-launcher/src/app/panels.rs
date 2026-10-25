@@ -9,7 +9,7 @@
 //! | `ConfirmUninstall` | `game_settings::UninstallPanel` | "Uninstall" row of the game settings |
 //! | `Saves`, `ConfirmRestore` | `saves::SavesPanel`, `saves::RestorePanel` | "Save Data" row of the game settings |
 //! | `Controls`, `Advanced` | `controls::ControlsPanel`, `advanced::AdvancedPanel` | rows of the game settings |
-//! | `Trophies` | `trophies::TrophyListPanel` | trophy button, row of the game settings |
+//! | `Trophies` | `trophies::TrophyListPanel` | trophy chip beside Play |
 //! | `Log` | `log::LogView` | "Open log" row of the game settings |
 //!
 //! The panels animate themselves; the host only keeps them in step with `Model::overlay`: a panel
@@ -52,8 +52,8 @@ use crate::screens::advanced::{AdvancedAction, AdvancedData, AdvancedPanel};
 use crate::screens::banner::{BannerHost, BannerTrophy};
 use crate::screens::controls::{ControlsAction, ControlsData, ControlsPanel};
 use crate::screens::game_settings::{
-    GameSettingsAction, GameSettingsData, GameSettingsPanel, RecommendedRow, TrophyProgress,
-    UninstallAction, UninstallPanel,
+    GameSettingsAction, GameSettingsData, GameSettingsPanel, RecommendedRow, UninstallAction,
+    UninstallPanel,
 };
 use crate::screens::home::tile_overlay;
 use crate::screens::library::{LibraryAction, LibraryData, LibraryEntry, LibraryGrid, StateText};
@@ -501,7 +501,6 @@ impl PanelHost {
                 .collect(),
             recommended: self.toolkit_advice(cx.model, &game),
         };
-        let trophies = cx.model.trophies.get(&id).map(TrophyProgress::from);
         let installed = matches!(cx.model.state_of(&game), GameState::Installed { .. });
         let language = cx.model.language();
         let accent = cx.shell.accent_color();
@@ -515,7 +514,6 @@ impl PanelHost {
             title: &game.name,
             settings: &mut settings,
             resolutions: &resolutions,
-            trophies,
             installed,
             saves: installed
                 .then(|| self.save_view.as_ref().map(|v| v.backups.len()))
@@ -561,7 +559,6 @@ impl PanelHost {
             GameSettingsAction::OpenControls => model.switch_overlay(Overlay::Controls),
             GameSettingsAction::OpenAdvanced => model.switch_overlay(Overlay::Advanced),
             GameSettingsAction::OpenRecommended => model.switch_overlay(Overlay::Recommended),
-            GameSettingsAction::OpenTrophies => model.switch_overlay(Overlay::Trophies),
             GameSettingsAction::AskUninstall => model.switch_overlay(Overlay::ConfirmUninstall),
             GameSettingsAction::OpenSaves => {
                 self.saves_stale = true;
@@ -1994,7 +1991,6 @@ mod tests {
         for (action, expected) in [
             (GameSettingsAction::OpenControls, Overlay::Controls),
             (GameSettingsAction::OpenAdvanced, Overlay::Advanced),
-            (GameSettingsAction::OpenTrophies, Overlay::Trophies),
             (GameSettingsAction::AskUninstall, Overlay::ConfirmUninstall),
             (GameSettingsAction::OpenLog, Overlay::Log),
         ] {

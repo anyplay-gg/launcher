@@ -25,6 +25,8 @@ pub enum HomeFocus {
     Tiles,
     /// The hero action row: 0 = primary, then trophies if present, last = "...".
     Actions(usize),
+    /// "How did it run?" below the facts: the four answers (0 to 3), then dismiss (4).
+    Ask(usize),
 }
 
 /// What the home screen needs to know to navigate.
@@ -36,6 +38,8 @@ pub struct HomeContext {
     pub selected: usize,
     /// The selected game has a trophy list (a trophy button sits between Play and "...").
     pub has_trophies: bool,
+    /// "How did it run?" is on screen.
+    pub asking: bool,
 }
 
 impl HomeContext {
@@ -54,6 +58,8 @@ pub enum HomeIntent {
     OpenTrophies,
     /// Open the game settings side panel.
     OpenGameSettings,
+    /// Answer "How did it run?" (0 to 3) or dismiss it (4).
+    AnswerRun(usize),
     OpenLibrary,
     OpenSettings,
     /// The friends button: the online area on the friends list, or on sign-in while signed out.
@@ -146,6 +152,7 @@ impl HomeFocus {
                 match command {
                     Command::Left => go(&mut step, HomeFocus::Actions(i.saturating_sub(1))),
                     Command::Right => go(&mut step, HomeFocus::Actions((i + 1).min(last))),
+                    Command::Down if ctx.asking => go(&mut step, HomeFocus::Ask(0)),
                     Command::Up | Command::Back => go(&mut step, HomeFocus::Tiles),
                     Command::Select => {
                         step.intent = Some(if i == 0 {
@@ -162,10 +169,21 @@ impl HomeFocus {
                     _ => {}
                 }
             }
+            HomeFocus::Ask(i) => match command {
+                Command::Left => go(&mut step, HomeFocus::Ask(i.saturating_sub(1))),
+                Command::Right => go(&mut step, HomeFocus::Ask((i + 1).min(ASK_LAST))),
+                Command::Up | Command::Back => go(&mut step, HomeFocus::Actions(0)),
+                Command::Select => step.intent = Some(HomeIntent::AnswerRun(i)),
+                Command::Options if has_games => step.intent = Some(HomeIntent::OpenGameSettings),
+                _ => {}
+            },
         }
         step
     }
 }
+
+/// The last stop of the question line: its dismiss button (four answers come before).
+pub const ASK_LAST: usize = 4;
 
 // ---------------------------------------------------------------------------------------------
 // Panels
@@ -355,7 +373,26 @@ mod tests {
             games,
             selected,
             has_trophies,
+            asking: false,
         }
+    }
+
+    #[test]
+    fn the_question_line_is_below_the_actions_and_only_while_asked() {
+        let mut c = ctx(3, 0, true);
+        let down = HomeFocus::Actions(0).navigate(Command::Down, c);
+        assert_eq!(down.focus, HomeFocus::Actions(0), "no question, no stop");
+        c.asking = true;
+        let down = HomeFocus::Actions(2).navigate(Command::Down, c);
+        assert_eq!(down.focus, HomeFocus::Ask(0));
+        let right = HomeFocus::Ask(4).navigate(Command::Right, c);
+        assert_eq!(right.focus, HomeFocus::Ask(4), "dismiss is the last stop");
+        let left = HomeFocus::Ask(1).navigate(Command::Left, c);
+        assert_eq!(left.focus, HomeFocus::Ask(0));
+        let select = HomeFocus::Ask(2).navigate(Command::Select, c);
+        assert_eq!(select.intent, Some(HomeIntent::AnswerRun(2)));
+        let up = HomeFocus::Ask(3).navigate(Command::Up, c);
+        assert_eq!(up.focus, HomeFocus::Actions(0));
     }
 
     #[test]

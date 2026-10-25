@@ -13,6 +13,7 @@ use egui::{
 use crate::app::model::{GameState, Model, SizeState};
 use crate::screens::online_social_strings::SocialText;
 use crate::screens::online_strings::OnlineText;
+use crate::screens::run_strings::{RunText, friends_line};
 use crate::screens::strings::{Extra, playtime_text};
 use crate::screens::toolkit_pin;
 use crate::screens::{
@@ -22,8 +23,8 @@ use crate::screens::{
 use crate::ui::anim::{AnimExt, Motion, lerp};
 use crate::ui::chrome::{self, TileImage, TileOverlay, TileStyle};
 use crate::ui::components::{
-    self as components, ConsoleButton, FOCUS_GROW, IconButton, IndeterminateLine, ProgressLine,
-    hint_bar, hint_bar_size,
+    self as components, Chip, ConsoleButton, FOCUS_GROW, IconButton, IndeterminateLine,
+    ProgressLine, hint_bar, hint_bar_size,
 };
 use crate::ui::focus::HomeFocus;
 use crate::ui::i18n::{Arg, Key, Language, byte_text};
@@ -37,10 +38,17 @@ const HERO_GAP: f32 = 22.0;
 /// Between the state line and the hero title.
 const STATE_GAP: f32 = 4.0;
 /// Space between the action row and the facts, and between two facts.
-const FACTS_ABOVE: f32 = 30.0;
+const FACTS_ABOVE: f32 = 46.0;
 const FACTS_SPACING: f32 = 48.0;
 /// Between a fact's overline and its value.
 const FACT_GAP: f32 = 6.0;
+/// Between the facts and the line that asks "How did it run?" below them. The row is kept free
+/// whether it shows or not, so nothing moves when it appears or goes.
+const ASK_GAP: f32 = 18.0;
+/// Between the question and its first answer, and after the last.
+const ASK_LABEL_GAP: f32 = 16.0;
+/// Under the action row to the friends line.
+const FRIENDS_GAP: f32 = 12.0;
 /// Height of the action row (the console button).
 const ACTION_ROW: f32 = size::BUTTON_MIN_HEIGHT;
 /// Longest a failure or diagnosis text gets.
@@ -712,6 +720,7 @@ struct HeroGeometry {
     title_bottom: f32,
     actions_top: f32,
     facts_top: f32,
+    ask_top: f32,
 }
 
 /// Overline, a small gap, then the value.
@@ -721,13 +730,15 @@ fn facts_height() -> f32 {
 
 fn hero_geometry(screen: Rect, hint_height: f32, dy: f32) -> HeroGeometry {
     let bottom = screen.max.y - pad::HINT_Y - hint_height - pad::HINT_Y + dy;
-    let facts_top = bottom - facts_height();
+    let ask_top = bottom - size::CHIP_HEIGHT;
+    let facts_top = ask_top - ASK_GAP - facts_height();
     let actions_top = facts_top - FACTS_ABOVE - ACTION_ROW;
     HeroGeometry {
         x: screen.min.x + pad::HERO_X,
         title_bottom: actions_top - HERO_GAP,
         actions_top,
         facts_top,
+        ask_top,
     }
 }
 
@@ -824,10 +835,11 @@ fn paint_hero(
             pressed = Some(HomeFocus::Actions(0));
         }
         if let Some(text) = &trophy_text {
-            let response = ConsoleButton::new(text)
+            let response = Chip::new(text)
                 .accessible_name(format!("{}, {}", language.text(Key::Trophies), text))
                 .icon(Icon::TROPHY)
                 .icon_fill(true)
+                .tabular(true)
                 .focused(focused(1))
                 .show(ui);
             if response.clicked() {
@@ -846,6 +858,21 @@ fn paint_hero(
         presses.push(Press::Focus(focus));
     }
     action_row_status(ui, cx, game, &state, after_buttons.x, geometry.actions_top);
+
+    // Friends who play this game now, under Play.
+    let names = cx.model.online.friends_playing(&game.title_id);
+    if let Some(line) = friends_line(&names, language) {
+        let galley = wrapped(
+            &painter,
+            ty::DETAIL_LARGE,
+            &line,
+            color::text_subtitle(),
+            width,
+            1,
+        );
+        let top = geometry.actions_top + ACTION_ROW + FRIENDS_GAP;
+        painter.galley(pos2(x, top), galley, color::text_subtitle());
+    }
 
     // 3. Facts: size, title ID, version. The state already stands next to the selected tile.
     let size_text = match cx.model.sizes.get(&game.id) {
@@ -869,9 +896,108 @@ fn paint_hero(
     if let Some(value) = toolkit_pin::fact_value(&cx.model.toolkit_of(&game.id), language) {
         facts.push((Extra::Toolkit.text(language), value));
     }
+    // What players found, once enough of them said (run reports).
+    if let Some((verdict, reports)) = cx.model.online.runs.verdict(&game.title_id, &game.version) {
+        let value = RunText::Verdict.format(
+            language,
+            &[
+                Arg::Str(RunText::of(verdict).text(language)),
+                Arg::Int(i64::from(reports)),
+            ],
+        );
+        facts.insert(3, (RunText::Runs.text(language), value));
+    }
     let mut left = x;
     for (title, value) in &facts {
         left += fact(ui, pos2(left, geometry.facts_top), title, value, language) + FACTS_SPACING;
+    }
+
+    // 4. "How did it run?", once, after a session.
+    if live {
+        ask_line(
+            ui,
+            cx,
+            game,
+            pos2(x, geometry.ask_top),
+            width,
+            visible,
+            presses,
+        );
+    }
+}
+
+/// The question below the facts: a quiet line of four answers and a dismiss. It fades in and does
+/// nothing else; one press answers it, and it never comes back for this game version.
+fn ask_line(
+    ui: &mut Ui,
+    cx: &mut ScreenCx<'_>,
+    game: &Game,
+    at: egui::Pos2,
+    width: f32,
+    visible: bool,
+    presses: &mut Vec<Press>,
+) {
+    let Some(prompt) = cx
+        .model
+        .run_question()
+        .filter(|p| p.game == game.id)
+        .cloned()
+    else {
+        return;
+    };
+    let language = cx.language();
+    let ctx = cx.ctx.clone();
+    let t = ctx.animate_from_to(
+        (
+            "home-ask",
+            game.id.as_str().to_owned(),
+            prompt.version.clone(),
+            prompt.toolkit.clone(),
+        ),
+        0.0,
+        1.0,
+        Motion::Fade,
+    );
+    let row = Rect::from_min_size(at, vec2(width, size::CHIP_HEIGHT));
+    let mut child = ui.new_child(UiBuilder::new().max_rect(row));
+    child.multiply_opacity(t.clamp(0.0, 1.0));
+    let question = RunText::Question.text(language);
+    let mut pressed = None;
+    place(&mut child, row, |ui| {
+        ui.spacing_mut().item_spacing.x = 12.0;
+        let painter = ui.painter().clone();
+        let label_width = text::width(&painter, ty::DETAIL_LARGE, question);
+        let (label, _) = ui.allocate_exact_size(
+            vec2(label_width + ASK_LABEL_GAP - 12.0, size::CHIP_HEIGHT),
+            Sense::hover(),
+        );
+        text::paint(
+            &painter,
+            label.left_center(),
+            Align2::LEFT_CENTER,
+            ty::DETAIL_LARGE,
+            question,
+            color::text_subtitle(),
+        );
+        for (i, verdict) in crate::app::run_question::ANSWERS.iter().enumerate() {
+            let answer = RunText::of(*verdict).text(language);
+            let response = Chip::new(answer)
+                .accessible_name(format!("{question} {answer}"))
+                .focused(visible && cx.model.focus == HomeFocus::Ask(i))
+                .show(ui);
+            if response.clicked() {
+                pressed = Some(HomeFocus::Ask(i));
+            }
+        }
+        let dismiss = Chip::icon_only(Icon::X, RunText::Dismiss.text(language))
+            .focused(visible && cx.model.focus == HomeFocus::Ask(crate::ui::focus::ASK_LAST))
+            .show(ui);
+        if dismiss.clicked() {
+            pressed = Some(HomeFocus::Ask(crate::ui::focus::ASK_LAST));
+        }
+    });
+    if let Some(focus) = pressed {
+        presses.push(Press::Focus(focus));
     }
 }
 

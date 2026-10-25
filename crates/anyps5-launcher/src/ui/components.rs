@@ -453,6 +453,153 @@ impl<'a> ConsoleButton<'a> {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Chip
+// ---------------------------------------------------------------------------------------------
+
+/// A small capsule for a quiet choice next to bigger buttons: the trophy count beside Play, an
+/// answer of the question line. Same language as the console button (translucent, solid white
+/// when focused) at 32 dp, and it does not grow when focused.
+pub struct Chip<'a> {
+    title: &'a str,
+    icon: Option<Icon>,
+    icon_fill: bool,
+    tabular: bool,
+    focused: bool,
+    label: Option<String>,
+}
+
+impl<'a> Chip<'a> {
+    pub fn new(title: &'a str) -> Self {
+        Self {
+            title,
+            icon: None,
+            icon_fill: false,
+            tabular: false,
+            focused: false,
+            label: None,
+        }
+    }
+
+    /// A chip with only a glyph. `label` is its accessible name.
+    pub fn icon_only(icon: Icon, label: impl Into<String>) -> Chip<'static> {
+        let mut chip = Chip::new("").icon(icon);
+        chip.label = Some(label.into());
+        chip
+    }
+
+    pub fn icon(mut self, icon: Icon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+    pub fn icon_fill(mut self, fill: bool) -> Self {
+        self.icon_fill = fill;
+        self
+    }
+    /// Digits of equal width, for a count that changes.
+    pub fn tabular(mut self, tabular: bool) -> Self {
+        self.tabular = tabular;
+        self
+    }
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+    /// The name assistive technology reads when it differs from the visible text.
+    pub fn accessible_name(mut self, name: impl Into<String>) -> Self {
+        self.label = Some(name.into());
+        self
+    }
+
+    pub fn show(self, ui: &mut Ui) -> Response {
+        let painter = ui.painter().clone();
+        let style = ty::CHIP;
+        let has_text = !self.title.is_empty();
+        let text_width = if !has_text {
+            0.0
+        } else if self.tabular {
+            text::tabular_width(&painter, style, self.title)
+        } else {
+            text::width(&painter, style, self.title)
+        };
+        let icon_width = if self.icon.is_some() {
+            size::CHIP_ICON
+        } else {
+            0.0
+        };
+        let gap = if self.icon.is_some() && has_text {
+            size::CHIP_GAP
+        } else {
+            0.0
+        };
+        let content = icon_width + gap + text_width;
+        // A glyph alone makes a circle; text gets the full side padding.
+        let pad = if has_text {
+            size::CHIP_PADDING
+        } else {
+            (size::CHIP_HEIGHT - icon_width) * 0.5
+        };
+        let it = interact(
+            ui,
+            vec2(pad * 2.0 + content, size::CHIP_HEIGHT),
+            self.focused,
+            true,
+            None,
+            0.0,
+        );
+        let name = match (&self.label, has_text) {
+            (Some(label), _) => label.as_str(),
+            (None, true) => self.title,
+            (None, false) => "",
+        };
+        it.response
+            .widget_info(|| WidgetInfo::labeled(Role::Button, true, name));
+        if !ui.is_rect_visible(it.rect) {
+            return it.response;
+        }
+        let rect = snap_rect(&painter, scale_rect(it.rect, it.press_scale()));
+        let rest = if it.hovered {
+            color::surface_hover()
+        } else {
+            color::surface()
+        };
+        paint_capsule(
+            &painter,
+            rect,
+            mix(rest, color::surface_focused(), it.focus),
+        );
+        let foreground = mix(Color32::WHITE, color::text_on_focus(), it.focus);
+        let mut x = rect.center().x - content * 0.5;
+        if let Some(icon) = self.icon {
+            painter.text(
+                pos2(x + icon_width * 0.5, rect.center().y),
+                Align2::CENTER_CENTER,
+                icon.glyph(),
+                icon.font(text::quantize_size(icon_width), self.icon_fill),
+                foreground,
+            );
+            x += icon_width + gap;
+        }
+        if has_text {
+            let at = pos2(x, rect.center().y);
+            if self.tabular {
+                let top = pos2(at.x, at.y - style.line_height() * 0.5);
+                text::paint_tabular(&painter, top, style, self.title, foreground);
+            } else {
+                text::paint(
+                    &painter,
+                    at,
+                    Align2::LEFT_CENTER,
+                    style,
+                    self.title,
+                    foreground,
+                );
+            }
+        }
+        it.response
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Icon button (top bar)
 // ---------------------------------------------------------------------------------------------
 

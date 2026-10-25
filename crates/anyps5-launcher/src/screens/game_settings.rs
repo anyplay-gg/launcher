@@ -27,7 +27,6 @@ pub enum GameSettingsAction {
     /// The panel is closing (back, options, a click on the scrim).
     Close,
     OpenControls,
-    OpenTrophies,
     OpenAdvanced,
     /// The recommended settings of this game, as a list of changes.
     OpenRecommended,
@@ -42,24 +41,6 @@ pub enum GameSettingsAction {
     AskUninstall,
     /// The backups of the game's saves.
     OpenSaves,
-}
-
-/// The unlocked trophies of the selected game, for the detail line of the trophies row.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TrophyProgress {
-    pub unlocked: usize,
-    pub total: usize,
-    pub percent: u32,
-}
-
-impl From<&anyps5_core::trophies::TrophySet> for TrophyProgress {
-    fn from(set: &anyps5_core::trophies::TrophySet) -> Self {
-        Self {
-            unlocked: set.unlocked_count(),
-            total: set.trophies.len(),
-            percent: set.percent(),
-        }
-    }
 }
 
 /// What the catalogue has for this game, for the row that opens it.
@@ -78,7 +59,6 @@ pub struct GameSettingsData<'a> {
     pub settings: &'a mut GameSettings,
     /// Resolutions the title's patch offers; empty hides the row.
     pub resolutions: &'a [String],
-    pub trophies: Option<TrophyProgress>,
     /// The game is unlocked (reinstall and uninstall are offered).
     pub installed: bool,
     /// How many backups of the saves there are; `None` hides the row (nothing unlocked yet).
@@ -213,7 +193,6 @@ impl GameSettingsPanel {
         }
         let action = match change.row() {
             "controls" => Some(GameSettingsAction::OpenControls),
-            "trophies" => Some(GameSettingsAction::OpenTrophies),
             "advanced" => Some(GameSettingsAction::OpenAdvanced),
             "recommended" => Some(GameSettingsAction::OpenRecommended),
             "reinstall" => Some(GameSettingsAction::Reinstall),
@@ -299,13 +278,6 @@ pub fn build_rows(data: &GameSettingsData<'_>) -> Vec<Row> {
     let mut controls = Row::action("controls", t(Key::Controls)).icon(Icon::KEYBOARD);
     controls.group_start = first_of_play;
     rows.push(controls);
-    if let Some(p) = data.trophies {
-        rows.push(
-            Row::action("trophies", t(Key::Trophies))
-                .detail(format!("{}/{} · {}%", p.unlocked, p.total, p.percent))
-                .icon(Icon::TROPHY),
-        );
-    }
     if let Some(count) = data.saves {
         rows.push(
             Row::action("saves", Extra::SavesTitle.text(data.language))
@@ -546,7 +518,6 @@ mod tests {
             title: "Test Game",
             settings,
             resolutions: &[],
-            trophies: None,
             installed: true,
             saves: None,
             recommended: None,
@@ -665,16 +636,13 @@ mod tests {
         let mut d = data(&mut s);
         let resolutions = vec!["1920x1080".to_owned(), "2560x1440".to_owned()];
         d.resolutions = &resolutions;
-        d.trophies = Some(TrophyProgress {
-            unlocked: 8,
-            total: 34,
-            percent: 8,
-        });
         d.installed = false;
         let rows = build_rows(&d);
         assert_eq!(rows[0].id, "resolution");
-        let trophies = rows.iter().find(|r| r.id == "trophies").unwrap();
-        assert_eq!(trophies.detail.as_deref(), Some("8/34 · 8%"));
+        assert!(
+            rows.iter().all(|r| r.id != "trophies"),
+            "the trophy count lives beside Play, not here"
+        );
         assert!(
             rows.iter()
                 .all(|r| r.id != "reinstall" && r.id != "uninstall")
@@ -807,11 +775,6 @@ mod tests {
         for language in Language::ALL {
             let mut d = data(&mut s);
             d.language = language;
-            d.trophies = Some(TrophyProgress {
-                unlocked: 1,
-                total: 2,
-                percent: 50,
-            });
             for row in build_rows(&d) {
                 assert!(!row.title.is_empty());
             }

@@ -11,7 +11,8 @@
 //! profile button with unread messages), `home-friends` (signed in, three friends online),
 //! `home-friends-quiet` (nobody online), `home-friends-focus` and `home-signin-focus` (the top bar's
 //! two pills focused), `home-theme1`,
-//! `home-theme2`, `home-noartwork`, `home-toolkit`, `home-toolkit-missing`, `home-empty`, `home-scanning`, `home-nofolder`, `starting`,
+//! `home-ask` (signed in, a session just ended: "How did it run?"), `home-runs` (the community verdict),
+//! `home-friends-playing` (friends playing the game), `home-theme2`, `home-noartwork`, `home-toolkit`, `home-toolkit-missing`, `home-empty`, `home-scanning`, `home-nofolder`, `starting`,
 //! `toast`. The games, their icons and artwork are generated here (nothing of any real game is in
 //! the repository); the clock of the backdrop is fixed, so a scene always renders the same.
 //!
@@ -22,13 +23,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyps5_core::library::{ExecutableKind, Game};
+use anyps5_core::online::api::{
+    Account, AccountId, Activity, Friend, Presence, RunSummary, Verdict, VerdictCounts,
+};
 use anyps5_core::paths::{AppPaths, GameId};
 use anyps5_core::settings::{Language as CoreLanguage, Preferences, Theme as CoreTheme};
 use anyps5_core::trophies::{Grade, Trophy, TrophySet};
 use egui::{ColorImage, Context, Ui};
 use image::{Rgba, RgbaImage};
 
-use crate::app::model::Effect;
+use crate::app::model::{Effect, Model};
 use crate::app::pipeline::{SimPipeline, UnlockStep};
 use crate::app::{Config, LauncherApp};
 use crate::ui::Shell;
@@ -63,6 +67,12 @@ pub enum Scene {
     HomeFriendsFocus,
     /// Signed out with the sign-in button focused.
     HomeSignInFocus,
+    /// Signed in, the session just ended: the question "How did it run?" below the facts.
+    HomeAsk,
+    /// Signed in, enough players reported: the Runs fact.
+    HomeRuns,
+    /// Signed in, two friends play the game now.
+    HomeFriendsPlaying,
     HomeTheme(u32),
     HomeNoArtwork,
     /// The selected game stays on a release of its own (a fact says so).
@@ -99,6 +109,9 @@ impl Scene {
             "home-friends-quiet" => Scene::HomeFriendsQuiet,
             "home-friends-focus" => Scene::HomeFriendsFocus,
             "home-signin-focus" => Scene::HomeSignInFocus,
+            "home-ask" => Scene::HomeAsk,
+            "home-runs" => Scene::HomeRuns,
+            "home-friends-playing" => Scene::HomeFriendsPlaying,
             "home-theme1" => Scene::HomeTheme(1),
             "home-theme2" => Scene::HomeTheme(2),
             "home-noartwork" => Scene::HomeNoArtwork,
@@ -113,7 +126,7 @@ impl Scene {
         })
     }
 
-    pub const ALL_NAMES: [&'static str; 30] = [
+    pub const ALL_NAMES: [&'static str; 33] = [
         "onboarding0",
         "onboarding1",
         "onboarding2",
@@ -134,6 +147,9 @@ impl Scene {
         "home-friends-quiet",
         "home-friends-focus",
         "home-signin-focus",
+        "home-ask",
+        "home-runs",
+        "home-friends-playing",
         "home-theme1",
         "home-theme2",
         "home-noartwork",
@@ -577,6 +593,61 @@ pub fn apply_scene(app: &mut LauncherApp, scene: Scene, games: Vec<Game>) {
                 conversations: vec![chat("a", (2, "Lumen"), 7, 5, false)],
                 requests: vec![chat("r", (9, "Nyx"), 1, 0, true)],
             });
+        }
+        Scene::HomeAsk | Scene::HomeRuns | Scene::HomeFriendsPlaying => {
+            sign_in(m);
+            let game = m.games[at(1)].clone();
+            if scene != Scene::HomeFriendsPlaying {
+                m.online.runs.keep(
+                    &game.title_id,
+                    Some(&game.version),
+                    RunSummary {
+                        title_id: game.title_id.clone(),
+                        version: Some(game.version.clone()),
+                        reports: 12,
+                        verdict: Some(Verdict::Playable),
+                        counts: VerdictCounts {
+                            no_start: 1,
+                            menus: 2,
+                            in_game: 3,
+                            playable: 6,
+                        },
+                    },
+                );
+            }
+            if scene != Scene::HomeRuns {
+                let playing = |id, handle: &str, title: &str| Friend {
+                    account: Account {
+                        id: AccountId(id),
+                        handle: handle.into(),
+                    },
+                    since: 1,
+                    presence: Presence {
+                        online: true,
+                        activity: Some(Activity {
+                            title_id: title.into(),
+                            title: game.name.clone(),
+                            version: game.version.clone(),
+                            session: None,
+                        }),
+                        revision: 1,
+                    },
+                };
+                m.online.friends.friends = vec![
+                    playing(2, "Mira", &game.title_id),
+                    playing(3, "Sam", &game.title_id),
+                ];
+            }
+            if scene == Scene::HomeAsk {
+                m.online.friends.friends.clear();
+                m.run_prompt = Some(crate::app::run_question::RunPrompt {
+                    game: game.id.clone(),
+                    title_id: game.title_id.clone(),
+                    version: game.version.clone(),
+                    toolkit: "0.1.0".to_owned(),
+                });
+                m.focus = HomeFocus::Ask(3);
+            }
         }
         Scene::Starting => {
             m.starting = Some(ids[at(1)].clone());

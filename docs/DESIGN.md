@@ -929,8 +929,9 @@ Row sketch (S-home):
 
 1. Title: game name, 58 light white, max 2 lines, shrinks to 60 %.
 2. Action row (gap 16): primary button (`Play`/`Unlock`/`Retry`/`Cancel`/...: prominent = white 0.20 fill, min width 210, symbol
-   and text as in 5.1); trophy button if the game has a trophy list (`"unlocked/total"` with the trophy glyph; no min width); the
-   "..." button (glyph: three dots, icon only), which opens game settings. To the right, depending on state:
+   and text as in 5.1); the **trophy chip** if the game has a trophy list (`"unlocked/total"` with the trophy glyph, a 32 high
+   chip, 14 medium tabular, vertically centred on the row; it opens the trophies, and it is the only place the count is shown, the
+   game settings carry no trophies row); the "..." button (glyph: three dots, icon only), which opens game settings. To the right, depending on state:
    - installing: a 340-wide block (leading pad 10): row with step title (15 medium, white 0.85) and `"NN%"` (15 semibold, tabular)
      where NN = `Int(step.overall(fraction) * 100)`; under it the progress line (accent), or the **indeterminate** sweep while step ==
      relink and fraction == 0. (S-unlocking.)
@@ -942,6 +943,24 @@ Row sketch (S-home):
    white 0.55) over the value (17 semibold white). Cards: **Status** (circle-dashed glyph, the state label), **Size** (disk glyph,
    `"..."` while being measured, else a decimal-unit file size such as `8,39 GB`; measured lazily for the selected game), **Title ID**
    (hash glyph, e.g. `PPSA12544`), **Version** (tag glyph, e.g. `01.000.010`).
+
+**Game page additions** (Windows launcher; the online features show only when signed in):
+
+- **Friends line.** Under the action row, 14 regular white 0.7, one line, 12 below the buttons: `Mira is playing this`,
+  `Mira and Sam are playing this`, `3 friends are playing this`. Friends are those whose presence activity has the game's title ID;
+  none, or signed out, shows nothing. The gap above the facts is 46 so the line has room.
+- **Runs fact.** A fifth fact (after Version) with the overline `RUNS` and the value `Playable · 12 reports`: the most reported
+  verdict (a tie goes to the lower one) and the number of players, from the cloud's run-report summary. It shows once at least 3
+  players reported, preferring the player's own game version when it has 3 or more, else all versions of the title. Otherwise
+  there is no fact.
+- **"How did it run?"** One row below the facts (18 below them, 32 high; the row is kept free whether it shows or not, so nothing
+  moves): the question in 14 regular white 0.7, four chips `Doesn't start`, `Menus`, `In game`, `Playable` and a round dismiss
+  chip with the X glyph (12 between the controls). It appears after a session of the game ended while the player is signed in, on
+  the page of that game, as a plain fade-in (`Motion.fade`), without a sound, toast or other movement. Focus: Down from the action row
+  enters it (`HomeFocus::Ask`), Left and Right move, Select answers, Up or Back leaves; a press answers and the row goes. It is
+  asked once per game version and toolkit version (`Preferences.run_asked`), and an answer or a dismiss both count as asked. The
+  answer goes to the net service as `run_report`: title ID, game version, toolkit version and verdict (the service adds the system).
+  Signed out, nothing is asked and nothing is sent.
 
 **Hint bar** (right aligned, padding h 64 v 28, item gap 22): `← → ↑ ↓` "Move", `↩ / ✕` "Select", `esc / ○` "Back", `O / △` "Options"
 (keys in a keycap: 12 bold, padding 7 x 3, white 0.16 fill, radius 5; label 13 medium; all white 0.72; gap 8). Library, trophies and

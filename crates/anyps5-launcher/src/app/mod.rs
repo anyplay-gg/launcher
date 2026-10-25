@@ -26,6 +26,7 @@ pub mod panels;
 pub mod pipeline;
 pub mod playtime;
 pub mod preview;
+pub mod run_question;
 pub mod selfupdate;
 pub mod services;
 pub mod textures;

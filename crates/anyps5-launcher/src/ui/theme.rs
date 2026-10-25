@@ -517,6 +517,11 @@ pub mod size {
     /// The glyph of a button without text, such as the "more" dots.
     pub const BUTTON_ICON_ONLY: f32 = 22.0;
     pub const BUTTON_GAP: f32 = 10.0;
+    /// A chip: 32 high, 14 beside its text, 12 beside a glyph, a 14 dp glyph.
+    pub const CHIP_HEIGHT: f32 = 32.0;
+    pub const CHIP_PADDING: f32 = 14.0;
+    pub const CHIP_ICON: f32 = 14.0;
+    pub const CHIP_GAP: f32 = 6.0;
     pub const PLAY_MIN_WIDTH: f32 = 210.0;
     pub const ICON_BUTTON: f32 = 44.0;
     pub const ICON_BUTTON_GLYPH: f32 = 20.0;
@@ -809,6 +814,8 @@ pub mod ty {
     pub const DETAIL_LARGE: TextStyle = TextStyle::new(14.0, Weight::Regular);
     pub const STATE_LABEL: TextStyle = TextStyle::new(14.0, Weight::Medium);
     pub const STATE_LABEL_SMALL: TextStyle = TextStyle::new(12.0, Weight::Medium);
+    /// The small chips of the game page (trophy count, the answers to "How did it run?").
+    pub const CHIP: TextStyle = TextStyle::new(14.0, Weight::Medium);
     pub const INFO_OVERLINE: TextStyle = TextStyle::tracked(13.0, Weight::SemiBold, 0.6);
     pub const ONBOARDING_OVERLINE: TextStyle = TextStyle::tracked(14.0, Weight::SemiBold, 0.8);
     pub const TROPHIES_OVERLINE: TextStyle = TextStyle::tracked(13.0, Weight::SemiBold, 0.8);
