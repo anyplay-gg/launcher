@@ -39,6 +39,7 @@ pub mod run_question;
 pub mod selfupdate;
 pub mod services;
 pub mod textures;
+pub mod together;
 pub mod toolkit;
 pub mod window_chrome;
 
@@ -163,6 +164,7 @@ pub struct LauncherApp {
     start_screen: screens::start::StartScreen,
     /// The ringing card and the call strip.
     calls: screens::calls::CallsUi,
+    together: screens::together::TogetherUi,
     links: links::LinkState,
     scan_on_start: bool,
     /// No scan, size or trophy work (previews and the demo have a made-up library).
@@ -213,6 +215,7 @@ impl LauncherApp {
             shown: None,
             start_screen: screens::start::StartScreen::default(),
             calls: screens::calls::CallsUi::default(),
+            together: screens::together::TogetherUi::default(),
             links: links::LinkState::default(),
             scan_on_start: config.scan_on_start,
             offline: false,
@@ -692,6 +695,7 @@ impl LauncherApp {
         self.paint_start(&ctx);
         self.paint_toast(&ctx);
         self.calls.show(&ctx, &mut self.model, &mut self.shell);
+        self.together.show(&ctx, &mut self.model, &mut self.shell);
         let mut cx = OverlayCx {
             model: &mut self.model,
             shell: &mut self.shell,

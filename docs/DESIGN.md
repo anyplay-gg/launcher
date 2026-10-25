@@ -1744,6 +1744,37 @@ Windows.Gaming.Input, which offers vibration to Xbox-style pads only: a DualSens
 is false), the setting then has no effect. Not verified on hardware: the feel of the strengths and the floor, WGI vibration from a
 second thread and the Linux timer.
 
+### 6.9 Finding the controller (2026-10-26)
+
+**Backend.** gilrs 0.11 with its default `wgi` feature: on Windows the launcher reads pads through Windows.Gaming.Input (the Xbox
+family as a `Gamepad`, everything else, a DualSense and a DualShock among them, as a `RawGameController` that gilrs maps from
+the bundled SDL controller database; the DualSense and DualSense Edge, 054C:0CE6 and 054C:0DF2, have Windows entries there, and
+Bluetooth pads are looked up as USB on purpose). On Linux it reads evdev (`/dev/input/event*` must be readable by the player; the
+kernel's `hid-playstation` driver provides the DualSense, SDL's database has its kernel GUIDs). A pad with no database entry is not
+dropped: it gets gilrs' default layout and `MappingSource::Driver`, and the launcher does not look at the mapping source. WGI delivers input only
+while a window of the process has focus, which suits the launcher's own screens; with a game in front only the XInput thread
+(Xbox pads) still hears the Home button.
+
+**What the launcher does about it.**
+- Each pad found at start or plugged in later is written to `launcher.log` with name, VID and PID, SDL GUID, mapping (or "no SDL
+  mapping") and backend; a pad without a mapping is a warning, "no gamepad found at start" and "gamepad removed" are info lines.
+- The pad thread restarts after five seconds when the backend cannot start (one odd device can fail gilrs on Windows) or panics,
+  instead of ending for good.
+- **Pad in use.** One pad counts at a time (`ActivePad`). Another pad's events are dropped while the pad in use spoke less than
+  600 ms ago, so Steam Input or DS4Windows with both the real pad and their virtual Xbox pad visible do not press twice; after 600 ms of quiet the
+  other pad takes over. The family (`ui::pad_info::Family`: PlayStation, Xbox, Nintendo, other) is read from the vendor id, else the name.
+- **Top bar.** A small status after the title (and the phone status) shows a controller icon and, when the pad reports one, its battery
+  in percent (read every 10 s; wired pads and pads without a reading show the icon alone). It is not a button and outside the focus order.
+  Screen readers get "Controller connected, battery 82 percent".
+- **Hints.** With an Xbox or other pad the hint bar and key strings name the buttons A, B, X, Y; a Switch pad swaps A with B and X with Y
+  (the positions). A PlayStation pad keeps the shapes. Before any pad was seen the shapes are used.
+- **Settings > Behaviour** has a note under Controller Vibration: what to try when the controller is not found (Steam Input,
+  DS4Windows).
+
+Not done, on purpose: a direct HID reader for the DualSense and DualShock. WGI and evdev both see them; the cases that make a pad invisible
+(Steam Input holding it, HidHide hiding it) hide it from HID readers as well. The one gap a HID reader would close is the Home button of a PlayStation pad while a game is in front.
+Not verified on hardware: a DualSense or DualShock over USB and Bluetooth through WGI, the battery reading of a Bluetooth DualSense through WGI, the A/B hints on a real Xbox pad.
+
 ## 7. Sounds and media
 
 ### 7.1 Sounds (`Sounds.swift`): synthesized, nothing bundled
@@ -2671,6 +2702,39 @@ Gallery scenes: `friends-screen-ready`, `friends-screen-hosting`, `friends-scree
 Gallery scenes: `friends-muted` (Home with a mute), `friends-restriction` (the mute's page), `friends-paused` (a conversation while muted), `friends-banned` (the Start page after a ban), `friends-signin`, `friends-browser`, `friends`, `friends-friend`, `friends-settings`, `friends-picker`, `friends-party`, `friends-party-picker`, `friends-messages`, `friends-conversation`, `friends-message`, `friends-request`, and `home-messages` (the profile button with unread messages).
 Gallery scenes: `friends-activity` (a card focused), `friends-activity-reaction` (a reaction focused), `friends-activity-empty`, `friends-activity-loading` and `friends-activity-error`; `friends-muted` (Home with a mute), `friends-restriction` (the mute's page), `friends-paused` (a conversation while muted), `friends-banned` (the Start page after a ban), `friends-signin`, `friends-browser`, `friends`, `friends-friend`, `friends-settings`, `friends-picker`, `friends-party`, `friends-party-picker`, `friends-messages`, `friends-conversation`, `friends-message`, `friends-request`, and `home-messages` (the profile button with unread messages).
 Gallery scenes of the Friends screen itself (1600 x 900): `friends` (the default page, the focus on the first request), `friends-busy` (five requests, friends playing), `friends-empty` (no friends yet), `friends-focus` (a friend's row with its quick actions up), `friends-rail` (the focus on the rail), `friends-offline` (the note and Try Again), `friends-connecting`, `friends-party-none` (the Party section without a party), `friends-signin` and `friends-browser` (no rail), `friends-banned`; every page of the table has a `friends-` scene of its own.
+
+### Play Together (2026-10-25, part of section 17)
+
+The launcher's side of [Play Together](https://github.com/anyplaynet/network/blob/main/spec/play-together.md): the owner's picture is "I start Minecraft from the launcher, my friend presses Join, his launcher starts Minecraft in the same session, and my world shows up as a LAN world". Nobody sets up a VPN, a port or an address. The pure rules are `anyps5_core::play_together` (the table, the join check, the presence wording); the flow is `app::together` and `app::online`; the card is `screens::together`; the words are `screens::together_strings`.
+
+**The table.** `data/lan-titles.v1.json` lists the games that can be played together (first entry: PPSA17221, Minecraft, up to 8 players). A copy is built in; an entry with a mode the launcher does not know is left out. Play Together exists only for a game in the table.
+
+**Hosting.** On the game's page the action row reads Play, Play Together, trophies, "...". Play stays the one primary action; Play Together is a secondary control of the same size, shown only for an unlocked game in the table (a game that is locked, starting or running shows no second button). The party page has a row of the same name with the game's name as its detail. Pressing it starts the game through the ordinary start with `game_start` carrying `host` (`max_members` from the table, `visibility` friends, `party` when the player is in a party); a plain Play carries none. When the net service cannot open the session, the game runs anyway and a toast says why nobody can join ("Nobody can join: Play Together could not start. Your game runs anyway."). A start that the net service does not answer within three seconds runs alone and says so.
+
+**Joining.** One function, one card. An invitation of kind `lan`, a friend of the party who plays in a Play Together session, a friend's Join row and an accepted invitation in the panel all end in `together::join`: the local checks first (signed in, online, online play on, owned, version, toolkit, place, not busy, in the order of the spec's table), then the net service's `check_join`, then `game_start` with `join`. A game that is owned but not unlocked is unlocked first and starts in the session when the unlock is done; a failed unlock drops the join and says so. An invitation of kind `lan` is not a toast and not an invitation row: it is the card "Mira is playing Minecraft. Join?".
+
+**The card.** A glass card at the top centre, on the call card's place and below it while a call rings (12 dp apart), entering with the overlay spring. Left a 56 dp lead (the friend's initial, or a quiet warning glyph), right a headline (semibold 16, three lines at most) and one line under it (14, 70 % white). Under both, the answers on one row, 12 dp apart: the quiet one on the left, the primary one (ink fill) on the right, one primary per card.
+
+| State | Headline | Line | Answers |
+|---|---|---|---|
+| Offer | Mira is playing Minecraft. Join? | 2 of 4 places taken (an invitation: Your game starts in their session) | Not now, **Join** |
+| Signed out | Sign in to play together | Play Together uses your AnyPlay account. | Close, **Sign in** |
+| Offline | You are offline | Play Together needs a connection. Try again in a moment. | **Close** |
+| Online play off | Online play is switched off | Switch it on to play together. | Close, **Switch on** |
+| Not owned | You need Minecraft to join | It is not in your library. Add it, then join again. | **Close** |
+| Wrong version | You need Minecraft 01.044.000; you have 01.008.000 | Both of you need the same version to play together. | **Close** |
+| Wrong toolkit | You need toolkit v0.1.5; you have v0.1.4 | Choose it under Toolkit for This Game, then join again. | **Close** |
+| Full | This game is full | Try again when someone leaves. | **Close** |
+| Busy | Another game is running | Close it, then join. | **Close** |
+| Ended | That session has ended | Ask your friend to start a new one. | **Close** |
+
+A friend who plays the game with no session (their online play is off, or they pressed Play) has no Join row; their page says "Online play is off on Mira's PC" above the actions. "Not now" remembers the offer by its session and declines the invitation; the card does not come back for that session. When the host's session ends while the player's game runs, a toast says "Mira's session ended. Your game keeps running." and the game is left alone.
+
+**Presence.** A friend in a Play Together session reads "Playing Minecraft together (2/4)" in the friends list, on the friend's page and in the party; the player's own session caption reads the same. A session of any other kind keeps the wording it had.
+
+**Strings.** `together_strings.rs`, English and Turkish (the Turkish is unreviewed). Headlines say what is the case; the line under says what to do. The wrong-version headline is the owner's sentence.
+
+**Gallery.** `home-together` (the button, focused), `together-offer`, `together-offer-invitation`, one scene for each blocker (`together-signed-out`, `-offline`, `-online-off`, `-not-owned`, `-wrong-version`, `-wrong-build`, `-full`, `-busy`, `-ended`, `-no-session`), and the panel pages `together-friends`, `together-friend`, `together-friend-nosession`, `together-party`.
 
 ## 18. Phone as controller
 

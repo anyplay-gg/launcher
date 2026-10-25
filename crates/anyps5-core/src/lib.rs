@@ -28,6 +28,7 @@ pub mod openh264;
 pub mod patches;
 pub mod paths;
 pub mod platform;
+pub mod play_together;
 pub mod process;
 pub mod recommended;
 pub mod releases;

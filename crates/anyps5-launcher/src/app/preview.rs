@@ -90,6 +90,8 @@ pub enum Scene {
     HomeRuns,
     /// Signed in, two friends play the game now.
     HomeFriendsPlaying,
+    /// Signed in, the selected game can be played together: the Play Together button.
+    HomeTogether,
     HomeTheme(u32),
     HomeNoArtwork,
     /// The selected game stays on a release of its own (a fact says so).
@@ -149,6 +151,7 @@ impl Scene {
             "home-ask" => Scene::HomeAsk,
             "home-runs" => Scene::HomeRuns,
             "home-friends-playing" => Scene::HomeFriendsPlaying,
+            "home-together" => Scene::HomeTogether,
             "home-theme1" => Scene::HomeTheme(1),
             "home-theme2" => Scene::HomeTheme(2),
             "home-noartwork" => Scene::HomeNoArtwork,
@@ -169,7 +172,7 @@ impl Scene {
         })
     }
 
-    pub const ALL_NAMES: [&'static str; 43] = [
+    pub const ALL_NAMES: [&'static str; 44] = [
         "onboarding0",
         "onboarding1",
         "onboarding2",
@@ -201,6 +204,7 @@ impl Scene {
         "home-ask",
         "home-runs",
         "home-friends-playing",
+        "home-together",
         "home-theme1",
         "home-theme2",
         "home-noartwork",
@@ -597,6 +601,15 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
             }
         }
         Scene::HomeActions => m.focus = HomeFocus::Actions(0),
+        Scene::HomeTogether => {
+            sign_in(m);
+            let id = ids[at(1)].clone();
+            if let Some(game) = m.games.iter_mut().find(|g| g.id == id) {
+                game.title_id = "PPSA17221".into();
+                game.name = "Minecraft".into();
+            }
+            m.focus = HomeFocus::Actions(1);
+        }
         Scene::HomeTrophies => m.focus = HomeFocus::Actions(1),
         Scene::HomeLocked => m.selected = 2,
         Scene::HomeGlibc => m.focus = HomeFocus::Actions(0),

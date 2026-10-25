@@ -135,6 +135,8 @@ pub enum ScreenPage {
     Profile(ProfileLook),
     /// The trophy comparison with an invented friend, in one of its states.
     Compare(CompareLook),
+    /// The Play Together card over the home screen of a game that can be played together.
+    Together(crate::screens::gallery_together::TogetherLook),
 }
 
 /// The trophy comparison's states (docs/DESIGN.md 17, "Trophy compare").
@@ -318,6 +320,14 @@ pub enum OnlineLook {
     InCallOpen,
     /// Waiting for a friend to answer.
     Calling,
+    /// The friends list with friends playing together and one without a session.
+    TogetherFriends,
+    /// A friend's page with a joinable Play Together session.
+    TogetherFriend,
+    /// The party page with its Play Together row.
+    TogetherParty,
+    /// A friend who plays the game with no session: why there is nothing to join.
+    TogetherNoSession,
     /// The friends list with a missed call.
     MissedCall,
     /// The party page while the voice is on Discord, for the leader.
@@ -569,6 +579,13 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "calling" => ScreenPage::Online(OnlineLook::Calling),
         "missed-call" => ScreenPage::Online(OnlineLook::MissedCall),
         "party-discord" => ScreenPage::Online(OnlineLook::PartyDiscord),
+        "together-friends" => ScreenPage::Online(OnlineLook::TogetherFriends),
+        "together-friend" => ScreenPage::Online(OnlineLook::TogetherFriend),
+        "together-party" => ScreenPage::Online(OnlineLook::TogetherParty),
+        "together-friend-nosession" => ScreenPage::Online(OnlineLook::TogetherNoSession),
+        other if crate::screens::gallery_together::parse(other).is_some() => {
+            ScreenPage::Together(crate::screens::gallery_together::parse(other)?)
+        }
         other => {
             let n: usize = other.strip_prefix("settings")?.parse().ok()?;
             (n < crate::screens::settings::Category::ALL.len())
@@ -581,11 +598,12 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
 const SAMPLE_NOW: i64 = 1_792_670_400;
 
 /// What the online panel shows over the invented online state: AnyPlay's own cloud.
-fn online_data(
-    online: &anyps5_core::online::Online,
+fn online_data<'a>(
+    online: &'a anyps5_core::online::Online,
+    play_together: Option<&'a str>,
     language: crate::ui::i18n::Language,
     accent: Color32,
-) -> crate::screens::online::OnlineData<'_> {
+) -> crate::screens::online::OnlineData<'a> {
     crate::screens::online::OnlineData {
         online,
         cloud: Some("https://cloud.example.org"),
@@ -597,6 +615,7 @@ fn online_data(
         now: SAMPLE_NOW,
         utc_offset: Some(0),
         game_running: false,
+        play_together,
     }
 }
 
@@ -620,11 +639,11 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
             title: title.into(),
             version: "01.000".into(),
             session: joinable.then(|| SessionRef {
+                kind: Default::default(),
                 id: "s1".into(),
                 joinable: true,
                 members: 2,
                 max_members: 4,
-                kind: Default::default(),
             }),
         })
     };
@@ -687,6 +706,7 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         blocked: vec![account(8, "Spamford")],
     };
     state.invitations = vec![Invitation {
+        kind: Default::default(),
         id: "i1".into(),
         from: account(3, "Juno"),
         session: "s2".into(),
@@ -694,7 +714,6 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         title: NAMES[4].into(),
         version: "01.000".into(),
         expires: 0,
-        kind: Default::default(),
     }];
     let count = |platinum, gold, silver, bronze| Count {
         bronze,
@@ -746,6 +765,16 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
     sample_voice(&mut state, look);
     sample_screen(&mut state, look);
     sample_calls(&mut state, look);
+    if matches!(
+        look,
+        OnlineLook::TogetherFriends
+            | OnlineLook::TogetherFriend
+            | OnlineLook::TogetherParty
+            | OnlineLook::TogetherNoSession
+    ) {
+        crate::screens::gallery_together::sample(&mut state);
+        state.session = None;
+    }
     if matches!(
         look,
         OnlineLook::Muted | OnlineLook::Restriction | OnlineLook::Paused
@@ -1054,13 +1083,13 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
         call: false,
     });
     state.session = Some(Session {
+        kind: Default::default(),
         id: "s1".into(),
         title_id: "TEST00001".into(),
         title: NAMES[1].into(),
         version: "01.000".into(),
         leader: AccountId(1),
         max_members: 4,
-        kind: Default::default(),
         visibility: Visibility::Friends,
         members: vec![Member {
             account: account(1, "Mira"),
@@ -1632,6 +1661,11 @@ impl ScreenGallery {
         }
     }
 
+    /// The name for the party's Play Together row: only the look that shows it.
+    fn together_name(&self) -> Option<&'static str> {
+        (self.page == ScreenPage::Online(OnlineLook::TogetherParty)).then_some(NAMES[1])
+    }
+
     /// The ringing card and the call strip of the call looks.
     fn call_surfaces(
         &self,
@@ -1814,6 +1848,7 @@ impl ScreenGallery {
             let scene = match page {
                 ScreenPage::Unlocking => Scene::HomeUnlocking,
                 ScreenPage::Online(_) | ScreenPage::Profile(_) => Scene::HomeFriends,
+                ScreenPage::Together(_) => Scene::HomeTogether,
                 _ => Scene::Home,
             };
             // The real home, as the launcher paints it; its focus stays hidden under a panel.
@@ -1956,7 +1991,7 @@ impl ScreenGallery {
                 .show(shell, &ctx, &events, &stamp, language, accent);
         }
         {
-            let data = online_data(&self.online, language, accent);
+            let data = online_data(&self.online, self.together_name(), language, accent);
             if self.friends.wants_local() {
                 self.friends.set_local(crate::screens::gallery_feed::local(
                     &self.covers,
@@ -1968,6 +2003,9 @@ impl ScreenGallery {
         }
         if let ScreenPage::Online(look) = self.page {
             self.call_surfaces(&ctx, look, accent, language);
+        }
+        if let ScreenPage::Together(look) = self.page {
+            crate::screens::gallery_together::paint(&ctx, accent, look, language);
         }
         {
             let plan = sample_plan(matches!(self.page, ScreenPage::RecommendedWarning));
@@ -2093,7 +2131,12 @@ impl ScreenGallery {
             ScreenPage::Online(look) => {
                 use crate::screens::online::Page;
                 let language = shell.language;
-                let data = online_data(&self.online, language, shell.accent_color());
+                let data = online_data(
+                    &self.online,
+                    self.together_name(),
+                    language,
+                    shell.accent_color(),
+                );
                 // The call looks show the ringing card or the strip over the bare home screen.
                 if matches!(
                     look,
@@ -2122,7 +2165,16 @@ impl ScreenGallery {
                     OnlineLook::Account | OnlineLook::AccountAppearing => {
                         self.friends.show_page(Page::Account, &data);
                     }
-                    OnlineLook::Party => self.friends.show_page(Page::Party, &data),
+                    OnlineLook::Party | OnlineLook::TogetherParty => {
+                        self.friends.show_page(Page::Party, &data);
+                    }
+                    OnlineLook::TogetherFriend => self
+                        .friends
+                        .show_page(Page::Friend(anyps5_core::online::api::AccountId(2)), &data),
+                    OnlineLook::TogetherNoSession => self
+                        .friends
+                        .show_page(Page::Friend(anyps5_core::online::api::AccountId(3)), &data),
+                    OnlineLook::TogetherFriends => self.friends.show_page(Page::Home, &data),
                     OnlineLook::PartyPicker => {
                         self.friends.show_page(Page::PartyPicker, &data);
                     }
@@ -2289,7 +2341,7 @@ impl ScreenGallery {
             ScreenPage::WhatsNewLoading => self.whats_new.open(),
             ScreenPage::Log | ScreenPage::Report => self.log.open(),
             ScreenPage::Start => self.start.open_at(ctx.clock()),
-            ScreenPage::Banner | ScreenPage::Unlocking => {}
+            ScreenPage::Banner | ScreenPage::Unlocking | ScreenPage::Together(_) => {}
         }
     }
 
