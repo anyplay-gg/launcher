@@ -85,6 +85,14 @@ pub fn paint_focus_stroke(painter: &Painter, rect: Rect, radius: f32, width: f32
     let t = t.clamp(0.0, 1.0);
     if t > 0.001 {
         let width = snap_width(painter, width);
+        // A hairline of shade outside the ring keeps it visible on a light picture.
+        let outer = width * 1.6 + 1.0;
+        painter.add(RectShape::stroke(
+            snap_rect(painter, rect.expand(outer)),
+            corner(radius + outer),
+            Stroke::new(1.0, black(0.35 * t)),
+            StrokeKind::Inside,
+        ));
         painter.add(RectShape::stroke(
             snap_rect(painter, rect.expand(width * 1.6)),
             corner(radius + width * 1.6),
@@ -661,7 +669,7 @@ impl IconButton {
 pub struct Switch {
     on: bool,
     accent: Color32,
-    /// Focus amount of the row the switch sits in (0..=1): the off track turns black 0.18.
+    /// Focus amount of the row the switch sits in (0..=1): the off track steps up to white 0.30.
     focus: f32,
     label: String,
     enabled: bool,
@@ -680,7 +688,7 @@ impl Switch {
             announce: true,
         }
     }
-    /// The row is focused: the off track turns black 0.18.
+    /// The row is focused: the off track steps up to white 0.30.
     pub fn focused(mut self, focused: bool) -> Self {
         self.focus = if focused { 1.0 } else { 0.0 };
         self
