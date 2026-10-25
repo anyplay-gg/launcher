@@ -211,7 +211,7 @@ Components:
 |---|---|
 | Tile row small / large / gap / label column | 118 / 176 / 16 / 300 |
 | Unselected tile y offset | `(176 - 118) * 0.18` = 10.44 |
-| Library tile | 196, column gap 26, row gap 30, 6 columns, grid padding 14 |
+| Library tile | 196, column gap 26, row gap 30, as many columns as fit the width (at least 3), grid padding 14 |
 | Splash tile | 200 |
 | Onboarding folder tiles | 84, gap 12, first 8 games |
 | Console button | min height 54, horizontal padding 30 (18 when icon only), icon 17, gap 10, `Play` min width 210, onboarding buttons 220 / 180 |
@@ -1126,7 +1126,7 @@ up-down arrows, curve, scope, gauge, waveform, timer, tortoise, keyboard, trigge
 ### 5.10 Library grid
 
 Full-screen overlay over the home (black 0.74 blurred): header `library` (40 light) + count (22 medium, 0.5, 8 leading) + hint bar
-without options; below, a scrolling grid of **6 columns x 196** tiles (gap 26 x 30). Each cell: tile with focus ring on the
+without options; below, a scrolling grid of **196** tiles (gap 26 x 30) with as many columns as fit the width, at least three (`columns_for`; up and down move by that row). Each cell: tile with focus ring on the
 keyboard-selected one, name (15; semibold white when focused, else regular 0.75; 1 line, truncated), state label (12). Click =
 select that game and close. Keys: arrows move (up/down jump a row of 6), select picks, back/options close. The focused tile scrolls
 to the centre (animation 31). (S-library. The tile shown "Playing" uses the coral accent.)
@@ -1214,8 +1214,8 @@ for new trophy records; each new one raises a banner and refreshes the trophy se
 
 ### 5.15 Onboarding (first start)
 
-Three steps; left-aligned column on a left-to-right black 0.55 -> 0.1 gradient over the (live) theme backdrop; padding 110 x 80.
-Top: three dots (current 46 x 5, others 18 x 5; white 0.95 for steps up to the current one, else 0.22; gap 10; 54 below).
+Three steps, four when there is a cloud to sign in to (release builds name AnyPlay’s); left-aligned column on a left-to-right black 0.55 -> 0.1 gradient over the (live) theme backdrop; padding 110 x 80.
+Top: one dot per step (current 46 x 5, others 18 x 5; white 0.95 for steps up to the current one, else 0.22; gap 10; 54 below).
 Then the step (animation 18), flexible space, bottom row: `back` button (chevron-left glyph, unfocused, only from step 1) left,
 hint bar (no options) right. Title block: title 54 light, subtitle 19 white 0.7 (max 720 wide), gap 14; step gap 46.
 
@@ -1224,12 +1224,18 @@ hint bar (no options) right. Title block: title 54 light, subtitle 19 white 0.7 
 | 0 | `welcome` / `welcomeSubtitle` | overline `chooseLanguage`; two cards 280 x 150 (radius 20, padding 26, bottom-left aligned): `TR` or `EN` (15 bold, 0.6) over the language's own name (28 medium). Focused: white fill, black text, scale 1.04, glow; else white 0.10 + 1 px white 0.14 |
 | 1 | `chooseTheme` / `chooseThemeSubtitle` | three theme cards (S-themes): live or still preview 330 x 186 (radius 18, focus ring) above a row: theme name (22) and a 12 dp dot in the theme's default accent; focused card scale 1.04 / opacity 1, others 0.97 / 0.72 |
 | 2 | `chooseFolder` / `chooseFolderSubtitle` | button `pickFolder` (or `changeFolder` once chosen; folder glyph, min 220), and once a folder is set the prominent button `start` (arrow glyph, min 180); a glass card (radius 16, padding 20, max 640) with a status glyph (magnifier while scanning, question-folder if empty, check in accent) + `scanning` / `noGamesFound` / `gamesFound` (18 medium) over the path (13, 0.5, middle truncated); the first 8 games as 84 tiles |
+| 3 | `Play together` / signing in (`OnboardingText`) | only with a cloud: one row of buttons, Sign In (prominent, sign-in glyph), Create Account (user-plus glyph) and Not Now (arrow glyph), min 180 each, gap 12; under them a detail line (13, 0.6): you can sign in any time from the top bar |
+
+Our own wording replaces the generated table’s for the welcome and folder subtitles, the empty library and the About text
+(`ui/i18n.rs` `ours`): they speak of the player’s games and game dumps, never of a platform’s name.
 
 The **language and theme choices apply live** while moving the focus (left/right change `preferences.language` / `preferences.theme`
 immediately, so the page re-renders in that language and the backdrop switches theme); select confirms and advances (sound
 `select`); Back (Esc/B/button) returns (sound `back`). Step 2 focus: 0 = the folder button, 1 = Start (only once a folder is set; focus
-jumps to Start after picking); select on Start finishes: sound `unlocked`, cross-fade (animation 19), focus on the tiles, rescan if
-empty. Mouse: tapping a language card selects and confirms; tapping a theme card selects it (sound `move`).
+jumps to Start after picking); select on Start goes on to the online step when there is a cloud, and otherwise finishes: sound `unlocked`, cross-fade
+(animation 19), focus on the tiles, rescan if empty. Step 3 focus: 0 Sign In, 1 Create Account, 2 Not Now. Every choice
+finishes the first start; Sign In and Create Account also open the online area, where the browser sign-in starts as soon as
+the net service has said hello (a missing service drops it). Mouse: tapping a language card selects and confirms; tapping a theme card selects it (sound `move`).
 
 ### 5.16 Icon mapping (SF Symbols -> Phosphor, MIT)
 
@@ -1957,7 +1963,8 @@ No counterpart in the macOS launcher (Sparkle there). Core module `anyps5_core::
 - **Verify.** The portable `AnyPlay-Launcher-<v>-x64.exe` (or, in a release without it, `AnyPS5-Launcher-<v>-x64.exe`; every release carries both, 9.7) goes to `%LOCALAPPDATA%\AnyPS5\Updates`. Its SHA-256 must match the line in the release's `SHA256SUMS.txt`; a missing line, a wrong hash or a file that does not start with `MZ` refuses the update and leaves nothing behind. The file gets its final name only after that, so a file of that name is always a verified one.
 - **Swap.** Windows cannot overwrite a running exe but can rename it. The staged file is copied beside the running exe (`<name>.new`, it may be on another drive), the running exe is renamed to `<name>.old`, the copy takes its place. A failure in the second step moves the old one back. The next start deletes `.old` files and stale downloads (one still in use stays until a later start). It works for the installed exe (`%LOCALAPPDATA%\Programs\AnyPlay Launcher`, or `...\AnyPS5 Launcher` for an install from v0.1.x) and for the portable exe in any writable folder. The swap keeps the exe's file name; nothing depends on it. A folder that refuses new files is reported before anything is downloaded: About shows "<v> available, but this folder is read-only" and nothing else happens.
 - **When.** A calm toast when the update is ready: "Launcher <v> is ready. It installs when you close the launcher." The swap runs on exit, after the preferences are saved. An update staged by a run that closed too early is offered again at the next start without a second download.
-- **About.** The *Version* row reads "<v>" and, with a staged update, "<v> ready" with a *Restart Now* row above *Quit*. It closes the launcher, swaps, and starts the new exe with the same arguments.
+- **About.** The *Version* row reads "<v>" and, with a staged update, "<v> ready" with a *Restart Now* row above *Quit*. It closes the launcher, swaps, and starts the new exe with the same arguments. Under it, from a gap: *AnyPlay Website* (anyplaynet.com), *AnyPlay Discord* (news, help and other players), *Privacy Policy* and *Terms of Service* open their pages in the browser (`about_strings`; the launcher opens only these), then a line on who it builds on (AnyPS5 by boykopovar; the launcher began as utkuhalis’ AnyPS5-ARM launcher), and *Quit* last.
+- **What’s New.** The highlights group the toolkit’s changes under names players know (Graphics, Trophies, Saves, Sound, Controllers, Online, Starting games, System; `area_title`), merging areas that share a name; an unknown area keeps its own. *Everything* below keeps the exact scopes.
 - **Signed manifest.** The step above is the *unsigned* path and runs only while `data/update-keys.txt` holds no trusted key (it holds none yet). From the first key on, the launcher takes updates only through the release's `latest.json` and `latest.json.sig`: an Ed25519 signature by a trusted key, an unexpired manifest, a version newer than the running one, a running version not below the manifest's `minimum_version`, and a download with the manifest's SHA-256 and size. The tag and `SHA256SUMS.txt` are then not used, and there is no fallback to the unsigned path: a release without a manifest is refused. A refusal only logs, offline the check just fails, and neither touches the installed exe. Nothing the player sees changes. The format, the rules, the migration and the key ceremony (making, storing, adding and rotating the key) are in [UPDATES.md](UPDATES.md).
 - **Not done.** The exe is not code-signed. Without a trusted key the checksum list comes from the same release as the exe, so it guards against a damaged or substituted download, not against a compromised release; the signed manifest is what does.
 
