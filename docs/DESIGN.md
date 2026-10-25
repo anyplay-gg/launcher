@@ -831,7 +831,7 @@ makes a circle); rows, cards, cells and tiles keep their radii (12, 16, 20, 12 %
 Neighbouring controls are always 12 apart (`size::CONTROL_GAP`), in the top bar and the action row alike. The profile pill is a
 control like the three buttons; only the clock, which is a status and not a control, sits 28 dp further out.
 
-**Two variants.** *Primary* is ink, not accent: white 0.92 fill, a dark label (`color::on_primary`, 16:1), one per view
+**Two variants.** *Primary* is ink, not accent: white 0.92 fill, a dark label (`color::on_primary`, 16:1 to 19:1 on the theme tones), one per view
 (Play, Unlock, Accept). *Secondary* is everything else: white 0.10 fill, a 1 px white 0.12 hairline, white ink. Destructive is
 a secondary with the destructive ink.
 
