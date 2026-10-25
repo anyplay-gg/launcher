@@ -74,9 +74,9 @@ pub struct Toast {
 /// Where the first-run setup stands.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Onboarding {
-    /// 0 language, 1 theme, 2 games folder.
+    /// 0 language, 1 theme, 2 games folder, 3 online (only when a cloud is set).
     pub step: usize,
-    choices: [Option<usize>; 3],
+    choices: [Option<usize>; 4],
 }
 
 /// Something that has to happen outside the model.
@@ -204,6 +204,9 @@ pub struct Model {
     /// The focused row of the trophy list.
     pub trophy_index: usize,
     pub onboarding: Onboarding,
+    /// The first start ended with Sign In (`false`) or Create Account (`true`): the browser
+    /// sign-in starts as soon as the net service is up (`app::online::poll_onboarding_sign_in`).
+    pub sign_in_after_onboarding: Option<bool>,
     /// The first scan of the games folder has finished.
     pub library_loaded: bool,
     /// The page of the settings a link asked for; the settings panel takes it when it opens.
@@ -280,6 +283,7 @@ impl Model {
             library_index: 0,
             trophy_index: 0,
             onboarding: Onboarding::default(),
+            sign_in_after_onboarding: None,
             library_loaded: false,
             settings_page: None,
             progress: HashMap::new(),
@@ -1027,27 +1031,41 @@ impl Model {
     /// The focused choice of the current step.
     pub fn onboarding_choice(&self) -> usize {
         let step = self.onboarding.step;
-        self.onboarding.choices[step.min(2)].unwrap_or_else(|| match step {
+        self.onboarding.choices[step.min(3)].unwrap_or_else(|| match step {
             0 => Language::ALL
                 .iter()
                 .position(|l| *l == self.language())
                 .unwrap_or(0),
             1 => self.theme().index() as usize,
-            _ => usize::from(self.prefs.games_folder.is_some()),
+            2 => usize::from(self.prefs.games_folder.is_some()),
+            // Sign In first.
+            _ => 0,
         })
+    }
+
+    /// How many steps the first start has: the online step only when there is a cloud to sign
+    /// in to (release builds name AnyPlay's; a build without one stays offline until set up).
+    pub fn onboarding_steps(&self) -> usize {
+        if anyps5_core::online::cloud(self.prefs.online_cloud.as_deref()).is_some() {
+            4
+        } else {
+            3
+        }
     }
 
     fn onboarding_count(&self) -> usize {
         match self.onboarding.step {
             0 => Language::ALL.len(),
             1 => Theme::ALL.len(),
-            _ => {
+            2 => {
                 if self.prefs.games_folder.is_some() {
                     2
                 } else {
                     1
                 }
             }
+            // Sign In, Create Account, Not Now.
+            _ => 3,
         }
     }
 
@@ -1098,19 +1116,50 @@ impl Model {
                 self.preview_choice();
                 self.onboarding_advance();
             }
-            _ => {
+            2 => {
                 if choice == 1 && self.prefs.games_folder.is_some() {
-                    self.onboarding_finish();
+                    self.onboarding_start();
                 } else {
                     self.request_folder_dialog();
                 }
             }
+            _ => match choice {
+                0 => self.onboarding_online(Some(false)),
+                1 => self.onboarding_online(Some(true)),
+                _ => self.onboarding_online(None),
+            },
         }
+    }
+
+    /// Start on the folder step: on to signing in, or done when there is no cloud.
+    pub fn onboarding_start(&mut self) {
+        if self.onboarding_steps() > 3 {
+            self.onboarding_advance();
+        } else {
+            self.onboarding_finish();
+        }
+    }
+
+    /// The online step's choice: sign in or create an account (`Some(create)`), or not now.
+    /// Either way the first start ends; a sign-in opens the online area, where the browser
+    /// sign-in starts once the net service is up.
+    pub fn onboarding_online(&mut self, sign_in: Option<bool>) {
+        self.onboarding_finish();
+        if let Some(create) = sign_in {
+            self.sign_in_after_onboarding = Some(create);
+            self.open(Overlay::Online);
+        }
+    }
+
+    /// A tap on one of the online step's buttons.
+    pub fn tap_online(&mut self, index: usize) {
+        self.set_onboarding_choice(index);
+        self.onboarding_confirm();
     }
 
     fn onboarding_advance(&mut self) {
         self.sound(Cue::Select);
-        self.onboarding.step = (self.onboarding.step + 1).min(2);
+        self.onboarding.step = (self.onboarding.step + 1).min(self.onboarding_steps() - 1);
     }
 
     pub fn onboarding_back(&mut self) {
@@ -1152,7 +1201,7 @@ impl Model {
 
 impl Onboarding {
     fn set_choice(&mut self, step: usize, choice: usize) {
-        self.choices[step.min(2)] = Some(choice);
+        self.choices[step.min(3)] = Some(choice);
     }
 }
 
@@ -1698,8 +1747,10 @@ mod tests {
 
     #[test]
     fn onboarding_walks_three_steps_and_finishes() {
+        // An empty cloud address is no cloud, even in a build that names AnyPlay's.
         let prefs = Preferences {
             language: settings::Language::English,
+            online_cloud: Some(String::new()),
             ..Preferences::default()
         };
         let mut m = Model::new(
@@ -1737,6 +1788,75 @@ mod tests {
         m2.handle(Command::Select);
         m2.handle(Command::Back);
         assert_eq!(m2.onboarding.step, 0);
+    }
+
+    /// A model on the online step: language and theme confirmed, a folder chosen, Start pressed.
+    fn on_online_step() -> Model {
+        let prefs = Preferences {
+            language: settings::Language::English,
+            online_cloud: Some("https://cloud.example.org".to_owned()),
+            ..Preferences::default()
+        };
+        let mut m = Model::new(
+            prefs,
+            AppPaths::under(std::path::Path::new("C:/none")),
+            false,
+        );
+        assert_eq!(m.onboarding_steps(), 4);
+        m.handle(Command::Select);
+        m.handle(Command::Select);
+        m.choose_folder(Some(PathBuf::from("C:/games")));
+        m.handle(Command::Select);
+        assert_eq!(m.onboarding.step, 3, "Start leads to the online step");
+        assert!(!m.onboarded());
+        m
+    }
+
+    #[test]
+    fn onboarding_ends_with_signing_in_when_there_is_a_cloud() {
+        let mut m = on_online_step();
+        // Sign In is focused first; select ends the first start and opens the online area.
+        assert_eq!(m.onboarding_choice(), 0);
+        m.handle(Command::Select);
+        assert!(m.onboarded());
+        assert_eq!(m.sign_in_after_onboarding, Some(false));
+        assert_eq!(m.overlay, Some(Overlay::Online));
+
+        // Create Account asks for a new account.
+        let mut m = on_online_step();
+        m.handle(Command::Right);
+        m.handle(Command::Select);
+        assert_eq!(m.sign_in_after_onboarding, Some(true));
+
+        // Not Now ends it with nothing pending and nothing open.
+        let mut m = on_online_step();
+        m.handle(Command::Right);
+        m.handle(Command::Right);
+        m.handle(Command::Right);
+        assert_eq!(m.onboarding_choice(), 2, "the row ends at Not Now");
+        m.handle(Command::Select);
+        assert!(m.onboarded());
+        assert_eq!(m.sign_in_after_onboarding, None);
+        assert_eq!(m.overlay, None);
+
+        // Back from the online step returns to the folder.
+        let mut m = on_online_step();
+        m.handle(Command::Back);
+        assert_eq!(m.onboarding.step, 2);
+    }
+
+    #[test]
+    fn the_sign_in_waits_for_the_net_service() {
+        use anyps5_core::online::Status;
+        let mut m = on_online_step();
+        m.handle(Command::Select);
+        // Not running yet: the wish stays.
+        crate::app::online::poll_onboarding_sign_in(&mut m);
+        assert_eq!(m.sign_in_after_onboarding, Some(false));
+        // A missing service drops it.
+        m.online.status = Status::Missing;
+        crate::app::online::poll_onboarding_sign_in(&mut m);
+        assert_eq!(m.sign_in_after_onboarding, None);
     }
 
     #[test]

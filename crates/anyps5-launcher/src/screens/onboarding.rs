@@ -1,4 +1,4 @@
-//! First start (docs/DESIGN.md 5.15): language, theme, games folder.
+//! First start (docs/DESIGN.md 5.15): language, theme, games folder and, with a cloud, signing in.
 //!
 //! A left-aligned column on a left-to-right black gradient over the live theme backdrop. The
 //! language and theme choices apply while the focus moves, so the page re-renders in that
@@ -7,6 +7,8 @@
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
 use egui::{Align2, Color32, Id, Painter, Rect, Role, Sense, Shape, Ui, WidgetInfo, pos2, vec2};
 
+use crate::screens::onboarding_strings::OnboardingText as OT;
+use crate::screens::online_strings::OnlineText;
 use crate::screens::{ScreenCx, place, wrapped};
 use crate::ui::anim::{AnimExt, Motion, lerp};
 use crate::ui::background::{Background, SLOT_CARDS, STILL_TIME_CARD};
@@ -22,7 +24,6 @@ use crate::ui::theme::{self, Theme, black, radius, size, ty, white};
 
 /// Steps slide in from this far to the side.
 const STEP_SLIDE: f32 = 40.0;
-const STEPS: usize = 3;
 
 /// What a press on the onboarding asks the model to do.
 enum Press {
@@ -30,6 +31,8 @@ enum Press {
     Theme(usize),
     Folder,
     Start,
+    /// Sign In, Create Account or Not Now on the online step.
+    Online(usize),
     Back,
 }
 
@@ -41,6 +44,7 @@ pub fn show(ui: &mut Ui, cx: &mut ScreenCx<'_>) {
 
     let language = cx.language();
     let step = cx.model.onboarding.step;
+    let steps = cx.model.onboarding_steps();
     let (pad_x, pad_y) = theme::pad::ONBOARDING;
     let left = screen.min.x + pad_x;
     let top = screen.min.y + pad_y;
@@ -52,7 +56,7 @@ pub fn show(ui: &mut Ui, cx: &mut ScreenCx<'_>) {
         Rect::from_min_size(pos2(left, top), vec2(200.0, 5.0)),
         |ui| {
             ui.spacing_mut().interact_size.y = 0.0;
-            onboarding_dots(ui, STEPS, step)
+            onboarding_dots(ui, steps, step)
         },
     );
 
@@ -61,7 +65,7 @@ pub fn show(ui: &mut Ui, cx: &mut ScreenCx<'_>) {
         .ctx
         .animate_to("onboarding-step", step as f32, Motion::Layout);
     let content_top = top + 5.0 + 54.0;
-    for index in 0..STEPS {
+    for index in 0..steps {
         let d = animated - index as f32;
         if d.abs() >= 1.0 {
             continue;
@@ -77,7 +81,8 @@ pub fn show(ui: &mut Ui, cx: &mut ScreenCx<'_>) {
         match index {
             0 => language_step(&mut child, cx, origin, language, &mut presses),
             1 => theme_step(&mut child, cx, origin, language, &mut presses),
-            _ => folder_step(&mut child, cx, origin, language, &mut presses),
+            2 => folder_step(&mut child, cx, origin, language, &mut presses),
+            _ => online_step(&mut child, cx, origin, language, &mut presses),
         }
     }
 
@@ -115,7 +120,8 @@ pub fn show(ui: &mut Ui, cx: &mut ScreenCx<'_>) {
                 cx.model.set_onboarding_choice(0);
                 cx.model.request_folder_dialog();
             }
-            Press::Start => cx.model.onboarding_finish(),
+            Press::Start => cx.model.onboarding_start(),
+            Press::Online(i) => cx.model.tap_online(i),
             Press::Back => cx.model.onboarding_back(),
         }
     }
@@ -419,4 +425,57 @@ fn folder_step(
         let style = crate::screens::home::tile_style(cx, game, side, accent);
         chrome::paint_tile(&painter, rect, &style);
     }
+}
+
+/// The last step, only with a cloud: Sign In (prominent), Create Account and Not Now in one row,
+/// and a line under them that says where signing in waits later.
+fn online_step(
+    ui: &mut Ui,
+    cx: &mut ScreenCx<'_>,
+    origin: egui::Pos2,
+    language: Language,
+    presses: &mut Vec<Press>,
+) {
+    let painter = ui.painter().clone();
+    let y = step_title(
+        &painter,
+        origin,
+        OT::OnlineTitle.text(language),
+        OT::OnlineSubtitle.text(language),
+    );
+    let on_step = cx.model.onboarding.step == 3;
+    let choice = cx.model.onboarding_choice();
+
+    let row = Rect::from_min_size(pos2(origin.x, y), vec2(800.0, size::BUTTON_MIN_HEIGHT));
+    place(ui, row, |ui| {
+        ui.spacing_mut().item_spacing.x = 12.0;
+        let buttons = [
+            (OnlineText::SignIn.text(language), Icon::SIGN_IN, true),
+            (
+                OnlineText::CreateAccount.text(language),
+                Icon::USER_PLUS,
+                false,
+            ),
+            (OT::NotNow.text(language), Icon::ARROW_RIGHT, false),
+        ];
+        for (index, (label, icon, prominent)) in buttons.into_iter().enumerate() {
+            let response = ConsoleButton::new(label)
+                .icon(icon)
+                .prominent(prominent)
+                .min_width(180.0)
+                .focused(on_step && choice == index)
+                .show(ui);
+            if on_step && response.clicked() {
+                presses.push(Press::Online(index));
+            }
+        }
+    });
+    text::paint(
+        &painter,
+        pos2(origin.x, y + size::BUTTON_MIN_HEIGHT + 22.0),
+        Align2::LEFT_TOP,
+        ty::DETAIL,
+        OT::OnlineLater.text(language),
+        white(0.6),
+    );
 }

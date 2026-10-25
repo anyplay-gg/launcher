@@ -771,6 +771,26 @@ fn record_env(model: &Model, game: &GameId) -> BTreeMap<String, String> {
     net::game_environment(None, record.as_deref())
 }
 
+/// Once per frame: the sign-in the player chose at the end of the first start. Opening the
+/// online area brings the net service up; the browser sign-in starts once it has said hello.
+/// A service that is missing, or a player already signed in, drops the wish.
+pub fn poll_onboarding_sign_in(model: &mut Model) {
+    let Some(create) = model.sign_in_after_onboarding else {
+        return;
+    };
+    if model.online.is_signed_in() || model.online.status == Status::Missing {
+        model.sign_in_after_onboarding = None;
+        return;
+    }
+    if model.online.status == Status::Running && model.online.cloud.is_some() {
+        model.sign_in_after_onboarding = None;
+        model.online.send(
+            Purpose::BrowserSignIn { create },
+            Command::BrowserSignIn { create },
+        );
+    }
+}
+
 /// What a failure means for the player, and what to do about it.
 pub fn failure_text(failure: &Failure, language: Language) -> String {
     let code = |c: ErrorCode| failure.is(c);

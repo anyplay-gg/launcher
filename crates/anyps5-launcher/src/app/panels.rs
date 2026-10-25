@@ -424,6 +424,7 @@ impl PanelHost {
                 }
             }
             SettingsAction::SetLinks(on) => self.set_links(model, on),
+            SettingsAction::OpenPage(page) => open_known_url(page),
             SettingsAction::Phone(crate::screens::phone::PhoneAction::OpenDriverPage) => {
                 open_known_url(crate::screens::phone::driver_page());
             }
@@ -1748,6 +1749,10 @@ fn open_known_url(url: &str) {
     let known = [
         crate::screens::phone::VIGEM_DOWNLOAD,
         crate::screens::phone::UINPUT_GUIDE,
+        crate::screens::about_strings::WEBSITE,
+        crate::screens::about_strings::DISCORD,
+        crate::screens::about_strings::PRIVACY,
+        crate::screens::about_strings::TERMS,
     ];
     if !known.contains(&url) {
         return;

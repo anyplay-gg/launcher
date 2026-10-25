@@ -37,7 +37,7 @@ pub const SAMPLE_NOTES: &str = "## What's Changed\n\
 * feat(agc): support depth bounds tests by @b in https://github.com/boykopovar/AnyPS5/pull/6422\n\
 * perf(agc): skip redundant barriers by @a in https://github.com/boykopovar/AnyPS5/pull/6430\n\
 * feat(libSceSaveData): keep memory saves per user by @c in https://github.com/boykopovar/AnyPS5/pull/6388\n\
-* fix(relinker): keep TLS alignment of the main module by @d in https://github.com/boykopovar/AnyPS5/pull/6377\n\
+* feat(relinker): keep TLS alignment of the main module by @d in https://github.com/boykopovar/AnyPS5/pull/6377\n\
 * feat(relinker): write the patch manifest next to the output by @d in https://github.com/boykopovar/AnyPS5/pull/6314\n\
 * perf(shader): cache recompiled shaders on disk by @e in https://github.com/boykopovar/AnyPS5/pull/6351\n\
 * fix(libkernel): wake waiters of a destroyed semaphore by @f in https://github.com/boykopovar/AnyPS5/pull/6402\n\
@@ -92,17 +92,56 @@ impl Line<'_> {
     }
 }
 
-/// Highlights as (area, changes): the busiest areas, then everything else as `other`.
+/// What a player calls the part of the toolkit a change is about: the highlights speak of
+/// graphics, trophies or saves, not of the engine's module names. Unknown areas keep their name;
+/// the full list under them keeps the exact scopes.
+fn area_title(scope: &str, language: Language) -> String {
+    let scope = scope.to_ascii_lowercase();
+    let has = |parts: &[&str]| parts.iter().any(|part| scope.contains(part));
+    let (english, turkish) = if has(&["trophy"]) {
+        ("Trophies", "Kupalar")
+    } else if has(&["savedata", "save"]) {
+        ("Saves", "Kayıtlar")
+    } else if has(&[
+        "agc", "gnm", "gpu", "vulkan", "shader", "videoout", "graphics",
+    ]) {
+        ("Graphics", "Grafik")
+    } else if has(&["audio", "sound", "ngs"]) {
+        ("Sound", "Ses")
+    } else if has(&["pad", "input", "mouse", "keyboard"]) {
+        ("Controllers", "Kontrolcüler")
+    } else if has(&["net", "np", "http", "ssl"]) {
+        ("Online", "Çevrimiçi")
+    } else if has(&["relink", "loader", "elf", "module"]) {
+        ("Starting games", "Oyunları başlatma")
+    } else if has(&["libc", "kernel", "system", "thread"]) {
+        ("System", "Sistem")
+    } else {
+        return scope;
+    };
+    match language {
+        Language::Turkish => turkish.to_owned(),
+        Language::English => english.to_owned(),
+    }
+}
+
+/// Highlights as (area, changes): the busiest areas under the names players know, then
+/// everything else as `other`. Areas that share a name are shown as one.
 fn highlight_groups<'a>(
     notes: &'a ReleaseNotes,
     other: &str,
+    language: Language,
 ) -> Vec<(String, Vec<&'a Change>, bool)> {
     let groups: Vec<Group<'a>> = notes.highlights();
     let mut out: Vec<(String, Vec<&Change>, bool)> = Vec::new();
     let mut rest: Vec<&Change> = Vec::new();
     for (index, group) in groups.into_iter().enumerate() {
         if index < AREAS {
-            out.push((group.scope.to_owned(), group.changes, false));
+            let title = area_title(group.scope, language);
+            match out.iter_mut().find(|(known, ..)| *known == title) {
+                Some((_, changes, _)) => changes.extend(group.changes),
+                None => out.push((title, group.changes, false)),
+            }
         } else {
             rest.extend(group.changes);
         }
@@ -120,7 +159,7 @@ fn lines<'a>(
 ) -> Vec<Line<'a>> {
     let mut out = vec![Line::Section(Extra::NotesHighlights.text(language))];
     let other = Extra::NotesOther.text(language);
-    for (key, changes, mixed) in highlight_groups(notes, other) {
+    for (key, changes, mixed) in highlight_groups(notes, other, language) {
         let open = expanded.contains(&key);
         out.push(Line::Group {
             key,
@@ -166,7 +205,7 @@ impl WhatsNewPanel {
     pub fn open_expanded(&mut self, notes: &ReleaseNotes, language: Language, count: usize) {
         self.open();
         let other = Extra::NotesOther.text(language);
-        self.expanded = highlight_groups(notes, other)
+        self.expanded = highlight_groups(notes, other, language)
             .into_iter()
             .take(count)
             .map(|(key, ..)| key)
@@ -643,13 +682,44 @@ mod tests {
             }))
             .collect();
         let notes = ReleaseNotes::parse(&text);
-        let groups = highlight_groups(&notes, "Other");
+        let groups = highlight_groups(&notes, "Other", Language::English);
         assert_eq!(groups.len(), AREAS + 1);
         let (name, changes, mixed) = groups.last().unwrap();
         assert_eq!(
             (name.as_str(), changes.len(), *mixed),
             ("Other", 12 - AREAS, true)
         );
+    }
+
+    #[test]
+    fn highlights_speak_of_what_players_know() {
+        let text = [
+            "## What's Changed",
+            "* feat(agc): a by @a in https://github.com/boykopovar/AnyPS5/pull/1",
+            "* feat(shader): b by @a in https://github.com/boykopovar/AnyPS5/pull/2",
+            "* feat(libSceNpTrophy): c by @a in https://github.com/boykopovar/AnyPS5/pull/3",
+            "* feat(relinker): d by @a in https://github.com/boykopovar/AnyPS5/pull/4",
+            "* feat(gizmo): e by @a in https://github.com/boykopovar/AnyPS5/pull/5",
+        ]
+        .join("\n");
+        let notes = ReleaseNotes::parse(&text);
+        let names: Vec<String> = highlight_groups(&notes, "Other", Language::English)
+            .into_iter()
+            .map(|(name, ..)| name)
+            .collect();
+        // agc and shader are both graphics, shown once; an unknown area keeps its name.
+        assert_eq!(
+            names.iter().filter(|n| n.as_str() == "Graphics").count(),
+            1,
+            "{names:?}"
+        );
+        for expected in ["Trophies", "Starting games", "gizmo"] {
+            assert!(
+                names.iter().any(|n| n == expected),
+                "{expected} in {names:?}"
+            );
+        }
+        assert_eq!(area_title("libSceSaveData", Language::Turkish), "Kayıtlar");
     }
 
     #[test]
