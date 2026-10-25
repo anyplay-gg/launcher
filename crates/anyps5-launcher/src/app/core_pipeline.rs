@@ -81,7 +81,12 @@ fn diagnosis_text(diagnosis: &Diagnosis, language: Language) -> String {
 /// The one-sentence reason of a failed unlock, with the next step, in the player's language. The
 /// technical message goes to the log.
 fn failure_text(error: &UnlockError, language: Language) -> String {
-    crate::screens::prepare_strings::failure(error.kind(), language).to_owned()
+    let sentence = crate::screens::prepare_strings::failure(error.kind(), language);
+    // How much is missing is worth saying; the sentence then says what to do.
+    if matches!(error, UnlockError::NotEnoughSpace { .. }) {
+        return format!("{}. {sentence}", error.to_string().trim_end_matches('.'));
+    }
+    sentence.to_owned()
 }
 
 /// How often the idle gate looks at the machine.

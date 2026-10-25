@@ -580,6 +580,7 @@ impl LauncherApp {
                 self.model.dismiss_overlay();
                 self.model.effects.push(Effect::RestoreWindow);
             }
+            Message::Create => self.model.effects.push(Effect::SaveClip),
             Message::WantArt { id } => self.send_art(&id),
             Message::SaveLayout { id, layout } => {
                 if let Some(layouts) = &mut self.phone.layouts

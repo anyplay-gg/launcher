@@ -16,6 +16,10 @@ How a launcher release can be traced from the source to the binary, and what mak
 
 The shared `rules` workflow comes from `anyplaynet/.github@main`, which is the organisation's own code and is not pinned to a commit.
 
+## What the share worker brings in
+
+The share worker (also the recorder of Clips) is built from the network repository at the commit in `network.ref`. Its notable dependencies and their licences: `windows` and `windows-capture` (Windows capture, Media Foundation; MIT or Apache-2.0 and MIT), `minifb` (the viewer's window; MIT or Apache-2.0) and `mp4` 0.14 (writes the clips' MP4 files; MIT, pure Rust, 15 million downloads, last release 2023). MIT is compatible with this repository's GPL-2.0-only; Apache-2.0 alone would not be, which is why the MP4 writer is `mp4` and not `shiguredo_mp4`. The network repository's `cargo deny` run holds the policy; this repository's `deny.toml` and the SBOM of the share worker cover what the launcher ships.
+
 ## How updates arrive
 
 [Dependabot](../.github/dependabot.yml) opens one pull request a week for the actions (all in one) and one for the crates (minor and patch updates in one; a major update by itself). It waits a week after a release before it proposes it, so a release that is pulled or found malicious in its first days never reaches us. Security updates ignore that wait.

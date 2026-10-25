@@ -17,6 +17,7 @@ use anyps5_core::toolkit::InstalledRelease;
 use egui::{Align2, Color32, Context, Rect, Sense, Ui, UiBuilder, pos2, vec2};
 
 use crate::app::phone::PhoneState;
+use crate::screens::clips_strings::ClipsText;
 use crate::screens::convert;
 use crate::screens::dialogs;
 use crate::screens::discord_strings::DiscordText;
@@ -170,6 +171,15 @@ impl LauncherUpdate {
     }
 }
 
+/// What the Clips rows show that is not a preference.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ClipsEnv {
+    /// How many clips the screenshots folder holds.
+    pub count: usize,
+    /// The clip key row waits for a key press.
+    pub capturing: bool,
+}
+
 /// What the settings show that is not a preference.
 pub struct SettingsEnv<'a> {
     pub games_found: usize,
@@ -195,6 +205,7 @@ pub struct SettingsEnv<'a> {
     pub cjk_fonts: CjkState,
     /// What the phone server is doing.
     pub phone: &'a PhoneState,
+    pub clips: ClipsEnv,
 }
 
 /// What the host has to do after a frame.
@@ -205,6 +216,8 @@ pub enum SettingsAction {
     GamesFolderChosen(PathBuf),
     Rescan,
     ShowScreenshots,
+    /// "Show Clips": the folder the clips are in.
+    ShowClips,
     /// "Check now" (or the check was switched on).
     CheckForUpdates,
     /// Download and install the latest toolkit (first install or update).
@@ -481,6 +494,10 @@ pub fn build_categories(
         .detail(Extra::ShowHiddenTrophiesDetail.text(language))
         .icon(Icon::TROPHY),
     );
+    // The recorder is the share worker, which captures windows on Windows only.
+    if cfg!(windows) {
+        push_clips_rows(&mut behaviour, prefs, env, language);
+    }
     // The registration lives in the registry, so only Windows has the row.
     if cfg!(windows) {
         let detail = match env.links {
@@ -779,6 +796,77 @@ pub fn build_categories(
     .collect()
 }
 
+/// The lengths of Clips as the choice row shows them, Off first.
+fn clips_options(language: Language) -> Vec<String> {
+    [
+        ClipsText::Off,
+        ClipsText::Seconds15,
+        ClipsText::Seconds30,
+        ClipsText::Minute1,
+        ClipsText::Minutes2,
+    ]
+    .iter()
+    .map(|t| t.text(language).to_owned())
+    .collect()
+}
+
+/// Clips: the length, then (when on) the key, then the folder. Off, the folder row stays only
+/// while there are clips to find.
+fn push_clips_rows(
+    rows: &mut Vec<Row>,
+    prefs: &Preferences,
+    env: &SettingsEnv<'_>,
+    language: Language,
+) {
+    let seconds = anyps5_core::clips::length_or_off(prefs.clips_seconds);
+    let selected = anyps5_core::clips::LENGTHS
+        .iter()
+        .position(|&l| l == seconds)
+        .unwrap_or(0);
+    rows.push(
+        Row::choice(
+            "clips",
+            ClipsText::Title.text(language),
+            clips_options(language),
+            selected,
+        )
+        .detail(ClipsText::Detail.text(language))
+        .icon(Icon::CAMERA)
+        .group_start(),
+    );
+    if seconds > 0 {
+        let hotkey = anyps5_core::clips::hotkey_or_default(prefs.clips_hotkey.as_deref());
+        let sources = hotkey.parts().iter().map(|p| format!("KEY:{p}")).collect();
+        // A detail line both ways, so that the rows below do not move when the row starts waiting.
+        let detail = if env.clips.capturing {
+            ClipsText::KeyPrompt
+        } else {
+            ClipsText::KeyDetail
+        };
+        let key = Row::keys(
+            "clipsKey",
+            ClipsText::Key.text(language),
+            sources,
+            env.clips.capturing,
+        )
+        .icon(Icon::KEYBOARD)
+        .detail(detail.text(language));
+        rows.push(key);
+    }
+    if seconds > 0 || env.clips.count > 0 {
+        let count = match env.clips.count {
+            0 => ClipsText::CountNone.text(language).to_owned(),
+            1 => ClipsText::CountOne.text(language).to_owned(),
+            n => ClipsText::CountMany.format(language, &[Arg::Int(n as i64)]),
+        };
+        rows.push(
+            Row::command("showClips", ClipsText::Show.text(language))
+                .detail(count)
+                .icon(Icon::FOLDER_OPEN),
+        );
+    }
+}
+
 /// The rows under *Version* that tell where the launcher's own update stands. Nothing while
 /// there is nothing to say. The status row is short; what it means follows as a note, and the
 /// one thing to do next as a row.
@@ -986,6 +1074,14 @@ pub fn apply_value(prefs: &mut Preferences, change: &Change) -> bool {
         } => prefs.backdrop = Backdrop::Theme,
         Change::Run { row: "fontsReset" } => prefs.fonts_folder = None,
         Change::Toggle { row: "phone", on } => prefs.phone_remote = *on,
+        Change::Choice {
+            row: "clips",
+            index,
+        } => {
+            if let Some(seconds) = anyps5_core::clips::LENGTHS.get(*index) {
+                prefs.clips_seconds = *seconds;
+            }
+        }
         _ => {}
     }
     *prefs != before
@@ -999,6 +1095,8 @@ pub struct SettingsPanel {
     /// Counts category changes: each one fades the new list in.
     switches: u32,
     last_category: usize,
+    /// The clip key row waits for a key press.
+    clip_capture: bool,
 }
 
 impl Default for SettingsPanel {
@@ -1009,6 +1107,7 @@ impl Default for SettingsPanel {
             nav: PanelNav::settings(Category::ALL.len()),
             switches: 0,
             last_category: 0,
+            clip_capture: false,
         }
     }
 }
@@ -1048,6 +1147,52 @@ impl SettingsPanel {
         self.open
     }
 
+    /// The clip key row waits for a key press.
+    pub fn clips_capturing(&self) -> bool {
+        self.clip_capture
+    }
+
+    /// While the clip key row waits: the first key with its modifiers binds it. Esc and a pad's
+    /// back keep the old one; a key that cannot be a hotkey (a bare letter) is ignored and the
+    /// row keeps waiting.
+    fn capture_clip_key(
+        &mut self,
+        shell: &mut Shell,
+        events: &[InputEvent],
+        prefs: &mut Preferences,
+        out: &mut Output<SettingsAction>,
+    ) {
+        for event in events {
+            match event {
+                InputEvent::CapturedKey {
+                    key,
+                    physical_key,
+                    modifiers,
+                } => {
+                    let key = physical_key.unwrap_or(*key);
+                    if key == egui::Key::Escape {
+                        self.clip_capture = false;
+                    } else if let Some(hotkey) = anyps5_core::clips::Hotkey::from_press(
+                        key.name(),
+                        modifiers.ctrl,
+                        modifiers.alt,
+                        modifiers.shift,
+                    ) {
+                        prefs.clips_hotkey = Some(hotkey.to_string());
+                        out.changed = true;
+                        self.clip_capture = false;
+                    }
+                }
+                InputEvent::Command(crate::ui::input::Command::Back) => self.clip_capture = false,
+                _ => {}
+            }
+            if !self.clip_capture {
+                break;
+            }
+        }
+        shell.input.capture_keys = self.clip_capture;
+    }
+
     pub fn is_active(&self) -> bool {
         self.open || self.closing
     }
@@ -1061,10 +1206,19 @@ impl SettingsPanel {
         env: &SettingsEnv<'_>,
     ) -> Output<SettingsAction> {
         let mut out = Output::default();
+        if self.clip_capture && !self.open {
+            self.clip_capture = false;
+            shell.input.capture_keys = false;
+        }
         if !self.is_active() {
             return out;
         }
-        if self.open {
+        // The keys of a frame that ended the capture are not commands (Esc must not close the page).
+        let was_capturing = self.clip_capture;
+        if was_capturing {
+            self.capture_clip_key(shell, events, prefs, &mut out);
+        }
+        if self.open && !was_capturing {
             for command in commands(events) {
                 let cats = build_categories(prefs, env, convert::language(prefs.language));
                 let rows = &cats[self.nav.category.min(cats.len() - 1)].rows;
@@ -1196,6 +1350,11 @@ impl SettingsPanel {
             Change::Run {
                 row: "showScreenshots",
             } => out.actions.push(SettingsAction::ShowScreenshots),
+            Change::Run { row: "showClips" } => out.actions.push(SettingsAction::ShowClips),
+            Change::Capture { row: "clipsKey" } => {
+                self.clip_capture = true;
+                shell.input.capture_keys = true;
+            }
             Change::Run { row: "fonts" } => {
                 let start = prefs.fonts_folder.clone();
                 if let Some(folder) =
@@ -1482,6 +1641,7 @@ mod tests {
             links: Handler::Absent,
             cjk_fonts: CjkState::Missing,
             phone: Box::leak(Box::new(PhoneState::default())),
+            clips: ClipsEnv::default(),
         }
     }
 

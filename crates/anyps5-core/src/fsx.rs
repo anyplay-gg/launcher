@@ -113,6 +113,65 @@ fn share_file(src: &Path, dst: &Path) -> io::Result<()> {
     }
 }
 
+/// Bytes a normal user can still write on the volume that holds `path`. Walks up to the nearest
+/// existing ancestor, so a folder that is not created yet works. `None` when the system gives no
+/// answer; callers then skip their check instead of blocking.
+pub fn free_space(path: &Path) -> Option<u64> {
+    let existing = path.ancestors().find(|p| p.exists())?;
+    free_space_of(existing)
+}
+
+#[cfg(windows)]
+fn free_space_of(path: &Path) -> Option<u64> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    use windows::core::PCWSTR;
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let mut available = 0u64;
+    // SAFETY: `wide` is NUL terminated and outlives the call; `available` is a valid out pointer.
+    unsafe { GetDiskFreeSpaceExW(PCWSTR(wide.as_ptr()), Some(&mut available), None, None) }
+        .ok()
+        .map(|()| available)
+}
+
+#[cfg(unix)]
+fn free_space_of(path: &Path) -> Option<u64> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    let c_path = CString::new(path.as_os_str().as_bytes()).ok()?;
+    let mut stat = std::mem::MaybeUninit::<libc::statvfs>::zeroed();
+    // SAFETY: `c_path` is NUL terminated; `stat` is a valid out pointer, read only after success.
+    if unsafe { libc::statvfs(c_path.as_ptr(), stat.as_mut_ptr()) } != 0 {
+        return None;
+    }
+    // SAFETY: statvfs returned 0, so the struct is filled.
+    let stat = unsafe { stat.assume_init() };
+    #[allow(clippy::unnecessary_cast)]
+    Some((stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64))
+}
+
+/// Whether `share_file` works from `src_file` into `dst_dir` (a link or clone, not a copy).
+/// Probes with a uniquely named file that is removed again. `dst_dir` may not exist yet; the
+/// nearest existing ancestor is used.
+pub fn can_link(src_file: &Path, dst_dir: &Path) -> bool {
+    link_probe(src_file, dst_dir).is_ok()
+}
+
+/// Like [`can_link`], with the reason when it does not.
+pub fn link_probe(src_file: &Path, dst_dir: &Path) -> io::Result<()> {
+    let dir = dst_dir
+        .ancestors()
+        .find(|p| p.is_dir())
+        .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))?;
+    let probe = dir.join(format!(".anyps5-link-probe-{}", std::process::id()));
+    let _ = fs::remove_file(&probe);
+    let result = share_file(src_file, &probe);
+    if result.is_ok() {
+        let _ = fs::remove_file(&probe);
+    }
+    result
+}
+
 /// Copies a file in 256 KiB steps, checking `cancel` between steps. A cancelled copy removes
 /// its partial destination and fails with `Interrupted`.
 pub fn copy_cancellable(src: &Path, dst: &Path, cancel: &CancelToken) -> io::Result<()> {
@@ -372,6 +431,26 @@ pub fn link_threads() -> usize {
 /// Below this many files one thread does it: starting threads costs more than the files.
 const PARALLEL_FROM: usize = 64;
 
+/// A tree walked once: what [`link_tree_planned`] will put at the target.
+#[derive(Debug, Clone, Default)]
+pub struct TreePlan {
+    pub entries: Vec<TreeEntry>,
+    pub files: u64,
+    pub bytes: u64,
+}
+
+/// Walks `source` (hidden files included, `skip_top` names left out) and totals the files.
+pub fn plan_tree(source: &Path, skip_top: &[&str]) -> io::Result<TreePlan> {
+    let entries = walk(source, true, skip_top)?;
+    let files = entries.iter().filter(|e| !e.is_dir).count() as u64;
+    let bytes = entries.iter().map(|e| e.size).sum();
+    Ok(TreePlan {
+        entries,
+        files,
+        bytes,
+    })
+}
+
 /// Mirrors `source` into `target`: folders are created, every file is removed at the
 /// destination and then linked or copied, by several threads. `progress` receives the share of
 /// bytes done (0..=1) on the calling thread. Hidden files are included. `skip_top` names are
@@ -384,13 +463,29 @@ pub fn link_tree(
     opts: &TreeOpts<'_>,
     progress: &mut dyn FnMut(f64),
 ) -> Result<(), TreeError> {
+    let plan = plan_tree(source, skip_top).map_err(|e| TreeError::Io {
+        relative: String::new(),
+        source: e,
+    })?;
+    link_tree_planned(source, &plan, target, linker, opts, progress)
+}
+
+/// [`link_tree`] for a tree that [`plan_tree`] already walked.
+pub fn link_tree_planned(
+    source: &Path,
+    plan: &TreePlan,
+    target: &Path,
+    linker: &Linker,
+    opts: &TreeOpts<'_>,
+    progress: &mut dyn FnMut(f64),
+) -> Result<(), TreeError> {
     let io_error = |relative: &Path, source: io::Error| TreeError::Io {
         relative: relative.to_string_lossy().replace('\\', "/"),
         source,
     };
     let cancel = opts.cancel;
-    let entries = walk(source, true, skip_top).map_err(|e| io_error(Path::new(""), e))?;
-    let total: u64 = entries.iter().map(|e| e.size).sum();
+    let entries = &plan.entries;
+    let total = plan.bytes;
     // Folders come before their content, so a plain `create_dir` finds its parent.
     for entry in entries.iter().filter(|e| e.is_dir) {
         let folder = target.join(&entry.relative);
@@ -663,6 +758,34 @@ mod tests {
         remove_tree(&dir.path().join("d")).unwrap();
         assert!(!dir.path().join("d").exists());
         remove_tree(&dir.path().join("never-existed")).unwrap();
+    }
+
+    #[test]
+    fn free_space_answers_for_existing_and_missing_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(free_space(dir.path()).expect("free space of a temp folder") > 0);
+        assert!(free_space(&dir.path().join("not/yet/created")).is_some());
+    }
+
+    #[test]
+    fn can_link_probes_and_removes_its_file() {
+        let dir = tempfile::tempdir().unwrap();
+        write(&dir.path().join("a.txt"), "a");
+        let dst = dir.path().join("dst");
+        fs::create_dir_all(&dst).unwrap();
+        assert!(can_link(&dir.path().join("a.txt"), &dst));
+        assert_eq!(fs::read_dir(&dst).unwrap().count(), 0);
+        assert!(!can_link(&dir.path().join("missing.txt"), &dst));
+    }
+
+    #[test]
+    fn plan_tree_totals_files_and_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        write(&dir.path().join("a"), "12345");
+        write(&dir.path().join("d/b"), "123");
+        write(&dir.path().join(".AnyPS5/x"), "skipped");
+        let plan = plan_tree(dir.path(), &[".AnyPS5"]).unwrap();
+        assert_eq!((plan.files, plan.bytes), (2, 8));
     }
 
     #[test]

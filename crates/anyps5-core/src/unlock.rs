@@ -117,10 +117,38 @@ pub enum UnlockError {
     },
     #[error("relinker wrote no executable")]
     NoOutput,
+    #[error("needs {} GB, {} GB free on {}{}", gb_up(*.needed), gb_down(*.free), .folder.display(), copy_note(*.copying))]
+    NotEnoughSpace {
+        needed: u64,
+        free: u64,
+        folder: PathBuf,
+        /// The game files must be copied because the games folder cannot hard-link to the dump.
+        copying: bool,
+    },
     #[error("{context}: {source}")]
     Io { context: String, source: io::Error },
     #[error(transparent)]
     Toolkit(#[from] ToolkitError),
+}
+
+const GIB: u64 = 1024 * 1024 * 1024;
+
+/// Gigabytes with one decimal for the space message: the need rounds up and the free space
+/// rounds down, so the two numbers never read as equal when one is short.
+fn gb_up(bytes: u64) -> String {
+    format!("{:.1}", ((bytes as f64 / GIB as f64) * 10.0).ceil() / 10.0)
+}
+
+fn gb_down(bytes: u64) -> String {
+    format!("{:.1}", ((bytes as f64 / GIB as f64) * 10.0).floor() / 10.0)
+}
+
+fn copy_note(copying: bool) -> &'static str {
+    if copying {
+        " (the games folder cannot hard-link to the dump, so the game files are copied)"
+    } else {
+        ""
+    }
 }
 
 /// What went wrong, in the terms of what the player can do about it.
@@ -158,6 +186,7 @@ impl UnlockError {
                     _ => FailureKind::Other,
                 },
             },
+            UnlockError::NotEnoughSpace { .. } => FailureKind::DiskFull,
             UnlockError::Cancelled | UnlockError::Toolkit(_) => FailureKind::Other,
         }
     }
@@ -233,6 +262,9 @@ pub struct UnlockRequest {
     /// ones are passed.
     pub relink_flags: Vec<String>,
     pub link_mode: LinkMode,
+    /// Test hook: `Some(free)` replaces the games folder's real free space; `Some(None)`
+    /// simulates a volume whose free space cannot be read; `None` asks the volume.
+    pub free_space_override: Option<Option<u64>>,
     /// Where to back up the saves of the copy this unlock replaces, just before it is replaced
     /// (see [`crate::saves`]); `None` makes no backup.
     pub backup_dir: Option<PathBuf>,
@@ -256,6 +288,7 @@ impl UnlockRequest {
             resolution: None,
             relink_flags: Vec::new(),
             link_mode: LinkMode::Auto,
+            free_space_override: None,
             backup_dir: None,
             background: false,
             fresh: false,
@@ -839,6 +872,123 @@ fn reusable_output(request: &UnlockRequest, copy: &Path, key: Option<&str>) -> O
     })
 }
 
+/// Slack for the relinker's temporary files, the record and the volume's own bookkeeping.
+const SPACE_HEADROOM: u64 = 256 * 1024 * 1024;
+/// What one hard-linked file costs the volume in directory data.
+const LINK_ENTRY_BYTES: u64 = 1024;
+
+/// What an unlock writes to the games folder's volume at its peak.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct SpaceNeed {
+    /// Summed on-disk size of eboot.bin and the modules: unwrapped into the work folder, then
+    /// relinked. An unwrapped binary can be larger than its container, so this is a floor.
+    binaries: u64,
+    /// Size of eboot.bin: the finished executable is copied into the partial copy while the
+    /// work folder still holds it.
+    executable: u64,
+    dump_bytes: u64,
+    dump_files: u64,
+    dump_copied: bool,
+    libs_bytes: u64,
+    libs_files: u64,
+    libs_copied: bool,
+}
+
+/// A lower-bound estimate, not an exact figure: the work folder holds the unwrapped and the
+/// relinked binaries (about twice their on-disk size), the executable is copied once more into
+/// the partial copy, and the copy holds every file that is copied and only directory data for
+/// the ones that are linked. All of it exists at the same time on the games folder's volume.
+/// The headroom covers the rest; a shortfall the estimate misses still ends in the late error.
+fn required_bytes(need: &SpaceNeed) -> u64 {
+    let part = |bytes: u64, files: u64, copied: bool| {
+        if copied {
+            bytes
+        } else {
+            files * LINK_ENTRY_BYTES
+        }
+    };
+    2 * need.binaries
+        + need.executable
+        + SPACE_HEADROOM
+        + part(need.dump_bytes, need.dump_files, need.dump_copied)
+        + part(need.libs_bytes, need.libs_files, need.libs_copied)
+}
+
+/// Stops an unlock that cannot fit before it writes anything. Skipped (returns the plan only)
+/// when the free space is unknown or the dump cannot be read; the later steps then report that.
+fn preflight(
+    request: &UnlockRequest,
+    root: &Path,
+    modules: &[String],
+    reporter: &Reporter<'_>,
+) -> Result<Option<fsx::TreePlan>, UnlockError> {
+    let Ok(plan) = fsx::plan_tree(&request.folder, &[STORE_NAME]) else {
+        return Ok(None);
+    };
+    let free = match request.free_space_override {
+        Some(simulated) => simulated,
+        None => fsx::free_space(root),
+    };
+    let Some(free) = free else {
+        return Ok(Some(plan));
+    };
+    let size_of = |rel: &str| {
+        fs::metadata(
+            request
+                .folder
+                .join(rel.replace('/', std::path::MAIN_SEPARATOR_STR)),
+        )
+        .map_or(0, |m| m.len())
+    };
+    let executable = size_of("eboot.bin");
+    let binaries: u64 = executable + modules.iter().map(|rel| size_of(rel)).sum::<u64>();
+    let games = games_dir(root);
+    let first_file = |plan: &fsx::TreePlan, base: &Path| {
+        plan.entries
+            .iter()
+            .find(|e| !e.is_dir)
+            .map(|e| base.join(&e.relative))
+    };
+    let probe = |plan: &fsx::TreePlan, base: &Path| -> Result<(), String> {
+        if request.link_mode == LinkMode::ForceCopy {
+            return Err("copy mode forced".to_string());
+        }
+        match first_file(plan, base) {
+            Some(file) => fsx::link_probe(&file, &games).map_err(|e| e.to_string()),
+            None => Ok(()),
+        }
+    };
+    let dump_probe = probe(&plan, &request.folder);
+    let libs_plan = fsx::plan_tree(request.toolkit.libs(), &[]).unwrap_or_default();
+    let libs_probe = probe(&libs_plan, request.toolkit.libs());
+    let need = SpaceNeed {
+        binaries,
+        executable,
+        dump_bytes: plan.bytes,
+        dump_files: plan.files,
+        dump_copied: dump_probe.is_err(),
+        libs_bytes: libs_plan.bytes,
+        libs_files: libs_plan.files,
+        libs_copied: libs_probe.is_err(),
+    };
+    if let Err(reason) = &dump_probe {
+        reporter.log(format!(
+            "files copied, not linked: {reason}; {} GB of game files will be written",
+            gb_up(plan.bytes)
+        ));
+    }
+    let needed = required_bytes(&need);
+    if free < needed {
+        return Err(UnlockError::NotEnoughSpace {
+            needed,
+            free,
+            folder: root.to_path_buf(),
+            copying: need.dump_copied,
+        });
+    }
+    Ok(Some(plan))
+}
+
 /// Runs the whole pipeline for one game. Emits `Started`, `Progress` and `Log` through `sink`;
 /// the caller reports `Finished`. Cancelling through `control` ends it with `Cancelled`;
 /// whatever it made (work folder, `.partial` copy) is removed on every exit path.
@@ -877,8 +1027,11 @@ pub fn run_unlock(
     let linker = Linker::new(request.link_mode);
     let mut clock = Stopwatch::new(control);
 
-    // What the relinker will be asked, and so whether its last output still fits.
+    // 0. Enough room on the games folder's volume, before anything is written.
     let modules = modules_in(&request.folder).map_err(io_context("read the dump"))?;
+    let dump_plan = preflight(request, &root, &modules, &reporter)?;
+
+    // What the relinker will be asked, and so whether its last output still fits.
     let mut inputs = vec!["eboot.bin".to_string()];
     inputs.extend(modules.iter().cloned());
     let mut args: Vec<std::ffi::OsString> = Os::current()
@@ -980,14 +1133,21 @@ pub fn run_unlock(
         hold: &hold,
         background: control.is_background(),
     };
-    fsx::link_tree(
-        &request.folder,
-        &app0,
-        &linker,
-        &[STORE_NAME],
-        &tree,
-        &mut |f| reporter.progress(Step::Copy, f),
-    )
+    match &dump_plan {
+        Some(plan) => {
+            fsx::link_tree_planned(&request.folder, plan, &app0, &linker, &tree, &mut |f| {
+                reporter.progress(Step::Copy, f)
+            })
+        }
+        None => fsx::link_tree(
+            &request.folder,
+            &app0,
+            &linker,
+            &[STORE_NAME],
+            &tree,
+            &mut |f| reporter.progress(Step::Copy, f),
+        ),
+    }
     .map_err(tree_error)?;
     if let Some(reuse) = &reuse {
         for relative in &generated {
@@ -1780,6 +1940,49 @@ fn run_job(shared: &Arc<Shared>, request: &UnlockRequest, control: &UnlockContro
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn required_bytes_counts_work_twice_and_copies_only_what_is_copied() {
+        let linked = SpaceNeed {
+            binaries: 100,
+            executable: 40,
+            dump_bytes: 10_000_000,
+            dump_files: 50,
+            libs_bytes: 5_000,
+            libs_files: 2,
+            ..SpaceNeed::default()
+        };
+        assert_eq!(
+            required_bytes(&linked),
+            240 + SPACE_HEADROOM + 50 * LINK_ENTRY_BYTES + 2 * LINK_ENTRY_BYTES
+        );
+        let copied = SpaceNeed {
+            dump_copied: true,
+            libs_copied: true,
+            ..linked
+        };
+        assert_eq!(required_bytes(&copied), 240 + SPACE_HEADROOM + 10_005_000);
+    }
+
+    #[test]
+    fn not_enough_space_says_needed_and_free() {
+        let error = UnlockError::NotEnoughSpace {
+            needed: 5 * GIB + GIB / 2 + 1,
+            free: GIB + GIB / 2 - 1,
+            folder: PathBuf::from("D:/Games"),
+            copying: false,
+        };
+        assert_eq!(error.to_string(), "needs 5.6 GB, 1.4 GB free on D:/Games");
+        let copying = UnlockError::NotEnoughSpace {
+            needed: 2 * GIB,
+            free: GIB,
+            folder: PathBuf::from("E:/Games"),
+            copying: true,
+        };
+        let text = copying.to_string();
+        assert!(text.starts_with("needs 2.0 GB, 1.0 GB free on E:/Games"));
+        assert!(text.contains("cannot hard-link"));
+    }
 
     #[test]
     fn copy_names_follow_the_arm_formula() {

@@ -2341,6 +2341,18 @@ Up to v0.1.3 the launcher was called AnyPS5 Launcher. It is AnyPlay Launcher now
 - **Installer upgrade:** the same AppId upgrades an old install in place and keeps its folder (`...\AnyPS5 Launcher`). It closes a running old launcher, removes `AnyPS5-Launcher.exe`, its `.new`/`.old` leftovers and the old shortcuts. Taskbar and Start pins of the old exe do not carry over.
 - **Linux:** the app id is `anyplay-launcher`, the same as the desktop entry's file name, `Icon` and `StartupWMClass` (a test holds them together). A desktop entry copied from an older tarball no longer matches the window: replace it and pin the launcher again.
 
+### 9.8 Clips
+
+While a game runs, the launcher can keep its last seconds and save them as a video. It is Windows only for now: the recorder is the share worker (the network repository's `spec/clips.md` and ADR 0028), which captures the game's window with Windows Graphics Capture and encodes with the GPU's H.264 encoder.
+
+- **Setting.** Settings > Behavior > Clips: Off (the default), 15 seconds, 30 seconds, 1 minute or 2 minutes (`clips_seconds`). Below it, while Clips is on, the row **Clip Key** (`clips_hotkey`, default `Alt+F12`, a key row like the talk key: choose it, press the keys, Esc keeps the old ones; a letter or digit alone is refused so that it cannot be taken from the game, a function key may stand alone) and **Show Clips**, which opens the screenshots folder and says how many clips it holds. With Clips off the Show Clips row stays only while there are clips. The row says that a clip has no sound.
+- **When it runs.** Nothing runs with Clips off or without a game: no worker, no hotkey. With Clips on, the launcher starts the worker when the game has a process (`--clips SECONDS`, the window and processes as for share screen) and ends it when the game ends or Clips is switched off. A worker that ends (no hardware video encoder, no window, a failed encoder) is told once in a toast and not started again for that game.
+- **Saving.** Three triggers, one effect (`Effect::SaveClip`): the global hotkey (`RegisterHotKey`, so the game does not also see it), the controller's Create button (the `Select` button of the pad backend: Create on a DualSense, View or Back on an Xbox pad) and the phone's `create` message. The worker writes `<game name> <date> <time>.mp4` to the screenshots folder under a temporary name and renames it when whole. A clip is at least the chosen length and up to 2 seconds longer, starts on a key frame and is 1280 by 720 at 30 pictures a second.
+- **Feedback.** A toast "Clip saved" (camera icon) and the unlock cue. A launcher hidden by "Hide Launcher While Playing" shows no toast, so the cue is the confirmation then. Create with Clips off in a running game says how to turn it on.
+- **Cost.** A hardware encoder only, 6 Mbit/s, at most 160 MiB of memory in the worker; a PC without one gets the toast "Clips need a graphics card with a video encoder" and no software encoding.
+- **Not yet.** The game's sound (process loopback capture, the same open task as share screen's sound), Linux, an in-game confirmation, playback inside the launcher (the folder opens in the system's file manager and a player).
+- **Gallery.** `--gallery=behavior-clips-off|behavior-clips|behavior-clips-key`.
+
 ---
 
 ## 10. Asset list
