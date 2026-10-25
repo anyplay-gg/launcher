@@ -148,6 +148,9 @@ pub struct NetProcess {
     lines: Receiver<Line>,
 }
 
+/// The `X-AnyPlay-Client` value the net service sends for this launcher.
+pub const CLIENT_ID: &str = concat!("launcher/", env!("CARGO_PKG_VERSION"));
+
 impl NetProcess {
     /// Where the net service is: `ANYPLAY_NET`, else next to the launcher's own executable.
     pub fn locate() -> Option<PathBuf> {
@@ -178,6 +181,8 @@ impl NetProcess {
             .append(true)
             .open(log)?;
         let mut command = Process::new(binary);
+        // Who is asking, for the cloud's `min_launcher_version` (network spec/cloud-api.md).
+        command.env("ANYPLAY_CLIENT", CLIENT_ID);
         command
             .arg("--data")
             .arg(data)
@@ -464,6 +469,9 @@ pub enum Notice {
     Dialog(Dialog),
     /// The net service ended.
     Ended,
+    /// The cloud turned this launcher away because it is older than the version named: the
+    /// launcher's update is required.
+    ClientTooOld(String),
     /// The browser sign-in finished: the account is signed in.
     SignedIn,
     /// The browser sign-in ran out of time.
@@ -1505,6 +1513,7 @@ impl Online {
                     notices.push(Notice::Restricted(restriction));
                 }
             }
+            Event::ClientTooOld { minimum } => notices.push(Notice::ClientTooOld(minimum)),
             Event::Banned { restriction } => {
                 self.restrictions.ban(restriction.clone());
                 notices.push(Notice::Banned(restriction));
@@ -1803,6 +1812,21 @@ mod tests {
             restrictions: Vec::new(),
         }));
         assert!(online.restrictions.active(10).is_empty());
+    }
+
+    #[test]
+    fn the_cloud_turning_the_launcher_away_is_a_notice_and_the_client_id_is_a_version() {
+        let mut online = Online::default();
+        let notices = online.apply(event(Event::ClientTooOld {
+            minimum: "0.3.0".into(),
+        }));
+        assert_eq!(notices, [Notice::ClientTooOld("0.3.0".into())]);
+        // The header the net service sends: `launcher/<semver>`, which the cloud's gate reads.
+        let version = CLIENT_ID.strip_prefix("launcher/").unwrap();
+        assert!(
+            anyplay_update_manifest::Version::parse(version).is_some(),
+            "{CLIENT_ID}"
+        );
     }
 
     #[test]

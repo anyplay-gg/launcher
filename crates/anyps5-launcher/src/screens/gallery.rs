@@ -7,6 +7,8 @@
 //!                           about-update|behavior-links|settings-codec|settings-codec-off|settings-location|settings-location-custom|settings-location-network|settings-location-missing|settings-location-moving|settings-location-left|behavior-clips-off|behavior-clips|behavior-clips-key|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|toolkit-engine|toolkit-engine-update|
 //!                           toolkit-unused|game-toolkit|
 //!                           recommended|recommended-warning|whats-new|whats-new-loading|
+//!                           update-required|update-required-downloading|update-required-failed|
+//!                           update-required-download|update-required-offline|
 //!                           saves|saves-empty|restore|
 //!                           online|online-browser|online-friends|online-friends-busy|
 //!                           online-friends-empty|online-requests|online-friend|
@@ -110,6 +112,8 @@ pub enum ScreenPage {
     AboutUpdate(UpdateLook),
     /// The notes of a launcher update, in the "What's New" panel.
     WhatsNewLauncher,
+    /// "Update required" in one of its states.
+    Required(RequiredLook),
     /// Behavior with the AnyPlay links registered to this launcher.
     BehaviourLinks,
     /// Advanced on Linux with share screen on: the OpenH264 row turned on (and downloaded), or off.
@@ -339,6 +343,38 @@ pub enum OnlineLook {
 /// What a launcher release's notes look like (the shape of the GitHub release body).
 const LAUNCHER_SAMPLE_NOTES: &str = "## AnyPlay Launcher 0.1.4\n\n### Your Profile\n\n- Your profile button now opens a full-screen profile: your games, hours and trophies.\n- **Edit Profile** opens your account on the web.\n\n### Look and Feel\n\n- Focus is a ring around buttons, rows and cards instead of a white fill.\n- Every control reacts when the mouse is over it.\n\n### Calls\n\n- A call uses Voice Activity while it lasts, so you no longer hold a key to talk.\n";
 
+/// What "Update required" shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RequiredLook {
+    /// The update is downloaded: Update Now has the focus.
+    Ready,
+    /// The download runs: Update Now waits, Play Offline has the focus.
+    Downloading,
+    /// GitHub could not be reached: Try Again.
+    Failed,
+    /// This launcher cannot install itself: Download from GitHub.
+    Download,
+    /// The player asked for the online area and was turned back: the reason says so, and the
+    /// focus is on Play Offline.
+    OnlineClosed,
+}
+
+impl RequiredLook {
+    fn state(self) -> LauncherUpdate {
+        use crate::screens::settings::UpdateFailure;
+        let version = "0.3.0".to_owned();
+        match self {
+            RequiredLook::Ready | RequiredLook::OnlineClosed => LauncherUpdate::Ready(version),
+            RequiredLook::Downloading => LauncherUpdate::Downloading {
+                version,
+                permille: 420,
+            },
+            RequiredLook::Failed => LauncherUpdate::Failed(UpdateFailure::Offline),
+            RequiredLook::Download => LauncherUpdate::Manual(version),
+        }
+    }
+}
+
 /// Where the launcher's own update stands on the About page.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UpdateLook {
@@ -478,6 +514,11 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "about-update-offline" => ScreenPage::AboutUpdate(UpdateLook::Offline),
         "about-update-refused" => ScreenPage::AboutUpdate(UpdateLook::Refused),
         "whats-new-launcher" => ScreenPage::WhatsNewLauncher,
+        "update-required" => ScreenPage::Required(RequiredLook::Ready),
+        "update-required-downloading" => ScreenPage::Required(RequiredLook::Downloading),
+        "update-required-failed" => ScreenPage::Required(RequiredLook::Failed),
+        "update-required-download" => ScreenPage::Required(RequiredLook::Download),
+        "update-required-offline" => ScreenPage::Required(RequiredLook::OnlineClosed),
         "behavior-links" => ScreenPage::BehaviourLinks,
         "settings-codec" => ScreenPage::SettingsCodec(true),
         "settings-codec-off" => ScreenPage::SettingsCodec(false),
@@ -1535,6 +1576,7 @@ pub struct ScreenGallery {
     compare: crate::screens::compare::CompareScreen,
     recommended: RecommendedPanel,
     whats_new: WhatsNewPanel,
+    required: crate::screens::required::RequiredScreen,
     notes: Published,
     /// The notes of a launcher update.
     launcher_notes: Published,
@@ -1612,6 +1654,7 @@ impl ScreenGallery {
         Self {
             recommended: RecommendedPanel::default(),
             whats_new: WhatsNewPanel::default(),
+            required: crate::screens::required::RequiredScreen::default(),
             notes: Published {
                 tag: "0.1.3".into(),
                 date: "2026-10-20".into(),
@@ -2055,6 +2098,22 @@ impl ScreenGallery {
             };
             self.whats_new.show(shell, &ctx, &events, &data);
         }
+        if let ScreenPage::Required(look) = self.page {
+            use crate::screens::required::{Reason, RequiredData};
+            let notes = crate::screens::required::note_lines(&self.launcher_notes.notes);
+            let update = look.state();
+            let data = RequiredData {
+                language,
+                update: &update,
+                reason: if look == RequiredLook::OnlineClosed {
+                    Reason::OnlineClosed
+                } else {
+                    Reason::Retired
+                },
+                notes: &notes,
+            };
+            self.required.show(shell, &ctx, &events, &data);
+        }
         {
             let mut data = ControlsData {
                 title: name,
@@ -2370,6 +2429,12 @@ impl ScreenGallery {
                     .open_expanded(&self.notes.notes, shell.language, 2);
             }
             ScreenPage::WhatsNewLoading => self.whats_new.open(),
+            ScreenPage::Required(look) => {
+                self.required.open();
+                if look == RequiredLook::OnlineClosed {
+                    self.required.focus_offline();
+                }
+            }
             ScreenPage::Log | ScreenPage::Report => self.log.open(),
             ScreenPage::Start => self.start.open_at(ctx.clock()),
             ScreenPage::Banner | ScreenPage::Unlocking | ScreenPage::Together(_) => {}

@@ -3,7 +3,7 @@
 //! ```text
 //! update-sign keygen --secret-out <file> [--public-out <file>] [--label <text>]
 //! update-sign manifest --version <v> --exe <file> --out <latest.json>
-//!                      [--appimage <file>] [--minimum <v>] [--days 30] [--base-url <url>]
+//!                      [--appimage <file>] [--minimum <v>] [--supported-file <MIN_SUPPORTED_VERSION>] [--days 30] [--base-url <url>]
 //! update-sign sign --manifest <latest.json> --out <latest.json.sig>
 //!                  (--key-env <NAME> | --key-file <file>)
 //! update-sign verify --manifest <latest.json> --sig <latest.json.sig> --keys <file>
@@ -25,8 +25,8 @@ use std::process::ExitCode;
 
 use anyplay_update_manifest::{
     Artifact, LINUX_X64, MAX_VALIDITY_DAYS, Manifest, SCHEMA, TrustedKeys, Version, WINDOWS_X64,
-    format_time, generate_signing_key, key_line, seed_hex, sign, signing_key_from_hex, to_hex,
-    verify,
+    format_time, generate_signing_key, key_line, parse_supported_file, seed_hex, sign,
+    signing_key_from_hex, to_hex, verify,
 };
 use sha2::{Digest, Sha256};
 use time::{Duration, OffsetDateTime};
@@ -129,6 +129,14 @@ fn manifest(flags: &Flags) -> Result<()> {
     let exe = PathBuf::from(flags.need("exe")?);
     let out = PathBuf::from(flags.need("out")?);
     let minimum = flags.get("minimum").unwrap_or("0.1.0").to_owned();
+    // The repository's MIN_SUPPORTED_VERSION file; one with no version in it leaves the field out.
+    let supported = match flags.get("supported-file") {
+        Some(file) => {
+            let text = fs::read_to_string(file).map_err(|e| format!("cannot read {file}: {e}"))?;
+            parse_supported_file(&text).map_err(|e| e.to_string())?
+        }
+        None => None,
+    };
     let days: i64 = flags
         .get("days")
         .unwrap_or("30")
@@ -173,6 +181,7 @@ fn manifest(flags: &Flags) -> Result<()> {
         published: format_time(now),
         expires: format_time(now + Duration::days(days)),
         minimum_version: minimum,
+        min_supported_version: supported,
         platforms,
     };
     manifest.validate().map_err(|e| e.to_string())?;

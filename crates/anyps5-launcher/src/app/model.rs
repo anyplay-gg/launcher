@@ -281,6 +281,16 @@ pub struct Model {
     /// The notice fits in the top bar as drawn last frame. The focus order reads it, so the pad
     /// never lands on a notice that is not there.
     pub notice_fits: bool,
+    /// This launcher must update before it goes online: the signed manifest or the cloud said so
+    /// (copied in every frame by the panel host). Offline play is never affected.
+    pub update_required: bool,
+    /// The "Update required" screen was shown (or the player turned it away with Play Offline):
+    /// it opens by itself once per run, then only when the online area is asked for.
+    pub required_seen: bool,
+    /// The screen is up because the online area was asked for, not because the launcher started.
+    pub required_online: bool,
+    /// The cloud turned the launcher away (`client_too_old`) since the host looked.
+    pub cloud_too_old: bool,
     /// The toolkit version on this PC (`None`: no toolkit, nothing can be unlocked).
     pub toolkit: Option<String>,
     /// The toolkit needs a newer glibc than this system has (Linux); a notice, not a block.
@@ -372,6 +382,10 @@ impl Model {
             update_dismissed: None,
             update_request: None,
             notice_fits: true,
+            update_required: false,
+            required_seen: false,
+            required_online: false,
+            cloud_too_old: false,
             toolkit: None,
             glibc: None,
             game_toolkits: HashMap::new(),
@@ -1105,6 +1119,15 @@ impl Model {
 
     /// Opens or replaces the overlay without a sound: the panel modules play their own cues.
     pub fn switch_overlay(&mut self, overlay: Overlay) {
+        // The online area is closed while the update is required: whoever asks for it (the
+        // button, an invitation, a link) meets the screen that says why and offers the update.
+        let overlay = if self.update_required && overlay.is_online() {
+            self.required_seen = true;
+            self.required_online = true;
+            Overlay::Required
+        } else {
+            overlay
+        };
         self.panel = match overlay {
             Overlay::Settings => PanelNav::settings(overlay.categories()),
             // The controls panel opens on its first key, below the hint; advanced below its header.
@@ -1118,6 +1141,33 @@ impl Model {
             self.library_index = self.selected;
         }
         self.overlay = Some(overlay);
+    }
+
+    /// The "Update required" screen is due: the update became required, the launcher is idle
+    /// (no game starts or runs, the first-run setup is done) and the screen has not been shown.
+    pub fn required_screen_due(&self) -> bool {
+        self.update_required
+            && !self.required_seen
+            && self.onboarded()
+            && self.running.is_none()
+            && self.starting.is_none()
+    }
+
+    /// Opens "Update required" because the launcher started below the supported version.
+    pub fn show_required(&mut self) {
+        self.required_seen = true;
+        self.required_online = false;
+        self.switch_overlay(Overlay::Required);
+        self.sound(Cue::Open);
+    }
+
+    /// "Play Offline": the screen goes away and the games are the player's again. The online area
+    /// stays closed until the launcher is updated.
+    pub fn play_offline(&mut self) {
+        if self.overlay == Some(Overlay::Required) {
+            self.close_overlay();
+        }
+        self.required_online = false;
     }
 
     /// Closes the overlay without a sound (the panel played its own cue).
@@ -2259,6 +2309,57 @@ mod tests {
         });
         assert_eq!(m.overlay, None);
         assert!(!m.summoned);
+    }
+
+    #[test]
+    fn nothing_changes_while_the_update_is_optional() {
+        let mut m = model_with(Vec::new());
+        assert!(!m.required_screen_due());
+        m.open(Overlay::Friends);
+        assert_eq!(m.overlay, Some(Overlay::Friends), "the online area is open");
+    }
+
+    #[test]
+    fn a_required_update_opens_its_screen_once_and_closes_the_online_area() {
+        let mut m = model_with(Vec::new());
+        m.update_required = true;
+        assert!(m.required_screen_due());
+        m.show_required();
+        assert_eq!(m.overlay, Some(Overlay::Required));
+        assert!(!m.required_online);
+        assert!(!m.required_screen_due(), "once per run");
+        // Play Offline: the home screen is the player's again.
+        m.play_offline();
+        assert_eq!(m.overlay, None);
+        assert!(!m.required_screen_due());
+        // Every way into the online area meets the screen again, with the reason that fits.
+        for online in [Overlay::Friends, Overlay::Profile, Overlay::Compare] {
+            m.play_offline();
+            m.open(online);
+            assert_eq!(m.overlay, Some(Overlay::Required), "{online:?}");
+            assert!(m.required_online);
+            m.play_offline();
+            assert_eq!(m.overlay, None);
+        }
+        // Offline things stay open: the library, the settings and the game's own panels.
+        for offline in [Overlay::Library, Overlay::Settings, Overlay::GameSettings] {
+            m.open(offline);
+            assert_eq!(m.overlay, Some(offline), "{offline:?}");
+            m.close_overlay();
+        }
+    }
+
+    #[test]
+    fn the_required_screen_waits_for_a_quiet_launcher() {
+        let mut m = model_with(Vec::new());
+        m.update_required = true;
+        m.starting = Some(GameId::from_key("PPSA00000".to_owned()));
+        assert!(
+            !m.required_screen_due(),
+            "a game starts: it is not interrupted"
+        );
+        m.starting = None;
+        assert!(m.required_screen_due());
     }
 
     #[test]
