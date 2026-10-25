@@ -463,6 +463,7 @@ pub fn build_categories(
                 None,
             )
             .attached()
+            // On a note, `destructive` is the amber warning ink (the line under Play on the home screen).
             .destructive(),
         );
     }
@@ -1195,6 +1196,7 @@ fn draw(
             ui.make_persistent_id(("category", index)),
             Sense::click(),
         );
+        crate::ui::a11y::follow(&ctx, response.id, focused);
         let title_text = cat.category.title(language);
         response.widget_info(|| {
             egui::WidgetInfo::selected(egui::Role::Tab, true, selected, title_text)

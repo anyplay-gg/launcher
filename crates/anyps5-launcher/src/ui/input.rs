@@ -254,6 +254,8 @@ impl Input {
         }
 
         if self.blocked {
+            // The model ignores the keys now; egui must not click the followed widget with them.
+            crate::ui::a11y::consume_activation(ctx);
             return out;
         }
         let in_text_field = crate::ui::a11y::foreign_focus(ctx);
@@ -270,6 +272,7 @@ impl Input {
                 } => {
                     set_device(ctx, Device::Keyboard);
                     if self.capture_keys {
+                        crate::ui::a11y::consume_activation(ctx);
                         out.push(InputEvent::CapturedKey {
                             key,
                             physical_key,
@@ -294,7 +297,7 @@ impl Input {
                         if !repeat || command.is_direction() {
                             out.push(InputEvent::Command(command));
                         }
-                        crate::ui::a11y::consume_activation(ctx, key);
+                        crate::ui::a11y::consume_activation(ctx);
                     }
                 }
                 Event::MouseWheel { unit, delta, .. } => {

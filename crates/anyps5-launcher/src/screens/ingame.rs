@@ -39,7 +39,7 @@ impl InGameText {
             InGameText::BackToGame => "Back to Game",
             InGameText::Friends => "Friends and Party",
             InGameText::CloseGame => "Close Game",
-            InGameText::CloseAsk => "Close %@? Progress the game has not saved is lost.",
+            InGameText::CloseAsk => "Close %@? Anything the game has not saved is lost.",
             InGameText::KeepPlaying => "Keep Playing",
         }
     }

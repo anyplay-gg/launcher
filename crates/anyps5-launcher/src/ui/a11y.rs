@@ -10,7 +10,9 @@
 //! - egui's focus is only taken when nothing, or this module's own earlier choice, holds it. A text
 //!   field being edited, or a control the player reached with Tab, keeps it ([`foreign_focus`]).
 //! - Tab and the arrows must not move egui's focus away from the ring: the widget's event filter
-//!   claims them (the model reads the same keys).
+//!   claims them (the model reads the arrows itself; Tab does nothing, as before). Tab with no
+//!   followed widget still lets egui focus one, which then owns the keys (a control reached with
+//!   Tab, as in the call card) until Enter or Escape lets it go.
 //! - Enter and Space activate a focused widget in egui; the model already turns them into "select",
 //!   so [`consume_activation`] removes them from egui's input once the model has taken them.
 
@@ -65,16 +67,25 @@ pub fn foreign_focus(ctx: &Context) -> bool {
     }
 }
 
-/// Takes the activation keys out of egui's input after the model has read them as "select", so a
-/// followed widget is not also clicked by egui's Enter/Space handling.
-pub fn consume_activation(ctx: &Context, key: Key) {
-    if matches!(key, Key::Enter | Key::Space) {
-        ctx.input_mut(|i| {
-            i.events.retain(
-                |e| !matches!(e, egui::Event::Key { key: k, pressed: true, .. } if *k == key),
-            );
-        });
+/// Takes Enter and Space out of egui's input when the model has handled them (or ignores them on
+/// purpose, with a dialog open or a key being captured), so a followed widget is not also clicked by
+/// egui's own activation. Nothing happens while egui's focus is foreign: a text field needs its Enter.
+pub fn consume_activation(ctx: &Context) {
+    if foreign_focus(ctx) {
+        return;
     }
+    ctx.input_mut(|i| {
+        i.events.retain(|e| {
+            !matches!(
+                e,
+                egui::Event::Key {
+                    key: Key::Enter | Key::Space,
+                    pressed: true,
+                    ..
+                }
+            )
+        });
+    });
 }
 
 #[cfg(test)]
@@ -113,6 +124,39 @@ mod tests {
         // No ring, no focus.
         pass(&ctx, &[(a, false), (b, false)]);
         assert_eq!(ctx.memory(|m| m.focused()), None);
+    }
+
+    #[test]
+    fn tab_does_not_move_the_focus_off_the_ring() {
+        let ctx = Context::default();
+        let (a, b) = (Id::unique("a"), Id::unique("b"));
+        // The filter is set from the second pass on, once the widget had the focus a frame before.
+        pass(&ctx, &[(a, true), (b, false)]);
+        pass(&ctx, &[(a, true), (b, false)]);
+        let tab = egui::RawInput {
+            events: vec![egui::Event::Key {
+                key: Key::Tab,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        };
+        let out = ctx.run_ui(tab, |ui| {
+            for (n, (id, focused)) in [(a, true), (b, false)].into_iter().enumerate() {
+                let at = pos2(10.0, 10.0 + 30.0 * n as f32);
+                ui.interact(
+                    Rect::from_min_size(at, egui::vec2(20.0, 20.0)),
+                    id,
+                    Sense::click(),
+                );
+                follow(ui.ctx(), id, focused);
+            }
+        });
+        out.drop_without_applying_deltas();
+        assert_eq!(ctx.memory(|m| m.focused()), Some(a));
+        assert!(!foreign_focus(&ctx));
     }
 
     #[test]
