@@ -910,6 +910,8 @@ mod tests {
         files.to_vec()
     }
 
+    // macOS has no engine build; these install one for this system.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn a_verified_archive_is_installed_with_its_record() {
         let (_dir, paths) = paths();
@@ -926,6 +928,8 @@ mod tests {
         assert!(!paths.toolkit_dir().join("engine.previous").exists());
     }
 
+    // macOS has no engine build; these install one for this system.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn the_engine_folder_is_not_a_release() {
         let (_dir, paths) = paths();
@@ -936,6 +940,8 @@ mod tests {
         assert!(Toolkit::locate_with(&paths, None, None).is_none());
     }
 
+    // macOS has no engine build; these install one for this system.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn a_wrong_checksum_installs_nothing_and_keeps_the_old_engine() {
         let (_dir, paths) = paths();
@@ -956,6 +962,8 @@ mod tests {
         assert!(!paths.toolkit_dir().join("engine.partial").exists());
     }
 
+    // macOS has no engine build; these install one for this system.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn a_swapped_archive_is_refused() {
         let (_dir, paths) = paths();
@@ -972,6 +980,8 @@ mod tests {
         assert!(installed(&paths).is_none());
     }
 
+    // macOS has no engine build; these install one for this system.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn a_list_without_the_archive_installs_nothing() {
         let (_dir, paths) = paths();
@@ -984,6 +994,8 @@ mod tests {
         assert!(!paths.toolkit_dir().join("engine.partial").exists());
     }
 
+    // macOS has no engine build; these install one for this system.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn an_archive_naming_another_build_is_refused_and_the_old_engine_stays() {
         let (_dir, paths) = paths();
@@ -1017,6 +1029,8 @@ mod tests {
         assert_eq!(installed(&paths).unwrap().version, "anyplay-30d0fe9");
     }
 
+    // macOS has no engine build; these install one for this system.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn a_newer_build_replaces_the_old_one() {
         let (_dir, paths) = paths();
@@ -1029,6 +1043,8 @@ mod tests {
         assert!(!paths.toolkit_dir().join("engine.previous").exists());
     }
 
+    // macOS has no engine build; these install one for this system.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn a_failed_swap_brings_the_old_engine_back() {
         let (_dir, paths) = paths();
@@ -1042,6 +1058,8 @@ mod tests {
         assert!(open(&paths).is_some());
     }
 
+    // macOS has no engine build; these install one for this system.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn a_crash_between_the_two_moves_is_repaired() {
         let (_dir, paths) = paths();
