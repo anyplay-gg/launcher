@@ -360,7 +360,7 @@ impl Extra {
             Extra::EngineBuilt => "Built on %@",
             Extra::EngineAvailable => "A new engine build is available",
             Extra::EngineNoBuild => {
-                "There is no engine build for this system yet. Nothing was installed."
+                "There is no engine build for this system yet. Nothing was installed. Choose another channel."
             }
             Extra::EngineUnverified => {
                 "The engine download could not be checked. Nothing was installed. Try again later."
@@ -559,7 +559,7 @@ impl Extra {
             Extra::EngineBuilt => "Derleme tarihi: %@",
             Extra::EngineAvailable => "Yeni bir motor derlemesi indirilebilir",
             Extra::EngineNoBuild => {
-                "Bu sistem için henüz motor derlemesi yok. Hiçbir şey kurulmadı."
+                "Bu sistem için henüz motor derlemesi yok. Hiçbir şey kurulmadı. Başka bir kanal seç."
             }
             Extra::EngineUnverified => {
                 "Motor indirmesi doğrulanamadı. Hiçbir şey kurulmadı. Daha sonra yeniden dene."
