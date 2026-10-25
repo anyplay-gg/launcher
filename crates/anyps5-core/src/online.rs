@@ -14,6 +14,7 @@
 //! Nothing here goes online by itself: the launcher starts the process only once the player asks
 //! to sign in, or when they signed in on this PC before.
 
+mod join;
 mod restrictions;
 mod social;
 mod voice;
@@ -31,6 +32,7 @@ pub use anyplay_control::{
     SignedIn, VoiceMode,
 };
 use api::{Account, AccountId, Conversation, FriendLists, Invitation, Message, PartyInvitation};
+pub use join::{JoinOffer, Step as JoinStep};
 pub use restrictions::{Blocked, Restrictions, in_force};
 pub use social::{Fetch, Ingested, KEPT, Listed, Social, others, plain, read_by_other, snippet};
 pub use voice::{
@@ -40,6 +42,13 @@ pub use voice::{
 
 use crate::events::Notifier;
 use crate::trophies::{Earned, Grade};
+
+/// Seconds since the epoch.
+pub fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
 
 /// The program name of the net service.
 pub const BINARY: &str = if cfg!(windows) {
@@ -299,6 +308,10 @@ pub enum Purpose {
     PartyKick(AccountId),
     PartyLeader(AccountId),
     PartyMove,
+    /// A join code for the Join button on Discord, its return, and a code being redeemed.
+    JoinCode,
+    JoinCodeRevoke,
+    JoinRedeem,
     Conversations,
     OpenConversation(AccountId),
     /// A fetch of messages; `announce` when a new-message event asked for it, so the player is
@@ -390,6 +403,8 @@ pub struct Online {
     pub cards: BTreeMap<AccountId, Option<api::Count>>,
     /// Who sees the player's trophies; `None` until the cloud said.
     pub privacy: Option<api::Privacy>,
+    /// The join code behind the Join button on Discord.
+    pub join: JoinOffer,
     /// How many trophies of each title the cloud has recorded since this sign-in.
     uploaded: BTreeMap<String, usize>,
     /// The minutes the cloud has recorded per title and day since this sign-in.
@@ -437,6 +452,27 @@ impl Online {
             .iter()
             .filter(|f| f.presence.online)
             .count()
+    }
+
+    /// Keeps the join code for the Join button in step with `active`: whether the player wants
+    /// one and plays online. It asks for a code once a session or party exists, renews it, and
+    /// gives it back when it is no longer wanted. Call it every frame; it sends at most one
+    /// command and answers its number.
+    pub fn sync_join_offer(&mut self, active: bool) -> Option<u64> {
+        // Offline, a held code waits: it is given back only because the player no longer wants it.
+        if active && !self.is_online() {
+            return None;
+        }
+        let offer = self
+            .session
+            .as_ref()
+            .map(|s| s.id.clone())
+            .or_else(|| self.social.party.as_ref().map(|p| p.id.clone()));
+        match self.join.step(active, offer.as_deref(), unix_now()) {
+            JoinStep::Nothing => None,
+            JoinStep::Ask => Some(self.send(Purpose::JoinCode, Command::JoinCode)),
+            JoinStep::Revoke => Some(self.send(Purpose::JoinCodeRevoke, Command::JoinCodeRevoke)),
+        }
     }
 
     /// Forgets the process and its state, keeping nothing of the account.
@@ -489,6 +525,13 @@ impl Online {
 
     /// Keeps what a refusal tells about the account: the restriction that stopped the command.
     fn refused(&mut self, purpose: &Purpose, failure: &Failure) {
+        if *purpose == Purpose::JoinCode {
+            self.join.failed(
+                failure.is(api::ErrorCode::NotFound),
+                failure.is(api::ErrorCode::RateLimited),
+                unix_now(),
+            );
+        }
         let Some(restriction) = &failure.restriction else {
             return;
         };
@@ -571,6 +614,10 @@ impl Online {
                 }
             }
             Purpose::Hello => self.voice_hello(),
+            Purpose::JoinCode => match serde_json::from_value::<api::JoinCode>(value.clone()) {
+                Ok(code) => self.join.issued(code),
+                Err(_) => self.join.failed(false, false, unix_now()),
+            },
             Purpose::VoiceDevices => {
                 if let Ok(devices) = serde_json::from_value::<control::VoiceDevices>(value.clone())
                 {
@@ -916,6 +963,7 @@ impl Online {
                     self.privacy = None;
                     self.uploaded.clear();
                     self.playtime_sent.clear();
+                    self.join = JoinOffer::default();
                 }
                 if self.account.is_some() {
                     self.restrictions.signed_in();

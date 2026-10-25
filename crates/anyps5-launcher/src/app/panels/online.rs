@@ -191,6 +191,10 @@ fn online_action(model: &mut Model, action: OnlineAction) {
             );
         }
         OnlineAction::SignOut => {
+            // The join code of the Discord button goes back first: afterwards nobody is signed in.
+            if online.join.take_for_sign_out() {
+                online.send(Purpose::JoinCodeRevoke, Command::JoinCodeRevoke);
+            }
             online.send(Purpose::SignOut, Command::SignOut);
         }
         OnlineAction::Dialog(accounts) => {

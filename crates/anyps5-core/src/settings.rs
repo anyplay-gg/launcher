@@ -479,6 +479,9 @@ pub struct Preferences {
     /// The running game on the player's Discord profile.
     #[serde(default = "yes")]
     pub discord_presence: bool,
+    /// A "Join on AnyPlay" button on that Discord status, while the player plays online.
+    #[serde(default = "yes")]
+    pub discord_join_button: bool,
     #[serde(default)]
     pub hide_while_playing: bool,
     /// Hidden trophies that are not earned show their name and description in the trophy list.
@@ -559,6 +562,7 @@ impl Default for Preferences {
             sounds: true,
             music: true,
             discord_presence: true,
+            discord_join_button: true,
             hide_while_playing: false,
             show_hidden_trophies: false,
             fullscreen: true,
@@ -1184,6 +1188,7 @@ mod tests {
         assert!(prefs.onboarded);
         assert_eq!(prefs.theme, Theme::Sunset);
         assert!(prefs.sounds && prefs.music && prefs.discord_presence && prefs.game_artwork);
+        assert!(prefs.discord_join_button, "an old file turns the button on");
         assert!(prefs.fullscreen);
         assert!(prefs.check_for_updates);
         assert_eq!(prefs.profile_name, "Player");

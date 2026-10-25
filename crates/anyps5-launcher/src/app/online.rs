@@ -19,6 +19,7 @@ use anyps5_core::paths::GameId;
 
 use crate::app::model::{Effect, Model};
 use crate::app::overlay::Overlay;
+use crate::screens::discord_strings::redeem_failure;
 use crate::screens::online_restriction_strings as restriction_text;
 use crate::screens::online_social_strings::SocialText as S;
 use crate::screens::online_strings::OnlineText as T;
@@ -486,6 +487,19 @@ impl OnlineService {
                 model.toast(text, Icon::FLAG);
             }
             (Purpose::Invite | Purpose::Dialog, Ok(_)) => {}
+            // The invitation a join link made arrives as the usual event; the panel's Home page
+            // lists it with Join and Decline. Nothing joins by itself.
+            (Purpose::JoinRedeem, Ok(_)) => {
+                model.effects.push(Effect::RestoreWindow);
+                if model.overlay != Some(Overlay::Online) {
+                    model.open(Overlay::Online);
+                }
+            }
+            (Purpose::JoinRedeem, Err(failure)) => {
+                let text = redeem_failure(&failure, language)
+                    .map_or_else(|| failure_text(&failure, language), str::to_owned);
+                model.toast(text, Icon::WARNING);
+            }
             (Purpose::PartyInvite | Purpose::PartyMove, Ok(_)) => {
                 let text = T::InvitationsSent.text(language).to_owned();
                 model.toast(text, Icon::PAPER_PLANE_RIGHT);
@@ -499,6 +513,8 @@ impl OnlineService {
                 | Purpose::Cards
                 | Purpose::Privacy
                 | Purpose::Party
+                | Purpose::JoinCode
+                | Purpose::JoinCodeRevoke
                 | Purpose::Conversations
                 | Purpose::Messages { .. }
                 | Purpose::MarkRead { .. },
@@ -1027,6 +1043,64 @@ mod tests {
             model.toast.as_ref().map(|t| t.text.as_str()),
             Some("Appeal sent.")
         );
+    }
+
+    #[test]
+    fn a_redeemed_join_code_opens_the_panel_and_joins_nothing() {
+        let mut model = signed_in_model();
+        let mut ready = Vec::new();
+        service().notice(
+            &mut model,
+            Notice::Answered(
+                Purpose::JoinRedeem,
+                Ok(serde_json::json!({"kind": "party"})),
+            ),
+            &mut ready,
+        );
+        assert_eq!(model.overlay, Some(Overlay::Online));
+        assert!(ready.is_empty(), "no game starts");
+        assert!(model.online.take_outbox().is_empty(), "no join is sent");
+        assert!(model.starting.is_none() && model.running.is_none());
+    }
+
+    #[test]
+    fn a_refused_join_code_says_why_in_plain_words() {
+        for (code, expected) in [
+            ("not_found", "expired"),
+            ("full", "full"),
+            ("limit", "already"),
+            ("bad_request", "your own"),
+            ("rate_limited", "Too many tries"),
+        ] {
+            let mut model = signed_in_model();
+            let mut ready = Vec::new();
+            service().notice(
+                &mut model,
+                Notice::Answered(Purpose::JoinRedeem, Err(Failure::new(code, "x"))),
+                &mut ready,
+            );
+            let toast = model
+                .toast
+                .as_ref()
+                .map(|t| t.text.clone())
+                .unwrap_or_default();
+            assert!(toast.contains(expected), "{code}: {toast}");
+            assert_eq!(model.overlay, None, "{code}");
+        }
+    }
+
+    #[test]
+    fn a_failed_join_code_for_the_button_is_only_logged() {
+        let mut model = signed_in_model();
+        let mut ready = Vec::new();
+        for purpose in [Purpose::JoinCode, Purpose::JoinCodeRevoke] {
+            service().notice(
+                &mut model,
+                Notice::Answered(purpose, Err(Failure::new("not_found", "x"))),
+                &mut ready,
+            );
+        }
+        assert!(model.toast.is_none(), "the player did not ask for it");
     }
 
     #[test]
