@@ -15,10 +15,10 @@
 //! to sign in, or when they signed in on this PC before.
 
 pub mod avatar;
+mod calls;
 mod feed;
 mod join;
 mod profile;
-mod calls;
 mod restrictions;
 mod runs;
 mod screen;

@@ -1695,6 +1695,7 @@ mod tests {
                 "join",
                 "sendMessage",
                 "inviteToParty",
+                "call",
                 "viewProfile",
                 "remove",
                 "block",
@@ -1728,6 +1729,7 @@ mod tests {
                 "join",
                 "sendMessage",
                 "inviteToParty",
+                "call",
                 "viewProfile",
                 "trophies",
                 "remove",
@@ -1735,21 +1737,21 @@ mod tests {
                 "report"
             ]
         );
-        assert_eq!(rows[4].control, Control::Info(Some("35".into())));
+        assert_eq!(rows[5].control, Control::Info(Some("35".into())));
         assert_eq!(
-            rows[4].detail.as_deref(),
+            rows[5].detail.as_deref(),
             Some("1 Platinum · 4 Gold · 30 Bronze")
         );
-        assert!(rows[4].group_start);
+        assert!(rows[5].group_start);
 
         online.cards.insert(AccountId(2), Some(count(0, 0, 0, 0)));
         let rows = panel.rows(&data(&online)).2;
-        assert_eq!(rows[4].control, Control::Info(Some("None yet".into())));
-        assert_eq!(rows[4].detail, None);
+        assert_eq!(rows[5].control, Control::Info(Some("None yet".into())));
+        assert_eq!(rows[5].detail, None);
 
         online.cards.insert(AccountId(2), None);
         let rows = panel.rows(&data(&online)).2;
-        assert_eq!(rows[4].control, Control::Info(Some("Hidden".into())));
+        assert_eq!(rows[5].control, Control::Info(Some("Hidden".into())));
     }
 
     #[test]

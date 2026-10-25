@@ -550,6 +550,13 @@ fn sample_calls(state: &mut anyps5_core::online::Online, look: OnlineLook) {
             }
         }
         OnlineLook::MissedCall => {
+            // A quiet list, so the friends are in view.
+            state.invitations.clear();
+            state.friends.incoming.clear();
+            state.friends.outgoing.clear();
+            state.social.party_invitations.clear();
+            state.social.apply_party(None);
+            state.session = None;
             state.calls.missed.push(MissedCall {
                 from: account(4, "Kit"),
                 at: SAMPLE_NOW as u64 - 300,

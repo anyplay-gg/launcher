@@ -504,6 +504,7 @@ mod tests {
         online.apply(event(Event::Party {
             party: Some(party(&[(2, "Lumen"), (1, "Alec")], 2)),
         }));
+        online.take_outbox();
         assert!(!online.start_call(&account(3, "Cy")));
         assert!(online.take_outbox().is_empty());
     }

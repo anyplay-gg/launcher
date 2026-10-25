@@ -136,6 +136,7 @@ mod tests {
             conversation: "c".into(),
             created: 0,
             revision: 1,
+            discord: None,
         }
     }
 

@@ -42,6 +42,7 @@ fn online() -> Online {
         conversation: "pc".into(),
         created: 0,
         revision: 1,
+        discord: None,
     }));
     online
 }

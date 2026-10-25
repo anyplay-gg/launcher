@@ -233,13 +233,14 @@ pub fn ago(seconds: u64, language: Language) -> String {
 mod tests {
     use super::*;
 
-    const WITH_ARGUMENT: [CallText; 6] = [
+    const WITH_ARGUMENT: [CallText; 7] = [
         CallText::IncomingName,
         CallText::Calling,
         CallText::MissedAgo,
         CallText::ToastMissed,
         CallText::ToastNoAnswer,
         CallText::ToastDeclined,
+        CallText::ToastUnreachable,
     ];
 
     #[test]
@@ -248,10 +249,6 @@ mod tests {
             let count = |s: &str| s.matches("%@").count();
             assert_eq!(count(text.english()), 1, "{text:?}");
             assert_eq!(count(text.turkish()), 1, "{text:?}");
-        }
-        for text in [CallText::ToastUnreachable] {
-            assert_eq!(text.english().matches("%@").count(), 1);
-            assert_eq!(text.turkish().matches("%@").count(), 1);
         }
     }
 

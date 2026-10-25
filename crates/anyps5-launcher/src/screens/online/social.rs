@@ -1153,6 +1153,7 @@ mod tests {
                 "partyChat",
                 "inviteFriends",
                 "voiceCaption",
+                "voiceProvider",
                 "voiceOn",
                 "voiceSettings",
                 "membersCaption",
@@ -1164,13 +1165,13 @@ mod tests {
         );
         assert_eq!(rows[0].detail.as_deref(), Some("3 new"));
         assert_eq!(
-            rows[6].detail.as_deref(),
+            rows[7].detail.as_deref(),
             Some("Leader"),
             "the leader's mark is a word"
         );
-        assert_eq!(rows[6].control, Control::Info(Some("You".into())));
-        assert_eq!(rows[7].detail.as_deref(), Some("Online"));
-        assert!(rows[9].destructive && rows[9].group_start);
+        assert_eq!(rows[7].control, Control::Info(Some("You".into())));
+        assert_eq!(rows[8].detail.as_deref(), Some("Online"));
+        assert!(rows[10].destructive && rows[10].group_start);
         assert_eq!(panel.side.nav.row, 0, "opens on the chat");
     }
 
@@ -1198,6 +1199,7 @@ mod tests {
             [
                 "partyChat",
                 "voiceCaption",
+                "voiceProvider",
                 "voiceOn",
                 "voiceSettings",
                 "membersCaption",
@@ -1206,7 +1208,7 @@ mod tests {
                 "leaveParty"
             ]
         );
-        assert_eq!(rows[5].detail.as_deref(), Some("Leader · Online"));
+        assert_eq!(rows[6].detail.as_deref(), Some("Leader · Online"));
         // Any member opens the member page for volume and mute; it has no leader rows.
         panel.go(Page::PartyMember(AccountId(2)), &data(&online));
         panel.follow(&data(&online));
@@ -1774,6 +1776,7 @@ mod tests {
             [
                 "sendMessage",
                 "inviteToParty",
+                "call",
                 "viewProfile",
                 "remove",
                 "block",
@@ -2227,6 +2230,7 @@ mod tests {
                 "partyChat",
                 "inviteFriends",
                 "voiceCaption",
+                "voiceProvider",
                 "voiceOn",
                 "voiceSettings",
                 "membersCaption",
@@ -2237,11 +2241,11 @@ mod tests {
             ]
         );
         // Off: the toggle says so, and nothing else about the microphone shows.
-        let Control::Toggle(on) = rows[3].control else {
+        let Control::Toggle(on) = rows[4].control else {
             panic!("not a toggle");
         };
         assert!(!on);
-        assert_eq!(rows[3].detail.as_deref(), Some("Off"));
+        assert_eq!(rows[4].detail.as_deref(), Some("Off"));
     }
 
     #[test]
@@ -2528,6 +2532,7 @@ mod tests {
         assert_eq!(
             ids(&rows),
             [
+                "voiceProvider",
                 "voiceOn",
                 "voiceMode",
                 "voiceNote",
@@ -2539,7 +2544,7 @@ mod tests {
             ]
         );
         assert!(
-            matches!(&rows[3].control, Control::Keys { sources, capturing: false } if sources == &["KEY:V"])
+            matches!(&rows[4].control, Control::Keys { sources, capturing: false } if sources == &["KEY:V"])
         );
         let input = rows.iter().find(|r| r.id == "voiceInput").unwrap();
         assert_eq!(input.detail.as_deref(), Some("Headset"));
