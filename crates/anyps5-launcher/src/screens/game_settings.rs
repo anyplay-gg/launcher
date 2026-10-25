@@ -158,7 +158,7 @@ impl GameSettingsPanel {
                     self.apply(data, change, &mut out);
                 }
                 if drawn.scrim_clicked {
-                    shell.play(crate::ui::sound::Cue::Back);
+                    shell.play(crate::ui::sound::Cue::Close);
                     self.side.close();
                     out.actions.push(GameSettingsAction::Close);
                 }

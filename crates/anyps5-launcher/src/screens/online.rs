@@ -507,7 +507,7 @@ impl OnlinePanel {
                     self.handle(ctx, change, data, &mut actions);
                 }
                 if drawn.scrim_clicked {
-                    shell.play(crate::ui::sound::Cue::Back);
+                    shell.play(crate::ui::sound::Cue::Close);
                     self.close_panel(data, &mut actions);
                 }
             }

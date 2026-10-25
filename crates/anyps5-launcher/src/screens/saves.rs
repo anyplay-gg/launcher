@@ -138,7 +138,7 @@ impl SavesPanel {
                     self.handle(change, data, &mut actions);
                 }
                 if drawn.scrim_clicked {
-                    shell.play(crate::ui::sound::Cue::Back);
+                    shell.play(crate::ui::sound::Cue::Close);
                     self.side.close();
                     actions.push(SavesAction::Close);
                 }

@@ -462,11 +462,19 @@ impl Model {
         self.online.upload_playtime(entries);
     }
 
-    /// Shows a toast; a warning also plays the error cue.
+    /// Shows a toast; a warning plays the error cue, every other one the soft chime.
     pub fn toast(&mut self, text: impl Into<String>, icon: Icon) {
-        if icon == Icon::WARNING {
-            self.sound(Cue::Error);
-        }
+        let cue = if icon == Icon::WARNING {
+            Cue::Error
+        } else {
+            Cue::Notify
+        };
+        self.toast_with(text, icon, cue);
+    }
+
+    /// A toast with its own cue: a message, an invitation.
+    pub fn toast_with(&mut self, text: impl Into<String>, icon: Icon, cue: Cue) {
+        self.sound(cue);
         self.toast_counter += 1;
         self.toast = Some(Toast {
             id: self.toast_counter,
@@ -997,7 +1005,7 @@ impl Model {
 
     pub fn open(&mut self, overlay: Overlay) {
         self.switch_overlay(overlay);
-        self.sound(Cue::Select);
+        self.sound(Cue::Open);
     }
 
     /// Opens or replaces the overlay without a sound: the panel modules play their own cues.
@@ -1024,7 +1032,7 @@ impl Model {
 
     pub fn close_overlay(&mut self) {
         self.overlay = None;
-        self.sound(Cue::Back);
+        self.sound(Cue::Close);
     }
 
     // --- home input --------------------------------------------------------------------------

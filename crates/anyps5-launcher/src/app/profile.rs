@@ -36,7 +36,7 @@ impl Model {
         match self.online.account.as_ref().map(|a| a.id) {
             Some(me) => {
                 self.open_profile(me, Back::Home);
-                self.sound(Cue::Select);
+                self.sound(Cue::Open);
             }
             None => self.open(Overlay::Online),
         }

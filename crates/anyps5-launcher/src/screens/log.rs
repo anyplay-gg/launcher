@@ -196,7 +196,7 @@ impl LogView {
                         break;
                     }
                     Command::Back | Command::Select => {
-                        shell.play(Cue::Back);
+                        shell.play(Cue::Close);
                         self.close();
                         actions.push(LogAction::Close);
                         break;
@@ -219,7 +219,7 @@ impl LogView {
         if self.open {
             match clicked {
                 Some(LogAction::Close) => {
-                    shell.play(Cue::Back);
+                    shell.play(Cue::Close);
                     self.close();
                     actions.push(LogAction::Close);
                 }

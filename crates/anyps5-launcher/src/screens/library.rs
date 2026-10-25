@@ -145,7 +145,7 @@ impl LibraryGrid {
                         actions.push(LibraryAction::Pick(self.index));
                     }
                     Command::Select | Command::Back | Command::Options => {
-                        shell.play(Cue::Back);
+                        shell.play(Cue::Close);
                         self.close();
                         actions.push(LibraryAction::Close);
                     }

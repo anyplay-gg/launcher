@@ -270,9 +270,12 @@ impl Change {
         }
     }
 
-    /// Value changes tick, actions and captures confirm (section 7.1).
+    /// Value changes tick, a switch says which way it went, actions and captures confirm
+    /// (sections 7.1 and 7.3).
     pub fn cue(&self) -> Cue {
         match self {
+            Change::Toggle { on: true, .. } => Cue::On,
+            Change::Toggle { on: false, .. } => Cue::Off,
             Change::Run { .. }
             | Change::Press { .. }
             | Change::Capture { .. }
@@ -382,13 +385,22 @@ pub fn drive(shell: &mut Shell, nav: &mut PanelNav, rows: &[Row], commands: &[Co
             nav.row = rows.len().saturating_sub(1);
         }
         let step = nav.command(command, &kinds);
-        if let Some(cue) = step.sound {
-            shell.play(cue);
+        // A switch answers with its own cue (on or off), whatever moved it.
+        let change = match step.effect {
+            effect @ (PanelEffect::Adjust { .. } | PanelEffect::Activate { .. }) => {
+                resolve(rows, effect)
+            }
+            _ => None,
+        };
+        match (&change, step.sound) {
+            (Some(change @ Change::Toggle { .. }), _) => shell.play(change.cue()),
+            (_, Some(cue)) => shell.play(cue),
+            _ => {}
         }
         match step.effect {
             PanelEffect::Close => out.close = true,
-            effect @ (PanelEffect::Adjust { .. } | PanelEffect::Activate { .. }) => {
-                if let Some(change) = resolve(rows, effect) {
+            PanelEffect::Adjust { .. } | PanelEffect::Activate { .. } => {
+                if let Some(change) = change {
                     out.changes.push(change);
                 }
             }
@@ -911,7 +923,20 @@ mod tests {
     fn cues_follow_section_7() {
         assert_eq!(Change::Run { row: "x" }.cue(), Cue::Select);
         assert_eq!(Change::Capture { row: "x" }.cue(), Cue::Select);
-        assert_eq!(Change::Toggle { row: "x", on: true }.cue(), Cue::Move);
+        assert_eq!(Change::Toggle { row: "x", on: true }.cue(), Cue::On);
+        assert_eq!(
+            Change::Toggle {
+                row: "x",
+                on: false
+            }
+            .cue(),
+            Cue::Off
+        );
+        assert_eq!(
+            Change::Choice { row: "x", index: 1 }.cue(),
+            Cue::Move,
+            "a choice only ticks"
+        );
     }
 
     #[test]

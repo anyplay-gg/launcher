@@ -243,7 +243,7 @@ impl TrophyListPanel {
                         }
                     }
                     Command::Back | Command::Options => {
-                        shell.play(Cue::Back);
+                        shell.play(Cue::Close);
                         self.close();
                         actions.push(TrophyAction::Close);
                     }
