@@ -67,6 +67,29 @@ pub fn black(alpha: f32) -> Color32 {
     rgba(0.0, 0.0, 0.0, alpha)
 }
 
+/// The ink for text or a glyph on `bg` (opaque): white, or the dark `on_primary` when that reads
+/// better. Whichever is better reaches 4.49:1 at worst, on any colour.
+pub fn readable_ink(bg: Color32) -> Color32 {
+    let lum = |c: Color32| {
+        let lin = |v: u8| {
+            let v = f32::from(v) / 255.0;
+            if v <= 0.04045 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * lin(c.r()) + 0.7152 * lin(c.g()) + 0.0722 * lin(c.b())
+    };
+    let dark = color::on_primary();
+    let (l, ld) = (lum(bg) + 0.05, lum(dark) + 0.05);
+    if 1.05 / l >= l / ld {
+        Color32::WHITE
+    } else {
+        dark
+    }
+}
+
 /// `color` with its alpha multiplied by `factor`.
 pub fn fade(color: Color32, factor: f32) -> Color32 {
     let [r, g, b, a] = color.to_srgba_unmultiplied();
@@ -1021,6 +1044,31 @@ mod tests {
             font(20.0, Weight::Medium).family,
             FontFamily::Name("inter-display-medium".into())
         );
+    }
+
+    #[test]
+    fn the_ink_on_a_colour_is_the_one_that_reads_better() {
+        assert_eq!(readable_ink(Color32::BLACK), Color32::WHITE);
+        assert_eq!(readable_ink(Color32::WHITE), color::on_primary());
+        for accent in Accent::ALL {
+            let bg = accent.color();
+            let ink = readable_ink(bg);
+            let (a, b) = (lum_of(ink), lum_of(bg));
+            let ratio = (a.max(b) + 0.05) / (a.min(b) + 0.05);
+            assert!(ratio >= 4.49, "{accent:?} {ratio}");
+        }
+    }
+
+    fn lum_of(c: Color32) -> f32 {
+        let lin = |v: u8| {
+            let v = f32::from(v) / 255.0;
+            if v <= 0.04045 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * lin(c.r()) + 0.7152 * lin(c.g()) + 0.0722 * lin(c.b())
     }
 
     #[test]

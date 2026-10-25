@@ -62,7 +62,7 @@ impl Pin {
 
     pub const fn turkish(self) -> &'static str {
         match self {
-            Pin::Title => "Bu Oyun İçin Araç Seti",
+            Pin::Title => "Bu Oyun için Araç Seti",
             Pin::FollowGlobal => "Genel Ayarı İzle",
             Pin::Recommended => "Önerilen: %@",
             Pin::NotInstalled => "%@ (kurulu değil)",

@@ -238,8 +238,8 @@ pub struct Input {
     pub blocked: bool,
     /// True while a binding waits for a key: every key press is returned as [`InputEvent::CapturedKey`].
     pub capture_keys: bool,
-    /// True while a call card or strip is on screen: its buttons are reached with Tab through
-    /// egui, so Tab is not taken for the focus ring.
+    /// True while a call is ringing: the card's buttons are reached with Tab through egui, so
+    /// Tab is not taken for the focus ring.
     pub tab_for_egui: bool,
 }
 

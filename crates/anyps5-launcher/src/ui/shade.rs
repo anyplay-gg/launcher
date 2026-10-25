@@ -8,7 +8,7 @@
 //! worst backdrops (a pure white picture, Sunset's lit lower band) against the ink laid on them.
 
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
-use egui::{Painter, Pos2, Rect, Shape, pos2};
+use egui::{Painter, Pos2, Rect, Shape, Vec2, pos2, vec2};
 
 use crate::ui::theme::black;
 
@@ -20,12 +20,14 @@ pub const SHADE_HERO: f32 = 0.46;
 /// Darkness on the plateau under the hint bar.
 pub const SHADE_HINTS: f32 = 0.28;
 
-/// A patch of black: `peak` on a plateau, easing to nothing over `feather` beyond it. A plateau
-/// that reaches past the screen's edge has no fade there.
+/// A patch of black: `peak` on a plateau, easing to nothing over `feather` (across, up and down)
+/// beyond it. The ease follows the distance from the plateau, so its contours are round at the
+/// corners and no straight edge shows. A plateau that reaches past the screen's edge has no fade
+/// there.
 #[derive(Clone, Copy, Debug)]
 pub struct Patch {
     pub plateau: Rect,
-    pub feather: f32,
+    pub feather: Vec2,
     pub peak: f32,
 }
 
@@ -43,25 +45,26 @@ impl Patch {
         let dy = (self.plateau.min.y - p.y)
             .max(p.y - self.plateau.max.y)
             .max(0.0);
-        self.peak * (1.0 - smoothstep(dx / self.feather)) * (1.0 - smoothstep(dy / self.feather))
+        let d = (dx / self.feather.x).hypot(dy / self.feather.y);
+        self.peak * (1.0 - smoothstep(d))
     }
 
     /// The area the patch touches at all.
     pub fn reach(&self) -> Rect {
-        self.plateau.expand(self.feather)
+        self.plateau.expand2(self.feather)
     }
 }
 
-/// The hero's patch for a screen: from the left edge to 720 dp, from 400 dp above the bottom down
-/// (the state line, the title, the buttons and the facts).
+/// The hero's patch for a screen: from the left edge to 880 dp, from 400 dp above the bottom down
+/// (the state line, the title, the buttons, the glibc line and the facts, which can run to 880).
 pub fn hero(screen: Rect) -> Patch {
     let far = 400.0;
     Patch {
         plateau: Rect::from_min_max(
             pos2(screen.min.x - far, screen.max.y - 400.0),
-            pos2(screen.min.x + 720.0, screen.max.y + far),
+            pos2(screen.min.x + 880.0, screen.max.y + far),
         ),
-        feather: 260.0,
+        feather: vec2(360.0, 260.0),
         peak: SHADE_HERO,
     }
 }
@@ -74,7 +77,7 @@ pub fn hints(screen: Rect) -> Patch {
             pos2(screen.max.x - 520.0, screen.max.y - 110.0),
             pos2(screen.max.x + far, screen.max.y + far),
         ),
-        feather: 220.0,
+        feather: vec2(300.0, 220.0),
         peak: SHADE_HINTS,
     }
 }
@@ -117,7 +120,7 @@ pub fn paint(painter: &Painter, screen: Rect, with_hero: bool) {
 
 /// A grid over the patch's reach, clipped to the screen, each vertex at the patch's alpha.
 fn paint_patch(painter: &Painter, screen: Rect, patch: Patch) {
-    const N: usize = 14;
+    const N: usize = 20;
     let area = patch.reach().intersect(screen);
     if area.width() <= 0.0 || area.height() <= 0.0 {
         return;
@@ -177,9 +180,9 @@ mod tests {
         assert!((hero(s).alpha(pos2(300.0, 760.0)) - SHADE_HERO).abs() < 1e-6);
         assert!((hints(s).alpha(pos2(1400.0, 862.0)) - SHADE_HINTS).abs() < 1e-6);
         // Over the tile row, and in the middle of the screen, nothing is laid.
-        assert_eq!(hero(s).alpha(pos2(300.0, 150.0)), 0.0);
-        assert_eq!(hero(s).alpha(pos2(1100.0, 760.0)), 0.0);
-        assert_eq!(hints(s).alpha(pos2(800.0, 862.0)), 0.0);
+        assert_eq!(hero(s).alpha(pos2(300.0, 100.0)), 0.0);
+        assert_eq!(hero(s).alpha(pos2(1300.0, 760.0)), 0.0);
+        assert_eq!(hints(s).alpha(pos2(600.0, 862.0)), 0.0);
     }
 
     #[test]

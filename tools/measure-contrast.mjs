@@ -2,7 +2,8 @@
 // behind it. The backdrop under a region is its median colour (text covers a small part of a
 // region that is a little larger than the text), so it is measured, not estimated.
 //
-//   node tools/measure-contrast.mjs <png> name:x,y,w,h:alpha [name:x,y,w,h:alpha ...]
+//   node tools/measure-contrast.mjs <png> name:x,y,w,h:alpha[:rrggbb] [...]
+// The ink is white at that alpha unless a hex colour is given.
 //
 // Prints one row per region: backdrop colour, text colour after compositing, ratio.
 import fs from 'fs';
@@ -70,11 +71,12 @@ export function backdrop(img, x, y, w, h) {
 if (process.argv[1] && process.argv[1].endsWith("measure-contrast.mjs")) {
   const img = decodePng(process.argv[2]);
   for (const spec of process.argv.slice(3)) {
-    const [name, box, alpha] = spec.split(':');
+    const [name, box, alpha, hex] = spec.split(':');
     const [x, y, w, h] = box.split(',').map(Number);
     const a = Number(alpha);
     const bg = backdrop(img, x, y, w, h);
-    const fg = bg.map((c) => Math.round(255 * a + c * (1 - a)));
+    const ink = hex ? [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16)) : [255, 255, 255];
+    const fg = bg.map((c, i) => Math.round(ink[i] * a + c * (1 - a)));
     console.log(`${name.padEnd(14)} backdrop rgb(${bg.join(',')}) text rgb(${fg.join(',')}) ratio ${ratio(fg, bg).toFixed(2)}`);
   }
 }

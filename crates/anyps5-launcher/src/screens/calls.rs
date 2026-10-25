@@ -199,9 +199,11 @@ impl CallsUi {
     }
 }
 
-/// A call card or the in-call strip is on screen: their buttons keep Tab.
-pub fn on_screen(online: &net::Online) -> bool {
-    card_data(online, unix_now()).is_some() || strip_data(online).is_some()
+/// A call is ringing: the card's buttons keep Tab. The strip of a call in progress does not need
+/// it (Mute, Deafen and Leave Call are rows of the Online panel), so Tab keeps walking the ring
+/// for as long as the call lasts.
+pub fn ringing(online: &net::Online) -> bool {
+    card_data(online, unix_now()).is_some()
 }
 
 /// The call that rings now, if any.

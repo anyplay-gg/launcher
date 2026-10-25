@@ -383,7 +383,7 @@ impl CompareScreen {
                 pos2(level.max.x + 10.0, y),
                 FACT,
                 &side.points_text,
-                white(0.66),
+                color::text_detail(),
             );
             y += FACT.line_height() + 8.0;
             let bar = Rect::from_min_size(pos2(x, y), vec2(COLUMN - 40.0, 4.0));
@@ -420,7 +420,7 @@ impl CompareScreen {
                 Align2::LEFT_TOP,
                 ty::DETAIL_LARGE,
                 &side.game_points_text,
-                white(0.66),
+                color::text_detail(),
             );
             y += ty::DETAIL_LARGE.line_height();
             bottom = bottom.max(y);
@@ -618,7 +618,7 @@ impl CompareScreen {
             name_g,
             fade(Color32::WHITE, if you_earned { 1.0 } else { 0.86 }),
         );
-        painter.galley(pos2(x, top + name_h + 6.0), detail_g, white(0.66));
+        painter.galley(pos2(x, top + name_h + 6.0), detail_g, color::text_detail());
         if let Some(grade) = row.grade
             && !row.secret
         {
@@ -659,7 +659,7 @@ impl CompareScreen {
                         Align2::LEFT_CENTER,
                         ty::DETAIL_LARGE,
                         C::NotYet.text(language),
-                        white(0.5),
+                        color::text_detail(),
                     );
                 }
             }
@@ -794,7 +794,7 @@ impl CompareScreen {
             job.halign = Align::Center;
             job.sections[0].format.line_height = Some(1.45 * ty::NOTE.size);
             let galley = painter.layout_job(job);
-            painter.galley(pos2(centre, y), galley, white(0.62));
+            painter.galley(pos2(centre, y), galley, color::text_detail());
         }
         if failed {
             let label = FeedText::TryAgain.text(language);

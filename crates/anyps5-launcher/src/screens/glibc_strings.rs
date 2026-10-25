@@ -38,9 +38,9 @@ const fn template(language: Language) -> &'static str {
 fn next_step(needed: Version, language: Language) -> String {
     match (releases_with(needed), language) {
         (Some(names), Language::English) => format!("Update to {names} or newer."),
-        (Some(names), Language::Turkish) => format!("Şuna geç: {names} veya daha yenisi."),
+        (Some(names), Language::Turkish) => format!("Güncelle: {names} veya daha yenisi."),
         (None, Language::English) => "Update to a newer release of your distribution.".to_owned(),
-        (None, Language::Turkish) => "Dağıtımının daha yeni bir sürümüne geç.".to_owned(),
+        (None, Language::Turkish) => "Dağıtımını daha yeni bir sürüme güncelle.".to_owned(),
     }
 }
 
@@ -85,7 +85,7 @@ mod tests {
         );
         assert_eq!(
             shortfall_text(&s, Language::Turkish),
-            "Oyunlar glibc 2.38 veya daha yenisini ister; bu sistemde 2.35 var. Şuna geç: Fedora 39, Ubuntu 24.04 veya daha yenisi."
+            "Oyunlar glibc 2.38 veya daha yenisini ister; bu sistemde 2.35 var. Güncelle: Fedora 39, Ubuntu 24.04 veya daha yenisi."
         );
     }
 

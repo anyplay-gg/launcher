@@ -984,7 +984,7 @@ pub fn paint_avatar(
                     Align2::CENTER_CENTER,
                     initial,
                     ty::BUTTON.font(),
-                    Color32::WHITE,
+                    crate::ui::theme::readable_ink(monogram_colour(account)),
                 );
             }
         }

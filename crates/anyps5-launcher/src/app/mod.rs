@@ -238,7 +238,7 @@ impl LauncherApp {
     /// Everything before painting: finished work, input, effects, preferences.
     pub fn step(&mut self, ctx: &Context) {
         self.shell.input.blocked = self.services.dialog_open();
-        self.shell.input.tab_for_egui = crate::screens::calls::on_screen(&self.model.online);
+        self.shell.input.tab_for_egui = crate::screens::calls::ringing(&self.model.online);
         let frame = self.shell.begin_frame(ctx);
         let now = ctx.clock();
         self.model.tick(now);
@@ -449,11 +449,14 @@ impl LauncherApp {
                     };
                     self.model.onboarding_command(command);
                 } else if self.model.overlay.is_some() {
-                    // A panel is a column of rows: reading order is down and up.
-                    let command = if backwards {
-                        crate::ui::input::Command::Up
-                    } else {
-                        crate::ui::input::Command::Down
+                    // A panel is a column of rows: reading order is down and up. The library is a
+                    // grid of tiles: reading order is along the row, then the next one.
+                    use crate::ui::input::Command;
+                    let command = match (self.model.overlay, backwards) {
+                        (Some(Overlay::Library), false) => Command::Right,
+                        (Some(Overlay::Library), true) => Command::Left,
+                        (_, false) => Command::Down,
+                        (_, true) => Command::Up,
                     };
                     self.handle_event(ctx, InputEvent::Command(command));
                 } else {

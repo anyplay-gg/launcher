@@ -910,7 +910,9 @@ the new weakest of every ink is in the test's output):
 | knob of a switch that is on | white; 1.1 on the White accent, 1.5 on mint or gold | `on_primary`, dark (6.5 or more) | every accent |
 | progress line in Blue and Violet | 2.0 and 2.2 on Sunset's band | Blue `#66A3FF`, Violet `#B391FF` (3.2, 3.3) | the unlock line on a bare Sunset |
 
-The literal inks the audit found in the screens (white 0.55 to 0.66 as text, 17 places) now use these tokens, and the row text of
+The initial in the profile button's avatar (and the monogram of a friend without a picture) takes `theme::readable_ink` of its
+colour: white, or the dark `on_primary` when that reads better (white on Mint, Gold or White was 1.2 to 2.2:1; every accent now
+reaches 4.5). The literal inks the audit found in the screens (white 0.55 to 0.66 as text, 17 places) now use these tokens, and the row text of
 the panels uses `text_row_detail`, `text_inert`, `text_note` (0.50, bare on the panel) and `text_caption`. New text ink is a token,
 so the test sees it.
 
@@ -922,9 +924,11 @@ switch, the online dot).
 **Shades, not a ramp** (`ui::shade`). The home screen's scrim was a ramp over the whole lower half, 0.58 in the corner, laid on the
 artwork's own two scrims: on a pale picture that is the grey fog. The artwork scrims already leave a pure white picture at 5.0:1
 under the facts and 6.7:1 under the hints, so the home screen lays only what a bare theme needs: a soft-edged patch under the hero
-(black 0.46 on a plateau from the left edge to 720 dp and from 400 dp above the bottom down, easing out over 260 dp), one under the
-hint bar (0.28; the right 520 dp, the bottom 110 dp, 220 dp feather) and the band under the top bar (0.45, 150 dp). A patch is as
-dark as the ink on it needs (Sunset's lit band sets it) and nothing more; the tile row and the middle of the picture get none.
+(black 0.46 on a plateau from the left edge to 880 dp and from 400 dp above the bottom down, easing out over 360 dp across and 260
+dp up), one under the hint bar (0.28; the right 520 dp, the bottom 110 dp, easing out over 300 and 220 dp) and the band under the
+top bar (0.45, 150 dp). The ease follows the distance from the plateau, so the contours are round and no straight edge shows. A
+patch is as dark as the ink on it needs (Sunset's lit band sets it) and nothing more; the tile row and the middle of the picture
+get none. The facts and the glibc line can run to 880 dp, so the model samples them there too.
 
 **One case rule.** Titles of rows, buttons, captions, headings and the names of a choice are in Title Case ("Save Changes", "Game
 Default", "Top Left", "Report as Installed"): every word capital except the short ones inside (a, an, the, and, or, of, to, in, on,
@@ -943,9 +947,10 @@ regular in `text_label` ink with 1.45 leading under the panel title, not the qui
 **Tab walks the ring.** Tab and Shift+Tab are the model's keys now (`InputEvent::Tab`; egui no longer sees them). On the home screen
 they step through the stops in reading order: the top bar from left to right, the tile row as one stop (the arrows choose the
 tile), the action row, the question line while it asks; they stop at the ends without wrapping. In a panel they are Down and Up (a
-panel is one column of rows), in the onboarding Right and Left (the choices sit side by side). A text field keeps Tab for itself, and
-while a call card or the call strip is on screen Tab stays with egui, which focuses their buttons (they are for the pointer and for
-Tab; the pad reaches a call through the Invitations row).
+panel is one column of rows), in the onboarding Right and Left (the choices sit side by side). The library, a grid, reads along the row (Tab is Right, Shift+Tab Left). A text field
+keeps Tab for itself, and while a call rings Tab stays with egui, which focuses the card's buttons (they are for the pointer and for
+Tab; the pad reaches a call through the Invitations row). The strip of a call in progress does not hold Tab: Mute, Deafen and Leave
+Call are rows of the Online panel.
 
 **Screen readers follow the ring on more widgets.** `a11y::follow` is called by the switch (when it is a node of its own), by the
 cards of the theme step of the onboarding, by the rows of the profile page and by the lines of What's New. The language cards,

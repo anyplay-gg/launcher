@@ -539,7 +539,7 @@ impl Extra {
             }
             Extra::UnlockOptional => "Yeniden açmak isteğe bağlı.",
             Extra::UnlockEarlierBuild => "Bu araç setinin önceki bir yapısıyla açıldı.",
-            Extra::RecTitle => "Bu Oyun İçin Önerilenler",
+            Extra::RecTitle => "Bu Oyun için Önerilenler",
             Extra::RecNeeded => "Başlamak için gerekli",
             Extra::RecWorthALook => "Göz atmaya değer",
             Extra::RecApply => "Uygula",

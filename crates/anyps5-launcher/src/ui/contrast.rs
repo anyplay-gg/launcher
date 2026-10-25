@@ -201,7 +201,7 @@ impl Report {
 /// Home screen text at its places (reference size 1600 x 900).
 fn home(report: &mut Report) {
     // (what, ink, style, where, on a keycap)
-    let places: [(&str, Color32, Need, Pos2, bool); 11] = [
+    let places: [(&str, Color32, Need, Pos2, bool); 14] = [
         (
             "clock",
             color::text_clock(),
@@ -249,6 +249,28 @@ fn home(report: &mut Report) {
             color::text_overline(),
             Need::of(ty::INFO_OVERLINE),
             pos2(330.0, 735.0),
+            false,
+        ),
+        // The facts and the glibc line run to the right when a value or a sentence is long.
+        (
+            "fact overline, far",
+            color::text_overline(),
+            Need::of(ty::INFO_OVERLINE),
+            pos2(870.0, 735.0),
+            false,
+        ),
+        (
+            "fact value, far",
+            color::text_value(),
+            Need::of(ty::INFO_VALUE),
+            pos2(870.0, 758.0),
+            false,
+        ),
+        (
+            "warning under Play, far",
+            color::warning_text(),
+            Need::of(ty::DETAIL_LARGE),
+            pos2(870.0, 700.0),
             false,
         ),
         (
@@ -425,6 +447,23 @@ fn panel(report: &mut Report) {
     }
 }
 
+/// The initial in the avatar of the profile button: on the middle of the accent's gradient.
+fn avatars(report: &mut Report) {
+    for accent in Accent::ALL {
+        let bg = crate::screens::home::avatar_middle(accent.color());
+        report.add(
+            &format!(
+                "avatar initial, {}",
+                accent.title(crate::ui::i18n::Language::English)
+            ),
+            "profile button",
+            theme::readable_ink(bg),
+            bg,
+            Need::Text,
+        );
+    }
+}
+
 /// The accent where it is the only cue left: the unlock progress line beside the action row, on
 /// the backdrops of the home screen's hero.
 fn accents(report: &mut Report) {
@@ -453,6 +492,7 @@ fn everything() -> Report {
     home(&mut report);
     panel(&mut report);
     accents(&mut report);
+    avatars(&mut report);
     report
 }
 

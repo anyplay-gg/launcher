@@ -427,13 +427,15 @@ fn profile_button(
             .take(1)
             .flat_map(char::to_uppercase)
             .collect();
+        // The initial sits on the middle of the gradient, over the pill: white on a dark accent,
+        // dark on a light one.
         text::paint(
             &painter,
             avatar,
             Align2::CENTER_CENTER,
             theme::TextStyle::new(text::quantize_size(16.0 * s), Weight::Bold),
             &initial,
-            Color32::WHITE,
+            theme::readable_ink(avatar_middle(accent)),
         );
     } else {
         // Nobody yet: the outline of a person in the avatar's footprint, in ink, not accent.
@@ -1370,6 +1372,12 @@ fn empty_library(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut
     if response.clicked() {
         presses.push(Press::ChooseFolder);
     }
+}
+
+/// The colour under the avatar's initial: the middle of the accent's gradient (accent at 100 % to
+/// 55 %) over the dark of the pill.
+pub(crate) fn avatar_middle(accent: Color32) -> Color32 {
+    theme::mix(Color32::from_rgb(28, 30, 36), accent, 0.775)
 }
 
 #[cfg(test)]

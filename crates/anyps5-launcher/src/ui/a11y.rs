@@ -13,7 +13,7 @@
 //!   claims them (the model reads the arrows itself). Tab is the model's too: `Input::poll` turns
 //!   it into `InputEvent::Tab` and [`consume_tab`] takes it out of egui's input, so Tab and
 //!   Shift+Tab walk the ring in reading order (home: top bar, tiles, actions, question; a panel:
-//!   down and up; the onboarding: right and left). While a call card or strip is on screen
+//!   down and up, in the library right and left; the onboarding: right and left). While a call rings
 //!   (`Input::tab_for_egui`) Tab stays with egui, which focuses their buttons; that focus then
 //!   owns the keys until Enter or Escape lets it go.
 //! - Enter and Space activate a focused widget in egui; the model already turns them into "select",

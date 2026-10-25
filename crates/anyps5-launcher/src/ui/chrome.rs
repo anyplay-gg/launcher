@@ -1255,7 +1255,7 @@ pub fn side_panel<R>(
                         1.2,
                     )
                 };
-                let galley = text::layout_font(
+                let galley = text::layout_font_pretty(
                     &painter,
                     style.font(),
                     style.size * leading,

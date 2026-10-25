@@ -117,7 +117,22 @@ impl HomeFocus {
     /// wrap, so the last stop stays put like the arrows do at an end.
     pub fn tab(self, backwards: bool, ctx: HomeContext) -> HomeStep {
         let order = Self::reading_order(ctx);
-        let here = order.iter().position(|f| *f == self).unwrap_or(0);
+        // A stop that has gone (the action row shrank, the question was answered) counts as the
+        // nearest one that is left.
+        let tiles = order
+            .iter()
+            .position(|f| *f == HomeFocus::Tiles)
+            .unwrap_or(0);
+        let here = order
+            .iter()
+            .position(|f| *f == self)
+            .unwrap_or_else(|| match self {
+                HomeFocus::Actions(_) | HomeFocus::Ask(_) => order
+                    .iter()
+                    .rposition(|f| matches!(f, HomeFocus::Actions(_)))
+                    .unwrap_or(tiles),
+                _ => tiles,
+            });
         let there = if backwards {
             here.saturating_sub(1)
         } else {
@@ -465,6 +480,17 @@ mod tests {
         c.asking = true;
         assert_eq!(HomeFocus::Actions(2).tab(false, c).focus, HomeFocus::Ask(0));
         assert_eq!(HomeFocus::Ask(4).tab(false, c).focus, HomeFocus::Ask(4));
+        // A stop that has gone is replaced by the nearest one: Tab from a third action when only two
+        // are left goes to nothing further, Shift+Tab to the one before.
+        let two = ctx(3, 0, false);
+        assert_eq!(
+            HomeFocus::Actions(2).tab(true, two).focus,
+            HomeFocus::Actions(0)
+        );
+        assert_eq!(
+            HomeFocus::Ask(1).tab(false, two).focus,
+            HomeFocus::Actions(1)
+        );
         // No games: the top bar and the one tile stop (choose a folder).
         let empty = ctx(0, 0, false);
         assert_eq!(HomeFocus::PROFILE.tab(false, empty).focus, HomeFocus::Tiles);
