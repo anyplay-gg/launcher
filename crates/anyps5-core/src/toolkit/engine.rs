@@ -579,6 +579,8 @@ fn extract_tar_gz(path: &Path, dest: &Path, cancel: &CancelToken) -> Result<(), 
 
 #[cfg(test)]
 mod tests {
+    // The install tests are not built on macOS, which has no engine; their helpers stay unused.
+    #![cfg_attr(target_os = "macos", allow(dead_code))]
     use super::*;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
