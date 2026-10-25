@@ -16,8 +16,8 @@
 
 pub mod avatar;
 mod feed;
-mod profile;
 mod join;
+mod profile;
 mod restrictions;
 mod runs;
 mod screen;
@@ -38,12 +38,12 @@ pub use anyplay_control::{
 };
 use api::{Account, AccountId, Conversation, FriendLists, Invitation, Message, PartyInvitation};
 pub use feed::{Ago, FeedState, Rarity, adjusted, party_others, toggled};
+pub use join::{JoinOffer, Step as JoinStep};
 pub use profile::{
     BANNER_CONTRAST, BANNER_TEXT_ALPHA, BANNER_TEXT_CONTRAST, ProfileEntry, banner_colour,
     contrast_of_text, contrast_with_white, dominant_colour, hours_minutes, most_played, page_of,
     readable_banner,
 };
-pub use join::{JoinOffer, Step as JoinStep};
 pub use restrictions::{Blocked, Restrictions, in_force};
 pub use runs::Runs;
 pub use screen::{Screen, ScreenCommand, ScreenNotice};
