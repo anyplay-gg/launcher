@@ -824,6 +824,10 @@ fn a_big_tree_is_laid_out_in_parallel_and_matches_the_dump() {
 }
 
 #[test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "the Mach-O patches change the executable: nothing is kept there"
+)]
 fn unlocking_again_keeps_the_relinker_output_until_something_it_reads_changes() {
     let w = world(&[]);
     let request = w.dump("Again", "PPSA20002", &elf_bytes());
@@ -1017,6 +1021,10 @@ fn promoting_a_paused_prepared_game_lets_it_go_on() {
 }
 
 #[test]
+#[cfg_attr(
+    target_os = "macos",
+    ignore = "the Mach-O patches change the executable: nothing is kept there"
+)]
 fn a_kept_relinker_output_does_not_report_timings() {
     let w = world(&[]);
     let request = w.dump("NoTimings", "PPSA20009", &elf_bytes());
