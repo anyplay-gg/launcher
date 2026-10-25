@@ -558,9 +558,7 @@ impl TrophyListPanel {
         let t = ctx.focus_t(("trophy-row-focus", index), focused);
         let r = radius::TROPHY_ROW;
         // The focused row is a row of every other panel: lifted, with the ring.
-        let under_pointer = ctx
-            .pointer_hover_pos()
-            .is_some_and(|p| rect.contains(p));
+        let under_pointer = ctx.pointer_hover_pos().is_some_and(|p| rect.contains(p));
         let hover_t = ctx.animate_to(
             ("trophy-row-hover", index),
             f32::from(under_pointer),

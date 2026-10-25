@@ -15,8 +15,8 @@ use egui::{
 use crate::screens::side::commands;
 use crate::screens::strings::Extra;
 use crate::ui::Shell;
-use crate::ui::chrome::fullscreen_panel;
 use crate::ui::anim::{AnimExt, Motion};
+use crate::ui::chrome::fullscreen_panel;
 use crate::ui::components::{self, ConsoleButton};
 use crate::ui::glass::GlassStyle;
 use crate::ui::i18n::{Arg, Language};

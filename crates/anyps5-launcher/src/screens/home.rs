@@ -299,7 +299,7 @@ fn paint_clock(painter: &egui::Painter, right: f32, mid: f32) -> f32 {
     // Digits are as tall as capitals: 0.727 em in Inter.
     let reach = style.size * 0.727 * 0.5 * 0.52;
     for dy in [-reach, reach] {
-        painter.circle_filled(pos2(colon_x, mid + dy), style.size * 0.065, ink);
+        painter.circle_filled(pos2(colon_x, mid + dy), style.size * 0.075, ink);
     }
     left
 }
@@ -1137,7 +1137,7 @@ fn action_row_status(
                 &painter,
                 ty::DETAIL,
                 message,
-                color::text_detail(),
+                color::text_subtitle(),
                 MESSAGE_WIDTH,
                 1,
             );
@@ -1145,7 +1145,14 @@ fn action_row_status(
             let top = mid - (headline.size().y + gap + detail.size().y) * 0.5;
             let detail_top = top + headline.size().y + gap;
             painter.galley(pos2(x + 16.0, top), headline, color::error_text());
-            painter.galley(pos2(x + 16.0, detail_top), detail, color::text_detail());
+            let total = Rect::from_min_size(
+                pos2(x + 16.0, top),
+                vec2(MESSAGE_WIDTH, detail_top + detail.size().y - top),
+            );
+            let name = format!("{} {message}", FailureText::UnlockStopped.text(language));
+            ui.allocate_rect(total, Sense::hover())
+                .widget_info(|| WidgetInfo::labeled(Role::Label, true, name.as_str()));
+            painter.galley(pos2(x + 16.0, detail_top), detail, color::text_subtitle());
         }
         _ => {
             if let Some(summary) = cx.model.diagnoses.get(&game.id) {
@@ -1317,6 +1324,7 @@ fn empty_library(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut
             |ui| {
                 ConsoleButton::new(button_title)
                     .icon(Icon::FOLDER)
+                    .prominent(true)
                     .focused(focused)
                     .show(ui)
             },
