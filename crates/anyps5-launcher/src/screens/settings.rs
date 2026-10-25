@@ -228,7 +228,6 @@ fn whats_new_tag(env: &SettingsEnv<'_>) -> Option<String> {
     }
 }
 
-/// All categories and rows for these preferences.
 /// What the fonts row says a game gets: the player's folder, else the built-in set and whether
 /// Japanese, Chinese and Korean are part of it.
 fn fonts_detail(picked: Option<String>, cjk: CjkState, language: Language) -> String {
@@ -247,6 +246,7 @@ fn fonts_detail(picked: Option<String>, cjk: CjkState, language: Language) -> St
     )
 }
 
+/// All categories and rows for these preferences.
 pub fn build_categories(
     prefs: &Preferences,
     env: &SettingsEnv<'_>,

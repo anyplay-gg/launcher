@@ -13,7 +13,7 @@
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::error::CancelToken;
@@ -124,6 +124,9 @@ pub fn resolve(paths: &AppPaths, bundle: &Bundle<'_>, picked: Option<&Path>) -> 
 /// Writes the bundled files into the managed folder and returns it. Files that are there with
 /// the right length are left alone; the others are written beside their name and renamed.
 pub fn ensure_bundled(paths: &AppPaths, bundle: &Bundle<'_>) -> io::Result<PathBuf> {
+    // A game start and the download thread can both get here: one writer at a time, so neither
+    // truncates the other's `.partial` file.
+    let _writer = WRITER.lock().unwrap_or_else(|e| e.into_inner());
     for name in BUNDLED_FILES {
         if !bundle.files.iter().any(|(n, _)| *n == name) {
             return Err(io::Error::new(
@@ -137,6 +140,7 @@ pub fn ensure_bundled(paths: &AppPaths, bundle: &Bundle<'_>) -> io::Result<PathB
         fs::metadata(dir.join(name)).is_ok_and(|m| m.len() == data.len() as u64)
     };
     if bundle.files.iter().all(complete) {
+        prune_old_sets(&dir);
         return Ok(dir);
     }
     fs::create_dir_all(&dir)?;
@@ -150,17 +154,41 @@ pub fn ensure_bundled(paths: &AppPaths, bundle: &Bundle<'_>) -> io::Result<PathB
         }
         written?;
     }
+    prune_old_sets(&dir);
     Ok(dir)
 }
 
-/// Whether the four CJK files and their marker are in `dir`.
-pub fn cjk_present(dir: &Path) -> bool {
-    dir.join(CJK_MARKER).is_file() && CJK_FILES.iter().all(|f| dir.join(f).is_file())
+static WRITER: Mutex<()> = Mutex::new(());
+
+/// Removes the folders of earlier bundle versions beside `dir` (their CJK files included).
+fn prune_old_sets(dir: &Path) {
+    let (Some(parent), Some(current)) = (dir.parent(), dir.file_name()) else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if name != current
+            && name.to_string_lossy().starts_with("noto-")
+            && entry.path().is_dir()
+            && let Err(error) = fs::remove_dir_all(entry.path())
+        {
+            tracing::warn!("cannot remove the old fonts {}: {error}", entry.path().display());
+        }
+    }
+}
+
+/// Whether the four CJK files are in `dir` with the marker of the archive `sha256` named.
+pub fn cjk_present(dir: &Path, sha256: &str) -> bool {
+    fs::read_to_string(dir.join(CJK_MARKER)).is_ok_and(|m| m.trim() == sha256)
+        && CJK_FILES.iter().all(|f| dir.join(f).is_file())
 }
 
 /// What the managed folder holds now (a download in this process counts as `Downloading`).
 pub fn cjk_state(paths: &AppPaths, bundle: &Bundle<'_>) -> CjkState {
-    if cjk_present(&managed_dir(paths, bundle)) {
+    if cjk_present(&managed_dir(paths, bundle), CJK_SHA256) {
         CjkState::Present
     } else if RUNNING.load(Ordering::SeqCst) {
         CjkState::Downloading
@@ -170,19 +198,26 @@ pub fn cjk_state(paths: &AppPaths, bundle: &Bundle<'_>) -> CjkState {
 }
 
 /// Downloads the archive, checks its SHA-256, and puts the four CJK files into `dir` (which must
-/// exist), the marker last. On any failure nothing of it stays in `dir`.
+/// exist), the marker last. A set that is there already is kept as it is. On any failure nothing
+/// this attempt wrote stays in `dir`.
 pub fn install_cjk(
     dir: &Path,
     source: &CjkSource,
     cancel: &CancelToken,
 ) -> Result<(), ToolkitError> {
+    if cjk_present(dir, &source.sha256) {
+        return Ok(());
+    }
+    // A marker of another archive no longer vouches for the files beside it.
+    let _ = fs::remove_file(dir.join(CJK_MARKER));
     let work = dir.join(".cjk-partial");
     let _ = fs::remove_dir_all(&work);
     fs::create_dir_all(&work)?;
-    let result = install_from(dir, &work, source, cancel);
+    let mut placed = Vec::new();
+    let result = install_from(dir, &work, source, cancel, &mut placed);
     let _ = fs::remove_dir_all(&work);
     if result.is_err() {
-        for name in CJK_FILES.iter().copied().chain([CJK_MARKER]) {
+        for name in placed {
             let _ = fs::remove_file(dir.join(name));
         }
     }
@@ -194,6 +229,7 @@ fn install_from(
     work: &Path,
     source: &CjkSource,
     cancel: &CancelToken,
+    placed: &mut Vec<&'static str>,
 ) -> Result<(), ToolkitError> {
     let archive_path = work.join("cjk.zip");
     let asset = Asset {
@@ -224,6 +260,7 @@ fn install_from(
     drop(archive);
     for name in CJK_FILES {
         crate::fsx::rename_retry(&work.join(name), &dir.join(name))?;
+        placed.push(name);
     }
     fs::write(dir.join(CJK_MARKER), source.sha256.as_bytes())?;
     Ok(())
@@ -249,7 +286,7 @@ pub fn download_cjk_in_background(
     automatic: bool,
     done: Option<Arc<dyn Fn() + Send + Sync>>,
 ) -> bool {
-    if cjk_present(&managed_dir(paths, &bundle)) {
+    if cjk_present(&managed_dir(paths, &bundle), CJK_SHA256) {
         return false;
     }
     if automatic && AUTOMATIC_TRIED.swap(true, Ordering::SeqCst) {
@@ -436,9 +473,11 @@ mod tests {
 
     #[test]
     fn the_cjk_download_installs_four_files_and_the_marker() {
-        let (dir, result) = install(cjk_zip(None), None);
+        let zip = cjk_zip(None);
+        let sha = sha_hex(&zip);
+        let (dir, result) = install(zip, None);
         result.unwrap();
-        assert!(cjk_present(dir.path()));
+        assert!(cjk_present(dir.path(), &sha));
         let mut want: Vec<String> = CJK_FILES.iter().map(|s| (*s).to_owned()).collect();
         want.push(CJK_MARKER.to_owned());
         want.sort();
@@ -483,7 +522,73 @@ mod tests {
             "{result:?}"
         );
         assert!(listing(dir.path()).is_empty());
-        assert!(!cjk_present(dir.path()));
+        assert!(!cjk_present(dir.path(), &source.sha256));
+    }
+
+    #[test]
+    fn a_failed_second_install_keeps_the_complete_set() {
+        let zip = cjk_zip(None);
+        let sha = sha_hex(&zip);
+        let (dir, result) = install(zip, None);
+        result.unwrap();
+        let before = listing(dir.path());
+        // The same archive asked for again while the server is gone: the set stays.
+        let (base, handle, stop) = serve(vec![]);
+        let source = CjkSource {
+            url: format!("{base}/missing.zip"),
+            sha256: sha.clone(),
+            size: 10,
+        };
+        let result = install_cjk(dir.path(), &source, &CancelToken::new());
+        stop.store(true, AtomicOrdering::SeqCst);
+        handle.join().unwrap();
+        result.unwrap();
+        assert_eq!(listing(dir.path()), before);
+        assert!(cjk_present(dir.path(), &sha));
+    }
+
+    #[test]
+    fn a_marker_of_another_archive_is_not_a_complete_set() {
+        let (dir, result) = install(cjk_zip(None), None);
+        result.unwrap();
+        assert!(!cjk_present(dir.path(), &"0".repeat(64)));
+    }
+
+    #[test]
+    fn a_new_bundle_version_removes_the_old_folder() {
+        let root = tempfile::tempdir().unwrap();
+        let paths = AppPaths::under(root.path());
+        let old = with_bundle("t1", |bundle| ensure_bundled(&paths, &bundle).unwrap());
+        fs::write(old.join("NotoSansCJK-Bold.ttc"), b"old cjk").unwrap();
+        let new = with_bundle("t2", |bundle| ensure_bundled(&paths, &bundle).unwrap());
+        assert!(new.is_dir());
+        assert!(!old.exists(), "{} stays", old.display());
+    }
+
+    #[test]
+    fn two_writers_at_once_both_get_the_full_set() {
+        let root = tempfile::tempdir().unwrap();
+        let paths = AppPaths::under(root.path());
+        let owned: Vec<(&'static str, Vec<u8>)> = BUNDLED_FILES
+            .iter()
+            .chain([&LICENCE_FILE])
+            .map(|n| (*n, vec![b'x'; 2 << 20]))
+            .collect();
+        let refs: Vec<(&str, &[u8])> = owned.iter().map(|(n, d)| (*n, d.as_slice())).collect();
+        let bundle = Bundle {
+            version: "t1",
+            files: &refs,
+        };
+        std::thread::scope(|s| {
+            let a = s.spawn(|| ensure_bundled(&paths, &bundle));
+            let b = s.spawn(|| ensure_bundled(&paths, &bundle));
+            a.join().unwrap().unwrap();
+            b.join().unwrap().unwrap();
+        });
+        let dir = managed_dir(&paths, &bundle);
+        for name in BUNDLED_FILES {
+            assert_eq!(fs::metadata(dir.join(name)).unwrap().len(), 2 << 20, "{name}");
+        }
     }
 
     #[test]
