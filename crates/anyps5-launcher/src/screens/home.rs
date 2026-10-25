@@ -32,6 +32,7 @@ use crate::ui::components::{
 use crate::ui::focus::HomeFocus;
 use crate::ui::i18n::{Arg, Key, Language, byte_text};
 use crate::ui::icons::Icon;
+use crate::ui::input;
 use crate::ui::intro;
 use crate::ui::text;
 use crate::ui::theme::{self, Weight, color, pad, size, ty, white};
@@ -681,6 +682,7 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
         style.opacity = opacity.clamp(0.0, 1.0);
         let under_pointer = interactive
             && opacity > 0.5
+            && input::pointer_in_use(&ctx)
             && ctx.pointer_hover_pos().is_some_and(|p| rect.contains(p));
         style.hover = ctx.animate_to(key("tile-hover"), f32::from(under_pointer), Motion::Hover);
         chrome::paint_tile(&painter, rect, &style);
@@ -695,7 +697,8 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
             let response =
                 ui.interact(rect, Id::unique(("tile", game.id.as_str())), Sense::click());
             response.widget_info(|| WidgetInfo::labeled(Role::Button, true, label.as_str()));
-            if response.hovered() {
+            crate::ui::a11y::follow(&ctx, response.id, ring_on && is_selected);
+            if input::hovered(&ctx, &response) {
                 ctx.set_cursor_icon(CursorIcon::PointingHand);
             }
             if response.double_clicked() {

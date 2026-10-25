@@ -313,7 +313,7 @@ impl LauncherApp {
         let held = focused
             && !self.shell.input.capture_keys
             && !self.shell.input.blocked
-            && !ctx.egui_wants_keyboard_input()
+            && !crate::ui::a11y::foreign_focus(ctx)
             && ctx.input(|i| i.key_down(key) && !i.modifiers.any());
         self.model.online.set_talking(held);
     }
@@ -701,76 +701,96 @@ impl LauncherApp {
 
     /// The selected game's `pic0.png` behind the home screen, cross-faded per selection, drifting.
     fn paint_artwork(&mut self, ctx: &Context, screen: Rect) {
-        let painter = ctx.layer_painter(egui::LayerId::background());
-        let wanted = self.model.onboarded()
-            && self.model.prefs.game_artwork
-            && self.model.overlay != Some(Overlay::Settings);
-        let current = if wanted {
-            self.model
-                .selected_game()
-                .and_then(|g| g.background.clone().map(|path| (g.id.clone(), path)))
-        } else {
-            None
-        };
-        if current.is_none() {
-            ctx.data_mut(|d| d.remove::<screens::ArtState>(screens::art_state_id()));
-        }
-        if let Some((id, _)) = &current {
-            self.artwork.retain(|a| a != id);
-            self.artwork.push(id.clone());
-        }
-        let ppp = ctx.pixels_per_point();
-        let max_dim = ((screen.width().max(screen.height()) * ppp * 1.6) as u32).min(2048);
-        let reduced = ctx.reduced_motion();
-        let mut keep = Vec::new();
-        for id in std::mem::take(&mut self.artwork) {
-            let is_current = current.as_ref().is_some_and(|(c, _)| *c == id);
-            let Some(path) = self.model.game(&id).and_then(|g| g.background.clone()) else {
-                continue;
-            };
-            let Some(tex) = self.textures.get(&path, max_dim) else {
-                keep.push(id);
-                continue;
-            };
-            let alpha = ctx.animate_from_to(
-                ("artwork", id.as_str().to_owned()),
-                0.0,
-                f32::from(u8::from(is_current)),
-                Motion::Fade,
-            );
-            if is_current {
-                let material = self.textures.get(&path, textures::MATERIAL);
-                let state = material.map(|m| screens::ArtState {
-                    material: m.id,
-                    aspect: tex.aspect,
-                    alpha,
-                    zoom: artwork::drift_zoom(ctx.clock(), reduced),
-                });
-                ctx.data_mut(|d| match state {
-                    Some(state) => {
-                        d.insert_temp(screens::art_state_id(), state);
-                    }
-                    None => d.remove::<screens::ArtState>(screens::art_state_id()),
-                });
-            }
-            if alpha > 0.003 || is_current {
-                artwork::paint_artwork(
-                    &painter,
-                    screen,
-                    tex.id,
-                    tex.aspect,
-                    ctx.clock(),
-                    reduced,
-                    alpha,
-                );
-                keep.push(id);
-            }
-            if alpha > 0.003 && !reduced && !self.shell.backdrop.paused {
-                ctx.request_repaint_after(Duration::from_millis(16));
-            }
-        }
-        self.artwork = keep;
+        paint_artwork_layer(
+            ctx,
+            screen,
+            &self.model,
+            &mut self.textures,
+            &mut self.artwork,
+            self.shell.backdrop.paused,
+        );
     }
+}
+
+/// The selected game's artwork over the backdrop, cross-fading when the game changes, and the
+/// state the home screen reads its material from. Shared by the app and the gallery (which draws
+/// the real home under its panels).
+pub(crate) fn paint_artwork_layer(
+    ctx: &Context,
+    screen: Rect,
+    model: &Model,
+    textures: &mut Textures,
+    artwork: &mut Vec<GameId>,
+    paused: bool,
+) {
+    let painter = ctx.layer_painter(egui::LayerId::background());
+    let wanted =
+        model.onboarded() && model.prefs.game_artwork && model.overlay != Some(Overlay::Settings);
+    let current = if wanted {
+        model
+            .selected_game()
+            .and_then(|g| g.background.clone().map(|path| (g.id.clone(), path)))
+    } else {
+        None
+    };
+    if current.is_none() {
+        ctx.data_mut(|d| d.remove::<screens::ArtState>(screens::art_state_id()));
+    }
+    if let Some((id, _)) = &current {
+        artwork.retain(|a| a != id);
+        artwork.push(id.clone());
+    }
+    let ppp = ctx.pixels_per_point();
+    let max_dim = ((screen.width().max(screen.height()) * ppp * 1.6) as u32).min(2048);
+    let reduced = ctx.reduced_motion();
+    let mut keep = Vec::new();
+    for id in std::mem::take(artwork) {
+        let is_current = current.as_ref().is_some_and(|(c, _)| *c == id);
+        let Some(path) = model.game(&id).and_then(|g| g.background.clone()) else {
+            continue;
+        };
+        let Some(tex) = textures.get(&path, max_dim) else {
+            keep.push(id);
+            continue;
+        };
+        let alpha = ctx.animate_from_to(
+            ("artwork", id.as_str().to_owned()),
+            0.0,
+            f32::from(u8::from(is_current)),
+            Motion::Fade,
+        );
+        if is_current {
+            let material = textures.get(&path, textures::MATERIAL);
+            let state = material.map(|m| screens::ArtState {
+                material: m.id,
+                aspect: tex.aspect,
+                alpha,
+                zoom: artwork::drift_zoom(ctx.clock(), reduced),
+            });
+            ctx.data_mut(|d| match state {
+                Some(state) => {
+                    d.insert_temp(screens::art_state_id(), state);
+                }
+                None => d.remove::<screens::ArtState>(screens::art_state_id()),
+            });
+        }
+        if alpha > 0.003 || is_current {
+            artwork::paint_artwork(
+                &painter,
+                screen,
+                tex.id,
+                tex.aspect,
+                ctx.clock(),
+                reduced,
+                alpha,
+            );
+            keep.push(id);
+        }
+        if alpha > 0.003 && !reduced && !paused {
+            ctx.request_repaint_after(Duration::from_millis(16));
+        }
+    }
+    *artwork = keep;
 }
 
 /// Fills the screen, or leaves it for a maximised window. A maximised window is restored first:

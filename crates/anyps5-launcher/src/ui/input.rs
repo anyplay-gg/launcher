@@ -189,6 +189,17 @@ fn device_id() -> egui::Id {
     egui::Id::unique("input-device")
 }
 
+/// Whether the pointer may light things up: not while a gamepad is the device in use, so a resting
+/// mouse never leaves a second control lit beside the one the pad has focused.
+pub fn pointer_in_use(ctx: &Context) -> bool {
+    device(ctx) != Device::Gamepad
+}
+
+/// `response.hovered()`, but only while the pointer is the device in use.
+pub fn hovered(ctx: &Context, response: &egui::Response) -> bool {
+    response.hovered() && pointer_in_use(ctx)
+}
+
 /// Sets the device the hint bars follow (the input pipeline does this; previews force it).
 pub fn set_device(ctx: &Context, device: Device) {
     ctx.data_mut(|d| d.insert_temp(device_id(), device));
@@ -245,7 +256,7 @@ impl Input {
         if self.blocked {
             return out;
         }
-        let in_text_field = ctx.egui_wants_keyboard_input();
+        let in_text_field = crate::ui::a11y::foreign_focus(ctx);
         let events = ctx.input(|i| i.events.clone());
         for event in events {
             match event {
@@ -283,6 +294,7 @@ impl Input {
                         if !repeat || command.is_direction() {
                             out.push(InputEvent::Command(command));
                         }
+                        crate::ui::a11y::consume_activation(ctx, key);
                     }
                 }
                 Event::MouseWheel { unit, delta, .. } => {

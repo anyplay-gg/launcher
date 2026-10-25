@@ -43,11 +43,9 @@ use anyps5_core::report::{ReportInput, SystemInfo};
 use anyps5_core::settings::{GameSettings, Preferences};
 use anyps5_core::toolkit::InstalledRelease;
 use anyps5_core::trophies::{Grade, Trophy, TrophySet};
-use egui::{
-    Align2, Color32, ColorImage, Context, Rect, TextureHandle, TextureOptions, Ui, UiBuilder, pos2,
-    vec2,
-};
+use egui::{Color32, ColorImage, Context, Rect, TextureHandle, TextureOptions, Ui, pos2, vec2};
 
+use crate::app::preview::{HomeStand, Scene};
 use crate::screens::advanced::{AdvancedData, AdvancedPanel};
 use crate::screens::banner::{self, BannerLook, BannerTrophy};
 use crate::screens::controls::{ControlsData, ControlsPanel};
@@ -65,18 +63,14 @@ use crate::screens::share_strings::Share;
 use crate::screens::start::{StartData, StartScreen};
 use crate::screens::toolkit_pin::PinChoices;
 use crate::screens::trophies::{IconCache, TrophyData, TrophyListPanel};
-use crate::screens::unlock::{UnlockProgress, UnlockStep, hero_progress};
 use crate::screens::whatsnew::{NotesView, SAMPLE_NOTES, WhatsNewData, WhatsNewPanel};
 use crate::ui::Shell;
 use crate::ui::anim::AnimExt;
-use crate::ui::artwork::paint_artwork;
-use crate::ui::chrome::{Fact, TileImage, TileOverlay, TileStyle, facts_line, paint_tile};
-use crate::ui::components::ConsoleButton;
+use crate::ui::chrome::{TileImage, TileOverlay};
 use crate::ui::i18n::Key;
 use crate::ui::icons::Icon;
 use crate::ui::input::InputEvent;
-use crate::ui::text;
-use crate::ui::theme::{color, size, ty, white};
+use crate::ui::theme::white;
 use anyps5_core::gamefiles::{GameInput, parse_input_ini};
 
 /// The page to show.
@@ -1358,12 +1352,19 @@ pub struct ScreenGallery {
     log: LogView,
     start: StartScreen,
     banner_icons: IconCache,
+    /// The real home screen the panels are drawn over.
+    home: Option<HomeStand>,
     opened: bool,
 }
 
 impl ScreenGallery {
-    pub fn new(page: ScreenPage, language: crate::ui::i18n::Language) -> Self {
+    pub fn new(
+        page: ScreenPage,
+        language: crate::ui::i18n::Language,
+        theme: crate::ui::theme::Theme,
+    ) -> Self {
         let mut prefs = Preferences::first_run();
+        prefs.theme = crate::screens::convert::theme_to_core(theme);
         // --tr shows the page in Turkish.
         if language == crate::ui::i18n::Language::Turkish {
             prefs.language = anyps5_core::settings::Language::Turkish;
@@ -1445,6 +1446,7 @@ impl ScreenGallery {
             log: LogView::default(),
             start: StartScreen::default(),
             banner_icons: IconCache::default(),
+            home: None,
             opened: false,
         }
     }
@@ -1598,7 +1600,17 @@ impl ScreenGallery {
         if matches!(self.page, ScreenPage::Banner) {
             self.draw_game_frame(ui);
         } else {
-            self.draw_home(ui, shell, matches!(self.page, ScreenPage::Unlocking));
+            let page = self.page;
+            let unlocking = matches!(page, ScreenPage::Unlocking);
+            let scene = match page {
+                ScreenPage::Unlocking => Scene::HomeUnlocking,
+                ScreenPage::Online(_) | ScreenPage::Profile(_) => Scene::HomeFriends,
+                _ => Scene::Home,
+            };
+            // The real home, as the launcher paints it; its focus stays hidden under a panel.
+            self.home
+                .get_or_insert_with(|| HomeStand::new(&ctx, self.prefs.clone(), scene, !unlocking))
+                .paint(ui, shell);
         }
         let entries: Vec<LibraryEntry> = (0..NAMES.len())
             .map(|i| LibraryEntry {
@@ -1997,169 +2009,6 @@ impl ScreenGallery {
             ScreenPage::Start => self.start.open_at(ctx.clock()),
             ScreenPage::Banner | ScreenPage::Unlocking => {}
         }
-    }
-
-    /// The home screen under the panels: artwork with scrims, the tile row, the title, buttons and
-    /// the facts, at the positions of the original (section 5.3). One tile carries the focus ring
-    /// only on the pages where the home is the subject.
-    fn draw_home(&self, ui: &mut Ui, shell: &Shell, unlocking: bool) {
-        let ctx = ui.ctx().clone();
-        let painter = ui.painter().clone();
-        let screen = ui.max_rect();
-        let language = shell.language;
-        let accent = shell.accent_color();
-        if let Some(hero) = &self.hero {
-            paint_artwork(
-                &painter,
-                screen,
-                hero.id(),
-                16.0 / 9.0,
-                ctx.clock(),
-                true,
-                1.0,
-            );
-        }
-        text::paint(
-            &painter,
-            pos2(64.0, 34.0),
-            Align2::LEFT_TOP,
-            ty::TOP_BAR_TITLE,
-            language.text(Key::Games),
-            Color32::WHITE,
-        );
-        // The tile row: the selected game large, a label column, then small tiles.
-        let selected = Rect::from_min_size(pos2(64.0, 112.0), vec2(176.0, 176.0));
-        let mut style = TileStyle::new(accent);
-        style.image = Some(self.tile(1));
-        style.overlay = if unlocking {
-            TileOverlay::Installing(0.39)
-        } else {
-            TileOverlay::None
-        };
-        paint_tile(&painter, selected, &style);
-        text::paint(
-            &painter,
-            pos2(262.4, 168.0),
-            Align2::LEFT_TOP,
-            ty::TILE_NAME,
-            NAMES[1],
-            Color32::WHITE,
-        );
-        let state = if unlocking {
-            language.text(Key::StepRelink)
-        } else {
-            language.text(Key::Ready)
-        };
-        painter.text(
-            pos2(262.4, 204.0),
-            Align2::LEFT_CENTER,
-            if unlocking {
-                Icon::ARROW_CIRCLE_DOWN.glyph()
-            } else {
-                Icon::CHECK_CIRCLE.glyph()
-            },
-            Icon::CHECK_CIRCLE.font(14.0, true),
-            if unlocking {
-                accent
-            } else {
-                color::state_neutral()
-            },
-        );
-        text::paint(
-            &painter,
-            pos2(282.0, 204.0),
-            Align2::LEFT_CENTER,
-            ty::STATE_LABEL,
-            state,
-            if unlocking {
-                accent
-            } else {
-                color::state_neutral()
-            },
-        );
-        for (n, x) in [556.0, 690.0, 824.0, 958.0].into_iter().enumerate() {
-            let r = Rect::from_min_size(pos2(x, 122.44), vec2(118.0, 118.0));
-            let mut s = TileStyle::new(accent);
-            s.image = Some(self.tile(n + 2));
-            paint_tile(&painter, r, &s);
-        }
-        // Title, buttons, facts.
-        text::paint(
-            &painter,
-            pos2(72.0, 560.0),
-            Align2::LEFT_TOP,
-            ty::HERO_TITLE,
-            NAMES[1],
-            Color32::WHITE,
-        );
-        let mut buttons = ui.new_child(
-            UiBuilder::new().max_rect(Rect::from_min_size(pos2(72.0, 651.0), vec2(900.0, 54.0))),
-        );
-        buttons.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 16.0;
-            ConsoleButton::new(if unlocking {
-                language.text(Key::Cancel)
-            } else {
-                language.text(Key::Play)
-            })
-            .icon(if unlocking { Icon::X } else { Icon::PLAY })
-            .icon_fill(!unlocking)
-            .prominent(true)
-            .min_width(size::PLAY_MIN_WIDTH)
-            .show(ui);
-            ConsoleButton::new("3/8")
-                .icon(Icon::TROPHY)
-                .icon_fill(true)
-                .show(ui);
-            ConsoleButton::icon_only(Icon::DOTS_THREE, language.text(Key::Options)).show(ui);
-            if unlocking {
-                ui.add_space(10.0);
-                hero_progress(
-                    ui,
-                    &UnlockProgress::new(UnlockStep::Relink, 0.55),
-                    language,
-                    accent,
-                );
-            }
-        });
-        let mut facts = ui.new_child(
-            UiBuilder::new().max_rect(Rect::from_min_size(pos2(72.0, 727.0), vec2(1000.0, 96.0))),
-        );
-        let status = if unlocking {
-            language.text(Key::StepRelink)
-        } else {
-            language.text(Key::Ready)
-        };
-        facts_line(
-            &mut facts,
-            &[
-                Fact {
-                    icon: Icon::CIRCLE_DASHED,
-                    title: language.text(Key::Status),
-                    value: status,
-                    value_color: None,
-                },
-                Fact {
-                    icon: Icon::HARD_DRIVE,
-                    title: language.text(Key::Size),
-                    value: "8.39 GB",
-                    value_color: None,
-                },
-                Fact {
-                    icon: Icon::HASH,
-                    title: language.text(Key::TitleID),
-                    value: "PPSA90001",
-                    value_color: None,
-                },
-                Fact {
-                    icon: Icon::TAG,
-                    title: language.text(Key::Version),
-                    value: "01.000.010",
-                    value_color: None,
-                },
-            ],
-            language,
-        );
     }
 
     /// A stand-in game window for the banner page.

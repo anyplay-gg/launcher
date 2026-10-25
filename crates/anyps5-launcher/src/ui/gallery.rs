@@ -57,6 +57,8 @@ pub struct Options {
     pub time: Option<f32>,
     pub language: Language,
     pub live: bool,
+    /// `--theme=aurora|sunset|cosmic` for the component and panel pages.
+    pub theme: Option<Theme>,
 }
 
 /// Returns the gallery options when `--gallery` is on the command line.
@@ -68,6 +70,7 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Option<Options> {
         time: None,
         language: Language::English,
         live: false,
+        theme: None,
     };
     let mut seen = false;
     for arg in args {
@@ -97,6 +100,10 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Option<Options> {
             options.time = t.parse().ok();
         } else if arg == "--tr" {
             options.language = Language::Turkish;
+        } else if let Some(name) = arg.strip_prefix("--theme=") {
+            options.theme = Theme::ALL
+                .into_iter()
+                .find(|t| t.title(Language::English).eq_ignore_ascii_case(name));
         } else if arg == "--live" {
             options.live = true;
         }
@@ -134,7 +141,7 @@ impl Gallery {
     fn new(cc: &eframe::CreationContext<'_>, options: Options) -> Self {
         let theme = match options.page {
             Page::Background(theme) => theme,
-            _ => Theme::Cosmic,
+            _ => options.theme.unwrap_or(Theme::Cosmic),
         };
         let page = options.page;
         let mut shell = Shell::headless(cc, theme);
@@ -151,9 +158,9 @@ impl Gallery {
             shot_requested: false,
             sample_art: None,
             screens: match page {
-                Page::Screen(page) => {
-                    Some(crate::screens::gallery::ScreenGallery::new(page, language))
-                }
+                Page::Screen(page) => Some(crate::screens::gallery::ScreenGallery::new(
+                    page, language, theme,
+                )),
                 _ => None,
             },
         }

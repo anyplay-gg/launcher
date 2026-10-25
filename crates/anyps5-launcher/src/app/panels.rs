@@ -1809,7 +1809,7 @@ mod tests {
             let shell = Shell::for_test(&ctx, Theme::Cosmic);
             let mut app = LauncherApp::from_shell(shell, &ctx, config);
             app.offline = true;
-            apply_scene(&mut app, Scene::Home, make_games(&dir.join("art")));
+            apply_scene(&mut app.model, Scene::Home, make_games(&dir.join("art")));
             // The scene touched the preferences; start from a clean file.
             app.model.take_prefs_dirty();
             let mut rig = Self {

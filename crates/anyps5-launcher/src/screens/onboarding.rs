@@ -19,6 +19,7 @@ use crate::ui::components::{
 use crate::ui::glass::{GlassStyle, paint_glass};
 use crate::ui::i18n::{Key, Language};
 use crate::ui::icons::Icon;
+use crate::ui::input;
 use crate::ui::text;
 use crate::ui::theme::{self, Theme, black, radius, size, ty, white};
 
@@ -293,7 +294,7 @@ fn theme_step(
             );
             let label = theme.title(language);
             response.widget_info(|| WidgetInfo::labeled(Role::Button, true, label));
-            if response.hovered() {
+            if input::hovered(&ctx, &response) {
                 ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
             }
             if response.clicked() {

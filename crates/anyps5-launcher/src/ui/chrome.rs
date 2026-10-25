@@ -16,6 +16,7 @@ use crate::ui::components::{
 use crate::ui::glass::{GlassStyle, paint_glass};
 use crate::ui::i18n::{Key, Language};
 use crate::ui::icons::Icon;
+use crate::ui::input;
 use crate::ui::text;
 use crate::ui::theme::{self, black, color, fade, mix, radius, shadows, size, ty, white};
 
@@ -617,7 +618,12 @@ impl<'a> PanelRow<'a> {
         };
         let (rect, response) = ui.allocate_exact_size(vec2(width, height), sense);
         response.widget_info(|| self.widget_info());
-        let hovered = focusable && (response.hovered() || self.force.is_some());
+        crate::ui::a11y::follow(
+            &ctx,
+            response.id,
+            self.focused && focusable && sense == Sense::click(),
+        );
+        let hovered = focusable && (input::hovered(&ctx, &response) || self.force.is_some());
         if hovered {
             ctx.set_cursor_icon(CursorIcon::PointingHand);
         }
@@ -649,7 +655,7 @@ impl<'a> PanelRow<'a> {
         let press_t = ctx.animate_to(
             (out.response.id, "press"),
             f32::from(focusable && out.response.is_pointer_button_down_on()),
-            Motion::Focus,
+            Motion::Press,
         );
         components::paint_surface(
             &painter,
@@ -826,7 +832,7 @@ impl<'a> PanelRow<'a> {
                 })
             );
             r.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, name.as_str()));
-            let hover = enabled && r.hovered();
+            let hover = enabled && input::hovered(ctx, &r);
             let press = enabled && r.is_pointer_button_down_on();
             if hover {
                 // A soft disc behind the glyph: the mouse affordance of the otherwise bare chevron.
@@ -862,7 +868,7 @@ impl<'a> PanelRow<'a> {
                     fade(fg, opacity),
                 );
             }
-            if enabled && r.hovered() {
+            if enabled && input::hovered(ctx, &r) {
                 ctx.set_cursor_icon(CursorIcon::PointingHand);
             }
             if enabled && r.clicked() {
@@ -979,7 +985,7 @@ impl<'a> PanelRow<'a> {
                     right -= w + BUTTON_GAP;
                     let r = ui.interact(at, row_id.with(("button", index)), Sense::click());
                     r.widget_info(|| WidgetInfo::labeled(Role::Button, true, label.as_str()));
-                    let hover = r.hovered();
+                    let hover = input::hovered(ctx, &r);
                     if hover {
                         ctx.set_cursor_icon(CursorIcon::PointingHand);
                     }

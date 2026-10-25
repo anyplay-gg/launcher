@@ -14,7 +14,7 @@ use crate::ui::chrome::{TileImage, TileOverlay, TileStyle, fullscreen_panel, pai
 use crate::ui::glass::GlassStyle;
 use crate::ui::i18n::{Key, Language};
 use crate::ui::icons::Icon;
-use crate::ui::input::{Command, InputEvent};
+use crate::ui::input::{self, Command, InputEvent};
 use crate::ui::sound::Cue;
 use crate::ui::text;
 use crate::ui::theme::{self, color, pad, size, ty, white};
@@ -265,6 +265,7 @@ fn draw(
             let cell = Rect::from_min_size(pos2(x, y), vec2(tile, cell_h));
             let focused = i == focus;
             let response = ui.interact(cell, id.with(("cell", i)), Sense::click());
+            crate::ui::a11y::follow(&ctx, response.id, focused);
             response.widget_info(|| {
                 egui::WidgetInfo::labeled(
                     egui::Role::Button,
@@ -272,7 +273,7 @@ fn draw(
                     format!("{}, {}", entry.name, entry.state.text),
                 )
             });
-            if response.hovered() {
+            if input::hovered(&ctx, &response) {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
             }
             if response.clicked() {
@@ -291,7 +292,7 @@ fn draw(
             style.time = ui.ctx().clock();
             style.hover = ui.ctx().animate_to(
                 ("library-hover", i),
-                f32::from(response.hovered()),
+                f32::from(input::hovered(&ctx, &response)),
                 crate::ui::anim::Motion::Hover,
             );
             paint_tile(

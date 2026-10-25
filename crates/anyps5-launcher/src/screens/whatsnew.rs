@@ -21,7 +21,7 @@ use crate::ui::components::{self, ConsoleButton};
 use crate::ui::glass::GlassStyle;
 use crate::ui::i18n::{Arg, Language};
 use crate::ui::icons::Icon;
-use crate::ui::input::{Command, InputEvent};
+use crate::ui::input::{self, Command, InputEvent};
 use crate::ui::sound::Cue;
 use crate::ui::text;
 use crate::ui::theme::{TextStyle, pad, radius, size, ty, white};
@@ -533,13 +533,13 @@ fn draw_line(ui: &mut Ui, rect: Rect, line: &Line<'_>, focused: bool, index: usi
         ui.make_persistent_id(("notes-line", index)),
         Sense::click(),
     );
-    if response.hovered() {
+    if input::hovered(ui.ctx(), &response) {
         ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
     }
     let ctx = ui.ctx().clone();
     let hover_t = ctx.animate_to(
         ("notes-line-hover", index),
-        f32::from(response.hovered()),
+        f32::from(input::hovered(&ctx, &response)),
         Motion::Hover,
     );
     let focus_t = ctx.focus_t(("notes-line-focus", index), focused);
