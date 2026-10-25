@@ -2,7 +2,7 @@
 //! and icons), the names of trophies (read from the game's own trophy files), and the avatars of
 //! other players (fetched once by `app::avatars`).
 //!
-//! The cloud knows none of it: a title and a trophy are numbers there (network ADR 0022). The host
+//! The cloud knows none of it: a title and a trophy are numbers there (network ADR 0024). The host
 //! builds this each frame the page is open and hands it to the panel, so the panel never touches
 //! the library, the disk or the network.
 
