@@ -195,7 +195,7 @@ Licensed under GPL-2.0 (see [LICENSE](LICENSE)).
 
 The launcher began as a port of the macOS launcher by [utkuhalis](https://github.com/utkuhalis) in [AnyPS5-ARM](https://github.com/utkuhalis/AnyPS5-ARM) (GPL-2.0), whose design and logic it builds on. Since then it has its own implementation, Windows and Linux integration, the online area and much more.
 
-Bundled fonts and icons (licence texts in `crates/anyps5-launcher/assets/fonts/`): [Inter](https://rsms.me/inter/) (SIL OFL 1.1), [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (SIL OFL 1.1) and [Phosphor Icons](https://phosphoricons.com) (MIT).
+Bundled fonts and icons (licence texts in `crates/anyps5-launcher/assets/fonts/`): [Inter](https://rsms.me/inter/) (SIL OFL 1.1), [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (SIL OFL 1.1), [Noto Sans](https://github.com/notofonts) in Latin, Mono, Thai and Arabic, the games' system font substitutes (SIL OFL 1.1; sources and checksums in `crates/anyps5-launcher/assets/fonts/noto/README.md`), and [Phosphor Icons](https://phosphoricons.com) (MIT). The Japanese, Chinese and Korean Noto Sans CJK fonts are not bundled: the launcher downloads them (pinned release, SHA-256 checked) on request or at the first game start.
 
 ## Legal note
 

@@ -1009,7 +1009,7 @@ category's rows (5.8).
 | Library (`storage`) | 2x2 grid | `folder` action `folder` (detail = path or an em dash; opens the folder dialog), `rescan` action `rescan` (detail `gamesFound` with count; sound `select`), info `installedSize` |
 | Language (`language`) | globe | `language` choice (Türkçe, English; shown in their own language) |
 | Behaviour (`behaviour`) | sliders | `name` text field `profileName` (live edit), `sounds` toggle, `music` toggle (Home Screen Music, 7.3), `hide` toggle `hideWhilePlaying`, `hiddenTrophies` toggle `showHiddenTrophies` (trophy glyph; detail `showHiddenTrophiesDetail`; the trophy list's only option, 5.11) (+ platform row, see 9) |
-| Advanced (`advanced`) | wrench+screwdriver | `screenshots` action `screenshotsFolder` (detail = path, `~` abbreviated), `showScreenshots` action, `fonts` action `fontsFolder` (detail = path or `fontsNone`), `fontsReset` action (only when a fonts folder is set), info `fontsHint` |
+| Advanced (`advanced`) | wrench+screwdriver | `screenshots` action `screenshotsFolder` (detail = path, `~` abbreviated), `showScreenshots` action, `fonts` action `fontsFolder` (detail = the picked path, else the built-in Noto set and whether Japanese, Chinese and Korean are included, not downloaded or downloading), `fontsReset` action (only when a fonts folder is set), `fontsCjk` command (download the Japanese, Chinese and Korean fonts; only without a picked folder and while they are missing), info `fontsHint` |
 | About (`about`) | info circle | info `aboutText`, info `version` (app version), info `toolkitVersion`, (platform row), `quit` action `quit` (destructive) |
 
 Settings are persisted per user (`Preferences`): `onboarded`, `language` (system default: Turkish if the OS UI language starts with
