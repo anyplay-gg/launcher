@@ -16,6 +16,8 @@ pub mod launch;
 pub mod library;
 pub mod linkreg;
 pub mod links;
+#[cfg(target_os = "macos")]
+pub mod macos;
 pub mod notes;
 pub mod online;
 pub mod patches;

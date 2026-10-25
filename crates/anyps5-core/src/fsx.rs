@@ -52,8 +52,11 @@ impl Linker {
 
     /// Puts `src` at `dst`. The destination must not exist (see [`replace_file`]).
     pub fn link_or_copy(&mut self, src: &Path, dst: &Path, cancel: &CancelToken) -> io::Result<()> {
+        if cancel.is_cancelled() {
+            return Err(io::Error::from(io::ErrorKind::Interrupted));
+        }
         if self.mode == LinkMode::Auto {
-            match fs::hard_link(src, dst) {
+            match share_file(src, dst) {
                 Ok(()) => {
                     self.linked += 1;
                     return Ok(());
@@ -73,6 +76,26 @@ impl Linker {
         copy_cancellable(src, dst, cancel)?;
         self.copied += 1;
         Ok(())
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn share_file(src: &Path, dst: &Path) -> io::Result<()> {
+    fs::hard_link(src, dst)
+}
+
+/// APFS clones share storage without sharing writes made by a running game with its dump.
+#[cfg(target_os = "macos")]
+fn share_file(src: &Path, dst: &Path) -> io::Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    let src = CString::new(src.as_os_str().as_bytes())?;
+    let dst = CString::new(dst.as_os_str().as_bytes())?;
+    // SAFETY: both paths are NUL terminated and live through this synchronous call.
+    if unsafe { libc::clonefile(src.as_ptr(), dst.as_ptr(), 0) } == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
     }
 }
 

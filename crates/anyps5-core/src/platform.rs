@@ -12,18 +12,42 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Refuse Linux/Windows executables before macOS turns them into an opaque spawn failure.
+pub fn require_macho(path: &Path) -> io::Result<()> {
+    use std::io::Read;
+    let mut magic = [0u8; 4];
+    std::fs::File::open(path)?.read_exact(&mut magic)?;
+    if matches!(
+        magic,
+        [0xcf, 0xfa, 0xed, 0xfe] | [0xca, 0xfe, 0xba, 0xbe] | [0xca, 0xfe, 0xba, 0xbf]
+    ) {
+        Ok(())
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "{} is not a macOS Mach-O executable; select a macOS toolkit and unlock again",
+                path.display()
+            ),
+        ))
+    }
+}
+
 /// An operating system the launcher can run games on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Os {
     Windows,
     Linux,
+    Macos,
 }
 
 impl Os {
-    /// The system this build runs on. Every non-Windows target counts as Linux.
+    /// The system this build runs on. macOS is distinct from Linux.
     pub const fn current() -> Os {
         if cfg!(windows) {
             Os::Windows
+        } else if cfg!(target_os = "macos") {
+            Os::Macos
         } else {
             Os::Linux
         }
@@ -33,7 +57,7 @@ impl Os {
     pub const fn executable(self) -> &'static str {
         match self {
             Os::Windows => "eboot.exe",
-            Os::Linux => "eboot",
+            Os::Linux | Os::Macos => "eboot",
         }
     }
 
@@ -42,19 +66,25 @@ impl Os {
         match self {
             Os::Windows => "windows",
             Os::Linux => "linux",
+            Os::Macos => "macos",
         }
     }
 
     /// The extra relinker flags (flag and value pairs) that apply to this system: the flags of
     /// another system's output format (`--windows-...`) are left out.
     pub fn relink_flags(self, flags: &[String]) -> Vec<String> {
-        let other = match self {
-            Os::Windows => "--linux",
-            Os::Linux => "--windows",
+        let allowed = |flag: &str| {
+            [
+                ("--windows", Os::Windows),
+                ("--linux", Os::Linux),
+                ("--macos", Os::Macos),
+            ]
+            .iter()
+            .all(|(prefix, os)| !flag.starts_with(prefix) || *os == self)
         };
         flags
             .chunks(2)
-            .filter(|pair| !pair[0].starts_with(other))
+            .filter(|pair| allowed(&pair[0]))
             .flatten()
             .cloned()
             .collect()
@@ -64,7 +94,7 @@ impl Os {
     pub const fn relinker_file(self) -> &'static str {
         match self {
             Os::Windows => "relinker.exe",
-            Os::Linux => "relinker",
+            Os::Linux | Os::Macos => "relinker",
         }
     }
 
@@ -73,6 +103,7 @@ impl Os {
         match self {
             Os::Windows => &["--windows"],
             Os::Linux => &[],
+            Os::Macos => &["--macos"],
         }
     }
 
@@ -80,15 +111,16 @@ impl Os {
     pub const fn runtime_libs(self) -> &'static [&'static str] {
         match self {
             Os::Windows => &crate::toolkit::MINGW_DLLS,
-            Os::Linux => &[],
+            Os::Linux | Os::Macos => &[],
         }
     }
 
     /// The release asset with the relinker, `tag` as published (`v0.1.3`).
-    pub fn relinker_asset(self, tag: &str) -> String {
+    pub fn relinker_asset(self, tag: &str) -> Option<String> {
         match self {
-            Os::Windows => format!("relinker-{tag}.exe"),
-            Os::Linux => format!("relinker-{tag}"),
+            Os::Windows => Some(format!("relinker-{tag}.exe")),
+            Os::Linux => Some(format!("relinker-{tag}")),
+            Os::Macos => None,
         }
     }
 
@@ -97,13 +129,14 @@ impl Os {
         match self {
             Os::Windows => format!("prx-windows-{tag}.zip"),
             Os::Linux => format!("prx-linux-{tag}.zip"),
+            Os::Macos => format!("AnyPS5-toolkit-macos-{}.zip", tag.trim_start_matches('v')),
         }
     }
 
     /// The name of the launcher's own folders below the config and data roots.
     const fn app_folder(self) -> &'static str {
         match self {
-            Os::Windows => "AnyPS5",
+            Os::Windows | Os::Macos => "AnyPS5",
             Os::Linux => "anyps5",
         }
     }
@@ -124,6 +157,20 @@ pub struct Roots {
     pub pictures: PathBuf,
 }
 
+/// Native macOS locations. XDG variables belong to Linux and do not override these folders.
+pub fn macos_roots(var: Vars) -> Option<Roots> {
+    let home = PathBuf::from(var("HOME")?);
+    if !is_unix_absolute(&home) {
+        return None;
+    }
+    let support = home.join("Library/Application Support/AnyPlay Launcher");
+    Some(Roots {
+        config: support.clone(),
+        data: support,
+        pictures: home.join("Pictures"),
+    })
+}
+
 /// Where the launcher keeps its files. Windows: `%APPDATA%\AnyPS5` and `%LOCALAPPDATA%\AnyPS5`.
 /// Linux: the XDG base directories (`$XDG_CONFIG_HOME` or `~/.config`, `$XDG_DATA_HOME` or
 /// `~/.local/share`), and the Pictures folder from `$XDG_PICTURES_DIR` or `user-dirs.dirs`.
@@ -132,6 +179,7 @@ pub fn roots(os: Os, var: Vars, user_dirs: Option<&str>) -> Option<Roots> {
     let path = |name: &str| var(name).map(PathBuf::from);
     let absolute = |name: &str| path(name).filter(|p| is_unix_absolute(p));
     match os {
+        Os::Macos => macos_roots(var),
         Os::Windows => {
             let profile = path("USERPROFILE").or_else(|| path("HOME"));
             let config = path("APPDATA")
@@ -253,13 +301,17 @@ pub fn open_folder(folder: &Path) -> io::Result<()> {
     {
         Command::new("explorer.exe").arg(folder).spawn().map(drop)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        desktop_open(&[folder.as_os_str()])
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         xdg_open(xdg_open_target(folder, false))
     }
 }
 
-/// Shows a file in the file manager. Windows selects it; elsewhere its folder opens.
+/// Shows a file in the file manager. Windows and macOS select it; elsewhere its folder opens.
 pub fn reveal(path: &Path) -> io::Result<()> {
     #[cfg(windows)]
     {
@@ -270,7 +322,11 @@ pub fn reveal(path: &Path) -> io::Result<()> {
             .spawn()
             .map(drop)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        desktop_open(&[std::ffi::OsStr::new("-R"), path.as_os_str()])
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         xdg_open(xdg_open_target(path, true))
     }
@@ -282,7 +338,11 @@ pub fn open_url(url: &str) -> io::Result<()> {
     {
         shell_open(url)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        desktop_open(&[std::ffi::OsStr::new(url)])
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         xdg_open(url)
     }
@@ -324,11 +384,20 @@ fn shell_open(target: &str) -> io::Result<()> {
         .unwrap_or_else(|_| Err(io::Error::other("the shell call panicked")))
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 fn xdg_open(target: impl AsRef<std::ffi::OsStr>) -> io::Result<()> {
+    spawn_desktop(Command::new("xdg-open").arg(target.as_ref()))
+}
+
+#[cfg(target_os = "macos")]
+fn desktop_open(args: &[&std::ffi::OsStr]) -> io::Result<()> {
+    spawn_desktop(Command::new("/usr/bin/open").args(args))
+}
+
+#[cfg(not(windows))]
+fn spawn_desktop(command: &mut Command) -> io::Result<()> {
     use std::process::Stdio;
-    let mut child = Command::new("xdg-open")
-        .arg(target.as_ref())
+    let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -407,9 +476,15 @@ mod tests {
 
     #[test]
     fn release_assets_match_upstream_names() {
-        assert_eq!(Os::Windows.relinker_asset("v0.1.3"), "relinker-v0.1.3.exe");
+        assert_eq!(
+            Os::Windows.relinker_asset("v0.1.3").as_deref(),
+            Some("relinker-v0.1.3.exe")
+        );
         assert_eq!(Os::Windows.libs_asset("v0.1.3"), "prx-windows-v0.1.3.zip");
-        assert_eq!(Os::Linux.relinker_asset("v0.1.3"), "relinker-v0.1.3");
+        assert_eq!(
+            Os::Linux.relinker_asset("v0.1.3").as_deref(),
+            Some("relinker-v0.1.3")
+        );
         assert_eq!(Os::Linux.libs_asset("v0.1.3"), "prx-linux-v0.1.3.zip");
     }
 
@@ -440,6 +515,24 @@ mod tests {
         assert_eq!(r.config, Path::new("/home/mira/.config/anyps5"));
         assert_eq!(r.data, Path::new("/home/mira/.local/share/anyps5"));
         assert_eq!(r.pictures, Path::new("/home/mira/Pictures"));
+    }
+
+    #[test]
+    fn macos_roots_use_application_support_and_require_an_absolute_home() {
+        let r = macos_roots(&vars(&[
+            ("HOME", "/Users/mira"),
+            ("XDG_CONFIG_HOME", "/linux/config"),
+            ("XDG_DATA_HOME", "/linux/data"),
+        ]))
+        .unwrap();
+        assert_eq!(
+            r.config,
+            Path::new("/Users/mira/Library/Application Support/AnyPlay Launcher")
+        );
+        assert_eq!(r.data, r.config);
+        assert_eq!(r.pictures, Path::new("/Users/mira/Pictures"));
+        assert!(macos_roots(&vars(&[])).is_none());
+        assert!(macos_roots(&vars(&[("HOME", "relative")])).is_none());
     }
 
     #[test]

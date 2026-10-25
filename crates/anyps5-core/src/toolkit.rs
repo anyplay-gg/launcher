@@ -18,6 +18,8 @@ use crate::error::CancelToken;
 use crate::paths::AppPaths;
 use crate::platform::Os;
 
+mod macos;
+
 /// The MinGW runtime the libraries need beside them (without it `LoadLibrary` fails with 126).
 pub const MINGW_DLLS: [&str; 3] = [
     "libgcc_s_seh-1.dll",
@@ -26,7 +28,11 @@ pub const MINGW_DLLS: [&str; 3] = [
 ];
 
 /// Default release repository (`toolkitRepository` setting).
-pub const DEFAULT_REPOSITORY: &str = "boykopovar/AnyPS5";
+pub const DEFAULT_REPOSITORY: &str = if cfg!(target_os = "macos") {
+    "utkuhalis/AnyPS5-ARM"
+} else {
+    "boykopovar/AnyPS5"
+};
 
 pub(crate) const API_BASE: &str = "https://api.github.com";
 
@@ -142,9 +148,13 @@ impl Toolkit {
     /// Opens an installed toolkit folder: `relinker.exe`, `libs\` with `.prx` files and the MinGW
     /// DLLs, optionally `version.txt`, `toolkit.json` and `patches\`.
     pub fn open(root: &Path) -> Result<Toolkit, ToolkitError> {
-        let relinker = root.join(Os::current().relinker_file());
+        Self::open_for(Os::current(), root)
+    }
+
+    fn open_for(os: Os, root: &Path) -> Result<Toolkit, ToolkitError> {
+        let relinker = root.join(os.relinker_file());
         let libs = root.join("libs");
-        let mut toolkit = Self::from_parts(root, relinker, libs, false)?;
+        let mut toolkit = Self::from_parts(os, root, relinker, libs, false)?;
         if let Ok(text) = fs::read_to_string(root.join("version.txt")) {
             let line = text.trim();
             toolkit.version = if line.is_empty() {
@@ -182,6 +192,7 @@ impl Toolkit {
     }
 
     fn from_parts(
+        os: Os,
         root: &Path,
         relinker: PathBuf,
         libs: PathBuf,
@@ -193,9 +204,34 @@ impl Toolkit {
         if !has_prx(&libs) {
             return Err(ToolkitError::Missing("libs\\*.prx".into()));
         }
+        if os == Os::Macos {
+            macos::validate(&relinker, root)?;
+        } else {
+            use std::io::Read;
+            let mut magic = [0u8; 4];
+            let count = fs::File::open(&relinker)?.read(&mut magic)?;
+            let macho = matches!(
+                magic,
+                [0xcf, 0xfa, 0xed, 0xfe] | [0xca, 0xfe, 0xba, 0xbe] | [0xca, 0xfe, 0xba, 0xbf]
+            );
+            if count == 4
+                && (macho
+                    || (os == Os::Windows && magic == *b"\x7fELF")
+                    || (os == Os::Linux && magic.starts_with(b"MZ")))
+            {
+                return Err(ToolkitError::Io(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "{} is not a {} relinker",
+                        relinker.display(),
+                        os.platform_key()
+                    ),
+                )));
+            }
+        }
         let mut extra_runtime = Vec::new();
         let mut missing = Vec::new();
-        for dll in Os::current().runtime_libs() {
+        for dll in os.runtime_libs() {
             if libs.join(dll).is_file() {
                 continue;
             }
@@ -264,7 +300,13 @@ impl Toolkit {
 }
 
 fn from_chosen(root: &Path, relinker: &Path, libs: &Path) -> Result<Toolkit, ToolkitError> {
-    Toolkit::from_parts(root, relinker.to_path_buf(), libs.to_path_buf(), true)
+    Toolkit::from_parts(
+        Os::current(),
+        root,
+        relinker.to_path_buf(),
+        libs.to_path_buf(),
+        true,
+    )
 }
 
 fn has_prx(dir: &Path) -> bool {
@@ -350,7 +392,7 @@ pub fn adopt_folder(folder: &Path) -> Result<Toolkit, ToolkitError> {
             && has_prx(p)
     })
     .ok_or_else(|| ToolkitError::Missing("libs\\*.prx".into()))?;
-    Toolkit::from_parts(folder, relinker, libs, true)
+    Toolkit::from_parts(Os::current(), folder, relinker, libs, true)
 }
 
 /// Breadth-first search, shallow matches first, names in order.
@@ -390,6 +432,12 @@ pub fn fingerprint(relinker: &Path, libs: &Path, patches: &Path) -> io::Result<S
         p.extension().is_some_and(|x| x == "toml" || x == "json")
     }) {
         feed(&mut hasher, &file)?;
+    }
+    // Runtime changes must also mark an adopted macOS toolkit as changed.
+    if let Some(root) = libs.parent() {
+        for file in sorted_files(&root.join("vulkan"), |_| true) {
+            feed(&mut hasher, &file)?;
+        }
     }
     let digest = hasher.finalize();
     Ok(hex(&digest)[..12].to_string())
@@ -431,7 +479,10 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
 /// `v0.1.10` -> `[0, 1, 10]`; `None` for anything that is not dotted numbers.
 fn parse_tag(tag: &str) -> Option<Vec<u64>> {
     let mut parts = Vec::new();
-    for part in tag.trim().trim_start_matches('v').split('.') {
+    let tag = tag.trim().trim_start_matches('v');
+    // The macOS runtime publishes versions such as 0.2.15-arm. Other suffixes stay invalid.
+    let tag = tag.strip_suffix("-arm").unwrap_or(tag);
+    for part in tag.split('.') {
         parts.push(part.parse().ok()?);
     }
     Some(parts)
@@ -473,10 +524,13 @@ pub struct Asset {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReleaseInfo {
+    pub os: Os,
     /// As published, with the leading `v`.
     pub tag: String,
     pub published: String,
-    pub relinker: Asset,
+    /// Separate relinker on Windows/Linux; macOS includes it in `libs`.
+    pub relinker: Option<Asset>,
+    /// Libraries archive, or the complete macOS toolkit archive.
     pub libs: Asset,
     pub notes_url: String,
     /// The full list of changes (`release-notes.md`), when the release has one.
@@ -517,6 +571,9 @@ pub fn parse_release_for(os: Os, json: &str) -> Result<ReleaseInfo, ToolkitError
     let text =
         |v: &serde_json::Value, key: &str| v.get(key).and_then(|x| x.as_str()).map(str::to_string);
     let tag = text(&value, "tag_name").ok_or(ToolkitError::NoRelease)?;
+    if parse_tag(&tag).is_none() {
+        return Err(ToolkitError::NoRelease);
+    }
     let assets = value
         .get("assets")
         .and_then(|a| a.as_array())
@@ -535,9 +592,21 @@ pub fn parse_release_for(os: Os, json: &str) -> Result<ReleaseInfo, ToolkitError
                 })
             })
     };
-    let relinker = find(&os.relinker_asset(&tag)).ok_or(ToolkitError::NoRelease)?;
+    let relinker = os
+        .relinker_asset(&tag)
+        .map(|name| find(&name).ok_or(ToolkitError::NoRelease))
+        .transpose()?;
     let libs = find(&os.libs_asset(&tag)).ok_or(ToolkitError::NoRelease)?;
+    if os == Os::Macos
+        && libs
+            .sha256
+            .as_ref()
+            .is_none_or(|hash| hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()))
+    {
+        return Err(ToolkitError::Digest);
+    }
     Ok(ReleaseInfo {
+        os,
         notes: find("release-notes.md"),
         published: text(&value, "published_at").unwrap_or_default(),
         notes_url: text(&value, "html_url").unwrap_or_default(),
@@ -668,6 +737,12 @@ pub fn download_and_install(
     cancel: &CancelToken,
 ) -> Result<Toolkit, ToolkitError> {
     let tag = info.plain_tag().to_string();
+    if parse_tag(&tag).is_none() {
+        return Err(ToolkitError::NoRelease);
+    }
+    if (info.os == Os::Macos) != info.relinker.is_none() {
+        return Err(ToolkitError::NoRelease);
+    }
     let base = paths.toolkit_dir();
     let partial = base.join(format!("{tag}.partial"));
     let final_dir = base.join(&tag);
@@ -678,10 +753,29 @@ pub fn download_and_install(
         let _ = crate::fsx::remove_tree(&partial);
         return Err(error);
     }
-    crate::fsx::remove_tree_retry(&final_dir)?;
-    crate::fsx::rename_retry(&partial, &final_dir)?;
+    let previous = base.join(format!("{tag}.previous"));
+    if !final_dir.exists() && previous.exists() {
+        crate::fsx::rename_retry(&previous, &final_dir)?;
+    }
+    crate::fsx::remove_tree_retry(&previous)?;
+    let replacing = final_dir.exists();
+    if replacing {
+        crate::fsx::rename_retry(&final_dir, &previous)?;
+    }
+    if let Err(error) = crate::fsx::rename_retry(&partial, &final_dir) {
+        if replacing {
+            crate::fsx::rename_retry(&previous, &final_dir)?;
+        }
+        return Err(error.into());
+    }
+    if let Err(error) = crate::fsx::remove_tree_retry(&previous) {
+        tracing::warn!(
+            "could not remove previous toolkit {}: {error}",
+            previous.display()
+        );
+    }
     prune_old_releases(paths, &tag);
-    Toolkit::open(&final_dir)
+    Toolkit::open_for(info.os, &final_dir)
 }
 
 fn install_into(
@@ -692,51 +786,92 @@ fn install_into(
     cancel: &CancelToken,
 ) -> Result<(), ToolkitError> {
     let agent = agent(None);
-    download(
-        &agent,
-        &info.relinker,
-        &partial.join(Os::current().relinker_file()),
-        DownloadStage::Relinker,
-        progress,
-        cancel,
-    )?;
-    make_executable(&partial.join(Os::current().relinker_file()))?;
+    if let Some(relinker) = &info.relinker {
+        download(
+            &agent,
+            relinker,
+            &partial.join(info.os.relinker_file()),
+            DownloadStage::Relinker,
+            progress,
+            cancel,
+        )?;
+        make_executable(&partial.join(info.os.relinker_file()))?;
+    }
     let zip_path = partial.join("libs.zip");
-    download(
-        &agent,
-        &info.libs,
-        &zip_path,
-        DownloadStage::Libraries,
-        progress,
-        cancel,
-    )?;
-    extract_libs(&zip_path, &partial.join("libs"), progress, cancel)?;
+    if info.os == Os::Macos {
+        if info.libs.sha256.is_none() {
+            return Err(ToolkitError::Digest);
+        }
+        download_capped(
+            &agent,
+            &info.libs,
+            &zip_path,
+            Some(512 * 1024 * 1024),
+            &mut |f| progress(DownloadStage::Libraries, f),
+            cancel,
+        )?;
+    } else {
+        download(
+            &agent,
+            &info.libs,
+            &zip_path,
+            DownloadStage::Libraries,
+            progress,
+            cancel,
+        )?;
+    }
+    if info.relinker.is_some() {
+        extract_libs(&zip_path, &partial.join("libs"), progress, cancel)?;
+    } else {
+        macos::extract(&zip_path, partial, info.plain_tag(), progress, cancel)?;
+        make_executable(&partial.join("relinker"))?;
+    }
     fs::remove_file(&zip_path)?;
     progress(DownloadStage::Finishing, 0.0);
-    if let Some(source) = patches_source {
+    if let Some(source) = patches_source.filter(|_| info.relinker.is_some()) {
         copy_patches(source, &partial.join("patches"))?;
     }
     let fp = fingerprint(
-        &partial.join(Os::current().relinker_file()),
+        &partial.join(info.os.relinker_file()),
         &partial.join("libs"),
         &partial.join("patches"),
     )?;
     let tag = info.plain_tag();
-    fs::write(partial.join("version.txt"), format!("{tag}-{fp}\n"))?;
-    let record = serde_json::json!({
+    let installed_version = format!("{tag}-{fp}\n");
+    fs::write(partial.join("version.txt"), &installed_version)?;
+    let mut record = if info.relinker.is_none() {
+        serde_json::from_slice::<serde_json::Value>(&fs::read(partial.join("toolkit.json"))?)
+            .map_err(|e| ToolkitError::BadArchive(e.to_string()))?
+    } else {
+        serde_json::json!({})
+    };
+    let relinker_digest = info
+        .relinker
+        .as_ref()
+        .and_then(|asset| asset.sha256.clone())
+        .or_else(|| record["files"]["relinker"].as_str().map(str::to_owned));
+    if info.os == Os::Macos {
+        record["version"] = installed_version.trim().into();
+        record["files"]["version.txt"] = hex(&Sha256::digest(installed_version.as_bytes())).into();
+    }
+    let provenance = serde_json::json!({
         "tag": tag,
         "published": info.published,
         "source": info.libs.url,
         "installedAt": now_text(),
-        "relinkerSha256": info.relinker.sha256,
+        "relinkerSha256": relinker_digest,
         "libsSha256": info.libs.sha256,
     });
+    record
+        .as_object_mut()
+        .ok_or_else(|| ToolkitError::BadArchive("invalid toolkit manifest".into()))?
+        .extend(provenance.as_object().expect("provenance object").clone());
     fs::write(
         partial.join("toolkit.json"),
         serde_json::to_string_pretty(&record).unwrap_or_default(),
     )?;
     // The folder must be usable, or the player would be left with a broken toolkit.
-    Toolkit::open(partial)?;
+    Toolkit::open_for(info.os, partial)?;
     progress(DownloadStage::Finishing, 1.0);
     Ok(())
 }
@@ -960,6 +1095,16 @@ fn prune_old_releases(paths: &AppPaths, keep_tag: &str) {
 mod tests {
     use super::*;
 
+    // The real host entry point must not select a Linux release on macOS.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_does_not_select_linux_release_assets() {
+        assert!(matches!(
+            parse_release(RELEASE_JSON),
+            Err(ToolkitError::NoRelease)
+        ));
+    }
+
     const RELINKER: &str = Os::current().relinker_file();
 
     fn write(path: &Path, bytes: &[u8]) {
@@ -967,8 +1112,29 @@ mod tests {
         fs::write(path, bytes).unwrap();
     }
 
+    fn native_relinker() -> Vec<u8> {
+        if cfg!(target_os = "macos") {
+            b"\xcf\xfa\xed\xfeRELINKER".to_vec()
+        } else {
+            b"RELINKER".to_vec()
+        }
+    }
+
+    fn macos_runtime(root: &Path) {
+        if cfg!(target_os = "macos") {
+            for name in ["libvulkan.1.dylib", "libMoltenVK.dylib"] {
+                write(&root.join("vulkan").join(name), b"runtime fixture");
+            }
+            write(
+                &root.join("vulkan/MoltenVK_icd.json"),
+                br#"{"ICD":{"library_path":"libMoltenVK.dylib"}}"#,
+            );
+        }
+    }
+
     fn make_toolkit(root: &Path, dlls: bool) {
-        write(&root.join(RELINKER), b"RELINKER");
+        write(&root.join(RELINKER), &native_relinker());
+        macos_runtime(root);
         write(&root.join("libs/a.prx"), b"AAA");
         if dlls {
             for dll in Os::current().runtime_libs() {
@@ -1078,7 +1244,11 @@ mod tests {
 
         let tree = tempfile::tempdir().unwrap();
         let r = tree.path();
-        write(&r.join(format!("build/core/relinker/{RELINKER}")), b"R");
+        write(
+            &r.join(format!("build/core/relinker/{RELINKER}")),
+            &native_relinker(),
+        );
+        macos_runtime(r);
         write(&r.join("build/core/libs/libs/x.prx"), b"X");
         for dll in MINGW_DLLS {
             write(&r.join("build/core/libs/libs").join(dll), b"D");
@@ -1166,9 +1336,10 @@ mod tests {
             (dir, t)
         };
         let release = |tag: &str| ReleaseInfo {
+            os: Os::Windows,
             tag: tag.into(),
             published: String::new(),
-            relinker: asset("x"),
+            relinker: Some(asset("x")),
             libs: asset("y"),
             notes_url: String::new(),
             notes: None,
@@ -1203,8 +1374,14 @@ mod tests {
         let info = parse_release_for(Os::Windows, RELEASE_JSON).unwrap();
         assert_eq!(info.tag, "v0.1.3");
         assert_eq!(info.plain_tag(), "0.1.3");
-        assert_eq!(info.relinker.url, "https://x/relinker.exe");
-        assert_eq!(info.relinker.sha256.as_deref(), Some("abcdef"));
+        assert_eq!(
+            info.relinker.as_ref().unwrap().url,
+            "https://x/relinker.exe"
+        );
+        assert_eq!(
+            info.relinker.as_ref().and_then(|a| a.sha256.as_deref()),
+            Some("abcdef")
+        );
         assert_eq!(info.libs.size, 96_600_000);
         assert_eq!(info.libs.sha256, None);
         assert_eq!(info.published, "2026-10-20T10:00:00Z");
@@ -1213,7 +1390,7 @@ mod tests {
     #[test]
     fn the_linux_assets_are_the_ones_without_an_extension_and_the_linux_zip() {
         let info = parse_release_for(Os::Linux, RELEASE_JSON).unwrap();
-        assert_eq!(info.relinker.url, "https://x/linux");
+        assert_eq!(info.relinker.as_ref().unwrap().url, "https://x/linux");
         assert_eq!(info.libs.name, "prx-linux-v0.1.3.zip");
         let json = RELEASE_JSON.replace("prx-linux-v0.1.3.zip", "prx-other.zip");
         assert!(matches!(
@@ -1342,14 +1519,19 @@ mod tests {
 
     fn release_for(base: &str, relinker: &[u8], zip: &[u8], digests: bool) -> ReleaseInfo {
         ReleaseInfo {
+            os: if Os::current() == Os::Macos {
+                Os::Windows
+            } else {
+                Os::current()
+            },
             tag: "v9.9.9".into(),
             published: "2026-10-22T00:00:00Z".into(),
-            relinker: Asset {
+            relinker: Some(Asset {
                 name: "relinker-v9.9.9.exe".into(),
                 url: format!("{base}/relinker.exe"),
                 size: relinker.len() as u64,
                 sha256: digests.then(|| sha_hex(relinker)),
-            },
+            }),
             libs: Asset {
                 name: "prx-windows-v9.9.9.zip".into(),
                 url: format!("{base}/prx.zip"),
@@ -1408,6 +1590,19 @@ mod tests {
         );
         assert!(events.iter().any(|(s, _)| *s == DownloadStage::Extracting));
         // locate finds it again, by choice and without.
+        if info.os != Os::current() {
+            assert!(
+                Toolkit::locate_with(&paths, Some(&toolkit.choice()), None).is_none(),
+                "a foreign toolkit must not be selected by this host"
+            );
+            assert_eq!(
+                Toolkit::open_for(info.os, toolkit.root())
+                    .unwrap()
+                    .version(),
+                toolkit.version()
+            );
+            return;
+        }
         let found = Toolkit::locate_with(&paths, Some(&toolkit.choice()), None).unwrap();
         assert_eq!(found.version(), toolkit.version());
         assert_eq!(
@@ -1481,12 +1676,227 @@ mod tests {
         assert!(fs::read_dir(paths.toolkit_dir()).unwrap().next().is_none());
     }
 
+    fn host_release_json() -> String {
+        if Os::current() == Os::Macos {
+            serde_json::json!({"tag_name":"v0.1.3", "assets":[{"name":Os::Macos.libs_asset("v0.1.3"),"browser_download_url":"https://x/toolkit.zip","size":1,"digest":format!("sha256:{}", "a".repeat(64))}]}).to_string()
+        } else {
+            RELEASE_JSON.into()
+        }
+    }
+
+    // Only HTTP transport and executable payloads are fixtures here. These tests cross the real
+    // release parser, downloader, manifest verifier and installer, but do not claim to run a game.
+    fn macos_archive(tampered: bool) -> Vec<u8> {
+        let prefix = "AnyPS5-toolkit-macos-0.2.15-arm";
+        let files: Vec<(&str, &[u8])> = vec![
+            ("relinker", b"\xcf\xfa\xed\xfemacOS relinker fixture"),
+            ("libs/libkernel.prx", b"system library fixture"),
+            ("vulkan/libvulkan.1.dylib", b"loader fixture"),
+            ("vulkan/libMoltenVK.dylib", b"driver fixture"),
+            (
+                "vulkan/MoltenVK_icd.json",
+                br#"{"ICD":{"library_path":"../../../MacOS/libs/libMoltenVK.dylib"}}"#,
+            ),
+            ("patches/EXAMPLE.json", br#"{"patches":[]}"#),
+            ("version.txt", b"0.2.15-arm-source\n"),
+        ];
+        let mut hashes = serde_json::Map::new();
+        for (name, bytes) in &files {
+            hashes.insert((*name).into(), sha_hex(bytes).into());
+        }
+        if tampered {
+            hashes.insert("libs/libkernel.prx".into(), "0".repeat(64).into());
+        }
+        let manifest = serde_json::to_vec(
+            &serde_json::json!({"format":1,"files":hashes,"engineCommit":"fixture"}),
+        )
+        .unwrap();
+        let mut entries: Vec<(String, &[u8])> = files
+            .iter()
+            .map(|(name, bytes)| (format!("{prefix}/{name}"), *bytes))
+            .collect();
+        entries.push((format!("{prefix}/toolkit.json"), &manifest));
+        build_zip(
+            &entries
+                .iter()
+                .map(|(name, bytes)| (name.as_str(), *bytes))
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    fn macos_release(base: &str, path: &str, bytes: &[u8]) -> ReleaseInfo {
+        let json = serde_json::json!({"tag_name":"v0.2.15-arm", "assets":[{
+            "name":Os::Macos.libs_asset("v0.2.15-arm"), "browser_download_url":format!("{base}/{path}"),
+            "size":bytes.len(), "digest":format!("sha256:{}", sha_hex(bytes))
+        }]});
+        parse_release_for(Os::Macos, &json.to_string()).unwrap()
+    }
+
+    #[test]
+    fn macos_bundle_download_is_verified_installed_and_platform_isolated() {
+        let bytes = macos_archive(false);
+        let (base, server, stop) = serve(vec![("/toolkit.zip", bytes.clone(), 200)]);
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::under(dir.path());
+        let info = macos_release(&base, "toolkit.zip", &bytes);
+        assert!(info.relinker.is_none());
+        assert_eq!(info.os, Os::Macos);
+        let toolkit =
+            download_and_install(&info, &paths, None, &mut |_, _| {}, &CancelToken::new()).unwrap();
+        assert_eq!(toolkit.tag(), Some("0.2.15-arm"));
+        assert!(toolkit.root().join("vulkan/libMoltenVK.dylib").is_file());
+        assert!(toolkit.patches().join("EXAMPLE.json").is_file());
+        assert_eq!(
+            Toolkit::open_for(Os::Macos, toolkit.root())
+                .unwrap()
+                .version(),
+            toolkit.version()
+        );
+        assert!(Toolkit::open_for(Os::Windows, toolkit.root()).is_err());
+        // Linux must not adopt this toolkit just because both relinkers have the same file name.
+        assert!(Toolkit::open_for(Os::Linux, toolkit.root()).is_err());
+        stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn macos_failed_or_cancelled_reinstall_preserves_the_working_toolkit() {
+        let bytes = macos_archive(false);
+        let bad = macos_archive(true);
+        let (base, server, stop) = serve(vec![
+            ("/toolkit.zip", bytes.clone(), 200),
+            ("/bad.zip", bad.clone(), 200),
+        ]);
+        let dir = tempfile::tempdir().unwrap();
+        let paths = AppPaths::under(dir.path());
+        let info = macos_release(&base, "toolkit.zip", &bytes);
+        let toolkit =
+            download_and_install(&info, &paths, None, &mut |_, _| {}, &CancelToken::new()).unwrap();
+        let version = toolkit.version().to_owned();
+        let bad = macos_release(&base, "bad.zip", &bad);
+        assert!(matches!(
+            download_and_install(&bad, &paths, None, &mut |_, _| {}, &CancelToken::new()),
+            Err(ToolkitError::Digest)
+        ));
+        assert_eq!(
+            Toolkit::open_for(Os::Macos, toolkit.root())
+                .unwrap()
+                .version(),
+            version
+        );
+        let cancel = CancelToken::new();
+        let result = download_and_install(
+            &info,
+            &paths,
+            None,
+            &mut |stage, _| {
+                if stage == DownloadStage::Extracting {
+                    cancel.cancel();
+                }
+            },
+            &cancel,
+        );
+        assert!(matches!(result, Err(ToolkitError::Cancelled)));
+        assert_eq!(
+            Toolkit::open_for(Os::Macos, toolkit.root())
+                .unwrap()
+                .version(),
+            version
+        );
+        assert!(!paths.toolkit_dir().join("0.2.15-arm.partial").exists());
+        stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn macos_archive_rejects_absolute_or_traversing_entries_before_writing() {
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("unpack");
+        fs::create_dir_all(&destination).unwrap();
+        let escaped = dir.path().join("escaped");
+        for name in [
+            "AnyPS5-toolkit-macos-0.2.15-arm/../escaped".into(),
+            format!("AnyPS5-toolkit-macos-0.2.15-arm/{}", escaped.display()),
+        ] {
+            let zip = build_zip(&[
+                ("AnyPS5-toolkit-macos-0.2.15-arm/valid", b"valid"),
+                (&name, b"invalid"),
+            ]);
+            let zip_path = dir.path().join("test.zip");
+            fs::write(&zip_path, zip).unwrap();
+            assert!(matches!(
+                macos::extract(
+                    &zip_path,
+                    &destination,
+                    "0.2.15-arm",
+                    &mut |_, _| {},
+                    &CancelToken::new()
+                ),
+                Err(ToolkitError::BadArchive(_))
+            ));
+            assert!(!escaped.exists());
+            assert_eq!(fs::read_dir(&destination).unwrap().count(), 0);
+        }
+    }
+
+    #[test]
+    fn macos_rejects_a_linux_toolkit_even_when_its_file_names_match() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            &dir.path().join("relinker"),
+            b"\x7fELFLinux relinker fixture",
+        );
+        write(&dir.path().join("libs/a.prx"), b"library fixture");
+        assert!(
+            matches!(Toolkit::open_for(Os::Macos, dir.path()), Err(ToolkitError::Io(e)) if e.kind() == io::ErrorKind::InvalidData)
+        );
+    }
+
+    #[test]
+    fn windows_and_linux_keep_their_split_downloads_and_runtime_layouts() {
+        let zip = libs_zip();
+        for os in [Os::Windows, Os::Linux] {
+            let relinker = if os == Os::Windows {
+                b"MZ\0\0Windows fixture".to_vec()
+            } else {
+                b"\x7fELFLinux fixture".to_vec()
+            };
+            let (base, server, stop) = serve(vec![
+                ("/relinker.exe", relinker.clone(), 200),
+                ("/prx.zip", zip.clone(), 200),
+            ]);
+            let mut info = release_for(&base, &relinker, &zip, true);
+            info.os = os;
+            let dir = tempfile::tempdir().unwrap();
+            let paths = AppPaths::under(dir.path());
+            let toolkit =
+                download_and_install(&info, &paths, None, &mut |_, _| {}, &CancelToken::new())
+                    .unwrap();
+            assert_eq!(
+                fs::read(toolkit.root().join(os.relinker_file())).unwrap(),
+                relinker
+            );
+            assert!(toolkit.libs().join("a.prx").is_file());
+            for file in os.runtime_libs() {
+                assert!(toolkit.libs().join(file).is_file());
+            }
+            assert!(!toolkit.root().join("vulkan").exists());
+            assert_eq!(
+                Toolkit::open_for(os, toolkit.root()).unwrap().version(),
+                toolkit.version()
+            );
+            assert!(Toolkit::open_for(Os::Macos, toolkit.root()).is_err());
+            stop.store(true, std::sync::atomic::Ordering::SeqCst);
+            server.join().unwrap();
+        }
+    }
+
     #[test]
     fn check_latest_reads_the_api_and_maps_rate_limits() {
         let (base, handle, stop) = serve(vec![
             (
                 "/repos/o/ok/releases/latest",
-                RELEASE_JSON.as_bytes().to_vec(),
+                host_release_json().into_bytes(),
                 200,
             ),
             ("/repos/o/limited/releases/latest", b"{}".to_vec(), 403),

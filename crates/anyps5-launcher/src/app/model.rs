@@ -572,10 +572,8 @@ impl Model {
                 self.library_index = self.library_index.min(self.games.len().saturating_sub(1));
                 self.measure_selected();
             }
-            CoreEvent::LibraryChanged => {
-                if !self.busy() {
-                    self.rescan();
-                }
+            CoreEvent::LibraryChanged if !self.busy() => {
+                self.rescan();
             }
             CoreEvent::SizeMeasured { game, bytes } => {
                 self.sizes.insert(game, SizeState::Known(bytes));

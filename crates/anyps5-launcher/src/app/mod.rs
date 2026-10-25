@@ -74,6 +74,22 @@ impl Config {
         let paths = AppPaths::from_env()
             .unwrap_or_else(|| AppPaths::under(&std::env::temp_dir().join("anyps5-launcher")));
         let prefs = Preferences::load(&paths);
+        #[cfg(target_os = "macos")]
+        let prefs = {
+            use anyps5_core::platform::{self, Os};
+            if let Some(old) = platform::roots(Os::Linux, &platform::process_vars, None) {
+                Preferences::load_with_fallback(
+                    &paths,
+                    &AppPaths {
+                        config: old.config,
+                        data: old.data,
+                        pictures: old.pictures,
+                    },
+                )
+            } else {
+                prefs
+            }
+        };
         crate::startup::mark("preferences loaded");
         // Whatever the last self-update swap left behind (`.old` exes, stale downloads).
         if let Ok(exe) = std::env::current_exe() {

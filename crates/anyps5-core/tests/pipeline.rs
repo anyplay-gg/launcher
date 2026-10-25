@@ -157,11 +157,16 @@ fn unlocks_a_dump_end_to_end() {
     let args = args_of(&copy.join(EXECUTABLE));
     let format_args = anyps5_core::platform::Os::current().relinker_args();
     let (format, args) = args.split_at(format_args.len());
+    let cpu_flag = if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        "--to-rosetta"
+    } else {
+        "--to-intel"
+    };
     assert_eq!(format, format_args);
     assert_eq!(
         &args[..5],
         [
-            "--to-intel",
+            cpu_flag,
             "--module-dir",
             ".",
             "--module-dir",
@@ -237,8 +242,13 @@ fn the_dumps_files_are_linked_not_copied_when_the_volume_allows() {
     fs::write(&pak, &longer).unwrap();
     let seen = fs::read(copy.join("app0/data/level1.pak")).unwrap();
     assert_eq!(
-        seen, longer,
-        "hard link: the copy and the dump are one file"
+        seen,
+        if cfg!(target_os = "macos") {
+            before
+        } else {
+            longer
+        },
+        "APFS clones isolate writes; Windows/Linux hard links share them"
     );
 }
 
@@ -259,6 +269,27 @@ fn forced_copy_mode_makes_independent_files_and_says_so() {
     assert_eq!(
         fs::read(request.folder.join("data/level1.pak")).unwrap(),
         b"LEVEL-ONE-DATA"
+    );
+}
+
+#[test]
+fn reconversion_ignores_old_host_guest_modules_but_converts_the_original() {
+    let w = world(&[]);
+    let request = w.dump("PreviouslyConverted", "PPSA00009", &elf_bytes());
+    write(
+        &request.folder.join("sce_module/libFoo.prx.guest.prx"),
+        b"old host executable",
+    );
+    let (result, _) = run(&request);
+    result.expect("the original module is converted again");
+    let copy = unlock::unlocked_copy("PPSA00009", &request.game, &w.root);
+    assert_eq!(
+        fs::read(copy.join("app0/sce_module/libFoo.prx.guest.prx")).unwrap(),
+        b"FAKE-GUEST-MODULE"
+    );
+    assert_eq!(
+        fs::read(request.folder.join("sce_module/libFoo.prx.guest.prx")).unwrap(),
+        b"old host executable"
     );
 }
 

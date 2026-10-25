@@ -55,6 +55,14 @@ pub fn make_toolkit(root: &Path, relinker_settings: &[&str]) -> anyps5_core::too
     )
     .unwrap();
     configure_fake(root, relinker_settings);
+    if cfg!(target_os = "macos") {
+        write(&root.join("vulkan/libMoltenVK.dylib"), b"fixture runtime");
+        write(&root.join("vulkan/libvulkan.1.dylib"), b"fixture loader");
+        write(
+            &root.join("vulkan/MoltenVK_icd.json"),
+            br#"{"ICD":{"library_path":"libMoltenVK.dylib"}}"#,
+        );
+    }
     write(&root.join("libs/libSceLibc.prx"), b"PRX-LIBC");
     write(&root.join("libs/libSceFoo.prx"), b"PRX-FOO");
     for dll in MINGW {

@@ -24,7 +24,7 @@ use crate::unlock::EXECUTABLE;
 
 /// Linux has no portable way to find another process's window (X11 and Wayland differ, and Wayland
 /// offers none), so a game that has run this long counts as shown.
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 const LINUX_WINDOW_GRACE: Duration = Duration::from_secs(6);
 /// The ring buffer of the game's latest output kept in memory.
 pub const TAIL_BYTES: usize = 400 * 1024;
@@ -94,12 +94,38 @@ pub struct CommandSpec {
 }
 
 pub fn build_command(request: &LaunchRequest) -> CommandSpec {
-    CommandSpec {
+    let spec = CommandSpec {
         program: request.copy.join(EXECUTABLE),
         args: Vec::new(),
         cwd: request.copy.clone(),
         env: request.env.clone(),
+    };
+    #[cfg(target_os = "macos")]
+    let spec = macos_command(spec, request.window);
+    spec
+}
+
+#[cfg(target_os = "macos")]
+fn macos_command(mut spec: CommandSpec, window: WindowPrefs) -> CommandSpec {
+    let driver = spec.cwd.join("vulkan/icd.d/MoltenVK_icd.json");
+    // Native test programs need no Vulkan runtime; converted games always carry this manifest.
+    if driver.is_file() {
+        spec.env
+            .entry("VK_DRIVER_FILES".into())
+            .or_insert_with(|| driver.to_string_lossy().into_owned());
+        spec.env
+            .entry("MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS".into())
+            .or_insert_with(|| "0".into());
     }
+    spec.env.insert(
+        "ANYPS5_FULLSCREEN".into(),
+        u8::from(window.fullscreen).to_string(),
+    );
+    spec.env.insert(
+        "ANYPS5_WINDOW_SIZE".into(),
+        window.size_percent.clamp(30, 100).to_string(),
+    );
+    spec
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -192,7 +218,17 @@ impl Running {
         if let Some(job) = &self.job {
             return job.active_processes() > 0;
         }
-        matches!(self.child.lock().expect("child lock").try_wait(), Ok(None))
+        let alive = matches!(self.child.lock().expect("child lock").try_wait(), Ok(None));
+        #[cfg(target_os = "macos")]
+        if !alive
+            && !self.killed.load(Ordering::SeqCst)
+            && let Ok(pid) = libc::pid_t::try_from(self.pid)
+        {
+            // SAFETY: signal zero only checks the process group. A LoadExec child can
+            // outlive its parent; keep watching until the owned group has ended.
+            return unsafe { libc::kill(-pid, 0) == 0 };
+        }
+        alive
     }
 
     #[cfg(windows)]
@@ -242,6 +278,8 @@ impl RunHandle {
 
     /// Brings the game's window to the front, if it has shown one.
     pub fn activate(&self) {
+        #[cfg(target_os = "macos")]
+        crate::macos::activate(self.running.window.load(Ordering::SeqCst));
         #[cfg(windows)]
         {
             let window = self.running.window.load(Ordering::SeqCst);
@@ -277,6 +315,11 @@ impl Launcher {
         let spec = build_command(&request);
         if !spec.program.is_file() {
             return Err(LaunchError::NotUnlocked);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            crate::platform::require_macho(&spec.program).map_err(LaunchError::Spawn)?;
+            crate::macos::require_rosetta_for(&spec.program).map_err(LaunchError::Spawn)?;
         }
         let mut log = open_log_for_start(&request.log_file, &request.title_id, &now_utc())
             .map_err(LaunchError::Log)?;
@@ -398,7 +441,9 @@ fn watch(
         if !reported {
             #[cfg(windows)]
             let found = crate::win::find_window(&running.pids());
-            #[cfg(not(windows))]
+            #[cfg(target_os = "macos")]
+            let found = crate::macos::find_window(running.pid);
+            #[cfg(not(any(windows, target_os = "macos")))]
             let found: Option<isize> = (started.elapsed() >= LINUX_WINDOW_GRACE).then_some(0);
             if let Some(window) = found {
                 running.window.store(window, Ordering::SeqCst);

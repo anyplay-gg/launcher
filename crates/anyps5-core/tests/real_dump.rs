@@ -51,7 +51,9 @@ fn unlock_and_start_a_real_dump() {
                 let info = toolkit::check_latest(DEFAULT_REPOSITORY).expect("release lookup");
                 println!(
                     "downloading toolkit {} ({} + {} bytes)",
-                    info.tag, info.relinker.size, info.libs.size
+                    info.tag,
+                    info.relinker.as_ref().map_or(0, |a| a.size),
+                    info.libs.size
                 );
                 let mut last = -1.0;
                 toolkit::download_and_install(
@@ -93,15 +95,15 @@ fn unlock_and_start_a_real_dump() {
     let started = Instant::now();
     let last_step = std::cell::Cell::new(None);
     let result = unlock::run_unlock(&request, &UnlockControl::new(), &|event| match event {
-        UnlockEvent::Progress { step, fraction, .. } => {
-            if last_step.get() != Some(step) || fraction >= 1.0 {
-                println!(
-                    "  [{:>5.1}s] {step:?} {:.0}%",
-                    started.elapsed().as_secs_f32(),
-                    fraction * 100.0
-                );
-                last_step.set(Some(step));
-            }
+        UnlockEvent::Progress { step, fraction, .. }
+            if last_step.get() != Some(step) || fraction >= 1.0 =>
+        {
+            println!(
+                "  [{:>5.1}s] {step:?} {:.0}%",
+                started.elapsed().as_secs_f32(),
+                fraction * 100.0
+            );
+            last_step.set(Some(step));
         }
         UnlockEvent::Log { line, .. } => println!("  relinker: {line}"),
         _ => {}

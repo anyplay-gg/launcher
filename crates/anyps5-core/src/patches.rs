@@ -108,6 +108,8 @@ pub struct PatchEntry {
 pub enum PatchError {
     #[error("not a 64-bit little-endian ELF executable")]
     NotElf,
+    #[error("not a valid 64-bit little-endian Mach-O executable")]
+    NotMacho,
     #[error("0x{0:x} is not in a file-backed segment")]
     NotInSegment(u64),
     #[error("{name}: original and replacement at {address} differ in length")]
@@ -121,6 +123,29 @@ pub enum PatchError {
 }
 
 impl PatchSet {
+    /// The ARM toolkit's catalogue uses Mach-O addresses; legacy files omit `space`.
+    pub fn load_macho(title_id: &str, dir: &Path) -> Option<PatchSet> {
+        let bytes = fs::read(dir.join(format!("{title_id}.json"))).ok()?;
+        let set: PatchSet = serde_json::from_slice(&bytes).ok()?;
+        (set.space.is_empty() || set.space == "macho").then_some(set)
+    }
+
+    /// Apply checked edits only to the newly copied executable, never to the original dump.
+    pub fn apply_macho(
+        &self,
+        path: &Path,
+        resolution: Option<&str>,
+    ) -> Result<Vec<(String, PatchState)>, Box<dyn std::error::Error + Send + Sync>> {
+        let mut data = fs::read(path)?;
+        let segments = macho_segments(&data)?;
+        let (entries, states) = self.plan_segments(&data, resolution, &segments)?;
+        for entry in entries {
+            let offset = file_offset(&segments, entry.va, entry.value.len())?;
+            data[offset..offset + entry.value.len()].copy_from_slice(&entry.value);
+        }
+        fs::write(path, data)?;
+        Ok(states)
+    }
     /// The title's patch file `<dir>\<title id>.json`. `None` when there is none, when it does not
     /// parse, or when it is not an `"elf"`-space file.
     pub fn load(title_id: &str, dir: &Path) -> Option<PatchSet> {
@@ -156,6 +181,15 @@ impl PatchSet {
     /// the file) is an error.
     pub fn plan(&self, elf: &[u8], resolution: Option<&str>) -> Result<Plan, PatchError> {
         let segments = elf_segments(elf)?;
+        self.plan_segments(elf, resolution, &segments)
+    }
+
+    fn plan_segments(
+        &self,
+        elf: &[u8],
+        resolution: Option<&str>,
+        segments: &[Segment],
+    ) -> Result<Plan, PatchError> {
         let mut entries = Vec::new();
         let mut states = Vec::new();
         for patch in &self.patches {
@@ -171,7 +205,7 @@ impl PatchSet {
                     });
                 }
                 let va = parse_address(&edit.address)?;
-                let offset = file_offset(&segments, va, original.len())?;
+                let offset = file_offset(segments, va, original.len())?;
                 let current = &elf[offset..offset + original.len()];
                 if current == original {
                     planned.push(PatchEntry {
@@ -209,7 +243,7 @@ impl PatchSet {
             for (index, field) in set.fields.iter().enumerate() {
                 let instruction = hex_bytes(&field.instruction)?;
                 let va = parse_address(&field.address)?;
-                let offset = file_offset(&segments, va, instruction.len())?;
+                let offset = file_offset(segments, va, instruction.len())?;
                 let current = &elf[offset..offset + instruction.len()];
                 if current != instruction {
                     state = PatchState::Skipped {
@@ -219,7 +253,11 @@ impl PatchSet {
                     };
                     break;
                 }
-                if field.offset + 4 > instruction.len() {
+                if field
+                    .offset
+                    .checked_add(4)
+                    .is_none_or(|end| end > instruction.len())
+                {
                     return Err(PatchError::LengthMismatch {
                         name: "resolution".into(),
                         address: field.address.clone(),
@@ -266,8 +304,16 @@ pub fn relinker_toml(entries: &[PatchEntry]) -> String {
 
 /// The resolutions the title with this ID offers, or none.
 pub fn resolution_choices(title_id: &str, dir: &Path) -> Vec<String> {
-    PatchSet::load(title_id, dir)
-        .map(|s| s.resolution_choices().to_vec())
+    resolution_choices_for(crate::platform::Os::current(), title_id, dir)
+}
+
+fn resolution_choices_for(os: crate::platform::Os, title_id: &str, dir: &Path) -> Vec<String> {
+    let set = if os == crate::platform::Os::Macos {
+        PatchSet::load_macho(title_id, dir)
+    } else {
+        PatchSet::load(title_id, dir)
+    };
+    set.map(|s| s.resolution_choices().to_vec())
         .unwrap_or_default()
 }
 
@@ -314,6 +360,53 @@ fn elf_segments(data: &[u8]) -> Result<Vec<Segment>, PatchError> {
                 filesz,
             });
         }
+    }
+    Ok(segments)
+}
+
+fn macho_segments(data: &[u8]) -> Result<Vec<Segment>, PatchError> {
+    if data.len() < 32 || data[..4] != [0xcf, 0xfa, 0xed, 0xfe] {
+        return Err(PatchError::NotMacho);
+    }
+    let u32_at = |at| u32::from_le_bytes(data[at..at + 4].try_into().unwrap());
+    let u64_at = |at| u64::from_le_bytes(data[at..at + 8].try_into().unwrap());
+    let end = 32usize
+        .checked_add(u32_at(20) as usize)
+        .filter(|end| *end <= data.len())
+        .ok_or(PatchError::NotMacho)?;
+    let mut at = 32usize;
+    let mut segments = Vec::new();
+    for _ in 0..u32_at(16) {
+        if at.checked_add(8).is_none_or(|end_at| end_at > end) {
+            return Err(PatchError::NotMacho);
+        }
+        let size = u32_at(at + 4) as usize;
+        let next = at
+            .checked_add(size)
+            .filter(|next| size >= 8 && *next <= end)
+            .ok_or(PatchError::NotMacho)?;
+        if u32_at(at) == 0x19 {
+            if size < 72 {
+                return Err(PatchError::NotMacho);
+            }
+            let segment = Segment {
+                vaddr: u64_at(at + 24),
+                offset: u64_at(at + 40),
+                filesz: u64_at(at + 48),
+            };
+            if segment.vaddr.checked_add(segment.filesz).is_none() {
+                return Err(PatchError::NotMacho);
+            }
+            if segment
+                .offset
+                .checked_add(segment.filesz)
+                .is_none_or(|end| end > data.len() as u64)
+            {
+                return Err(PatchError::NotMacho);
+            }
+            segments.push(segment);
+        }
+        at = next;
     }
     Ok(segments)
 }
@@ -419,6 +512,48 @@ mod tests {
     }
 
     #[test]
+    fn macho_edits_are_checked_mapped_and_idempotent_without_accepting_elf() {
+        let mut image = vec![0u8; 0x120];
+        image[..4].copy_from_slice(&[0xcf, 0xfa, 0xed, 0xfe]);
+        image[16..20].copy_from_slice(&1u32.to_le_bytes());
+        image[20..24].copy_from_slice(&72u32.to_le_bytes());
+        image[32..36].copy_from_slice(&0x19u32.to_le_bytes());
+        image[36..40].copy_from_slice(&72u32.to_le_bytes());
+        image[56..64].copy_from_slice(&0x1000u64.to_le_bytes());
+        image[72..80].copy_from_slice(&0x100u64.to_le_bytes());
+        image[80..88].copy_from_slice(&32u64.to_le_bytes());
+        image[0x104..0x106].copy_from_slice(&[0x11, 0x22]);
+        let patches: PatchSet = serde_json::from_str(r#"{"patches":[{"name":"example","edits":[{"address":"0x1004","original":"1122","replacement":"3344"}]}]}"#).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let executable = dir.path().join("eboot");
+        fs::write(&executable, &image).unwrap();
+        assert_eq!(
+            patches.apply_macho(&executable, None).unwrap()[0].1,
+            PatchState::Applied
+        );
+        let modified = fs::read(&executable).unwrap();
+        assert_eq!(&modified[0x104..0x106], &[0x33, 0x44]);
+        assert_eq!(&modified[..0x104], &image[..0x104]);
+        assert_eq!(&modified[0x106..], &image[0x106..]);
+        assert_eq!(
+            patches.apply_macho(&executable, None).unwrap()[0].1,
+            PatchState::AlreadyApplied
+        );
+        assert!(matches!(
+            patches.plan(&image, None),
+            Err(PatchError::NotElf)
+        ));
+        image[56..64].copy_from_slice(&u64::MAX.to_le_bytes());
+        fs::write(&executable, &image).unwrap();
+        assert!(patches.apply_macho(&executable, None).is_err());
+        assert_eq!(
+            fs::read(&executable).unwrap(),
+            image,
+            "invalid input is never rewritten"
+        );
+    }
+
+    #[test]
     fn load_reads_elf_space_files_only() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("PPSA1.json"), FILE).unwrap();
@@ -441,10 +576,10 @@ mod tests {
             assert!(PatchSet::load(id, dir.path()).is_none(), "{id}");
         }
         assert_eq!(
-            resolution_choices("PPSA1", dir.path()),
+            resolution_choices_for(crate::platform::Os::Linux, "PPSA1", dir.path()),
             ["1280x720", "1920x1080", "2560x1440"]
         );
-        assert!(resolution_choices("PPSA2", dir.path()).is_empty());
+        assert!(resolution_choices_for(crate::platform::Os::Linux, "PPSA2", dir.path()).is_empty());
     }
 
     #[test]

@@ -123,9 +123,13 @@ fn output_order_is_kept_the_log_has_the_marker_and_the_exit_code_arrives() {
         expected.iter().map(String::as_str).collect::<Vec<_>>()
     );
     // The game ran in its copy.
-    assert!(
-        session.contains(&format!("game cwd={}", s.copy.display())),
-        "{session}"
+    let cwd = session
+        .lines()
+        .find_map(|line| line.strip_prefix("game cwd="))
+        .expect("reported working directory");
+    assert_eq!(
+        fs::canonicalize(cwd).unwrap(),
+        fs::canonicalize(&s.copy).unwrap()
     );
     // The tail in memory holds the same.
     assert!(handle.tail().contains("err 50"));

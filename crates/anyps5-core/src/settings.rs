@@ -434,7 +434,7 @@ fn default_profile_name() -> String {
 }
 
 fn default_repository() -> String {
-    "boykopovar/AnyPS5".to_string()
+    crate::toolkit::DEFAULT_REPOSITORY.to_string()
 }
 
 fn one() -> u32 {
@@ -624,8 +624,8 @@ impl Preferences {
         let bytes = bytes
             .strip_prefix(&[0xEF, 0xBB, 0xBF][..])
             .unwrap_or(&bytes);
-        match serde_json::from_slice(bytes) {
-            Ok(prefs) => prefs,
+        match serde_json::from_slice::<Preferences>(bytes) {
+            Ok(prefs) => prefs.for_current_platform(),
             Err(error) => {
                 tracing::warn!(
                     "preferences.json is damaged ({error}); moved to preferences.json.bad"
@@ -637,6 +637,34 @@ impl Preferences {
                 Preferences::first_run()
             }
         }
+    }
+
+    /// On the first native macOS start, read the old XDG preference file without altering it.
+    /// A native preference file, including one recovering from corruption, always takes priority.
+    pub fn load_with_fallback(paths: &AppPaths, previous: &AppPaths) -> Preferences {
+        if !paths.preferences_file().exists() && previous.preferences_file().is_file() {
+            fs::read(previous.preferences_file())
+                .ok()
+                .and_then(|bytes| {
+                    serde_json::from_slice::<Self>(
+                        bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes),
+                    )
+                    .ok()
+                })
+                .map(Self::for_current_platform)
+                .unwrap_or_else(Self::first_run)
+        } else {
+            Self::load(paths)
+        }
+    }
+
+    fn for_current_platform(mut self) -> Self {
+        if cfg!(target_os = "macos") && self.toolkit_repository == "boykopovar/AnyPS5" {
+            // Migrate the old non-Windows default, retaining user-selected third-party sources.
+            self.toolkit_repository = crate::toolkit::DEFAULT_REPOSITORY.into();
+            self.toolkit_pinned = None;
+        }
+        self
     }
 
     /// Writes the preferences atomically.
@@ -1106,7 +1134,10 @@ mod tests {
         assert_eq!(value["theme"], 0);
         assert_eq!(value["language"], "en");
         assert_eq!(value["backdrop"], "theme");
-        assert_eq!(value["toolkitRepository"], "boykopovar/AnyPS5");
+        assert_eq!(
+            value["toolkitRepository"],
+            crate::toolkit::DEFAULT_REPOSITORY
+        );
         assert_eq!(value["gamesFolder"], Value::Null);
         assert_eq!(value["cpuConversion"], "auto");
     }
@@ -1128,7 +1159,7 @@ mod tests {
         assert!(prefs.fullscreen);
         assert!(prefs.check_for_updates);
         assert_eq!(prefs.profile_name, "Player");
-        assert_eq!(prefs.toolkit_repository, "boykopovar/AnyPS5");
+        assert_eq!(prefs.toolkit_repository, crate::toolkit::DEFAULT_REPOSITORY);
         assert!(!prefs.games["c:/g"].vsync);
         assert_eq!(prefs.games["c:/g"].window_size, 75);
         prefs.save(&paths).unwrap();
@@ -1168,6 +1199,44 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let prefs = Preferences::load(&AppPaths::under(dir.path()));
         assert!(!prefs.onboarded && prefs.games.is_empty());
+    }
+
+    #[test]
+    fn preference_fallback_preserves_the_old_file_and_native_settings_take_priority() {
+        let dir = tempfile::tempdir().unwrap();
+        let previous = AppPaths::under(&dir.path().join("old"));
+        let native = AppPaths::under(&dir.path().join("native"));
+        let mut old = Preferences {
+            profile_name: "Example Player".into(),
+            toolkit_repository: "example/custom-runtime".into(),
+            ..Preferences::default()
+        };
+        old.games_folder = Some(dir.path().join("games"));
+        old.extra.insert("futureSetting".into(), true.into());
+        old.save(&previous).unwrap();
+        let original = fs::read(previous.preferences_file()).unwrap();
+        let imported = Preferences::load_with_fallback(&native, &previous);
+        assert_eq!(imported, old);
+        assert_eq!(fs::read(previous.preferences_file()).unwrap(), original);
+        imported.save(&native).unwrap();
+        old.profile_name = "Changed old profile".into();
+        old.save(&previous).unwrap();
+        assert_eq!(
+            Preferences::load_with_fallback(&native, &previous).profile_name,
+            "Example Player"
+        );
+    }
+
+    #[test]
+    fn damaged_fallback_is_not_renamed_or_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let previous = AppPaths::under(&dir.path().join("old"));
+        let native = AppPaths::under(&dir.path().join("native"));
+        fs::create_dir_all(&previous.config).unwrap();
+        fs::write(previous.preferences_file(), b"{broken").unwrap();
+        let _ = Preferences::load_with_fallback(&native, &previous);
+        assert_eq!(fs::read(previous.preferences_file()).unwrap(), b"{broken");
+        assert!(!native.preferences_file().exists());
     }
 
     #[test]

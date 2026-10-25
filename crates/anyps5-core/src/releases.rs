@@ -16,8 +16,7 @@ use crate::notes::{self, ReleaseNotes};
 use crate::paths::AppPaths;
 use crate::platform::Os;
 use crate::toolkit::{
-    API_BASE, DEFAULT_REPOSITORY, ReleaseInfo, ToolkitError, compare_tags, parse_release,
-    parse_releases,
+    API_BASE, ReleaseInfo, ToolkitError, compare_tags, parse_release, parse_releases,
 };
 
 /// How many releases the "pin a version" choice offers.
@@ -34,7 +33,7 @@ pub struct Endpoints {
 impl Endpoints {
     pub fn github(repo: &str) -> Endpoints {
         let pages =
-            (repo == DEFAULT_REPOSITORY).then(|| "https://boykopovar.github.io/AnyPS5".to_owned());
+            (repo == "boykopovar/AnyPS5").then(|| "https://boykopovar.github.io/AnyPS5".to_owned());
         Endpoints {
             api: API_BASE.to_owned(),
             pages,
@@ -60,6 +59,7 @@ struct PagesRelease {
 struct PagesPlatforms {
     windows: Option<PagesAsset>,
     linux: Option<PagesAsset>,
+    macos: Option<PagesAsset>,
 }
 
 #[derive(Deserialize)]
@@ -143,6 +143,7 @@ pub fn libs_digest_disagrees(
         .and_then(|p| match Os::current() {
             Os::Windows => p.windows,
             Os::Linux => p.linux,
+            Os::Macos => p.macos,
         })
         .and_then(|asset| asset.sha256);
     pages.tag.trim_start_matches('v') == release.plain_tag()
@@ -267,7 +268,9 @@ mod tests {
               {{"name":"{}","browser_download_url":"{base}/r","size":1}},
               {{"name":"{}","browser_download_url":"{base}/p","size":1,"digest":"sha256:{}"}},
               {{"name":"release-notes.md","browser_download_url":"{base}/notes/{tag}","size":1,"digest":"sha256:{}"}}]}}"#,
-            Os::current().relinker_asset(tag),
+            Os::current()
+                .relinker_asset(tag)
+                .unwrap_or_else(|| "unrelated-platform-asset".into()),
             Os::current().libs_asset(tag),
             "a".repeat(64),
             "b".repeat(64)

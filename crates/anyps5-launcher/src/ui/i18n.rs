@@ -97,6 +97,27 @@ impl Language {
 /// The few strings that name the system. The table is generated with Windows in them; on every
 /// other system these take their place.
 const fn elsewhere(language: Language, key: Key) -> Option<&'static str> {
+    if cfg!(target_os = "macos") {
+        return match (language, key) {
+            (Language::English, Key::StartingText) => Some(
+                "The game is opening, please wait. The first start can take a few minutes while Rosetta translates the game and its shaders compile.",
+            ),
+            (Language::English, Key::StepRelink) => Some("Converting for macOS"),
+            (Language::English, Key::ShowInFinder) => Some("Show in Finder"),
+            (Language::English, Key::AboutText) => {
+                Some("AnyPlay Launcher runs PS5 games on macOS with AnyPS5, Rosetta and MoltenVK.")
+            }
+            (Language::Turkish, Key::StartingText) => Some(
+                "Oyun açılıyor, lütfen bekle. İlk açılış, Rosetta oyunu çevirirken ve gölgelendiriciler derlenirken birkaç dakika sürebilir.",
+            ),
+            (Language::Turkish, Key::StepRelink) => Some("macOS için çevriliyor"),
+            (Language::Turkish, Key::ShowInFinder) => Some("Finder’da göster"),
+            (Language::Turkish, Key::AboutText) => Some(
+                "AnyPlay Launcher, PS5 oyunlarını AnyPS5, Rosetta ve MoltenVK ile macOS'ta çalıştırır.",
+            ),
+            _ => None,
+        };
+    }
     Some(match (language, key) {
         (Language::English, Key::StartingText) => {
             "The game is opening, please wait. The first start can take a few minutes while the game gets ready for Linux."
@@ -238,7 +259,7 @@ mod tests {
         }
     }
 
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     #[test]
     fn system_names_follow_the_system() {
         assert_eq!(
@@ -249,6 +270,16 @@ mod tests {
             Language::Turkish.text(Key::ShowInFinder),
             "Dosya yöneticisinde göster"
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_names_do_not_claim_linux_or_windows_support() {
+        assert_eq!(
+            Language::English.text(Key::StepRelink),
+            "Converting for macOS"
+        );
+        assert_eq!(Language::English.text(Key::ShowInFinder), "Show in Finder");
     }
 
     #[cfg(windows)]
@@ -301,6 +332,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn no_visible_string_still_names_the_mac() {
         for key in Key::ALL {

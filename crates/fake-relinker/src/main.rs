@@ -81,6 +81,7 @@ fn relinker() {
     while let Some(arg) = iter.next() {
         match arg.as_str() {
             "--windows" => windows = true,
+            "--macos" | "--to-rosetta" => {}
             "--module-dir"
             | "--patches"
             | "--rpath"

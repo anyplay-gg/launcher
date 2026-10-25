@@ -228,7 +228,13 @@ mod tests {
                 assert!(!step_title(step, language).is_empty());
             }
         }
-        let system = if cfg!(windows) { "Windows" } else { "Linux" };
+        let system = if cfg!(windows) {
+            "Windows"
+        } else if cfg!(target_os = "macos") {
+            "macOS"
+        } else {
+            "Linux"
+        };
         assert_eq!(
             step_title(UnlockStep::Relink, Language::English),
             format!("Converting for {system}")

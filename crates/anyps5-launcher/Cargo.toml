@@ -1,6 +1,6 @@
 [package]
 name = "anyps5-launcher"
-description = "AnyPlay Launcher, the native launcher for AnyPS5 on Windows and Linux"
+description = "AnyPlay Launcher, the native launcher for AnyPS5 on Windows, Linux and macOS"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -484,17 +484,16 @@ impl Social {
 pub fn plain(text: &str) -> String {
     text.chars()
         .filter(|c| {
-            !(c.is_control() && *c != '\n' && *c != '\t')
-                && !matches!(
-                    *c,
-                    '\u{061C}'
-                        | '\u{2028}'
-                        | '\u{2029}'
-                        | '\u{200E}'
-                        | '\u{200F}'
-                        | '\u{202A}'..='\u{202E}'
-                        | '\u{2066}'..='\u{2069}'
-                )
+            !(matches!(
+                *c,
+                '\u{061C}'
+                    | '\u{2028}'
+                    | '\u{2029}'
+                    | '\u{200E}'
+                    | '\u{200F}'
+                    | '\u{202A}'..='\u{202E}'
+                    | '\u{2066}'..='\u{2069}'
+            ) || c.is_control() && *c != '\n' && *c != '\t')
         })
         .map(|c| if c == '\t' { ' ' } else { c })
         .collect()

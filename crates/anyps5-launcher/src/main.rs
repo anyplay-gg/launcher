@@ -1,4 +1,4 @@
-//! AnyPlay Launcher: native front end for AnyPS5 on Windows and Linux.
+//! AnyPlay Launcher: native front end for AnyPS5 on Windows, Linux and macOS.
 
 // No console window in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]

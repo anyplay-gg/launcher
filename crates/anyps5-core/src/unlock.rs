@@ -148,6 +148,8 @@ pub struct UnlockRequest {
     pub to_intel: bool,
     /// Relinker patch file text for this title and build (PORT.md 6.9), if it has patches.
     pub patches_toml: Option<String>,
+    /// Selected output resolution for a toolkit's Mach-O patch catalogue.
+    pub resolution: Option<String>,
     /// Extra relinker flags (flag and value pairs) from the game's settings; only allowlisted
     /// ones are passed.
     pub relink_flags: Vec<String>,
@@ -167,6 +169,7 @@ impl UnlockRequest {
             toolkit,
             to_intel: false,
             patches_toml: None,
+            resolution: None,
             relink_flags: Vec::new(),
             link_mode: LinkMode::Auto,
             backup_dir: None,
@@ -248,6 +251,11 @@ pub fn modules_in(folder: &Path) -> io::Result<Vec<String>> {
                 }
             } else if file_type.is_file() {
                 let lower = name.to_lowercase();
+                // Outputs of an earlier conversion are host binaries, never PS5 inputs.
+                // The original .prx is still staged and converted, replacing this old output.
+                if lower.ends_with(".guest.prx") {
+                    continue;
+                }
                 if lower.ends_with(".prx") || lower.ends_with(".sprx") {
                     out.push(relative);
                 }
@@ -518,6 +526,13 @@ pub fn run_unlock(
     if !request.toolkit.relinker().is_file() {
         return Err(UnlockError::ToolkitMissing);
     }
+    #[cfg(target_os = "macos")]
+    {
+        crate::platform::require_macho(request.toolkit.relinker())
+            .map_err(io_context("macOS relinker"))?;
+        crate::macos::require_rosetta_for(request.toolkit.relinker())
+            .map_err(io_context("Rosetta 2"))?;
+    }
     let root = std::path::absolute(&request.root).unwrap_or_else(|_| request.root.clone());
     let name = crate::paths::unlocked_copy_name(&request.title_id, &request.game);
     let copy = games_dir(&root).join(&name);
@@ -566,7 +581,9 @@ pub fn run_unlock(
         .iter()
         .map(Into::into)
         .collect();
-    if request.to_intel {
+    if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        args.push("--to-rosetta".into());
+    } else if request.to_intel {
         args.push("--to-intel".into());
     }
     for directory in module_directories(&modules) {
@@ -632,6 +649,8 @@ pub fn run_unlock(
     reporter.progress(Step::Assemble, 0.0);
     fs::copy(out.join(EXECUTABLE), partial.join(EXECUTABLE))
         .map_err(io_context("copy the executable"))?;
+    #[cfg(target_os = "macos")]
+    assemble_macos(request, &partial, &reporter)?;
     fsx::link_tree(
         request.toolkit.libs(),
         &partial.join("libs"),
@@ -707,6 +726,63 @@ fn unique_name() -> String {
         std::process::id(),
         COUNTER.fetch_add(1, Ordering::Relaxed)
     )
+}
+
+#[cfg(target_os = "macos")]
+fn assemble_macos(
+    request: &UnlockRequest,
+    copy: &Path,
+    reporter: &Reporter,
+) -> Result<(), UnlockError> {
+    use std::os::unix::fs::PermissionsExt;
+    let eboot = copy.join(EXECUTABLE);
+    fs::set_permissions(&eboot, fs::Permissions::from_mode(0o755))
+        .map_err(io_context("make the game executable"))?;
+    if let Some(patches) =
+        crate::patches::PatchSet::load_macho(&request.title_id, request.toolkit.patches())
+    {
+        let states = patches
+            .apply_macho(&eboot, request.resolution.as_deref())
+            .map_err(|e| UnlockError::Io {
+                context: "apply Mach-O patches".into(),
+                source: io::Error::other(e),
+            })?;
+        for (name, state) in states {
+            reporter.log(format!("{} patch {name}: {state}", request.title_id));
+        }
+    }
+    let vulkan = request.toolkit.root().join("vulkan");
+    for name in ["libvulkan.1.dylib", "libMoltenVK.dylib"] {
+        fs::copy(vulkan.join(name), copy.join("libs").join(name))
+            .map_err(io_context(format!("copy {name}")))?;
+    }
+    let mut icd: serde_json::Value = serde_json::from_slice(
+        &fs::read(vulkan.join("MoltenVK_icd.json"))
+            .map_err(io_context("read MoltenVK manifest"))?,
+    )
+    .map_err(|e| UnlockError::Io {
+        context: "read MoltenVK manifest".into(),
+        source: io::Error::other(e),
+    })?;
+    let driver = icd
+        .get_mut("ICD")
+        .and_then(|v| v.as_object_mut())
+        .ok_or_else(|| UnlockError::Io {
+            context: "MoltenVK manifest has no ICD object".into(),
+            source: io::Error::from(io::ErrorKind::InvalidData),
+        })?;
+    driver.insert("library_path".into(), "../../libs/libMoltenVK.dylib".into());
+    let icd_dir = copy.join("vulkan/icd.d");
+    fs::create_dir_all(&icd_dir).map_err(io_context("create Vulkan manifest folder"))?;
+    fs::write(
+        icd_dir.join("MoltenVK_icd.json"),
+        serde_json::to_vec_pretty(&icd).map_err(|e| UnlockError::Io {
+            context: "encode MoltenVK manifest".into(),
+            source: io::Error::other(e),
+        })?,
+    )
+    .map_err(io_context("write MoltenVK manifest"))?;
+    Ok(())
 }
 
 fn now_utc() -> String {

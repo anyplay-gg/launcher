@@ -156,7 +156,7 @@ impl Shell {
     }
 }
 
-/// The environment variable that picks the graphics API (`dx12`, `vulkan` or `both`); the launcher
+/// The environment variable that picks the graphics API (`metal`, `dx12`, `vulkan` or `both`); the launcher
 /// sets it to `vulkan` itself when DirectX 12 has no usable GPU.
 pub const GPU_ENV: &str = "ANYPS5_GPU";
 
@@ -164,7 +164,7 @@ pub const GPU_ENV: &str = "ANYPS5_GPU";
 ///
 /// * One API, never OpenGL (its probing crashes some AMD drivers). On Windows that is DirectX 12:
 ///   enumerating Vulkan as well loads every Vulkan driver layer and probes each GPU, seconds
-///   before the first frame, for a choice DirectX 12 makes as well. Elsewhere it is Vulkan.
+///   before the first frame, for a choice DirectX 12 makes as well. macOS uses Metal; Linux uses Vulkan.
 ///   `ANYPS5_GPU` overrides it.
 /// * The low-power GPU first, so a laptop does not wake its discrete GPU to draw a launcher.
 ///   `ANYPS5_POWER=high` turns that round. A software renderer is no choice on Windows: with
@@ -179,7 +179,9 @@ pub fn restrict_backends(options: &mut eframe::NativeOptions) {
         Ok("vulkan") => Backends::VULKAN,
         Ok("both") => Backends::VULKAN | Backends::DX12,
         Ok("dx12") => Backends::DX12,
+        Ok("metal") => Backends::METAL,
         _ if cfg!(windows) => Backends::DX12,
+        _ if cfg!(target_os = "macos") => Backends::METAL,
         _ => Backends::VULKAN,
     };
     let low_power = std::env::var("ANYPS5_POWER").as_deref() != Ok("high");

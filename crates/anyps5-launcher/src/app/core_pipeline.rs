@@ -171,6 +171,7 @@ impl CorePipeline {
         };
         request.to_intel = HostCpu::detect().wants_intel_conversion(mode);
         request.relink_flags = prefs.game_settings(&game.id).relink;
+        request.resolution = prefs.game_settings(&game.id).resolution;
         // Unlocking again replaces the copy; its saves are backed up first.
         request.backup_dir = Some(self.paths.game_backups_dir(&game.title_id));
         if !self.queue.enqueue(request) {
