@@ -234,6 +234,9 @@ mod imp {
                 self.dress = Dress::new(mtm, window);
                 if self.dress.is_some() {
                     self.menu = Some(install_menu(mtm));
+                    // The launcher is dark only: the window takes the dark look, and with it the blur behind
+                    // it (the title bar, the traffic lights and the menus too).
+                    ctx.send_viewport_cmd(egui::ViewportCommand::SetTheme(egui::SystemTheme::Dark));
                 }
             }
             if self.polled.is_none_or(|at| at.elapsed() >= POLL) {
