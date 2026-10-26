@@ -17,7 +17,7 @@ use crate::ui::i18n::{Arg, Key};
 use crate::ui::icons::Icon;
 
 /// Cancel is the second button of the card, and where its focus opens.
-const CANCEL_ROW: usize = 1;
+pub(super) const CANCEL_ROW: usize = 1;
 
 /// What is being asked about.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -163,7 +163,11 @@ impl OnlinePanel {
         // The card shows the destructive answer first and Cancel last (SYSTEM.md 3); the focus
         // opens on Cancel (`ask`).
         rows.push(Row::command("confirmYes", label).icon(icon).destructive());
-        rows.push(Row::command("confirmCancel", language.text(Key::Cancel)).icon(Icon::X));
+        rows.push(
+            Row::command("confirmCancel", language.text(Key::Cancel))
+                .icon(Icon::X)
+                .refusal(),
+        );
         (title, Some(note))
     }
 

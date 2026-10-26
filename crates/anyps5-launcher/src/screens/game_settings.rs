@@ -462,7 +462,9 @@ impl UninstallPanel {
                 Row::command("uninstall", language.text(Key::Uninstall))
                     .icon(Icon::TRASH)
                     .destructive(),
-                Row::command("cancel", language.text(Key::Cancel)).icon(Icon::X),
+                Row::command("cancel", language.text(Key::Cancel))
+                    .icon(Icon::X)
+                    .refusal(),
             ]
         };
         if self.side.is_open() {
@@ -484,7 +486,7 @@ impl UninstallPanel {
             Extra::UninstallBacksUp.text(language)
         );
         let view = SideView {
-            title: language.text(Key::Uninstall),
+            title: Extra::UninstallTitle.text(language),
             subtitle: Some(&ask),
             question: true,
             list_id: "uninstall-rows",

@@ -320,7 +320,6 @@ impl FriendsScreen {
                         page_width - 2.0 * inset,
                         &title,
                         note,
-                        asks,
                     );
                     top + used + 22.0
                 };

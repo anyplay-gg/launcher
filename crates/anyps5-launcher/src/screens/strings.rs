@@ -246,6 +246,10 @@ pub enum Extra {
     SavesRestoreFailed,
     /// Toast.
     SavesCorrupt,
+    /// The removal question's title.
+    UninstallTitle,
+    /// The restore question's title.
+    SavesRestoreTitle,
     /// Added to the removal question.
     UninstallBacksUp,
     /// Toast: the removal did not start.
@@ -459,6 +463,8 @@ impl Extra {
             Extra::SavesCorrupt => {
                 "This backup is damaged. Your saves were not changed. Pick another backup."
             }
+            Extra::UninstallTitle => "Remove this installation?",
+            Extra::SavesRestoreTitle => "Restore this backup?",
             Extra::UninstallBacksUp => "Your saves and trophies are backed up first.",
             Extra::UninstallNeedsBackup => {
                 "Could not back up the saves, so the game was not removed. Check the free disk space and try again."
@@ -667,6 +673,8 @@ impl Extra {
             }
             Extra::SavesRestoreFailed => "Yedek geri yüklenemedi. Kayıtların değişmedi.",
             Extra::SavesCorrupt => "Bu yedek hasarlı. Kayıtların değişmedi. Başka bir yedek seç.",
+            Extra::UninstallTitle => "Bu kurulum kaldırılsın mı?",
+            Extra::SavesRestoreTitle => "Bu yedek geri yüklensin mi?",
             Extra::UninstallBacksUp => "Kayıtların ve kupaların önce yedeklenir.",
             Extra::UninstallNeedsBackup => {
                 "Kayıtlar yedeklenemedi, bu yüzden oyun kaldırılmadı. Boş disk alanını kontrol edip yeniden dene."
@@ -690,7 +698,7 @@ impl Extra {
         substitute(self.text(language), args)
     }
 
-    pub const ALL: [Extra; 153] = [
+    pub const ALL: [Extra; 155] = [
         Extra::Toolkit,
         Extra::UpdateCheck,
         Extra::UpdateCheckDetail,
@@ -839,6 +847,8 @@ impl Extra {
         Extra::SavesFailed,
         Extra::SavesRestoreFailed,
         Extra::SavesCorrupt,
+        Extra::UninstallTitle,
+        Extra::SavesRestoreTitle,
         Extra::UninstallBacksUp,
         Extra::UninstallNeedsBackup,
         Extra::SavesRestoreIncomplete,
