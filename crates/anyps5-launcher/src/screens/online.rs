@@ -472,6 +472,38 @@ impl OnlinePanel {
         }
     }
 
+    /// A page with nothing on it but its one way forward is a state page: what this place is, how
+    /// to fill it, one button (Friends without friends, Messages without conversations).
+    fn empty_page(&self, data: &OnlineData<'_>, rows: &[Row]) -> Option<EmptyPage> {
+        let language = data.language;
+        let ids: Vec<RowId> = rows.iter().map(|r| r.id).collect();
+        let label = |id: RowId| rows.iter().find(|r| r.id == id).map(|r| r.title.clone());
+        match (&self.page, ids.as_slice()) {
+            (Page::Home, ["noFriends", "addFriend"]) => Some(EmptyPage {
+                icon: Icon::USERS,
+                title: FX::NoFriendsTitle.text(language).to_owned(),
+                note: Some(FX::NoFriendsNote.text(language).to_owned()),
+                label: label("addFriend")?,
+                action: "addFriend",
+            }),
+            (Page::Messages, ["none", "openFriends"]) => Some(EmptyPage {
+                icon: Icon::ENVELOPE_SIMPLE,
+                title: FX::NoConversationsTitle.text(language).to_owned(),
+                note: Some(FX::NoConversationsNote.text(language).to_owned()),
+                label: label("openFriends")?,
+                action: "openFriends",
+            }),
+            (Page::Messages, ["none", "retryList"]) => Some(EmptyPage {
+                icon: Icon::CLOUD,
+                title: rows.first()?.title.clone(),
+                note: None,
+                label: label("retryList")?,
+                action: "retryList",
+            }),
+            _ => None,
+        }
+    }
+
     /// What Enter does on the focused thing when "Select" would be wrong: a field edits, a
     /// composer sends. `None` is "Select". The hint bar of the screen says it.
     pub fn enter_hint(&self, ctx: &Context, data: &OnlineData<'_>) -> Option<&'static str> {
@@ -787,47 +819,76 @@ impl OnlinePanel {
         };
         // Each kind of page keeps its own scroll: walking the rail never lands on an old offset.
         let list_id = ("online-rows", std::mem::discriminant(&self.page));
-        let events = match self.page.clone() {
-            Page::Party => {
-                self.room_draw(shell, ui, data, open && focused, &mut actions);
+        let empty = self.empty_page(data, &rows);
+        let events = if let Some(state) = empty {
+            let at = rows::position(&rows, state.action).unwrap_or(0);
+            let room = ui.available_rect_before_wrap();
+            let clicked = crate::ui::state_page::show(
+                ui,
+                room,
+                &crate::ui::state_page::StatePage {
+                    icon: state.icon,
+                    title: &state.title,
+                    note: state.note.as_deref(),
+                    loading: false,
+                    action: Some(&state.label),
+                },
+                focused && self.side.nav.row == at,
+            );
+            if clicked {
+                vec![
+                    rows::ListEvent::Focus(at),
+                    rows::ListEvent::Effect {
+                        row: at,
+                        effect: crate::ui::focus::PanelEffect::Activate { row: at },
+                    },
+                ]
+            } else {
                 Vec::new()
             }
-            Page::Messages if self.chat_is_list(data) => {
-                self.chat_list_draw(ui, data, open && focused, &mut actions);
-                Vec::new()
+        } else {
+            match self.page.clone() {
+                Page::Party => {
+                    self.room_draw(shell, ui, data, open && focused, &mut actions);
+                    Vec::new()
+                }
+                Page::Messages if self.chat_is_list(data) => {
+                    self.chat_list_draw(ui, data, open && focused, &mut actions);
+                    Vec::new()
+                }
+                Page::Conversation(_) | Page::MessageRequest(_) if self.chat_is_thread(data) => {
+                    self.chat_thread_draw(ui, data, open && focused, &mut actions);
+                    Vec::new()
+                }
+                Page::Feed if self.feed_is_list(data) => {
+                    self.feed_draw(ui, data, open && focused, &mut actions);
+                    Vec::new()
+                }
+                Page::Feed => {
+                    let (icon, title, note) = self.feed_state(data);
+                    let language = data.language;
+                    rows::list_with_header(ui, list_id, &mut rows, &opts, |ui| {
+                        feed::paint_state(
+                            ui,
+                            icon,
+                            title.text(language),
+                            note.map(|n| n.text(language)),
+                        );
+                    })
+                }
+                Page::Confirm(..) => {
+                    let card = dialog::Card {
+                        id: "online-confirm",
+                        title: &head,
+                        message: sentence.as_deref(),
+                        language: data.language,
+                        focus: self.side.nav.row,
+                        force: None,
+                    };
+                    dialog::draw(ctx, open, &card, &rows).unwrap_or_default()
+                }
+                _ => rows::list(ui, list_id, &mut rows, &opts),
             }
-            Page::Conversation(_) | Page::MessageRequest(_) if self.chat_is_thread(data) => {
-                self.chat_thread_draw(ui, data, open && focused, &mut actions);
-                Vec::new()
-            }
-            Page::Feed if self.feed_is_list(data) => {
-                self.feed_draw(ui, data, open && focused, &mut actions);
-                Vec::new()
-            }
-            Page::Feed => {
-                let (icon, title, note) = self.feed_state(data);
-                let language = data.language;
-                rows::list_with_header(ui, list_id, &mut rows, &opts, |ui| {
-                    feed::paint_state(
-                        ui,
-                        icon,
-                        title.text(language),
-                        note.map(|n| n.text(language)),
-                    );
-                })
-            }
-            Page::Confirm(..) => {
-                let card = dialog::Card {
-                    id: "online-confirm",
-                    title: &head,
-                    message: sentence.as_deref(),
-                    language: data.language,
-                    focus: self.side.nav.row,
-                    force: None,
-                };
-                dialog::draw(ctx, open, &card, &rows).unwrap_or_default()
-            }
-            _ => rows::list(ui, list_id, &mut rows, &opts),
         };
         if open {
             let (changes, texts) = rows::apply_mouse(shell, &mut self.side.nav, &rows, events);
@@ -1851,6 +1912,15 @@ pub(super) fn appear_offline_row(data: &OnlineData<'_>) -> Row {
     .detail(T::AppearOfflineDetail.text(language))
 }
 
+/// The words and the button of a page that has nothing else (see `OnlinePanel::empty_page`).
+struct EmptyPage {
+    icon: Icon,
+    title: String,
+    note: Option<String>,
+    label: String,
+    action: RowId,
+}
+
 /// How many friend requests the friends list answers in place; the rest wait behind a row.
 const MAX_INLINE_REQUESTS: usize = 5;
 
@@ -2425,6 +2495,9 @@ mod tests {
             None,
             "an action selects"
         );
+    }
+
+    #[test]
     fn the_cloud_is_a_note_under_sign_out_not_a_row_between_cards() {
         let online = signed_in();
         let mut panel = OnlinePanel::default();

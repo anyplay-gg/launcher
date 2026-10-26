@@ -437,7 +437,8 @@ pub fn thread(data: &OnlineData<'_>, local: &Local, id: &str, shown: usize) -> O
         }
     }
     let typers = social.typers(id, u64::try_from(now).unwrap_or(0), me);
-    if let Some(first) = typers.first() {
+    // Offline nobody is typing for the player: the dots would be stale.
+    if let Some(first) = typers.first().filter(|_| online.is_online()) {
         let line = super::social::typing_text(&typers, language);
         let crowd = conversation.kind != ConversationKind::Direct;
         items.push(Item::Typing(crowd.then(|| face(data, local, first)), line));
@@ -806,6 +807,10 @@ impl OnlinePanel {
             return None;
         };
         let language = data.language;
+        // A bar in the field's place (offline, paused, blocked) has no field to edit or send from.
+        if !matches!(composer(data, id), Some(Composer::Write { .. })) {
+            return None;
+        }
         match self.chat.focus {
             ThreadFocus::Composer(Slot::Send) => Some(S::Send.text(language)),
             ThreadFocus::Composer(Slot::Field) => {
@@ -2394,6 +2399,9 @@ fn button_bar(
     if response.clicked() {
         events.push(Mouse::Press(ThreadFocus::Bar));
     }
+    // The reason is painted, so say it to a screen reader too.
+    ui.interact(rect, ui.id().with(("bar-note", note)), Sense::hover())
+        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, note));
     let line = one_line(
         &painter,
         ty::LABEL,
@@ -3074,6 +3082,9 @@ mod tests {
         // Offline there is no field to write in.
         online.cloud = Some(Cloud::Offline);
         assert_eq!(composer(&data(&online), "d"), Some(Composer::Offline));
+        // The field is gone, so is its hint, even with the focus still on it.
+        panel.chat.focus = ThreadFocus::Composer(Slot::Field);
+        assert_eq!(panel.chat_enter_hint(&ctx, &data(&online)), None);
     }
 
     #[test]

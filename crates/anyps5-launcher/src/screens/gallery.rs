@@ -318,6 +318,8 @@ pub enum OnlineLook {
     ConversationOffline,
     /// The party room while offline: nobody can be invited.
     PartyOffline,
+    /// No party and no cloud: the page says so and offers Try Again.
+    PartyNoneOffline,
     /// A friend with the longest handle and game name, focused on the list: the chip reads them.
     FriendsLong,
     /// The party room with the same long names on a tile.
@@ -796,6 +798,7 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "friends-connecting" => ScreenPage::Online(OnlineLook::FriendsConnecting),
         "friends-friend-offline" => ScreenPage::Online(OnlineLook::FriendOffline),
         "friends-conversation-offline" => ScreenPage::Online(OnlineLook::ConversationOffline),
+        "friends-party-none-offline" => ScreenPage::Online(OnlineLook::PartyNoneOffline),
         "friends-party-offline" => ScreenPage::Online(OnlineLook::PartyOffline),
         "friends-long" => ScreenPage::Online(OnlineLook::FriendsLong),
         "friends-party-long" => ScreenPage::Online(OnlineLook::PartyLong),
@@ -1067,6 +1070,10 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         OnlineLook::FriendsConnecting => state.cloud = None,
         OnlineLook::PartyNone => {
             state.social.apply_party(None);
+        }
+        OnlineLook::PartyNoneOffline => {
+            state.social.apply_party(None);
+            state.cloud = Some(Cloud::Offline);
         }
         OnlineLook::PartyPair | OnlineLook::PartyAlone => {
             if let Some(party) = &mut state.social.party {
@@ -2738,9 +2745,10 @@ impl ScreenGallery {
                         self.friends.focus_row("friendRow", 1, &data);
                     }
                     OnlineLook::FriendsRail => self.friends.focus_rail(),
-                    OnlineLook::PartyNone | OnlineLook::PartyOffline | OnlineLook::PartyLong => {
-                        self.friends.show_page(Page::Party, &data)
-                    }
+                    OnlineLook::PartyNone
+                    | OnlineLook::PartyNoneOffline
+                    | OnlineLook::PartyOffline
+                    | OnlineLook::PartyLong => self.friends.show_page(Page::Party, &data),
                     OnlineLook::FriendOffline => self
                         .friends
                         .show_page(Page::Friend(anyps5_core::online::api::AccountId(2)), &data),

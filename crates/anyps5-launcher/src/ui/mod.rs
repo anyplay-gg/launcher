@@ -52,6 +52,7 @@ pub mod ps_button;
 pub mod reveal;
 pub mod shade;
 pub mod sound;
+pub mod state_page;
 pub mod text;
 pub mod theme;
 

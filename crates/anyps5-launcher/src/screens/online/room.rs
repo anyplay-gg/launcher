@@ -20,6 +20,7 @@ use super::local::Local;
 use super::social::free_places;
 use super::{OnlineAction, OnlineData, OnlinePanel, Page};
 use crate::screens::clamped;
+use crate::screens::friends_strings::FriendsText as FX;
 use crate::screens::online_call_strings::CallText as CT;
 use crate::screens::online_screen_strings::ScreenText as X;
 use crate::screens::online_social_strings::SocialText as S;
@@ -58,6 +59,8 @@ const MARK_GLYPH: f32 = 14.0;
 const CARD_HEIGHT: f32 = 76.0;
 /// The air between two groups of the page: at least twice the gap inside one.
 const GROUP_GAP: f32 = space::XL;
+/// The room the page without a party takes for its state.
+const EMPTY_HEIGHT: f32 = 300.0;
 
 const NAME: TextStyle = ty::ROW_TITLE;
 const STATE: TextStyle = ty::DETAIL_LARGE;
@@ -257,8 +260,10 @@ pub(super) struct Room {
     pub cards: Vec<Card>,
     pub voice: Vec<Button>,
     pub actions: Vec<Button>,
-    /// The words of the empty page.
+    /// The words of the empty page: title, note and the label of its one button.
+    pub empty_title: String,
     pub empty_note: String,
+    pub empty_action: String,
     pub primary: Option<Stop>,
 }
 
@@ -489,6 +494,20 @@ impl Room {
                 )),
             })
             .collect();
+        // Offline a party cannot start: the page says so and offers Try Again, its one button.
+        let empty = if online.is_online() {
+            (
+                FX::NotInParty.text(language),
+                FX::NotInPartyNote.text(language),
+                S::StartParty.text(language),
+            )
+        } else {
+            (
+                FX::OfflineTitle.text(language),
+                FX::PartyOfflineNote.text(language),
+                FX::TryAgain.text(language),
+            )
+        };
         let mut voice = Vec::new();
         if online.is_online() {
             voice.push(Button {
@@ -502,9 +521,9 @@ impl Room {
             in_party: false,
             cards,
             voice,
-            empty_note: crate::screens::friends_strings::FriendsText::NotInPartyNote
-                .text(language)
-                .to_owned(),
+            empty_title: empty.0.to_owned(),
+            empty_note: empty.1.to_owned(),
+            empty_action: empty.2.to_owned(),
             primary: Some(Stop::Start),
             ..Room::default()
         }
@@ -727,6 +746,7 @@ impl OnlinePanel {
                 }
             }
             Stop::Seat | Stop::Invite => self.run("inviteFriends", data, actions),
+            Stop::Start if !online.is_online() => actions.push(OnlineAction::Reconnect),
             Stop::Start => self.run("startParty", data, actions),
             Stop::Card(n) => {
                 let Some((_, action)) = room.cards.get(n).and_then(|c| c.action.clone()) else {
@@ -875,7 +895,7 @@ fn draw(
                 } else {
                     let top = ui.cursor().min.y;
                     let here = focus.is_some_and(|f| f.row == row);
-                    if empty_state(ui, room, here, language) {
+                    if empty_state(ui, room, here) {
                         view.pressed = Some(RoomFocus { row, col: 0 });
                     }
                     note(ui, top, &mut geometry);
@@ -1231,62 +1251,22 @@ fn seat_tile(ui: &mut Ui, width: f32, focused: bool, language: Language) -> bool
     response.clicked()
 }
 
-/// The page without a party: a quiet picture, one sentence and the one action.
-fn empty_state(ui: &mut Ui, room: &Room, focused: bool, language: Language) -> bool {
-    let painter = ui.painter().clone();
-    let width = ui.available_width();
-    ui.add_space(space::XL);
-    let disc = 96.0;
-    let (rect, response) = ui.allocate_exact_size(vec2(width, disc), Sense::hover());
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::Role::Label, true, S::StartPartyDetail.text(language))
-    });
-    let centre = rect.center();
-    painter.circle_filled(centre, disc * 0.5, color::surface_row());
-    painter.circle_stroke(
-        centre,
-        disc * 0.5,
-        egui::Stroke::new(1.0, color::hairline_control()),
-    );
-    painter.text(
-        centre,
-        Align2::CENTER_CENTER,
-        Icon::USERS.glyph(),
-        Icon::USERS.font(36.0, false),
-        color::text_detail(),
-    );
-    ui.add_space(space::L);
-    let wrap = (width - 48.0).min(360.0);
-    let mut job = egui::text::LayoutJob::simple(
-        room.empty_note.clone(),
-        ty::NOTE.font(),
-        egui::Color32::PLACEHOLDER,
-        wrap,
-    );
-    job.halign = Align::Center;
-    job.sections[0].format.line_height = Some(1.4 * ty::NOTE.size);
-    let galley = painter.layout_job(job);
-    let (note, _) = ui.allocate_exact_size(vec2(width, galley.size().y), Sense::hover());
-    painter.galley(
-        pos2(note.center().x, note.min.y),
-        galley,
-        color::text_detail(),
-    );
-    ui.add_space(space::XL);
-    ui.allocate_ui_with_layout(
-        vec2(width, size::CONTROL_L),
-        Layout::top_down(Align::Center),
-        |ui| {
-            ConsoleButton::new(S::StartParty.text(language))
-                .icon(Icon::USER_PLUS)
-                .size(ControlSize::Large)
-                .prominent(true)
-                .focused(focused)
-                .show(ui)
-                .clicked()
+/// The page without a party: the shared state page (what this is, how to fill it, one button).
+fn empty_state(ui: &mut Ui, room: &Room, focused: bool) -> bool {
+    let (rect, _) =
+        ui.allocate_exact_size(vec2(ui.available_width(), EMPTY_HEIGHT), Sense::hover());
+    crate::ui::state_page::show(
+        ui,
+        rect,
+        &crate::ui::state_page::StatePage {
+            icon: Icon::USERS,
+            title: &room.empty_title,
+            note: Some(&room.empty_note),
+            loading: false,
+            action: Some(&room.empty_action),
         },
+        focused,
     )
-    .inner
 }
 
 /// A card: what the party can do together, with its one button on the right. Returns whether the
