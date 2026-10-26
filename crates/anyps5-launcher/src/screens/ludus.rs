@@ -451,7 +451,11 @@ mod tests {
             address.control,
             Control::Info(Some("192.168.178.20:45989".into()))
         );
-        assert_eq!(address.icon, Some(Icon::GLOBE), "as the phone server's Address");
+        assert_eq!(
+            address.icon,
+            Some(Icon::GLOBE),
+            "as the phone server's Address"
+        );
         let first = rows.iter().find(|r| r.id == "ludus0").unwrap();
         assert_eq!(first.title, "Remove Pixel 8");
         assert_eq!(first.detail.as_deref(), Some("Paired on 2026-10-24"));
