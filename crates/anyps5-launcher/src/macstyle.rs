@@ -271,7 +271,7 @@ mod imp {
                 // SAFETY: as above.
                 let view: Retained<NSVisualEffectView> =
                     unsafe { msg_send![mtm.alloc::<NSVisualEffectView>(), initWithFrame: bounds] };
-                view.setMaterial(NSVisualEffectMaterial::HUDWindow);
+                view.setMaterial(NSVisualEffectMaterial::Sidebar);
                 view.setBlendingMode(NSVisualEffectBlendingMode::BehindWindow);
                 view.setState(NSVisualEffectState::Active);
                 Retained::into_super(view)

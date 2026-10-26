@@ -114,9 +114,9 @@ pub struct Backdrop {
 }
 
 /// The theme still's opacity over the plate while the window is see-through (docs/DESIGN.md 19.2).
-pub const GLASS_VEIL: f32 = 0.62;
+pub const GLASS_VEIL: f32 = 0.40;
 /// Black under the veil: the least dark the window gets over the system blur (alpha 0..1).
-pub const GLASS_PLATE: f32 = 0.5;
+pub const GLASS_PLATE: f32 = 0.35;
 
 impl Backdrop {
     pub fn new(theme: Theme) -> Self {

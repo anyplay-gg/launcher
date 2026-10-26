@@ -2906,9 +2906,9 @@ The window is **see-through** when all of these hold: the player's setting "Glas
 
 Layers, from the back:
 
-1. **The system blur**, a view behind the content view in the window's frame view: `NSGlassEffectView` (Liquid Glass, style Regular) on macOS 26 and newer, found at run time by class lookup; `NSVisualEffectView` (material HUD window, behind window, always active) on earlier systems. `ANYPLAY_GLASS_MATERIAL=blur` forces the older one. Hidden, and the window made opaque, when the window is not see-through.
-2. **A plate**: black 0.50 over the whole window (`GLASS_PLATE`).
-3. **The theme**, a still of the theme background (the shader frame at 260 s, the same as the gallery stills) at opacity 0.62 (`GLASS_VEIL`). Nothing moves: the backdrop clock stops and asks for no frames, and the offscreen image is not redrawn, so an idle launcher costs nothing. The theme's colour still shows through as a tint, which is what makes the glass this launcher's and not any window's.
+1. **The system blur**, a view behind the content view in the window's frame view: `NSGlassEffectView` (Liquid Glass, style Regular) on macOS 26 and newer, found at run time by class lookup; `NSVisualEffectView` (material sidebar, behind window, always active) on earlier systems. `ANYPLAY_GLASS_MATERIAL=blur` forces the older one. Hidden, and the window made opaque, when the window is not see-through.
+2. **A plate**: black 0.35 over the whole window (`GLASS_PLATE`).
+3. **The theme**, a still of the theme background (the shader frame at 260 s, the same as the gallery stills) at opacity 0.40 (`GLASS_VEIL`). Nothing moves: the backdrop clock stops and asks for no frames, and the offscreen image is not redrawn, so an idle launcher costs nothing. The theme's colour still shows through as a tint, which is what makes the glass this launcher's and not any window's.
 4. The game artwork, scrims and the UI, unchanged.
 5. **Glass panels** (section 4) keep their recipe; each is drawn at 0.96 of its opacity (`WINDOW_GLASS_PANEL`), so the window is faintly present through them. Text sits on the panels and on the plate, never on the bare blur.
 
