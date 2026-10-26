@@ -28,7 +28,7 @@ use crate::ui::anim::{AnimExt, Motion, lerp};
 use crate::ui::chrome::{self, TileImage, TileOverlay, TileStyle};
 use crate::ui::components::{
     self as components, ConsoleButton, ControlSize, HintSet, IconButton, IndeterminateLine,
-    ProgressLine, Variant, hint_bar, hint_bar_size,
+    ProgressLine, Variant, hint_bar_set, hint_bar_set_size, hint_bar_size,
 };
 use crate::ui::focus::HomeFocus;
 use crate::ui::i18n::{Arg, Key, Language, byte_text, substitute};
@@ -1022,7 +1022,7 @@ fn back_does_something(model: &Model) -> bool {
 
 fn hints(ui: &mut Ui, language: Language, set: HintSet, screen: Rect) {
     let painter = ui.painter().clone();
-    let (width, height) = hint_bar_size(&painter, language, set);
+    let (width, height) = hint_bar_set_size(&painter, language, set);
     let rect = Rect::from_min_size(
         pos2(
             screen.max.x - pad::HOME_X - width,
@@ -1030,7 +1030,7 @@ fn hints(ui: &mut Ui, language: Language, set: HintSet, screen: Rect) {
         ),
         vec2(width, height),
     );
-    place(ui, rect, |ui| hint_bar(ui, language, set));
+    place(ui, rect, |ui| hint_bar_set(ui, language, set));
 }
 
 fn hero(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<Press>) {
