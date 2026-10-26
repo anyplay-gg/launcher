@@ -1054,6 +1054,11 @@ leaves the "Back" hint out (`HintSet::without_back`): the bar never repeats a co
 **Messages** (tokens for the social area): `color::bubble_other` white 0.10, `bubble_own` 0.16, `composer` 0.10 with the control hairline;
 gaps `space::BUBBLE_IN_GROUP` 4, `BUBBLE_BETWEEN` 16, `BUBBLE_DAY` 24. A system row is centred 14 regular in `text_note` with no bubble.
 
+**Motion and avatars (PR 3 of the round).** Hover, press, progress and the reduced-motion focus use `Bezier::STRONG_OUT` (0.23, 1, 0.32, 1)
+at the same durations (120, 100, 350, 120 ms): the answer to a touch is seen at once. The exit of the old hero keeps the softer ease-out it was
+tuned with. The initial in the call card and the Play Together card is `ty::ITEM_TITLE` in `readable_ink` of the gradient's middle
+(`home::avatar_middle`), not white: white on Mint, Gold or White was 1.2 to 2.2:1.
+
 ## 4. Materials and blur on the GPU
 
 SwiftUI `.ultraThinMaterial` is a backdrop blur with a light tint and some saturation; it is used under every panel. egui has no
