@@ -2236,10 +2236,11 @@ fn composer_view(
             let button_h = ControlSize::Medium.height();
             let slot = |from_start: bool| {
                 let w = ANSWER_SLOT;
+                // On the column's two edges, like the header and the bubbles.
                 let x = if from_start {
-                    rect.min.x + space::S
+                    rect.min.x
                 } else {
-                    rect.max.x - space::S - w
+                    rect.max.x - w
                 };
                 Rect::from_min_size(pos2(x, rect.center().y - button_h * 0.5), vec2(w, button_h))
             };
