@@ -1047,6 +1047,13 @@ secondary with the danger ink; icons are 14, 17, 18, 20, 24 or 36 dp; the only m
 page draws no focus ring of its own; the case rule of 3.10 stands, and the verbs are Cancel, Back, Close, Done, Continue, Try
 Again, Remove, Delete, Sign In, Later.
 
+**The hint bar has one place (PR 2 of the round).** Every full-screen area shows it at the bottom right, where Home has it: the right edge
+`pad::HOME_X` in, the baseline `pad::HINT_Y` up (`screens::footer_hints`), never in a header. A screen with a Back button on screen
+leaves the "Back" hint out (`HintSet::without_back`): the bar never repeats a control the player can see.
+
+**Messages** (tokens for the social area): `color::bubble_other` white 0.10, `bubble_own` 0.16, `composer` 0.10 with the control hairline;
+gaps `space::BUBBLE_IN_GROUP` 4, `BUBBLE_BETWEEN` 16, `BUBBLE_DAY` 24. A system row is centred 14 regular in `text_note` with no bubble.
+
 ## 4. Materials and blur on the GPU
 
 SwiftUI `.ultraThinMaterial` is a backdrop blur with a light tint and some saturation; it is used under every panel. egui has no
@@ -1468,6 +1475,12 @@ If the game never opened a window and no diagnosis was found: toast `startFailed
 | out of memory | `diagnosisOutOfMemory` | `VK_ERROR_OUT_OF_DEVICE_MEMORY`, `std::bad_alloc`, "out of memory" |
 | engine error | `diagnosisEngineError` (message, cut at 200 chars + ellipsis) | any other uncaught engine exception |
 | crashed | `diagnosisCrashed` (exception) | the OS crash report, e.g. `EXC_BAD_ACCESS (SIGSEGV)` |
+
+**Every sentence names a way out (0.2.8, `ui/i18n.rs` `ours`).** GPU lost: update the graphics driver, start again. Out of
+memory: close other programs, start again. Engine error and crash: start again, and if it repeats send a report from Options > Log
+(the part that varies in length, the function, the engine message or the exception, goes last so the step stays visible when the hero line clips at two lines). Unsupported function: send a
+report so it can be added. A CPU that lacks an instruction set is a fact about the PC and has no step. `reportFailed` says
+"Check that the disk has space, then try again." (a test in `screens/log.rs` checks that each sentence has a step).
 
 **Report**: "Make a Report" writes a text file (`<titleID>-yyyyMMdd-HHmmss.txt` in the Reports folder) with: title line + ISO date,
 Game (name, title ID, version), machine (model, CPU, RAM GB), OS version, launcher version, toolkit version, Reason (sentence or
