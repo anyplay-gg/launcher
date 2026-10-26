@@ -62,6 +62,8 @@ pub enum Scene {
     HomePreparingWaiting,
     HomeRelinking,
     HomeFailed,
+    HomeFailedLong,
+    HomeLongTitle,
     HomeQueued,
     HomeRunning,
     /// The running game with the Home button's quick panel in front.
@@ -138,6 +140,8 @@ impl Scene {
             "home-preparing-waiting" => Scene::HomePreparingWaiting,
             "home-relinking" => Scene::HomeRelinking,
             "home-failed" => Scene::HomeFailed,
+            "home-failed-long" => Scene::HomeFailedLong,
+            "home-long-title" => Scene::HomeLongTitle,
             "home-queued" => Scene::HomeQueued,
             "home-running" => Scene::HomeRunning,
             "home-ingame" => Scene::HomeInGame,
@@ -177,7 +181,7 @@ impl Scene {
         })
     }
 
-    pub const ALL_NAMES: [&'static str; 46] = [
+    pub const ALL_NAMES: [&'static str; 48] = [
         "onboarding0",
         "onboarding1",
         "onboarding2",
@@ -193,6 +197,8 @@ impl Scene {
         "home-preparing-waiting",
         "home-relinking",
         "home-failed",
+        "home-failed-long",
+        "home-long-title",
         "home-queued",
         "home-running",
         "home-ingame",
@@ -659,6 +665,24 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
                 )
                 .to_owned(),
             );
+        }
+        Scene::HomeFailedLong => {
+            m.selected = at(4);
+            m.failures.insert(
+                ids[at(4)].clone(),
+                crate::screens::prepare_strings::failure(
+                    anyps5_core::unlock::FailureKind::LocationMissing,
+                    m.language(),
+                )
+                .to_owned(),
+            );
+        }
+        Scene::HomeLongTitle => {
+            m.selected = at(1);
+            if let Some(game) = m.games.iter_mut().find(|g| g.id == ids[at(1)]) {
+                game.name = "The Extraordinarily Long Title of a Remastered Collection: Director's Cut, Complete Edition".into();
+            }
+            m.focus = HomeFocus::Actions(0);
         }
         Scene::HomeQueued => {
             m.selected = at(4);

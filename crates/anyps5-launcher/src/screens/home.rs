@@ -39,7 +39,7 @@ use crate::ui::input;
 use crate::ui::intro;
 use crate::ui::pad_info;
 use crate::ui::text;
-use crate::ui::theme::{self, Weight, color, pad, size, ty, white};
+use crate::ui::theme::{self, Weight, color, pad, size, space, ty, white};
 
 /// Gap between the stacked parts of the hero.
 const HERO_GAP: f32 = 22.0;
@@ -50,6 +50,9 @@ const FACTS_ABOVE: f32 = 46.0;
 const FACTS_SPACING: f32 = 48.0;
 /// Between a fact's overline and its value.
 const FACT_GAP: f32 = 6.0;
+/// Most facts in the row, and the gap between a value and the quiet note beside it.
+const MAX_FACTS: usize = 4;
+const FACT_NOTE_GAP: f32 = 8.0;
 /// Between the facts and the line that asks "How did it run?" below them. The row is kept free
 /// whether it shows or not, so nothing moves when it appears or goes.
 const ASK_GAP: f32 = 18.0;
@@ -235,8 +238,8 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
         .show(&mut row);
     if update_waiting {
         let dot = response.rect.right_top() + vec2(-8.0, 8.0);
-        painter.circle_filled(dot, 6.0, theme::black(0.62));
-        painter.circle_filled(dot, 4.0, white(0.92));
+        painter.circle_filled(dot, GEAR_DOT + space::XS * 0.5, theme::black(0.62));
+        painter.circle_filled(dot, GEAR_DOT, color::text());
     }
     if response.clicked() {
         presses.push(Press::Focus(HomeFocus::SETTINGS));
@@ -373,7 +376,7 @@ fn update_notice(
     } else {
         UpdateText::NoticeName.format(language, &version)
     };
-    let height = ControlSize::Small.height() + 8.0;
+    let height = ControlSize::Small.height() + space::S;
     let labels: Vec<&str> = if notice.holding {
         vec![UpdateText::CancelRestart.text(language)]
     } else {
@@ -382,19 +385,19 @@ fn update_notice(
             UpdateText::Later.text(language),
         ]
     };
-    // What it needs: the margin, the glyph, the text and its buttons, each 12 apart.
+    // What it needs: the margin, the text and its buttons, each 12 apart.
     let measure = ui.painter().clone();
-    let needed = 16.0
-        + 18.0
-        + 12.0
+    let needed = space::L
         + text::width(&measure, ty::DETAIL_LARGE, &text)
         + labels
             .iter()
             .map(|label| {
-                12.0 + 2.0 * ControlSize::Small.text_pad() + text::width(&measure, ty::CHIP, label)
+                size::CONTROL_GAP
+                    + 2.0 * ControlSize::Small.text_pad()
+                    + text::width(&measure, ty::CHIP, label)
             })
             .sum::<f32>()
-        + 4.0;
+        + space::XS;
     // One rule for drawing it and for reaching it (the model's focus order reads this).
     let fits = left_middle.x + needed <= limit_x;
     cx.model.notice_fits = fits;
@@ -412,18 +415,9 @@ fn update_notice(
             .layout(Layout::left_to_right(Align::Center)),
     );
     row.multiply_opacity(t);
-    row.spacing_mut().item_spacing.x = 12.0;
-    row.add_space(16.0);
+    row.spacing_mut().item_spacing.x = size::CONTROL_GAP;
+    row.add_space(space::L);
     let painter = row.painter().clone();
-    let glyph = 18.0;
-    let (icon, _) = row.allocate_exact_size(vec2(glyph, glyph), Sense::hover());
-    painter.text(
-        icon.center(),
-        Align2::CENTER_CENTER,
-        Icon::ARROW_CIRCLE_DOWN.glyph(),
-        Icon::ARROW_CIRCLE_DOWN.font(text::quantize_size(glyph), false),
-        color::text_label(),
-    );
     let label_width = text::width(&painter, ty::DETAIL_LARGE, &text);
     let (label, response) = row.allocate_exact_size(vec2(label_width, height), Sense::hover());
     response.widget_info(|| WidgetInfo::labeled(Role::Status, true, &group));
@@ -448,7 +442,7 @@ fn update_notice(
     let used = row.min_rect();
     let capsule = Rect::from_min_max(
         pos2(used.min.x, rect.min.y),
-        pos2(used.max.x + 4.0, rect.max.y),
+        pos2(used.max.x + space::XS, rect.max.y),
     );
     ui.painter().set(
         background,
@@ -459,6 +453,9 @@ fn update_notice(
         ),
     );
 }
+
+/// The reminder dot on the gear (radius).
+const GEAR_DOT: f32 = 4.0;
 
 /// Room the colon of the clock takes between the hours and the minutes.
 const CLOCK_COLON: f32 = 7.0;
@@ -505,8 +502,8 @@ const PHONE_STATUS_HEIGHT: f32 = 32.0;
 const PHONE_STATUS_NAME_MAX: f32 = 150.0;
 
 /// The status of a connected phone (the phone server's, or a LudusCtrl phone): its icon and name
-/// on the pills' surface, 32 high so it reads as a note beside the 44 high buttons. Not a button:
-/// nothing happens on a press. The phone server's pill wears `device-mobile`, LudusCtrl's the
+/// in quiet ink with no surface, so it reads as a status and not as a button beside the 44 high
+/// ones. Nothing happens on a press. The phone server's pill wears `device-mobile`, LudusCtrl's the
 /// game controller of its switch, so the two differ without reading. `label` is what a screen
 /// reader says. With `limit_x` it is left out (`None`) when it would reach past it.
 fn phone_status(
@@ -520,7 +517,7 @@ fn phone_status(
     let painter = ui.painter().clone();
     let shown = text::middle_truncate(&painter, ty::CHIP, name, PHONE_STATUS_NAME_MAX);
     let glyph = 18.0;
-    let width = 12.0 + glyph + 8.0 + text::width(&painter, ty::CHIP, &shown) + 14.0;
+    let width = glyph + 8.0 + text::width(&painter, ty::CHIP, &shown);
     if limit_x.is_some_and(|limit| left_middle.x + width > limit) {
         return None;
     }
@@ -533,10 +530,9 @@ fn phone_status(
     if !ui.is_rect_visible(rect) {
         return Some(rect.max.x);
     }
-    components::paint_capsule(&painter, rect, color::surface());
-    let ink = color::text_label();
+    let ink = color::text_detail();
     painter.text(
-        pos2(rect.min.x + 12.0 + glyph * 0.5, rect.center().y),
+        pos2(rect.min.x + glyph * 0.5, rect.center().y),
         Align2::CENTER_CENTER,
         icon.glyph(),
         icon.font(text::quantize_size(glyph), false),
@@ -544,7 +540,7 @@ fn phone_status(
     );
     text::paint(
         &painter,
-        pos2(rect.min.x + 12.0 + glyph + 8.0, rect.center().y),
+        pos2(rect.min.x + glyph + 8.0, rect.center().y),
         Align2::LEFT_CENTER,
         ty::CHIP,
         &shown,
@@ -554,7 +550,7 @@ fn phone_status(
 }
 
 /// The status of the connected controller: its icon and, where the pad reports one, its battery.
-/// Same surface and height as [`phone_status`]; not a button.
+/// Same look as [`phone_status`]: quiet ink, no surface; not a button.
 fn pad_status(
     ui: &mut Ui,
     left_middle: egui::Pos2,
@@ -585,7 +581,7 @@ fn pad_status(
     let text_width = shown
         .as_deref()
         .map_or(0.0, |s| 8.0 + text::width(&painter, ty::CHIP, s) + bolt);
-    let width = 12.0 + glyph + text_width + 14.0;
+    let width = glyph + text_width;
     if left_middle.x + width > limit_x {
         return None;
     }
@@ -598,10 +594,9 @@ fn pad_status(
     if !ui.is_rect_visible(rect) {
         return Some(rect.max.x);
     }
-    components::paint_capsule(&painter, rect, color::surface());
-    let ink = color::text_label();
+    let ink = color::text_detail();
     painter.text(
-        pos2(rect.min.x + 12.0 + glyph * 0.5, rect.center().y),
+        pos2(rect.min.x + glyph * 0.5, rect.center().y),
         Align2::CENTER_CENTER,
         Icon::GAME_CONTROLLER.glyph(),
         Icon::GAME_CONTROLLER.font(text::quantize_size(glyph), false),
@@ -610,7 +605,7 @@ fn pad_status(
     if let Some(shown) = shown {
         let text_rect = text::paint(
             &painter,
-            pos2(rect.min.x + 12.0 + glyph + 8.0, rect.center().y),
+            pos2(rect.min.x + glyph + 8.0, rect.center().y),
             Align2::LEFT_CENTER,
             ty::CHIP,
             &shown,
@@ -1316,15 +1311,19 @@ fn paint_hero(
         painter.galley(pos2(x, top), galley, color::text_subtitle());
     }
 
-    // 3. Facts: size, title ID, version. The state already stands next to the selected tile.
+    // 3. Facts, at most four: size, version (the title ID quiet beside it), then what played, the
+    // toolkit and the players' verdict add. The state already stands next to the selected tile.
     let size_text = match cx.model.sizes.get(&game.id) {
         Some(SizeState::Known(bytes)) => byte_text(*bytes as i64, language),
         _ => byte_text(-1, language),
     };
-    let mut facts = vec![
-        (language.text(Key::Size), size_text),
-        (language.text(Key::TitleID), game.title_id.clone()),
-        (language.text(Key::Version), game.version.clone()),
+    let mut facts: Vec<(&str, String, Option<&str>)> = vec![
+        (language.text(Key::Size), size_text, None),
+        (
+            language.text(Key::Version),
+            game.version.clone(),
+            Some(game.title_id.as_str()),
+        ),
     ];
     // Said only once there is something to say: a game never played shows no "0 min".
     let played = cx.model.prefs.playtime(&game.id);
@@ -1332,11 +1331,12 @@ fn paint_hero(
         facts.push((
             Extra::Played.text(language),
             playtime_text(played.seconds, language),
+            None,
         ));
     }
     // The toolkit the game is unlocked and started with: the global one, or the release it stays on.
     if let Some(value) = toolkit_pin::fact_value(&cx.model.toolkit_of(&game.id), language) {
-        facts.push((Extra::Toolkit.text(language), value));
+        facts.push((Extra::Toolkit.text(language), value, None));
     }
     // What players found, once enough of them said (run reports).
     if let Some((verdict, reports)) = cx.model.online.runs.verdict(&game.title_id, &game.version) {
@@ -1347,11 +1347,26 @@ fn paint_hero(
                 Arg::Int(i64::from(reports)),
             ],
         );
-        facts.insert(3, (RunText::Runs.text(language), value));
+        facts.insert(2, (RunText::Runs.text(language), value, None));
+    }
+    // A fifth fact would crowd the row; the playing time is the one that gives way.
+    if facts.len() > MAX_FACTS
+        && let Some(at) = facts
+            .iter()
+            .position(|f| f.0 == Extra::Played.text(language))
+    {
+        facts.remove(at);
     }
     let mut left = x;
-    for (title, value) in &facts {
-        left += fact(ui, pos2(left, geometry.facts_top), title, value, language) + FACTS_SPACING;
+    for (title, value, note) in &facts {
+        left += fact(
+            ui,
+            pos2(left, geometry.facts_top),
+            title,
+            value,
+            *note,
+            language,
+        ) + FACTS_SPACING;
     }
 
     // 4. "How did it run?", once, after a session.
@@ -1593,9 +1608,9 @@ fn action_row_status(
                 message,
                 color::text_subtitle(),
                 room,
-                2,
+                3,
             );
-            let gap = 4.0;
+            let gap = space::XS;
             let top = mid - (headline.size().y + gap + detail.size().y) * 0.5;
             let detail_top = top + headline.size().y + gap;
             painter.galley(pos2(x + 16.0, top), headline, color::error_text());
@@ -1607,8 +1622,12 @@ fn action_row_status(
                 "{} {message}",
                 crate::screens::prepare_strings::failure_headline(language)
             );
-            ui.allocate_rect(total, Sense::hover())
-                .widget_info(|| WidgetInfo::labeled(Role::Label, true, name.as_str()));
+            let response = ui.allocate_rect(total, Sense::hover());
+            response.widget_info(|| WidgetInfo::labeled(Role::Label, true, name.as_str()));
+            // A sentence that did not fit stays readable in full under the pointer.
+            if detail.elided {
+                response.on_hover_text(message.as_str());
+            }
             painter.galley(pos2(x + 16.0, detail_top), detail, color::text_subtitle());
         }
         _ => {
@@ -1657,19 +1676,27 @@ fn glibc_notice_applies(state: &GameState) -> bool {
 
 /// One fact of the hero: a quiet overline over its value, with space and no card around it
 /// (DESIGN.md 3.7). Returns its width.
-fn fact(ui: &mut Ui, at: egui::Pos2, title: &str, value: &str, language: Language) -> f32 {
+fn fact(
+    ui: &mut Ui,
+    at: egui::Pos2,
+    title: &str,
+    value: &str,
+    note: Option<&str>,
+    language: Language,
+) -> f32 {
     let painter = ui.painter().clone();
     let overline = text::to_upper(title, language);
-    let width = text::width(&painter, ty::INFO_OVERLINE, &overline).max(text::width(
-        &painter,
-        ty::INFO_VALUE,
-        value,
-    ));
+    let note_width = note.map_or(0.0, |n| FACT_NOTE_GAP + text::width(&painter, ty::NOTE, n));
+    let width = text::width(&painter, ty::INFO_OVERLINE, &overline)
+        .max(text::width(&painter, ty::INFO_VALUE, value) + note_width);
     let rect = Rect::from_min_size(at, vec2(width, facts_height()));
     let response = place(ui, rect, |ui| {
         ui.allocate_exact_size(rect.size(), Sense::hover()).1
     });
-    let name = format!("{title}: {value}");
+    let name = match note {
+        Some(note) => format!("{title}: {value}, {note}"),
+        None => format!("{title}: {value}"),
+    };
     response.widget_info(|| WidgetInfo::labeled(Role::Label, true, name.as_str()));
     text::paint(
         &painter,
@@ -1687,6 +1714,20 @@ fn fact(ui: &mut Ui, at: egui::Pos2, title: &str, value: &str, language: Languag
         value,
         color::text_label(),
     );
+    if let Some(note) = note {
+        let value_width = text::width(&painter, ty::INFO_VALUE, value);
+        text::paint(
+            &painter,
+            pos2(
+                at.x + value_width + FACT_NOTE_GAP,
+                at.y + ty::INFO_OVERLINE.line_height() + FACT_GAP + ty::INFO_VALUE.line_height(),
+            ),
+            Align2::LEFT_BOTTOM,
+            ty::NOTE,
+            note,
+            color::text_note(),
+        );
+    }
     width
 }
 
