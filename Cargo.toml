@@ -29,6 +29,7 @@ ureq = "3"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 windows = "0.62"
 tempfile = "3"
+hidapi = { version = "2.6", default-features = false, features = ["linux-static-hidraw"] }
 
 [profile.release]
 lto = "thin"

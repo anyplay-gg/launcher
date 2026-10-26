@@ -26,6 +26,12 @@ fn every_blocker() -> Vec<Blocker> {
             need: "01.044.000".into(),
             have: "01.008.000".into(),
         },
+        // You are ahead of the session: the longest line the card has to hold.
+        Blocker::WrongVersion {
+            title: "Minecraft".into(),
+            need: "01.008.000".into(),
+            have: "01.044.000".into(),
+        },
         Blocker::WrongBuild {
             need: "v0.1.5".into(),
             have: "v0.1.4".into(),
@@ -51,12 +57,13 @@ pub enum TogetherLook {
     Blocked(usize),
 }
 
-const BLOCKERS: [&str; 10] = [
+const BLOCKERS: [&str; 11] = [
     "signed-out",
     "offline",
     "online-off",
     "not-owned",
     "wrong-version",
+    "wrong-version-ahead",
     "wrong-build",
     "full",
     "busy",
