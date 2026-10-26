@@ -95,8 +95,10 @@ pub enum LudusVia {
 
 There is no delay figure on the PC: the page measures the round trip (`ping:`/`pong:`) and shows it itself.
 
-The launcher-side test `the_core_status_becomes_the_launchers_event` (in `app/ludus.rs`) builds `LudusVia::Browser` and gains
-the `device: None` field on this branch; nothing else of the launcher crate is touched.
+The launcher meets the browser server in two places: `app::ludus_web` (the `BrowserBridge` trait, which every
+`LudusReceiver` is, `BrowserState` and `config_for_launcher`) and `impl BrowserBridge for LudusServer` in `app/ludus.rs`, the
+one place the core plugs in. In the same file, `event_of` turns `LudusVia::Browser { peer, device }` into the launcher's
+`LudusEvent::Browser`, which names the browser in the status row and the top-bar pill.
 
 ## Certificate
 
