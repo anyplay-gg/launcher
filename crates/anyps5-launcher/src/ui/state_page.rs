@@ -98,10 +98,7 @@ pub fn show(ui: &mut Ui, room: Rect, page: &StatePage<'_>, focused: bool) -> boo
         Some(note) if !note.is_empty() => format!("{}. {note}", page.title),
         _ => page.title.to_owned(),
     };
-    let block = Rect::from_center_size(
-        pos2(centre, top + height * 0.5),
-        vec2(TITLE_WIDTH, height),
-    );
+    let block = Rect::from_center_size(pos2(centre, top + height * 0.5), vec2(TITLE_WIDTH, height));
     ui.interact(block, Id::unique("state-page"), Sense::hover())
         .widget_info(|| WidgetInfo::labeled(Role::Label, true, said.as_str()));
 
@@ -128,11 +125,7 @@ pub fn show(ui: &mut Ui, room: Rect, page: &StatePage<'_>, focused: bool) -> boo
     }
     let mut y = disc.max.y + space::L;
     let title_height = title.size().y;
-    painter.galley(
-        pos2(centre - title.size().x * 0.5, y),
-        title,
-        color::text(),
-    );
+    painter.galley(pos2(centre - title.size().x * 0.5, y), title, color::text());
     y += title_height;
     if let Some(note) = note {
         y += space::S;

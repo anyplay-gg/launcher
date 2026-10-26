@@ -163,7 +163,9 @@ fn grades_width(painter: &Painter, grades: [u32; 4]) -> f32 {
     grades
         .iter()
         .filter(|n| **n > 0)
-        .map(|n| 14.0 + space::XS + text::tabular_width(painter, GRADE_COUNT, &n.to_string()) + space::M)
+        .map(|n| {
+            14.0 + space::XS + text::tabular_width(painter, GRADE_COUNT, &n.to_string()) + space::M
+        })
         .sum::<f32>()
         - space::M
 }

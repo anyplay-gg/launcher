@@ -34,9 +34,9 @@ use crate::ui::components::{self, HintSet, corner, paint_grade_counts, paint_pro
 use crate::ui::glass::GlassStyle;
 use crate::ui::i18n::{Key, Language};
 use crate::ui::icons::Icon;
-use crate::ui::state_page::{self, StatePage};
 use crate::ui::input::{Command, InputEvent};
 use crate::ui::sound::Cue;
+use crate::ui::state_page::{self, StatePage};
 use crate::ui::text;
 use crate::ui::theme::{color, fade, pad, radius, size, space, ty};
 
@@ -60,7 +60,6 @@ const SHOW_PAD: f32 = 18.0;
 const SHOW_GAP: f32 = 26.0;
 const SHOW_REACH: f32 = 5.0;
 const SHOW_RADIUS: f32 = radius::ROW;
-
 
 /// What the host has to do after a frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -406,7 +405,10 @@ impl CompareScreen {
             if word.max.x + space::M + points_w <= x + width {
                 text::paint_tabular(
                     &painter,
-                    pos2(x + width - points_w, figure.max.y - ty::NOTE.line_height() - space::XS),
+                    pos2(
+                        x + width - points_w,
+                        figure.max.y - ty::NOTE.line_height() - space::XS,
+                    ),
                     ty::NOTE,
                     &side.points_text,
                     color::text_detail(),

@@ -24,8 +24,8 @@ use crate::ui::i18n::{Arg, Language};
 use crate::ui::icons::Icon;
 use crate::ui::input::{self, Command};
 use crate::ui::sound::Cue;
-use crate::ui::text;
 use crate::ui::state_page::{self, StatePage};
+use crate::ui::text;
 use crate::ui::theme::{
     self, TextStyle, Weight, black, color, fade, mix, radius, size, space, ty, white,
 };

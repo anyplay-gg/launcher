@@ -19,7 +19,9 @@ use crate::ui::icons::Icon;
 use crate::ui::input::{self, Device};
 use crate::ui::pad_info;
 use crate::ui::text;
-use crate::ui::theme::{self, TextStyle, black, color, fade, mix, radius, shadows, size, space, ty, white};
+use crate::ui::theme::{
+    self, TextStyle, black, color, fade, mix, radius, shadows, size, space, ty, white,
+};
 
 /// Forces a visual state so galleries and tests can show hover or press without a pointer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
