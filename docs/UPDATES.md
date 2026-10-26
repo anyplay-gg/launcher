@@ -240,9 +240,9 @@ Rules of the client that go beyond the list under [What the launcher checks](#wh
 ## When the launcher checks
 
 - **At the start, then every 6 hours** while the launcher stays open; after a check that could not reach GitHub, again after 30 minutes. Only with the *Check for Updates* preference on, except for the player's own *Check Now*.
-- **The release data is asked for with an ETag** (`Cache/Feeds/launcher-latest.json` and its `.etag`), so a check that finds nothing new is one small `304` that GitHub does not count against the rate limit. The manifest and its signature (two small files on github.com) are fetched on every check that sees a release, and checked from scratch every time: the cache decides what is asked for, never what is trusted. If the network fails, the stored copy is **not** used as an answer; the check fails and the launcher says "Not reachable" instead of "Up to date".
+- **The release data is asked for with an ETag** (`Cache/Feeds/launcher-latest.json` and its `.etag`), so a check that finds nothing new is one small `304` that GitHub does not count against the rate limit. The manifest and its signature (two small files on github.com) are fetched on every check that sees a release, and checked from scratch every time: the cache decides what is asked for, never what is trusted. If the network fails, the stored copy is **not** used as an answer; the check fails and the launcher says "Could not check" instead of "Up to date".
 - **The release notes** shown in "What's New" come from the `body` of the same release data. They are unsigned display text: cut to 32 KiB, control characters removed, rendered as plain lines. Nothing is decided by them, and no address in them is opened.
-- **A refusal is quiet.** A signature, expiry, hash or size that fails is written to the log. The player sees it only on the About page ("Not installed", with *Download from GitHub*); no notice, no toast.
+- **A refusal is quiet.** A signature, expiry, hash or size that fails is written to the log. The player sees it only on the About page ("Update failed", with *Download from GitHub*); no notice, no toast.
 
 ## macOS app updates
 

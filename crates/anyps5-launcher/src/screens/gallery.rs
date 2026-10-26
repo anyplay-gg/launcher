@@ -18,7 +18,8 @@
 //!                           online-party|online-party-picker|online-messages|online-conversation|
 //!                           online-message|online-request|
 //!                           friends-message-own|friends-quick-replies|friends-keyboard|
-//!                           friends-chat-options|
+//!                           friends-chat-options|friends-confirm|friends-confirm-unsend|
+//!                           friends-confirm-party|
 //!                           online-party-voice|online-party-member|online-voice|online-voice-key|
 //!                           online-voice-devices|online-voice-denied|
 //!                           online-screen-ready|online-screen-hosting|online-screen-offer|
@@ -81,7 +82,6 @@ use crate::ui::chrome::{TileImage, TileOverlay};
 use crate::ui::i18n::Key;
 use crate::ui::icons::Icon;
 use crate::ui::input::InputEvent;
-use crate::ui::theme::white;
 use anyps5_core::gamefiles::{GameInput, parse_input_ini};
 
 /// The page to show.
@@ -110,6 +110,8 @@ pub enum ScreenPage {
     /// The review of a report to AnyPS5.
     Report,
     Library,
+    /// The library grid with no games.
+    LibraryEmpty,
     /// The Captures area, in one of its states.
     Captures(crate::screens::captures::sample::CapturesLook),
     /// The Toolkit category, in its rows: stable, an update waiting, pinned, a local build.
@@ -351,6 +353,10 @@ pub enum OnlineLook {
     Keyboard,
     /// Mute, pin, report, block.
     ChatOptions,
+    /// The question before a block, an unsend and leaving the party.
+    Confirm,
+    ConfirmUnsend,
+    ConfirmParty,
     /// A stranger's first messages, waiting for an answer.
     Request,
     /// The party with voice on: Lumen speaks, Kit is muted for the player.
@@ -694,6 +700,7 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "log" => ScreenPage::Log,
         "report" => ScreenPage::Report,
         "library" => ScreenPage::Library,
+        "library-empty" => ScreenPage::LibraryEmpty,
         "captures-empty" => ScreenPage::Captures(CapturesLook::Empty),
         "captures-few" => ScreenPage::Captures(CapturesLook::Few),
         "captures-many" => ScreenPage::Captures(CapturesLook::Many),
@@ -796,6 +803,9 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "friends-quick-replies" => ScreenPage::Online(OnlineLook::QuickReplies),
         "friends-keyboard" => ScreenPage::Online(OnlineLook::Keyboard),
         "friends-chat-options" => ScreenPage::Online(OnlineLook::ChatOptions),
+        "friends-confirm" => ScreenPage::Online(OnlineLook::Confirm),
+        "friends-confirm-unsend" => ScreenPage::Online(OnlineLook::ConfirmUnsend),
+        "friends-confirm-party" => ScreenPage::Online(OnlineLook::ConfirmParty),
         "friends-request" => ScreenPage::Online(OnlineLook::Request),
         "friends-party-voice" => ScreenPage::Online(OnlineLook::PartyVoice),
         "friends-party-member" => ScreenPage::Online(OnlineLook::PartyMember),
@@ -2316,7 +2326,12 @@ impl ScreenGallery {
                 .get_or_insert_with(|| HomeStand::new(&ctx, self.prefs.clone(), scene, !unlocking))
                 .paint(ui, shell);
         }
-        let entries: Vec<LibraryEntry> = (0..NAMES.len())
+        let shown = if matches!(self.page, ScreenPage::LibraryEmpty) {
+            0
+        } else {
+            NAMES.len()
+        };
+        let entries: Vec<LibraryEntry> = (0..shown)
             .map(|i| LibraryEntry {
                 name: NAMES[i].to_owned(),
                 icon: Some(self.tile(i)),
@@ -2330,12 +2345,14 @@ impl ScreenGallery {
                         icon: Icon::PLAY_CIRCLE,
                         text: language.text(Key::Running).into(),
                         tint: crate::ui::theme::color::text_active(),
+                        quiet: false,
                     }
                 } else {
                     StateText {
                         icon: Icon::CHECK_CIRCLE,
                         text: language.text(Key::Ready).into(),
-                        tint: white(0.75),
+                        tint: crate::ui::theme::color::text_detail(),
+                        quiet: true,
                     }
                 },
             })
@@ -2398,6 +2415,7 @@ impl ScreenGallery {
                     worker: Some(("ready".into(), None)),
                 }
             }),
+            windows_rows: true,
             clips: crate::screens::settings::ClipsEnv {
                 count: if self.prefs.clips_seconds > 0 { 3 } else { 0 },
                 capturing: matches!(self.page, ScreenPage::BehaviourClipsKey),
@@ -2577,6 +2595,8 @@ impl ScreenGallery {
                 entries: &entries,
                 language,
                 accent,
+                folder_set: false,
+                scanning: false,
             },
         );
         let diagnosis =
@@ -2622,7 +2642,7 @@ impl ScreenGallery {
             ScreenPage::Saves | ScreenPage::SavesEmpty => self.saves.open(),
             ScreenPage::Restore => self.restore.open(),
             ScreenPage::Online(look) => {
-                use crate::screens::online::Page;
+                use crate::screens::online::{Ask, Page};
                 let language = shell.language;
                 let data = online_data(
                     &self.online,
@@ -2731,6 +2751,26 @@ impl ScreenGallery {
                     OnlineLook::Request => self
                         .friends
                         .show_page(Page::MessageRequest("c-nyx".into()), &data),
+                    OnlineLook::Confirm => {
+                        let lumen = anyps5_core::online::api::AccountId(2);
+                        self.friends.show_page(
+                            Page::Confirm(Ask::Block(lumen), Box::new(Page::Friend(lumen))),
+                            &data,
+                        );
+                    }
+                    OnlineLook::ConfirmUnsend => self.friends.show_page(
+                        Page::Confirm(
+                            Ask::Unsend {
+                                conversation: "c-lumen".into(),
+                                seq: 4,
+                            },
+                            Box::new(Page::Message("c-lumen".into(), 4)),
+                        ),
+                        &data,
+                    ),
+                    OnlineLook::ConfirmParty => self
+                        .friends
+                        .show_page(Page::Confirm(Ask::LeaveParty, Box::new(Page::Party)), &data),
                     OnlineLook::Muted => self.friends.show_page(Page::Home, &data),
                     OnlineLook::Restriction => self
                         .friends
@@ -2796,6 +2836,7 @@ impl ScreenGallery {
                 self.trophies.reveal(SECRET_TROPHY);
             }
             ScreenPage::Library => self.library.open(1),
+            ScreenPage::LibraryEmpty => self.library.open(0),
             ScreenPage::Captures(look) => self.open_captures(ctx, look),
             ScreenPage::ControlsEnd => self.controls.open_row(30),
             ScreenPage::Toolkit(look) => {
@@ -2825,7 +2866,10 @@ impl ScreenGallery {
                 self.whats_new
                     .open_launcher(&self.launcher_notes.notes, shell.language);
             }
-            ScreenPage::BehaviourLinks => self.settings.open_at(3, true),
+            ScreenPage::BehaviourLinks => {
+                self.settings.open_at(3, true);
+                self.settings.focus_row_id("links");
+            }
             ScreenPage::SettingsCodec(on) => {
                 self.prefs.online_openh264 = on;
                 self.settings.open_at(6, true);
@@ -2843,27 +2887,27 @@ impl ScreenGallery {
             ScreenPage::BehaviourClipsOff => {
                 self.prefs.clips_seconds = 0;
                 self.settings.open_at(3, true);
-                self.settings.focus_row(8);
+                self.settings.focus_row_id("clips");
             }
             ScreenPage::BehaviourClips | ScreenPage::BehaviourClipsKey => {
                 self.prefs.clips_seconds = 30;
                 self.settings.open_at(3, true);
                 self.settings
-                    .focus_row(if self.page == ScreenPage::BehaviourClipsKey {
-                        9
+                    .focus_row_id(if self.page == ScreenPage::BehaviourClipsKey {
+                        "clipsKey"
                     } else {
-                        8
+                        "clips"
                     });
             }
             ScreenPage::BehaviourSteam => {
                 self.settings.open_at(3, true);
-                self.settings.focus_row(12);
+                self.settings.focus_row_id("addToSteam");
             }
             ScreenPage::Phone(look) => {
                 self.settings.open_at(4, true);
                 // The question lands on its first answer.
                 if look == PhoneLook::Pairing {
-                    self.settings.focus_row(4);
+                    self.settings.focus_row_id("pairAllow");
                 }
                 // LudusCtrl's question lands on its first answer; a connected LudusCtrl phone
                 // shows the end of the page, where the app comes from. LudusCtrl waiting is the
