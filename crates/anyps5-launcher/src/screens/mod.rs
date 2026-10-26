@@ -54,6 +54,8 @@ pub mod location_strings;
 pub mod log;
 pub mod ludus;
 pub mod ludus_strings;
+pub mod ludus_web;
+pub mod ludus_web_strings;
 pub mod onboarding;
 pub mod onboarding_strings;
 pub mod online;

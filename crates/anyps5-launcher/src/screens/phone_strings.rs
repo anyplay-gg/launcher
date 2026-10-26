@@ -13,8 +13,7 @@ pub enum PhoneText {
     ConnectedTo,
     ConnectingTo,
     StartFailed,
-    /// Delay of the pad, `%d` milliseconds.
-    Delay,
+    /// Delay of the pad, `%d` milliseconds, said after the status.
     DelayValue,
     /// The address to type into the app, and why it is shown.
     Address,
@@ -66,7 +65,6 @@ impl PhoneText {
             PhoneText::StartFailed => {
                 "Could not start. Another program may be using the network port."
             }
-            PhoneText::Delay => "Delay",
             PhoneText::DelayValue => "%d ms",
             PhoneText::Address => "Address",
             PhoneText::AddressNote => {
@@ -126,7 +124,6 @@ impl PhoneText {
             PhoneText::StartFailed => {
                 "Başlatılamadı. Ağ bağlantı noktasını başka bir program kullanıyor olabilir."
             }
-            PhoneText::Delay => "Gecikme",
             PhoneText::DelayValue => "%d ms",
             PhoneText::Address => "Adres",
             PhoneText::AddressNote => {

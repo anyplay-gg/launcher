@@ -61,15 +61,20 @@ pub fn rows(prefs: &Preferences, phone: &PhoneState, language: Language) -> Vec<
         (None, Some(name)) => PhoneText::ConnectingTo.format(language, &[Arg::Str(name)]),
         (None, None) => t(PhoneText::Waiting),
     };
+    // The delay belongs to the connection: one row says both ("Connected to Pixel 8 · 4 ms").
+    let status = match (&phone.connected, phone.latency_ms) {
+        (Some(_), Some(milliseconds)) => {
+            let delay =
+                PhoneText::DelayValue.format(language, &[Arg::Int(milliseconds.round() as i64)]);
+            format!("{status} · {delay}")
+        }
+        _ => status,
+    };
     rows.push(
         Row::info("phoneStatus", t(PhoneText::Status), Some(status))
             .icon(Icon::WIFI_HIGH)
             .group_start(),
     );
-    if let (Some(_), Some(milliseconds)) = (&phone.connected, phone.latency_ms) {
-        let text = PhoneText::DelayValue.format(language, &[Arg::Int(milliseconds.round() as i64)]);
-        rows.push(Row::info("phoneDelay", t(PhoneText::Delay), Some(text)));
-    }
 
     // The pairing question: the code, a note, the two answers.
     if let Some(request) = &phone.pairing {
@@ -91,6 +96,7 @@ pub fn rows(prefs: &Preferences, phone: &PhoneState, language: Language) -> Vec<
                 t(PhoneText::Address),
                 Some(format!("{address}:{}", info.control_port)),
             )
+            .icon(Icon::GLOBE)
             .group_start(),
         );
         rows.push(Row::info("phoneAddressNote", t(PhoneText::AddressNote), None).attached());
@@ -114,8 +120,7 @@ pub fn rows(prefs: &Preferences, phone: &PhoneState, language: Language) -> Vec<
                 PhoneText::Remove.format(language, &[Arg::Str(&device.name)]),
             )
             .detail(PhoneText::PairedOn.format(language, &[Arg::Str(date_of(&device.added))]))
-            .icon(Icon::X_CIRCLE)
-            .destructive(),
+            .icon(Icon::X_CIRCLE),
         );
     }
 
@@ -180,16 +185,23 @@ pub fn page(
     if !prefs.phone_remote {
         return rows;
     }
-    // The PC's address with LudusCtrl's own port, for typing into its app.
-    let address = phone
-        .info
-        .as_ref()
-        .and_then(|info| info.addresses.first())
+    // The PC's address with LudusCtrl's own port, for typing into its app: LudusCtrl's own
+    // address list, so the row stays when the phone server could not start.
+    let address = ludus
+        .addresses
+        .first()
         .zip(ludus.port)
         .map(|(address, port)| format!("{address}:{port}"));
-    rows.extend(crate::screens::ludus::rows(prefs, ludus, address, language));
+    rows.extend(crate::screens::ludus::rows(
+        prefs,
+        ludus,
+        address,
+        phone.windows,
+        language,
+    ));
     let phone_on = !phone.failed;
-    let ludus_on = prefs.phone_ludusctrl && !ludus.failed;
+    // LudusCtrl's server runs for the app, or for the browser client alone.
+    let ludus_on = prefs.phone_ludusctrl && (!ludus.failed || ludus.browser.info.is_some());
     let pad = phone
         .pad
         .as_ref()
@@ -348,11 +360,18 @@ mod tests {
         let first = rows.iter().find(|r| r.id == "phone0").unwrap();
         assert_eq!(first.title, "Remove Pixel 8");
         assert_eq!(first.detail.as_deref(), Some("Paired on 2026-10-24"));
-        assert!(first.destructive);
+        assert!(
+            !first.destructive,
+            "pairing again undoes it: ink, not danger red"
+        );
         assert!(rows.iter().any(|r| r.id == "phone1"));
         assert!(!rows.iter().any(|r| r.id == "phone2"));
-        let delay = rows.iter().find(|r| r.id == "phoneDelay").unwrap();
-        assert_eq!(delay.control, Control::Info(Some("4 ms".into())));
+        let status = rows.iter().find(|r| r.id == "phoneStatus").unwrap();
+        assert_eq!(
+            status.control,
+            Control::Info(Some("Connected to Pixel 8 · 4 ms".into()))
+        );
+        assert!(!ids(&rows).contains(&"phoneDelay"));
         assert_eq!(
             action(&state, &Change::Run { row: "phone1" }),
             Some(PhoneAction::Forget("b".into()))
@@ -446,6 +465,7 @@ mod tests {
         let ludus = LudusState {
             pad: Some(VirtualPadStatus::DriverMissing),
             port: Some(45989),
+            addresses: vec!["192.168.178.20".parse().unwrap()],
             ..LudusState::default()
         };
         let quiet = PhoneState {
@@ -474,6 +494,12 @@ mod tests {
         let list = page(&both, &failed, &ludus, Language::English);
         assert_eq!(list.iter().filter(|r| r.id == "padStatus").count(), 1);
         assert!(list.iter().any(|r| r.id == "padOpen"));
+        let address = list.iter().find(|r| r.id == "ludusAddress");
+        assert_eq!(
+            address.map(|r| &r.control),
+            Some(&Control::Info(Some("192.168.178.20:45989".into()))),
+            "LudusCtrl's own address list"
+        );
 
         // Both run: one controller section, after both groups; LudusCtrl's address is the PC's.
         let phone = PhoneState {
