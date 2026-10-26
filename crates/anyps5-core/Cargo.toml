@@ -41,6 +41,13 @@ p256 = { version = "0.14", default-features = false, features = ["ecdh"] }
 hkdf = "0.13"
 hmac = "0.13"
 sha2-0-11 = { package = "sha2", version = "0.11" }
+# The LudusCtrl browser client: TLS by rustls on ring (the same build ureq already uses; without the
+# default features, which pull aws-lc and its OpenSSL licence), the request head by httparse (already
+# here through tungstenite), and the self-signed certificate by rcgen (MIT or Apache-2.0, on ring,
+# with its DER writer yasna).
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+httparse = "1"
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring"] }
 
 [build-dependencies]
 # build.rs parses data/update-keys.txt with the same parser the launcher uses at run time.
@@ -62,6 +69,7 @@ windows = { workspace = true, features = [
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Dxgi_Common",
     "Win32_Graphics_Gdi",
+    "Win32_Networking_WinSock",
     "Win32_Security",
     "Win32_Storage_FileSystem",
     "Win32_System_IO",

@@ -3,9 +3,9 @@
 What `anyps5-core` offers the launcher for LudusCtrl's browser client: a phone that cannot run the LudusCtrl app (an iPhone)
 opens an HTTPS page that this PC serves on the LAN, and the controller connected to that phone plays through the page's
 WebSocket. The wire protocol is LudusCtrl's `docs/PROTOCOL.md`, section "Browser client (HTTPS and WebSocket)"; this file is
-the interface the launcher and the page bind to, and the list of the places where the launcher differs from that section.
-It extends [ludusctrl-api.md](ludusctrl-api.md) (the app over UDP). Everything lives in `anyps5_core::remote::ludusctrl` and the
-names below are re-exported from `anyps5_core::remote`.
+the interface the launcher binds to, and the short list of what the launcher does on top of that section. It extends
+[ludusctrl-api.md](ludusctrl-api.md) (the app over UDP). Everything lives in `anyps5_core::remote::ludusctrl` and the names
+below are re-exported from `anyps5_core::remote`.
 
 ## Preference
 
@@ -21,11 +21,11 @@ pub const LUDUS_WEB_PORT: u16 = 45991; // TCP: HTTPS page and WebSocket (a busy 
 pub struct BrowserConfig {
     pub cert_file: PathBuf,   // BrowserConfig::file_in(&paths): <config>/LudusCtrlWeb.json
     pub port: u16,            // LUDUS_WEB_PORT
-    pub language: String,     // the page's language: "en" or "tr" (anything else is served as "en")
     pub bind: Option<IpAddr>, // None = every interface (the launcher); tests bind 127.0.0.1
+    // (private: the protocol's timers, shortened only by the core's tests)
 }
 impl BrowserConfig {
-    pub fn new(cert_file: PathBuf) -> BrowserConfig; // port 45991, "en", every interface
+    pub fn new(cert_file: PathBuf) -> BrowserConfig; // port 45991, every interface
     pub fn file_in(paths: &AppPaths) -> PathBuf;
 }
 
@@ -63,7 +63,8 @@ impl LudusServer {
 }
 ```
 
-All four return at once (the stop waits at most for one 40 ms accept tick). Call them from the UI thread.
+All four return quickly (the stop waits at most for one 40 ms accept tick); `start_browser` reads or mints the certificate,
+which takes a few milliseconds. Call them from the UI thread.
 
 The token is new at every start and every New Link: 16 random bytes, URL-safe base64 without padding (22 characters). It
 travels only in the URL fragment, so the browser never sends it in a request; no log line contains it. Restarting the launcher
@@ -105,89 +106,82 @@ the `device: None` field on this branch; nothing else of the launcher crate is t
 - Stored in `<config>/LudusCtrlWeb.json` (temp file and rename, mode 0600 on Linux):
   `{ "cert": "<base64 DER>", "key": "<base64 PKCS#8>", "addresses": ["192.168.1.23", ...], "expires": <unix seconds> }`.
 - Reissued only when the file is missing or unreadable, the key does not match the certificate, it ends within 30 days, or a
-  current LAN address is not covered. The key is kept across a reissue, and the new address list is the union of the old and the
-  current ones (at most 32, the newest first), so a PC that moves between Wi-Fi and Ethernet does not alternate between two
+  current LAN address is not covered. The key is kept across a reissue, and the new address list is the union of the current and
+  the old ones (at most 32, the current first), so a PC that moves between Wi-Fi and Ethernet does not alternate between two
   certificates. A config folder that cannot be written still serves a certificate (a new one every start; logged).
 
 ## Serving the page
 
-The page is the files of `crates/anyps5-core/assets/ludusctrl-web/`, built into the binary with `include_bytes!`:
+The page is LudusCtrl's own browser page in the launcher's colours, one file with its script and style inline:
+`crates/anyps5-core/assets/ludusctrl-web/index.html`, built into the binary with `include_bytes!` and checked out with LF
+endings (`.gitattributes`), because its CSP hashes are taken from its bytes.
 
-| Path | File | Content-Type |
-|---|---|---|
-| `GET /`, `GET /index.html` | `index.html` | `text/html; charset=utf-8` |
-| `GET /app.js` | `app.js` | `text/javascript; charset=utf-8` |
-| `GET /app.css` | `app.css` | `text/css; charset=utf-8` |
-| `GET /ws` with `Upgrade: websocket` | the WebSocket | `101` |
-| any other path | | `404` |
-| any other method | | `405` |
+| Request | Answer |
+|---|---|
+| `GET /`, `GET /index.html` (a query is ignored) | `200`, the page, `text/html; charset=utf-8` |
+| `GET /ws` | the WebSocket (`101`), or `400`/`403` (below) |
+| anything else, any other method | `404` |
+| a head that does not parse, or over 8 KiB | `400` |
 
-Every response has `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and
+Every answer has `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and
 `Connection: close` (one request per connection). The page has
 
 ```
-Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;
+Content-Security-Policy: default-src 'none'; script-src 'sha256-<script>'; style-src 'sha256-<style>'; img-src data:;
   connect-src 'self' wss://<Host>; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 ```
 
-**What the page must do to work under that** (for the page branch, `feat/ludusctrl-web-page`):
-
-- Load its script and style as `<script src="app.js"></script>` (or `defer`) and `<link rel="stylesheet" href="app.css">`.
-  No inline `<script>` or `<style>`, no `on...=` attributes, no `style="..."` attributes in the markup and no
-  `setAttribute("style", ...)`. Setting `element.style.foo` from the script is allowed. Images only as files of the folder
-  (not served, so in practice none) or `data:` URLs. No fonts, no other origins.
-- Write the root element exactly as `<html lang="en">`: the server replaces `en` there with the launcher's language (`tr`), so
-  the script can pick its strings from `document.documentElement.lang`.
-- Connect to `wss://${location.host}/ws` (the same host and port as the page).
-- Only these three files are served; anything else in the folder is ignored.
-
-Until the page branch lands, the folder holds a placeholder page; the page branch replaces the three files wholesale.
+The hashes are computed at start from the embedded bytes (one per inline block; blocks with `src=` are skipped) and written
+down nowhere, so a new page needs no server change. There is no `'unsafe-inline'`. A test compares the served CSP with hashes of
+the served body. For the page: no `on...=` or `style="..."` attributes (the CSP blocks them); `__LUDUSCTRL_VERSION__` stays
+as it is.
 
 ## The WebSocket, as the launcher answers it
 
-As PROTOCOL.md, with the launcher's values:
+As PROTOCOL.md:
 
 - Upgrade: `Upgrade: websocket` and `Sec-WebSocket-Key` are required, otherwise `400`. An `Origin` header, when present, must
-  equal `https://` + `Host` (case-insensitive), otherwise `403`.
-- First frame `auth:<token>` within 5 s, compared in constant time. Wrong: `denied`, close 1008 "bad token". Nothing in 5 s:
-  close 1008 "no token".
+  equal `https://` + `Host` (case-insensitive), otherwise `403`. No `Origin`: on to the token.
+- First frame `auth:<token>` (the token from the link's `#t=`) within 5 s, compared in constant time. Wrong, or any other first
+  frame: `denied`, close 1008 "bad token". Nothing in 5 s: close 1008 "no token".
 - Claim: the app linked over UDP: `busy:app`, close 1000. Another browser sent a packet within 1.5 s: `busy`, close 1000. A
   staler holder is taken over.
 - Success: `ready`, then `padkind:x360`.
 - Binary, exactly 20 bytes, `D5 01`: applied (`buttons & 0xF7FF`; flags bit 0 clear holds the pad at neutral). Acked with
   `ack:<seq>:<received>:<applied>` at most every 200 ms per connection; `received` counts every packet the bridge applied since
-  it started, `applied` is the pad-live bit. Any other binary: ignored.
-- `ping:<id>`: `pong:<id>` (the first 59 bytes of the id, cut at a character boundary). WebSocket pings are answered by the
-  library.
-- `pad:x360`: `padkind:x360`. `pad:<anything else>`: `paderr:unknown pad kind`. The launcher's virtual pad is Xbox 360 only,
-  so the page should not offer a switch.
+  it started, `applied` is the pad-live bit. Any other binary: ignored, no reply.
+- Any rate is accepted (the page sends one packet per animation frame: 234 a second on a 240 Hz screen). Packets that arrive
+  together after a stall are coalesced: of a run that is already in the buffer, only the newest is written to the pad.
+- `ping:<id>`: `pong:<id>` (the first 59 bytes of the id, cut at a character boundary). A WebSocket ping: a pong with the same
+  payload. A close: its code is echoed and the session ends. Other text: ignored.
+- `pad:x360`: `padkind:x360`. `pad:ds4`: `paderr:this PC has only the Xbox 360 pad` (the protocol's "why the new pad could not
+  be created"; the launcher has one Xbox 360 virtual pad, which stays). Any other kind: `paderr:unknown pad kind`. At most one
+  switch every 2 s: `paderr:wait a moment before switching again`. The page's picker offers Xbox 360 only.
 - Eviction: a holder with no valid packet for 1.5 s loses the pad (neutral). The connection learns it on its next frame
-  (`evicted`, close 1000) or after 5 s without any frame (`evicted`, close 1001 "idle").
-- Errors from the WebSocket layer: 1002 for a protocol error (reserved bits, a continuation without a start, an unknown opcode,
-  a fragmented or over-125-byte control frame, an unmasked frame), 1009 for a frame or message over 4096 bytes.
+  (`evicted`, close 1000) or at the 5 s read deadline (`evicted`, close 1001 "idle"). Still holding at the deadline: close 1001
+  "idle".
+- The frames are parsed by the bridge itself, not by a WebSocket library, so the rules are the protocol's exactly: 1002 for
+  reserved bits, a fragment, a continuation, an unknown opcode, a control frame over 125 bytes or an unmasked frame; 1009 for a
+  frame over 4096 bytes (known from its header, before the payload arrives).
 - After its own close frame the server reads for up to 1 s for the peer's close, then sends TLS close_notify.
 - At most 16 connections at a time (page loads included); the 17th is closed before TLS. A TLS handshake has 5 s, a request
-  head 10 s (and at most 8 KiB).
+  head 10 s.
 
-## Where the launcher differs from PROTOCOL.md
+## What the launcher adds to PROTOCOL.md
 
-1. **ECDSA P-256 certificate**, not RSA 2048 (see Certificate).
-2. **Three files, not one**: the page's script and style are served as `/app.js` and `/app.css` and the CSP allows `'self'`
-   for them, instead of one page with inline script and style pinned by hash. Same origin over the same pinned TLS connection,
-   so it allows nothing the hashes would not.
-3. **Fragmented messages are reassembled** (up to 4096 bytes in all) by tungstenite instead of being closed with 1002. Browsers
-   never fragment messages this small, and the page sends none.
-4. **Invalid UTF-8 in a text frame** closes with 1007 (the RFC's code; PROTOCOL.md does not name one).
-5. **No pad switch**: only `x360` exists, so `pad:ds4` gets `paderr:unknown pad kind` and there is no 2 s switch interval.
-6. **New Link and stop** are the launcher's: New Link closes every open page with `denied` and 1008 "bad token" (the page
-   reads it as an old link); stop closes them with 1001 "stopping".
-7. **Stricter peers**: a connection must come from a private address on a network this PC is plugged into (the launcher's rule
-   of DESIGN.md 18: not carrier-grade NAT, not routed, not a VPN). The `Host` of every request must be an address of this PC or
-   `localhost`, otherwise `403` (DNS rebinding).
-8. **`SO_EXCLUSIVEADDRUSE`** on Windows and no `SO_REUSEADDR`, so no other program can bind over the port.
+Nothing the page can see. On the PC side:
+
+1. **ECDSA P-256 certificate**, not RSA 2048 (see Certificate). Browsers accept both the same way; the iPhone warning flow with
+   it still has to be tried on a real device.
+2. **New Link and stop** are the launcher's: New Link closes every open page with `denied` and 1008 "bad token", which the page
+   reads as an old link; stop closes them with 1001 "stopping", and the page's reconnect then finds no server.
+3. **Stricter peers**: a connection must come from a private address on a network this PC is plugged into (the launcher's rule
+   of DESIGN.md 18: not carrier-grade NAT, not routed, not a VPN). Anything else is dropped before TLS.
+4. **`SO_EXCLUSIVEADDRUSE`** on Windows and no `SO_REUSEADDR`, so no other program can bind over the port.
 
 ## Testing by hand
 
-`fake-phone browser <url>` (the test helper crate, never shipped) opens the link the launcher shows, skips certificate
-verification (it is a test tool), authenticates with the token in the fragment and sends one packet every 16 ms for a few
-seconds with the buttons it is given, printing everything the PC sends.
+`fake-phone browser --url "<link>" --press cross+r1 --seconds 3` (the test helper crate, never shipped) opens the link the
+launcher shows, skips certificate verification (it is a test tool), authenticates with the token in the fragment, sends one
+packet every 16 ms with those buttons and a ping every second, prints everything the PC sends, and ends with a neutral packet
+and a close. Button names: up, down, left, right, options, create, l3, r3, l1, r1, ps, cross, circle, square, triangle.

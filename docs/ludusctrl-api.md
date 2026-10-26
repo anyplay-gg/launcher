@@ -39,7 +39,7 @@ impl LudusServer {
     pub fn paired(&self) -> Vec<LudusPhone>;
     pub fn forget(&self, id: &str);            // removes the phone; if it holds the pad the pad is released
     pub fn set_pad(&self, pad: Option<Arc<dyn PadTarget>>); // the slot's pad; None = nowhere (pad live 0)
-    pub fn pad_slot(&self) -> Arc<PadSlot>;    // for the browser bridge of step 2 (see "The pad slot")
+    pub fn pad_slot(&self) -> Arc<PadSlot>;    // the one pad slot (see "The pad slot")
     pub fn stop(&self);                        // also on drop; unplugs the pad
 }
 ```
@@ -83,8 +83,8 @@ pub enum LudusStatus {
 pub enum LudusVia {
     /// A phone of the LudusCtrl app, by the name it paired with.
     App { name: String },
-    /// A browser client (step 2; nothing claims the pad this way yet).
-    Browser { peer: IpAddr },
+    /// A browser client (ludusctrl-web-api.md): its address and a coarse device name from its User-Agent.
+    Browser { peer: IpAddr, device: Option<String> },
 }
 
 pub struct LudusPhone {
@@ -120,7 +120,7 @@ phone has no controller or the holder times out, and calls `release` (unplug) af
 
 ## The pad slot
 
-LudusCtrl has exactly one virtual pad, owned by one `PadSlot` inside the server. The UDP receiver (the app) and, in step 2,
+LudusCtrl has exactly one virtual pad, owned by one `PadSlot` inside the server. The UDP receiver (the app) and
 the browser bridge both feed it through the slot; neither holds a `PadTarget` of its own, so Windows never shows two controllers
 for LudusCtrl.
 
@@ -145,7 +145,7 @@ The rules are the protocol's: one holder; a holder silent for 1.5 s is dropped a
 session takes over at once and a continued one after 0.3 s of the holder's silence; a browser claim is refused with `BusyApp`
 while the app is linked and with `Busy` while another browser sent within 1.5 s (a staler one is taken over); while a browser holds
 the pad, the app's packets are authenticated and acked with pad-live 0 but not applied. The browser bridge itself (HTTPS,
-WebSocket, the token) is step 2 and not built.
+WebSocket, the token) is [ludusctrl-web-api.md](ludusctrl-web-api.md).
 
 **Two servers, one pad.** The AnyPS5 Remote server opens its own `VirtualPad` while a game runs (`app::phone::attach_pad`). If
 both features are on, `app::phone` must keep **one** `Arc<VirtualPad>` and hand it to LudusCtrl (`set_pad`) and to the Remote
