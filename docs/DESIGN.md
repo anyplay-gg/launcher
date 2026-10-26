@@ -1047,6 +1047,13 @@ secondary with the danger ink; icons are 14, 17, 18, 20, 24 or 36 dp; the only m
 page draws no focus ring of its own; the case rule of 3.10 stands, and the verbs are Cancel, Back, Close, Done, Continue, Try
 Again, Remove, Delete, Sign In, Later.
 
+**The hint bar has one place (PR 2 of the round).** Every full-screen area shows it at the bottom right, where Home has it: the right edge
+`pad::HOME_X` in, the baseline `pad::HINT_Y` up (`screens::footer_hints`), never in a header. A screen with a Back button on screen
+leaves the "Back" hint out (`HintSet::without_back`): the bar never repeats a control the player can see.
+
+**Messages** (tokens for the social area): `color::bubble_other` white 0.10, `bubble_own` 0.16, `composer` 0.10 with the control hairline;
+gaps `space::BUBBLE_IN_GROUP` 4, `BUBBLE_BETWEEN` 16, `BUBBLE_DAY` 24. A system row is centred 14 regular in `text_note` with no bubble.
+
 ## 4. Materials and blur on the GPU
 
 SwiftUI `.ultraThinMaterial` is a backdrop blur with a light tint and some saturation; it is used under every panel. egui has no

@@ -474,6 +474,17 @@ pub mod color {
     pub fn card_fill() -> Color32 {
         rgba(0.07, 0.07, 0.07, 0.94)
     }
+    /// A message bubble from someone else, and the composer's fill.
+    pub fn bubble_other() -> Color32 {
+        white(0.10)
+    }
+    /// The player's own bubble: one step lighter, never a white fill and never the accent.
+    pub fn bubble_own() -> Color32 {
+        white(0.16)
+    }
+    pub fn composer() -> Color32 {
+        white(0.10)
+    }
     pub fn switch_track_off() -> Color32 {
         white(0.16)
     }
@@ -661,6 +672,10 @@ pub mod space {
     pub const XL: f32 = 24.0;
     pub const XXL: f32 = 32.0;
     pub const XXXL: f32 = 48.0;
+    /// Messages: between bubbles of one sender, between senders, and above a day divider.
+    pub const BUBBLE_IN_GROUP: f32 = XS;
+    pub const BUBBLE_BETWEEN: f32 = L;
+    pub const BUBBLE_DAY: f32 = XL;
 }
 
 /// Spacing between sections of screens, in dp.
