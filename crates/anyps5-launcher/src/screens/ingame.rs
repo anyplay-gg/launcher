@@ -220,7 +220,7 @@ impl InGamePanel {
                 for change in &changes {
                     self.handle(change, &mut actions);
                 }
-                if drawn.scrim_clicked {
+                if drawn.back_clicked {
                     self.side.close();
                     actions.push(InGameAction::Dismiss);
                 }
@@ -318,7 +318,7 @@ impl CloseGamePanel {
                 for change in &changes {
                     self.handle(change, &mut actions);
                 }
-                if drawn.scrim_clicked {
+                if drawn.back_clicked {
                     self.side.close();
                     actions.push(InGameAction::Keep);
                 }

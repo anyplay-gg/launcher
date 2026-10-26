@@ -158,7 +158,7 @@ impl GameSettingsPanel {
                 for change in &changes {
                     self.apply(data, change, &mut out);
                 }
-                if drawn.scrim_clicked {
+                if drawn.back_clicked {
                     shell.play(crate::ui::sound::Cue::Close);
                     self.side.close();
                     out.actions.push(GameSettingsAction::Close);
@@ -499,7 +499,7 @@ impl UninstallPanel {
                 for change in &changes {
                     self.handle(change, &mut actions);
                 }
-                if drawn.scrim_clicked {
+                if drawn.back_clicked {
                     self.side.close();
                     actions.push(UninstallAction::Cancel);
                 }

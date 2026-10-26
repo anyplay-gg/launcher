@@ -206,7 +206,7 @@ Screen paddings:
 | Library | horizontal 80, vertical 60 |
 | Trophies | horizontal 80, vertical 56 |
 | Log | 70 all around |
-| Side panel | 36 all around, width 560 |
+| Game panel frame | the full-screen area's margins (`pad::TROPHIES`), content column 720 |
 | Toast stack | top 26 |
 
 Components:
@@ -395,7 +395,7 @@ key..." pulse, the banner pop.
 | 20 | Settings category change | `Motion.focus`; rows fade in with x offset 18 | spring focus; new list opacity + `offset_x = 18 * (1 - v)` |
 | 21 | Settings panel in/out | opacity, `Motion.overlay` | spring overlay on opacity |
 | 22 | Library and Trophy list in/out | opacity + scale 1.03 -> 1, `Motion.overlay` | spring overlay: opacity and scale about the centre |
-| 23 | Side panel in/out | move from the trailing edge + opacity, `Motion.overlay` | spring overlay: `offset_x = (1 - v) * panel_width`, opacity v |
+| 23 | Panel in/out (the game panels, 5.9) | the full-screen area's enter and exit: opacity v (no slide from the side since 0.2.8) | spring overlay, as every full-screen area |
 | 24 | Log in/out | opacity | spring overlay |
 | 25 | Launch splash in/out | opacity + scale 1.04 -> 1, `Motion.overlay` | spring overlay |
 | 26 | Splash breathing | icon scale 0.985 <-> 1.015, glow alpha 0.2 <-> 0.55 and radius 18 <-> 40, `easeInOut 1.6 s` repeat autoreverse (off in reduced motion) | triangle wave, easeInOut 1.6 each way |
@@ -1372,10 +1372,11 @@ focused). Focused row scrolls to the centre of the list (animation 31). List scr
 mouse/wheel sources (black 0.12 / 0.06 when focused), 1 px stroke at 0.18. No binding: the text `noKey` (15 medium, 0.5). Waiting for
 a key: `pressKey` (15 semibold, pulsing, animation 17b).
 
-### 5.9 Game settings side panel (the "..." menu)
+### 5.9 Game settings (the "..." menu) and the panels of its frame
 
-Opened by "..." or `O` / Y / Menu / Options. Right-aligned panel 560 + 72 wide over a black 0.35 scrim (click on the scrim closes), see
-1.2 for fills. Title = game name (30 light), subtitle `gameSettings` (15, white 0.6), rows below (18 gap). (S-game-settings.) Rows
+**No drawers (0.2.8).** The launcher is a console home: every page is a full-screen area, nothing slides in from a side. The panels of a game share one frame (`screens::side`): game settings, controls, advanced, saves, the recommended settings, the toolkit pin, the Home-button panel and the confirmations. The frame is the full-screen area of Friends and Captures (`chrome::fullscreen_panel`: glass and black, the same enter and exit): the Back row on top (`screens::back_row`: the Back button at the leading edge, the hint bar at the trailing one; clicking the button is the Back command), a content column 720 wide centred under it (title 28 light, subtitle 15 in the text-detail ink, then the rows with their 6 dp inset), nothing else. Switching from one panel to another keeps the area on screen and swaps the content. A confirmation (Remove Installation, Close Game, Restore) keeps the area but not the Back row: its question stands higher up on the column (28 % of the height, body size, 1.45 leading) with the choices under it and the footer hints bottom right, so the decision is the only thing on the page; Cancel or Keep Playing holds the first focus, and Back is the same as Cancel. A centred card was weighed and left out: the page is the card, and nothing else competes for the eye.
+
+Opened by "..." or `O` / Y / Menu / Options. Title = game name, subtitle `gameSettings`, rows below. (S-game-settings.) Rows
 in order, with the condition for each:
 
 | # | Id | Kind | Key / content |
@@ -1824,11 +1825,11 @@ Guide), the PS button reader (below), and the phone server. Presses within 350 m
 function is the state machine and carries the tests. The UI takes two flags once per frame, `take_summoned` and `take_returned`,
 and opens or closes the panel.
 
-**The quick panel** is a side panel (`Overlay::InGame`, `screens::ingame`) in the family of 3.9 and 5.9: the game's name, the line
+**The quick panel** is a full-screen panel of the frame of 5.9 (`Overlay::InGame`, `screens::ingame`; it covers the game's window, which is behind the launcher anyway): the game's name, the line
 "The game keeps running behind the launcher.", and the rows *Back to Game* (the focused row on open), *Trophies*, *Captures*, *Game
 Settings* (the game's own sheet), *Friends and Party* (only when signed in) and *Close Game* (destructive). *Close Game* opens the
 question `Overlay::ConfirmCloseGame` on *Keep Playing*, so Enter never ends a game. The panel selects the running game first, so
-trophies and settings are that game's. Back on the panel, a click beside it and *Back to Game* all return to the game. Back on the
+trophies and settings are that game's. Back on the panel, the Back button and *Back to Game* all return to the game. Back on the
 home screen does the same while the launcher is there because of the Home button (`Model::summoned`); it is cleared when the
 launcher loses the focus, and when the game ends the panel closes.
 While the panel is up, the phone's navigation reaches the launcher and its virtual pad is detached from the game.
@@ -2786,12 +2787,12 @@ Decisions and deviations:
 | `Settings` | `settings` | options button, `Ctrl+,` | back to home |
 | `Library` | `library` | library button | pick selects the game (focus on the tiles) and closes |
 | `GameSettings` | `game_settings` | "..." button | back to home |
-| `Controls`, `Advanced` | `controls`, `advanced` | rows of the game settings | back returns to the game settings on the row that opened them (no slide); a click on the scrim closes everything |
+| `Controls`, `Advanced` | `controls`, `advanced` | rows of the game settings | back (the Back button too) returns to the game settings on the row that opened them (no exit) |
 | `Trophies` | `trophies` | trophy button, row of the game settings | back to home |
 | `Log` | `log` | "Open log" row | back to home |
 | `ConfirmUninstall` | `UninstallPanel` | "Uninstall" row | both answers close everything, as in the original |
 
-- **Keeping in step.** A panel opens when `Model::overlay` becomes its overlay and closes (slides out) when another overlay or none is open. The four side panels share one frame, so switching between them swaps the content without a slide. Commands routed by the model are queued in the host and handed to the panel with the raw captured keys of the controls panel.
+- **Keeping in step.** A panel opens when `Model::overlay` becomes its overlay and closes (leaves like a full-screen area) when another overlay or none is open. The panels of the game frame (5.9) share one area, so switching between them swaps the content without an exit. Commands routed by the model are queued in the host and handed to the panel with the raw captured keys of the controls panel.
 - **Persistence.** The settings panel edits `Model::prefs` in place; game settings, controls and advanced edit a copy of the game's `GameSettings` that is stored back (`Preferences::set_game_settings`) when the panel reports `changed`. Either way `Model::mark_prefs_dirty` makes the host write `preferences.json` atomically at the end of the frame (and on exit). A panel that was only looked at writes nothing.
 - **Theme and accent** reach `Shell::set_theme` inside the settings panel while the choice is made (the backdrop cross-fades) and are saved with the other preferences.
 - **Sounds.** The panels play their own cues, so the host closes and switches overlays silently (`Model::dismiss_overlay`, `Model::switch_overlay`).

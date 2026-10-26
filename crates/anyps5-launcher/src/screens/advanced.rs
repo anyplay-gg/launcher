@@ -401,7 +401,7 @@ impl AdvancedPanel {
                 for change in &changes {
                     self.apply(shell, data, change, &mut out);
                 }
-                if drawn.scrim_clicked {
+                if drawn.back_clicked {
                     shell.play(Cue::Close);
                     self.side.close();
                     out.actions.push(AdvancedAction::Close);
