@@ -49,6 +49,7 @@ pub mod nudge;
 pub mod pad_info;
 pub mod press;
 pub mod ps_button;
+pub mod reveal;
 pub mod shade;
 pub mod sound;
 pub mod text;
