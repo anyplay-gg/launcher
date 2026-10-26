@@ -1103,8 +1103,10 @@ container), `locked`.
 | installing | black 0.30 + progress line at the bottom | down-arrow-circle, accent, current step title | x, `cancel` |
 | failed | black 0.42 + warning badge | warning, `#FF998C`, `failed` | refresh, `retry` |
 | installed | none | check-circle, white 0.75, `ready` (outdated: refresh-arrows, `#FFD166`, `updateAvailable`) | play, `play` |
-| starting | black 0.42 + small spinner | hourglass, accent, `starting` | hourglass, `starting` (inactive) |
-| running | accent dot (0.09 size) top-right with glow | play-circle, accent, `running` | play-circle, `running` (press re-activates the game window) |
+| starting | black 0.42 + small spinner | hourglass, accent, `starting` | hourglass, `starting` (inactive, so not prominent: it only reports) |
+| running | accent dot (0.09 size) top-right with glow | play-circle, accent, `running` | play-circle, "Back to Game" (the verb of what a press does: it re-activates the game window; the state line above the title says "Playing") |
+
+On the home hero the state line is left out for the plain `installed` state ("Ready"): the Play button says it, and every game would repeat it.
 
 Badge (locked/unreadable/failed): glyph size `tile * 0.13` semibold white, padding `tile * 0.08`, behind it a circle black 0.55
 inset by `tile * 0.035`, anchored bottom-trailing. Installing line: height `max(3, tile * 0.03)`, padding `tile * 0.07`.
@@ -1418,7 +1420,7 @@ Full-screen overlay over the home (black 0.74 blurred): header `library` (40 lig
 without options; below, a scrolling grid of **196** tiles (gap 26 x 30) with as many columns as fit the width, at least three (`columns_for`; up and down move by that row). Each cell: tile with focus ring on the
 keyboard-selected one, name (15; semibold white when focused, else regular 0.75; 1 line, truncated), state label (12). Click =
 select that game and close. Keys: arrows move (up/down jump a row of 6), select picks, back/options close. The focused tile scrolls
-to the centre (animation 31). (S-library. The tile shown "Playing" uses the coral accent.)
+to the centre (animation 31). The plain "Ready" is not drawn under a tile (it stays in the accessible name): every game would repeat it, and it would hide the one that differs ("Playing", "Update available"). With no games the grid says what the empty home says ("No games yet" and the line about the games folder; scene `library-empty`). (S-library. The tile shown "Playing" uses the coral accent.)
 
 ### 5.11 Trophy list and trophy button
 
@@ -1691,7 +1693,7 @@ leaves the link on the clipboard.
 
 The relinker and the `.prx` libraries are ELF files that link against glibc. Their `.gnu.version_r` sections list the symbol versions they need (`GLIBC_2.38`); the newest over all of them is the oldest glibc the toolkit runs on (`anyps5-core::glibc`, reads section headers only, every offset bounded, 32- and 64-bit little-endian; `GLIBC_PRIVATE` and other families such as `GLIBCXX` do not count). The launcher compares it with `gnu_get_libc_version()` once when the toolkit is located. The idea of such a check came from the macOS and desktop launchers of the AnyPS5 community; the design and code here are our own.
 
-When the system is older it says one sentence, the same in three places: "Games need glibc 2.38 or newer; this system has 2.35. Update to Fedora 39, Ubuntu 24.04 or newer." (the next step, and the install-guide row in Settings, are from round 3, 3.10) A note under the version row in Settings > Toolkit (like the "newer than tested" note, gallery scene `toolkit-glibc`), and a warning line under the primary button of the hero, in the states Locked, Queued, Installing, Failed and Installed (scenes `home-glibc`, `home-glibc-locked`; it takes the line the friends playing use, since it says why a start may fail). It is a notice and never a block: Unlock and Play work as before. Nothing is shown when the system is new enough, when a version cannot be read, on Windows and on macOS.
+When the system is older it says one sentence, the same in three places: "Games need glibc 2.38 or newer; this system has 2.35. Update to Fedora 39, Ubuntu 24.04 or newer." (the next step, and the install-guide row in Settings, are from round 3, 3.10) A note under the version row in Settings > Toolkit (like the "newer than tested" note, gallery scene `toolkit-glibc`), and a warning to the right of the buttons of the hero, in the status place a failure or a diagnosis uses (one status at a time: a failure, then this, then the last run's diagnosis), in the states Locked, Queued, Installing, Failed and Installed (scenes `home-glibc`, `home-glibc-locked`). The friends line under the buttons keeps its place. It is a notice and never a block: Unlock and Play work as before. Nothing is shown when the system is new enough, when a version cannot be read, on Windows and on macOS.
 
 ## 6. Input
 
