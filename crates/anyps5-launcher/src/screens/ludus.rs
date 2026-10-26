@@ -282,7 +282,10 @@ mod tests {
         let first = rows.iter().find(|r| r.id == "ludus0").unwrap();
         assert_eq!(first.title, "Remove Pixel 8");
         assert_eq!(first.detail.as_deref(), Some("Paired on 2026-10-24"));
-        assert!(first.destructive);
+        assert!(
+            !first.destructive,
+            "pairing again undoes it: ink, not danger red"
+        );
         assert!(!ids(&rows).contains(&"ludusPairedNone"));
         assert!(!ids(&rows).contains(&"ludus2"));
         assert_eq!(
