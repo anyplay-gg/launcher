@@ -179,71 +179,72 @@ fn panel<R>(
     language: crate::ui::i18n::Language,
     contents: impl FnOnce(&mut Ui) -> R,
 ) -> Option<(bool, R)> {
-    chrome::fullscreen_panel(
-        ctx,
-        SIDE_ID,
-        open,
-        GlassStyle::fullscreen_panel(),
-        |ui, _| {
-            let screen = ui.max_rect();
-            let area = screen.shrink2(vec2(pad::TROPHIES.0, pad::TROPHIES.1));
-            let painter = ui.painter().clone();
-            let mut back = false;
-            // The hint bar is the footer's, as everywhere (DESIGN.md 3.12); "Back" is left out where a
-            // Back button is on screen.
-            let top = if question {
-                footer_hints(ui, screen, language, HintSet::BASIC);
-                (screen.min.y + screen.height() * QUESTION_TOP).max(area.min.y)
+    chrome::fullscreen_panel(ctx, SIDE_ID, open, GlassStyle::game_panel(), |ui, _| {
+        let screen = ui.max_rect();
+        let area = screen.shrink2(vec2(pad::TROPHIES.0, pad::TROPHIES.1));
+        let painter = ui.painter().clone();
+        let mut back = false;
+        // The hint bar is the footer's, as everywhere (DESIGN.md 3.12); "Back" is left out where a
+        // Back button is on screen.
+        let top = if question {
+            footer_hints(ui, screen, language, HintSet::BASIC);
+            (screen.min.y + screen.height() * QUESTION_TOP).max(area.min.y)
+        } else {
+            footer_hints(ui, screen, language, HintSet::BASIC.without_back());
+            back = back_button(ui, area, language);
+            area.min.y + BACK_ROW
+        };
+        let width = COLUMN.min(area.width());
+        let x = area.center().x - width * 0.5;
+        // Title and subtitle start on the text of the rows below them (the icon's edge).
+        let edge = x + size::LIST_INSET + size::ROW_PADDING_X;
+        // Text wraps inside the rows' right edge, as far in as it starts from the left.
+        let text_width = width - (edge - x) * 2.0;
+        let title_galley = text::layout(
+            &painter,
+            ty::SIDE_PANEL_TITLE,
+            title,
+            color::text(),
+            text_width,
+        );
+        let mut y = top;
+        let title_h = title_galley.size().y;
+        painter.galley(pos2(edge, y), title_galley, color::text());
+        y += title_h + space::S;
+        if let Some(subtitle) = subtitle {
+            // Wraps (the confirmation sentence is long, and longer in Turkish). A
+            // confirmation's question is what the player decides on: body size and ink, with
+            // room between the lines. Any other subtitle is a quiet line.
+            let (style, ink, leading) = if question {
+                (ty::QUESTION, color::text_label(), QUESTION_LEADING)
             } else {
-                footer_hints(ui, screen, language, HintSet::BASIC.without_back());
-                back = back_button(ui, area, language);
-                area.min.y + BACK_ROW
+                (ty::SENTENCE, color::text_detail(), SUBTITLE_LEADING)
             };
-            let width = COLUMN.min(area.width());
-            let x = area.center().x - width * 0.5;
-            // Title and subtitle start on the text of the rows below them (the icon's edge).
-            let edge = x + size::LIST_INSET + size::ROW_PADDING_X;
-            let title_galley =
-                text::layout(&painter, ty::SIDE_PANEL_TITLE, title, color::text(), width);
-            let mut y = top;
-            let title_h = title_galley.size().y;
-            painter.galley(pos2(edge, y), title_galley, color::text());
-            y += title_h + space::S;
-            if let Some(subtitle) = subtitle {
-                // Wraps (the confirmation sentence is long, and longer in Turkish). A
-                // confirmation's question is what the player decides on: body size and ink, with
-                // room between the lines. Any other subtitle is a quiet line.
-                let (style, ink, leading) = if question {
-                    (ty::QUESTION, color::text_label(), QUESTION_LEADING)
-                } else {
-                    (ty::SENTENCE, color::text_detail(), SUBTITLE_LEADING)
-                };
-                let galley = text::layout_font_pretty(
-                    &painter,
-                    style.font(),
-                    style.size * leading,
-                    style.tracking,
-                    subtitle,
-                    ink,
-                    width,
-                );
-                let height = galley.size().y;
-                painter.galley(pos2(edge, y), galley, ink);
-                y += height + space::S;
-            }
-            y += space::M;
-            // The list runs down to the foot of the screen: the hint bar sits at the trailing
-            // edge, clear of the column.
-            let column =
-                egui::Rect::from_min_max(pos2(x, y), pos2(x + width, screen.max.y - space::XL));
-            let mut child = ui.new_child(
-                UiBuilder::new()
-                    .max_rect(column)
-                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            let galley = text::layout_font_pretty(
+                &painter,
+                style.font(),
+                style.size * leading,
+                style.tracking,
+                subtitle,
+                ink,
+                text_width,
             );
-            (back, contents(&mut child))
-        },
-    )
+            let height = galley.size().y;
+            painter.galley(pos2(edge, y), galley, ink);
+            y += height + space::S;
+        }
+        y += space::M;
+        // The list runs down to the foot of the screen: the hint bar sits at the trailing
+        // edge, clear of the column.
+        let column =
+            egui::Rect::from_min_max(pos2(x, y), pos2(x + width, screen.max.y - space::XL));
+        let mut child = ui.new_child(
+            UiBuilder::new()
+                .max_rect(column)
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+        );
+        (back, contents(&mut child))
+    })
 }
 
 #[cfg(test)]

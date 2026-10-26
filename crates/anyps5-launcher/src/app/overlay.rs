@@ -12,9 +12,9 @@ use crate::app::textures::Textures;
 use crate::ui::Shell;
 use crate::ui::input::Command;
 
-/// the profile and the friends are full-screen panels, and so are the panels of a game, which share
-/// one frame (`screens::side`).
-/// family.
+/// The overlays of the original (`Overlay` in `AppModel.swift`). Every one is a full-screen area:
+/// settings, library, log, trophies, the profile and the friends, and the panels of a game, which
+/// share one frame (`screens::side`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Overlay {
     Settings,

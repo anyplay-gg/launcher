@@ -471,10 +471,6 @@ pub mod color {
         white(0.16)
     }
     // Scrims and panels
-    /// `Color(white: 0.06)` (a near-black gray, not white with alpha) at 0.92: the side panel fill.
-    pub fn side_panel() -> Color32 {
-        rgba(0.06, 0.06, 0.06, 0.92)
-    }
     /// `Color(white: 0.07)` at 0.94: toast and banner card fill.
     pub fn card_fill() -> Color32 {
         rgba(0.07, 0.07, 0.07, 0.94)

@@ -319,7 +319,11 @@ fn home(report: &mut Report) {
 fn panel(report: &mut Report) {
     for theme in Theme::ALL {
         let name = theme.title(crate::ui::i18n::Language::English);
-        let panel = over(color::side_panel(), lit(theme));
+        // The frame of the game panels is a full-screen area: the game panels' black (GlassStyle::game_panel) over the lit backdrop.
+        let panel = over(
+            crate::ui::theme::black(crate::ui::glass::GlassStyle::game_panel().black),
+            lit(theme),
+        );
         let row = over(color::surface_row(), panel);
         let hover = over(color::surface_hover(), panel);
         let focus = over(color::surface_focus(), panel);
