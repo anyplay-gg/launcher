@@ -288,6 +288,8 @@ pub struct Model {
     pub phone_trophies: Vec<Trophy>,
     /// What the phone server is doing (`app::phone`).
     pub phone: crate::app::phone::PhoneState,
+    /// What the LudusCtrl receiver is doing (`app::ludus`).
+    pub ludus: crate::app::ludus::LudusState,
     /// What the share worker said of Cisco's OpenH264 in its last answer (Linux): its `state` and
     /// `detail`.
     pub share_codec: Option<(String, Option<String>)>,
@@ -368,6 +370,7 @@ impl Model {
             trophy_banners: Vec::new(),
             phone_trophies: Vec::new(),
             phone: Default::default(),
+            ludus: Default::default(),
             share_codec: None,
             effects: Vec::new(),
             online: Online::default(),

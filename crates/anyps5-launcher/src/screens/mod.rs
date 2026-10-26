@@ -48,6 +48,8 @@ pub mod home;
 pub mod ingame;
 pub mod library;
 pub mod log;
+pub mod ludus;
+pub mod ludus_strings;
 pub mod onboarding;
 pub mod onboarding_strings;
 pub mod online;

@@ -343,6 +343,10 @@ _Avoid_: Trusted device, registered phone
 The controller the operating system sees while a paired phone plays: ViGEmBus on Windows, uinput on Linux. Games read it like a plugged-in pad. It exists only while a game starts or runs.
 _Avoid_: Fake pad, emulated controller
 
+**LudusCtrl phone**:
+A phone or tablet running the LudusCtrl app, which passes on a controller paired with it over Bluetooth. Turned on with the LudusCtrl option of Phone as Controller; it is paired once by comparing a six-digit code and carries only the pad, never the library.
+_Avoid_: Bridge, relay (the code's words for other things)
+
 **ViGEmBus**:
 The Windows driver that makes a virtual controller possible. The launcher explains it and links its official download; it never installs it.
 _Avoid_: Driver (alone, there are others)
