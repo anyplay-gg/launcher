@@ -188,15 +188,16 @@ pub(super) fn online_action(model: &mut Model, action: OnlineAction) {
         OnlineAction::Unblock(account) => {
             online.send(Purpose::Unblock(account), Command::Unblock { account });
         }
-        OnlineAction::Report(account, reason) => {
+        OnlineAction::Report(account, reason, message) => {
+            let (conversation, seq) = message.unzip();
             online.send(
                 Purpose::Report(account),
                 Command::Report {
                     account,
                     reason,
                     details: String::new(),
-                    conversation: None,
-                    seq: None,
+                    conversation,
+                    seq,
                 },
             );
         }
@@ -287,8 +288,30 @@ pub(super) fn online_action(model: &mut Model, action: OnlineAction) {
         OnlineAction::Draft { conversation, text } => {
             // The field takes what the cloud takes; a longer text is cut where the cloud stops.
             let text: String = text.chars().take(MAX_MESSAGE_CHARS + 1).collect();
+            // Typing is told to the others while the field has text.
+            let typing = !text.is_empty();
             online.social.set_draft(&conversation, text);
+            online.typing(&conversation, typing);
         }
+        OnlineAction::StartReply { conversation, seq } => {
+            online.social.start_reply(&conversation, seq);
+        }
+        OnlineAction::StartEdit { conversation, seq } => {
+            online.social.start_edit(&conversation, seq);
+        }
+        OnlineAction::NeedPreviews(ids) => online.request_previews(&ids),
+        OnlineAction::RetryMessages(None) => online.refresh_conversations(),
+        OnlineAction::RetryMessages(Some(conversation)) => online.open_thread(&conversation),
+        OnlineAction::CancelCompose(conversation) => {
+            online.social.cancel_compose(&conversation);
+            online.typing(&conversation, false);
+        }
+        OnlineAction::Unsend { conversation, seq } => online.unsend_message(&conversation, seq),
+        OnlineAction::ConversationSettings {
+            conversation,
+            muted,
+            pinned,
+        } => online.conversation_settings(&conversation, muted, pinned),
         OnlineAction::SendMessage(conversation) => {
             online.send_draft(&conversation);
         }

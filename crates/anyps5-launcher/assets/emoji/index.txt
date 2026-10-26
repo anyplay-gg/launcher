@@ -1,0 +1,1629 @@
+1f600	smileys	grinning face
+1f603	smileys	grinning face with big eyes
+1f604	smileys	grinning face with smiling eyes
+1f601	smileys	beaming face with smiling eyes
+1f606	smileys	grinning squinting face
+1f605	smileys	grinning face with sweat
+1f923	smileys	rolling on the floor laughing
+1f602	smileys	face with tears of joy
+1f642	smileys	slightly smiling face
+1f643	smileys	upside-down face
+1fae0	smileys	melting face
+1f609	smileys	winking face
+1f60a	smileys	smiling face with smiling eyes
+1f607	smileys	smiling face with halo
+1f970	smileys	smiling face with hearts
+1f60d	smileys	smiling face with heart-eyes
+1f929	smileys	star-struck
+1f618	smileys	face blowing a kiss
+1f617	smileys	kissing face
+263a-fe0f	smileys	smiling face
+1f61a	smileys	kissing face with closed eyes
+1f619	smileys	kissing face with smiling eyes
+1f972	smileys	smiling face with tear
+1f60b	smileys	face savoring food
+1f61b	smileys	face with tongue
+1f61c	smileys	winking face with tongue
+1f92a	smileys	zany face
+1f61d	smileys	squinting face with tongue
+1f911	smileys	money-mouth face
+1f917	smileys	smiling face with open hands
+1f92d	smileys	face with hand over mouth
+1fae2	smileys	face with open eyes and hand over mouth
+1fae3	smileys	face with peeking eye
+1f92b	smileys	shushing face
+1f914	smileys	thinking face
+1fae1	smileys	saluting face
+1f910	smileys	zipper-mouth face
+1f928	smileys	face with raised eyebrow
+1f610	smileys	neutral face
+1f611	smileys	expressionless face
+1f636	smileys	face without mouth
+1fae5	smileys	dotted line face
+1f636-200d-1f32b-fe0f	smileys	face in clouds
+1f60f	smileys	smirking face
+1f612	smileys	unamused face
+1f644	smileys	face with rolling eyes
+1f62c	smileys	grimacing face
+1f62e-200d-1f4a8	smileys	face exhaling
+1f925	smileys	lying face
+1fae8	smileys	shaking face
+1f642-200d-2194-fe0f	smileys	head shaking horizontally
+1f642-200d-2195-fe0f	smileys	head shaking vertically
+1f60c	smileys	relieved face
+1f614	smileys	pensive face
+1f62a	smileys	sleepy face
+1f924	smileys	drooling face
+1f634	smileys	sleeping face
+1f637	smileys	face with medical mask
+1f912	smileys	face with thermometer
+1f915	smileys	face with head-bandage
+1f922	smileys	nauseated face
+1f92e	smileys	face vomiting
+1f927	smileys	sneezing face
+1f975	smileys	hot face
+1f976	smileys	cold face
+1f974	smileys	woozy face
+1f635	smileys	face with crossed-out eyes
+1f635-200d-1f4ab	smileys	face with spiral eyes
+1f92f	smileys	exploding head
+1f920	smileys	cowboy hat face
+1f973	smileys	partying face
+1f978	smileys	disguised face
+1f60e	smileys	smiling face with sunglasses
+1f913	smileys	nerd face
+1f9d0	smileys	face with monocle
+1f615	smileys	confused face
+1fae4	smileys	face with diagonal mouth
+1f61f	smileys	worried face
+1f641	smileys	slightly frowning face
+2639-fe0f	smileys	frowning face
+1f62e	smileys	face with open mouth
+1f62f	smileys	hushed face
+1f632	smileys	astonished face
+1f633	smileys	flushed face
+1f97a	smileys	pleading face
+1f979	smileys	face holding back tears
+1f626	smileys	frowning face with open mouth
+1f627	smileys	anguished face
+1f628	smileys	fearful face
+1f630	smileys	anxious face with sweat
+1f625	smileys	sad but relieved face
+1f622	smileys	crying face
+1f62d	smileys	loudly crying face
+1f631	smileys	face screaming in fear
+1f616	smileys	confounded face
+1f623	smileys	persevering face
+1f61e	smileys	disappointed face
+1f613	smileys	downcast face with sweat
+1f629	smileys	weary face
+1f62b	smileys	tired face
+1f971	smileys	yawning face
+1f624	smileys	face with steam from nose
+1f621	smileys	enraged face
+1f620	smileys	angry face
+1f92c	smileys	face with symbols on mouth
+1f608	smileys	smiling face with horns
+1f47f	smileys	angry face with horns
+1f480	smileys	skull
+2620-fe0f	smileys	skull and crossbones
+1f4a9	smileys	pile of poo
+1f921	smileys	clown face
+1f479	smileys	ogre
+1f47a	smileys	goblin
+1f47b	smileys	ghost
+1f47d	smileys	alien
+1f47e	smileys	alien monster
+1f916	smileys	robot
+1f63a	smileys	grinning cat
+1f638	smileys	grinning cat with smiling eyes
+1f639	smileys	cat with tears of joy
+1f63b	smileys	smiling cat with heart-eyes
+1f63c	smileys	cat with wry smile
+1f63d	smileys	kissing cat
+1f640	smileys	weary cat
+1f63f	smileys	crying cat
+1f63e	smileys	pouting cat
+1f648	smileys	see-no-evil monkey
+1f649	smileys	hear-no-evil monkey
+1f64a	smileys	speak-no-evil monkey
+1f48c	smileys	love letter
+1f498	smileys	heart with arrow
+1f49d	smileys	heart with ribbon
+1f496	smileys	sparkling heart
+1f497	smileys	growing heart
+1f493	smileys	beating heart
+1f49e	smileys	revolving hearts
+1f495	smileys	two hearts
+1f49f	smileys	heart decoration
+2763-fe0f	smileys	heart exclamation
+1f494	smileys	broken heart
+2764-fe0f-200d-1f525	smileys	heart on fire
+2764-fe0f-200d-1fa79	smileys	mending heart
+2764-fe0f	smileys	red heart
+1fa77	smileys	pink heart
+1f9e1	smileys	orange heart
+1f49b	smileys	yellow heart
+1f49a	smileys	green heart
+1f499	smileys	blue heart
+1fa75	smileys	light blue heart
+1f49c	smileys	purple heart
+1f90e	smileys	brown heart
+1f5a4	smileys	black heart
+1fa76	smileys	grey heart
+1f90d	smileys	white heart
+1f48b	smileys	kiss mark
+1f4af	smileys	hundred points
+1f4a2	smileys	anger symbol
+1f4a5	smileys	collision
+1f4ab	smileys	dizzy
+1f4a6	smileys	sweat droplets
+1f4a8	smileys	dashing away
+1f573-fe0f	smileys	hole
+1f4ac	smileys	speech balloon
+1f441-fe0f-200d-1f5e8-fe0f	smileys	eye in speech bubble
+1f5e8-fe0f	smileys	left speech bubble
+1f5ef-fe0f	smileys	right anger bubble
+1f4ad	smileys	thought balloon
+1f4a4	smileys	ZZZ
+1f44b	people	waving hand
+1f91a	people	raised back of hand
+1f590-fe0f	people	hand with fingers splayed
+270b	people	raised hand
+1f596	people	vulcan salute
+1faf1	people	rightwards hand
+1faf2	people	leftwards hand
+1faf3	people	palm down hand
+1faf4	people	palm up hand
+1faf7	people	leftwards pushing hand
+1faf8	people	rightwards pushing hand
+1f44c	people	OK hand
+1f90c	people	pinched fingers
+1f90f	people	pinching hand
+270c-fe0f	people	victory hand
+1f91e	people	crossed fingers
+1faf0	people	hand with index finger and thumb crossed
+1f91f	people	love-you gesture
+1f918	people	sign of the horns
+1f919	people	call me hand
+1f448	people	backhand index pointing left
+1f449	people	backhand index pointing right
+1f446	people	backhand index pointing up
+1f595	people	middle finger
+1f447	people	backhand index pointing down
+261d-fe0f	people	index pointing up
+1faf5	people	index pointing at the viewer
+1f44d	people	thumbs up
+1f44e	people	thumbs down
+270a	people	raised fist
+1f44a	people	oncoming fist
+1f91b	people	left-facing fist
+1f91c	people	right-facing fist
+1f44f	people	clapping hands
+1f64c	people	raising hands
+1faf6	people	heart hands
+1f450	people	open hands
+1f932	people	palms up together
+1f91d	people	handshake
+1f64f	people	folded hands
+270d-fe0f	people	writing hand
+1f485	people	nail polish
+1f933	people	selfie
+1f4aa	people	flexed biceps
+1f9be	people	mechanical arm
+1f9bf	people	mechanical leg
+1f9b5	people	leg
+1f9b6	people	foot
+1f442	people	ear
+1f9bb	people	ear with hearing aid
+1f443	people	nose
+1f9e0	people	brain
+1fac0	people	anatomical heart
+1fac1	people	lungs
+1f9b7	people	tooth
+1f9b4	people	bone
+1f440	people	eyes
+1f441-fe0f	people	eye
+1f445	people	tongue
+1f444	people	mouth
+1fae6	people	biting lip
+1f476	people	baby
+1f9d2	people	child
+1f466	people	boy
+1f467	people	girl
+1f9d1	people	person
+1f471	people	person blond hair
+1f468	people	man
+1f9d4	people	person beard
+1f9d4-200d-2642-fe0f	people	man beard
+1f9d4-200d-2640-fe0f	people	woman beard
+1f468-200d-1f9b0	people	man red hair
+1f468-200d-1f9b1	people	man curly hair
+1f468-200d-1f9b3	people	man white hair
+1f468-200d-1f9b2	people	man bald
+1f469	people	woman
+1f469-200d-1f9b0	people	woman red hair
+1f9d1-200d-1f9b0	people	person red hair
+1f469-200d-1f9b1	people	woman curly hair
+1f9d1-200d-1f9b1	people	person curly hair
+1f469-200d-1f9b3	people	woman white hair
+1f9d1-200d-1f9b3	people	person white hair
+1f469-200d-1f9b2	people	woman bald
+1f9d1-200d-1f9b2	people	person bald
+1f471-200d-2640-fe0f	people	woman blond hair
+1f471-200d-2642-fe0f	people	man blond hair
+1f9d3	people	older person
+1f474	people	old man
+1f475	people	old woman
+1f64d	people	person frowning
+1f64d-200d-2642-fe0f	people	man frowning
+1f64d-200d-2640-fe0f	people	woman frowning
+1f64e	people	person pouting
+1f64e-200d-2642-fe0f	people	man pouting
+1f64e-200d-2640-fe0f	people	woman pouting
+1f645	people	person gesturing NO
+1f645-200d-2642-fe0f	people	man gesturing NO
+1f645-200d-2640-fe0f	people	woman gesturing NO
+1f646	people	person gesturing OK
+1f646-200d-2642-fe0f	people	man gesturing OK
+1f646-200d-2640-fe0f	people	woman gesturing OK
+1f481	people	person tipping hand
+1f481-200d-2642-fe0f	people	man tipping hand
+1f481-200d-2640-fe0f	people	woman tipping hand
+1f64b	people	person raising hand
+1f64b-200d-2642-fe0f	people	man raising hand
+1f64b-200d-2640-fe0f	people	woman raising hand
+1f9cf	people	deaf person
+1f9cf-200d-2642-fe0f	people	deaf man
+1f9cf-200d-2640-fe0f	people	deaf woman
+1f647	people	person bowing
+1f647-200d-2642-fe0f	people	man bowing
+1f647-200d-2640-fe0f	people	woman bowing
+1f926	people	person facepalming
+1f926-200d-2642-fe0f	people	man facepalming
+1f926-200d-2640-fe0f	people	woman facepalming
+1f937	people	person shrugging
+1f937-200d-2642-fe0f	people	man shrugging
+1f937-200d-2640-fe0f	people	woman shrugging
+1f9d1-200d-2695-fe0f	people	health worker
+1f468-200d-2695-fe0f	people	man health worker
+1f469-200d-2695-fe0f	people	woman health worker
+1f9d1-200d-1f393	people	student
+1f468-200d-1f393	people	man student
+1f469-200d-1f393	people	woman student
+1f9d1-200d-1f3eb	people	teacher
+1f468-200d-1f3eb	people	man teacher
+1f469-200d-1f3eb	people	woman teacher
+1f9d1-200d-2696-fe0f	people	judge
+1f468-200d-2696-fe0f	people	man judge
+1f469-200d-2696-fe0f	people	woman judge
+1f9d1-200d-1f33e	people	farmer
+1f468-200d-1f33e	people	man farmer
+1f469-200d-1f33e	people	woman farmer
+1f9d1-200d-1f373	people	cook
+1f468-200d-1f373	people	man cook
+1f469-200d-1f373	people	woman cook
+1f9d1-200d-1f527	people	mechanic
+1f468-200d-1f527	people	man mechanic
+1f469-200d-1f527	people	woman mechanic
+1f9d1-200d-1f3ed	people	factory worker
+1f468-200d-1f3ed	people	man factory worker
+1f469-200d-1f3ed	people	woman factory worker
+1f9d1-200d-1f4bc	people	office worker
+1f468-200d-1f4bc	people	man office worker
+1f469-200d-1f4bc	people	woman office worker
+1f9d1-200d-1f52c	people	scientist
+1f468-200d-1f52c	people	man scientist
+1f469-200d-1f52c	people	woman scientist
+1f9d1-200d-1f4bb	people	technologist
+1f468-200d-1f4bb	people	man technologist
+1f469-200d-1f4bb	people	woman technologist
+1f9d1-200d-1f3a4	people	singer
+1f468-200d-1f3a4	people	man singer
+1f469-200d-1f3a4	people	woman singer
+1f9d1-200d-1f3a8	people	artist
+1f468-200d-1f3a8	people	man artist
+1f469-200d-1f3a8	people	woman artist
+1f9d1-200d-2708-fe0f	people	pilot
+1f468-200d-2708-fe0f	people	man pilot
+1f469-200d-2708-fe0f	people	woman pilot
+1f9d1-200d-1f680	people	astronaut
+1f468-200d-1f680	people	man astronaut
+1f469-200d-1f680	people	woman astronaut
+1f9d1-200d-1f692	people	firefighter
+1f468-200d-1f692	people	man firefighter
+1f469-200d-1f692	people	woman firefighter
+1f46e	people	police officer
+1f46e-200d-2642-fe0f	people	man police officer
+1f46e-200d-2640-fe0f	people	woman police officer
+1f575-fe0f	people	detective
+1f575-fe0f-200d-2642-fe0f	people	man detective
+1f575-fe0f-200d-2640-fe0f	people	woman detective
+1f482	people	guard
+1f482-200d-2642-fe0f	people	man guard
+1f482-200d-2640-fe0f	people	woman guard
+1f977	people	ninja
+1f477	people	construction worker
+1f477-200d-2642-fe0f	people	man construction worker
+1f477-200d-2640-fe0f	people	woman construction worker
+1fac5	people	person with crown
+1f934	people	prince
+1f478	people	princess
+1f473	people	person wearing turban
+1f473-200d-2642-fe0f	people	man wearing turban
+1f473-200d-2640-fe0f	people	woman wearing turban
+1f472	people	person with skullcap
+1f9d5	people	woman with headscarf
+1f935	people	person in tuxedo
+1f935-200d-2642-fe0f	people	man in tuxedo
+1f935-200d-2640-fe0f	people	woman in tuxedo
+1f470	people	person with veil
+1f470-200d-2642-fe0f	people	man with veil
+1f470-200d-2640-fe0f	people	woman with veil
+1f930	people	pregnant woman
+1fac3	people	pregnant man
+1fac4	people	pregnant person
+1f931	people	breast-feeding
+1f469-200d-1f37c	people	woman feeding baby
+1f468-200d-1f37c	people	man feeding baby
+1f9d1-200d-1f37c	people	person feeding baby
+1f47c	people	baby angel
+1f385	people	Santa Claus
+1f936	people	Mrs. Claus
+1f9d1-200d-1f384	people	Mx Claus
+1f9b8	people	superhero
+1f9b8-200d-2642-fe0f	people	man superhero
+1f9b8-200d-2640-fe0f	people	woman superhero
+1f9b9	people	supervillain
+1f9b9-200d-2642-fe0f	people	man supervillain
+1f9b9-200d-2640-fe0f	people	woman supervillain
+1f9d9	people	mage
+1f9d9-200d-2642-fe0f	people	man mage
+1f9d9-200d-2640-fe0f	people	woman mage
+1f9da	people	fairy
+1f9da-200d-2642-fe0f	people	man fairy
+1f9da-200d-2640-fe0f	people	woman fairy
+1f9db	people	vampire
+1f9db-200d-2642-fe0f	people	man vampire
+1f9db-200d-2640-fe0f	people	woman vampire
+1f9dc	people	merperson
+1f9dc-200d-2642-fe0f	people	merman
+1f9dc-200d-2640-fe0f	people	mermaid
+1f9dd	people	elf
+1f9dd-200d-2642-fe0f	people	man elf
+1f9dd-200d-2640-fe0f	people	woman elf
+1f9de	people	genie
+1f9de-200d-2642-fe0f	people	man genie
+1f9de-200d-2640-fe0f	people	woman genie
+1f9df	people	zombie
+1f9df-200d-2642-fe0f	people	man zombie
+1f9df-200d-2640-fe0f	people	woman zombie
+1f9cc	people	troll
+1f486	people	person getting massage
+1f486-200d-2642-fe0f	people	man getting massage
+1f486-200d-2640-fe0f	people	woman getting massage
+1f487	people	person getting haircut
+1f487-200d-2642-fe0f	people	man getting haircut
+1f487-200d-2640-fe0f	people	woman getting haircut
+1f6b6	people	person walking
+1f6b6-200d-2642-fe0f	people	man walking
+1f6b6-200d-2640-fe0f	people	woman walking
+1f6b6-200d-27a1-fe0f	people	person walking facing right
+1f6b6-200d-2640-fe0f-200d-27a1-fe0f	people	woman walking facing right
+1f6b6-200d-2642-fe0f-200d-27a1-fe0f	people	man walking facing right
+1f9cd	people	person standing
+1f9cd-200d-2642-fe0f	people	man standing
+1f9cd-200d-2640-fe0f	people	woman standing
+1f9ce	people	person kneeling
+1f9ce-200d-2642-fe0f	people	man kneeling
+1f9ce-200d-2640-fe0f	people	woman kneeling
+1f9ce-200d-27a1-fe0f	people	person kneeling facing right
+1f9ce-200d-2640-fe0f-200d-27a1-fe0f	people	woman kneeling facing right
+1f9ce-200d-2642-fe0f-200d-27a1-fe0f	people	man kneeling facing right
+1f9d1-200d-1f9af	people	person with white cane
+1f9d1-200d-1f9af-200d-27a1-fe0f	people	person with white cane facing right
+1f468-200d-1f9af	people	man with white cane
+1f468-200d-1f9af-200d-27a1-fe0f	people	man with white cane facing right
+1f469-200d-1f9af	people	woman with white cane
+1f469-200d-1f9af-200d-27a1-fe0f	people	woman with white cane facing right
+1f9d1-200d-1f9bc	people	person in motorized wheelchair
+1f9d1-200d-1f9bc-200d-27a1-fe0f	people	person in motorized wheelchair facing right
+1f468-200d-1f9bc	people	man in motorized wheelchair
+1f468-200d-1f9bc-200d-27a1-fe0f	people	man in motorized wheelchair facing right
+1f469-200d-1f9bc	people	woman in motorized wheelchair
+1f469-200d-1f9bc-200d-27a1-fe0f	people	woman in motorized wheelchair facing right
+1f9d1-200d-1f9bd	people	person in manual wheelchair
+1f9d1-200d-1f9bd-200d-27a1-fe0f	people	person in manual wheelchair facing right
+1f468-200d-1f9bd	people	man in manual wheelchair
+1f468-200d-1f9bd-200d-27a1-fe0f	people	man in manual wheelchair facing right
+1f469-200d-1f9bd	people	woman in manual wheelchair
+1f469-200d-1f9bd-200d-27a1-fe0f	people	woman in manual wheelchair facing right
+1f3c3	people	person running
+1f3c3-200d-2642-fe0f	people	man running
+1f3c3-200d-2640-fe0f	people	woman running
+1f3c3-200d-27a1-fe0f	people	person running facing right
+1f3c3-200d-2640-fe0f-200d-27a1-fe0f	people	woman running facing right
+1f3c3-200d-2642-fe0f-200d-27a1-fe0f	people	man running facing right
+1f483	people	woman dancing
+1f57a	people	man dancing
+1f574-fe0f	people	person in suit levitating
+1f46f	people	people with bunny ears
+1f46f-200d-2642-fe0f	people	men with bunny ears
+1f46f-200d-2640-fe0f	people	women with bunny ears
+1f9d6	people	person in steamy room
+1f9d6-200d-2642-fe0f	people	man in steamy room
+1f9d6-200d-2640-fe0f	people	woman in steamy room
+1f9d7	people	person climbing
+1f9d7-200d-2642-fe0f	people	man climbing
+1f9d7-200d-2640-fe0f	people	woman climbing
+1f93a	people	person fencing
+1f3c7	people	horse racing
+26f7-fe0f	people	skier
+1f3c2	people	snowboarder
+1f3cc-fe0f	people	person golfing
+1f3cc-fe0f-200d-2642-fe0f	people	man golfing
+1f3cc-fe0f-200d-2640-fe0f	people	woman golfing
+1f3c4	people	person surfing
+1f3c4-200d-2642-fe0f	people	man surfing
+1f3c4-200d-2640-fe0f	people	woman surfing
+1f6a3	people	person rowing boat
+1f6a3-200d-2642-fe0f	people	man rowing boat
+1f6a3-200d-2640-fe0f	people	woman rowing boat
+1f3ca	people	person swimming
+1f3ca-200d-2642-fe0f	people	man swimming
+1f3ca-200d-2640-fe0f	people	woman swimming
+26f9-fe0f	people	person bouncing ball
+26f9-fe0f-200d-2642-fe0f	people	man bouncing ball
+26f9-fe0f-200d-2640-fe0f	people	woman bouncing ball
+1f3cb-fe0f	people	person lifting weights
+1f3cb-fe0f-200d-2642-fe0f	people	man lifting weights
+1f3cb-fe0f-200d-2640-fe0f	people	woman lifting weights
+1f6b4	people	person biking
+1f6b4-200d-2642-fe0f	people	man biking
+1f6b4-200d-2640-fe0f	people	woman biking
+1f6b5	people	person mountain biking
+1f6b5-200d-2642-fe0f	people	man mountain biking
+1f6b5-200d-2640-fe0f	people	woman mountain biking
+1f938	people	person cartwheeling
+1f938-200d-2642-fe0f	people	man cartwheeling
+1f938-200d-2640-fe0f	people	woman cartwheeling
+1f93c	people	people wrestling
+1f93c-200d-2642-fe0f	people	men wrestling
+1f93c-200d-2640-fe0f	people	women wrestling
+1f93d	people	person playing water polo
+1f93d-200d-2642-fe0f	people	man playing water polo
+1f93d-200d-2640-fe0f	people	woman playing water polo
+1f93e	people	person playing handball
+1f93e-200d-2642-fe0f	people	man playing handball
+1f93e-200d-2640-fe0f	people	woman playing handball
+1f939	people	person juggling
+1f939-200d-2642-fe0f	people	man juggling
+1f939-200d-2640-fe0f	people	woman juggling
+1f9d8	people	person in lotus position
+1f9d8-200d-2642-fe0f	people	man in lotus position
+1f9d8-200d-2640-fe0f	people	woman in lotus position
+1f6c0	people	person taking bath
+1f6cc	people	person in bed
+1f9d1-200d-1f91d-200d-1f9d1	people	people holding hands
+1f46d	people	women holding hands
+1f46b	people	woman and man holding hands
+1f46c	people	men holding hands
+1f48f	people	kiss
+1f469-200d-2764-fe0f-200d-1f48b-200d-1f468	people	kiss woman, man
+1f468-200d-2764-fe0f-200d-1f48b-200d-1f468	people	kiss man, man
+1f469-200d-2764-fe0f-200d-1f48b-200d-1f469	people	kiss woman, woman
+1f491	people	couple with heart
+1f469-200d-2764-fe0f-200d-1f468	people	couple with heart woman, man
+1f468-200d-2764-fe0f-200d-1f468	people	couple with heart man, man
+1f469-200d-2764-fe0f-200d-1f469	people	couple with heart woman, woman
+1f468-200d-1f469-200d-1f466	people	family man, woman, boy
+1f468-200d-1f469-200d-1f467	people	family man, woman, girl
+1f468-200d-1f469-200d-1f467-200d-1f466	people	family man, woman, girl, boy
+1f468-200d-1f469-200d-1f466-200d-1f466	people	family man, woman, boy, boy
+1f468-200d-1f469-200d-1f467-200d-1f467	people	family man, woman, girl, girl
+1f468-200d-1f468-200d-1f466	people	family man, man, boy
+1f468-200d-1f468-200d-1f467	people	family man, man, girl
+1f468-200d-1f468-200d-1f467-200d-1f466	people	family man, man, girl, boy
+1f468-200d-1f468-200d-1f466-200d-1f466	people	family man, man, boy, boy
+1f468-200d-1f468-200d-1f467-200d-1f467	people	family man, man, girl, girl
+1f469-200d-1f469-200d-1f466	people	family woman, woman, boy
+1f469-200d-1f469-200d-1f467	people	family woman, woman, girl
+1f469-200d-1f469-200d-1f467-200d-1f466	people	family woman, woman, girl, boy
+1f469-200d-1f469-200d-1f466-200d-1f466	people	family woman, woman, boy, boy
+1f469-200d-1f469-200d-1f467-200d-1f467	people	family woman, woman, girl, girl
+1f468-200d-1f466	people	family man, boy
+1f468-200d-1f466-200d-1f466	people	family man, boy, boy
+1f468-200d-1f467	people	family man, girl
+1f468-200d-1f467-200d-1f466	people	family man, girl, boy
+1f468-200d-1f467-200d-1f467	people	family man, girl, girl
+1f469-200d-1f466	people	family woman, boy
+1f469-200d-1f466-200d-1f466	people	family woman, boy, boy
+1f469-200d-1f467	people	family woman, girl
+1f469-200d-1f467-200d-1f466	people	family woman, girl, boy
+1f469-200d-1f467-200d-1f467	people	family woman, girl, girl
+1f5e3-fe0f	people	speaking head
+1f464	people	bust in silhouette
+1f465	people	busts in silhouette
+1fac2	people	people hugging
+1f46a	people	family
+1f9d1-200d-1f9d1-200d-1f9d2	people	family adult, adult, child
+1f9d1-200d-1f9d1-200d-1f9d2-200d-1f9d2	people	family adult, adult, child, child
+1f9d1-200d-1f9d2	people	family adult, child
+1f9d1-200d-1f9d2-200d-1f9d2	people	family adult, child, child
+1f463	people	footprints
+1f435	nature	monkey face
+1f412	nature	monkey
+1f98d	nature	gorilla
+1f9a7	nature	orangutan
+1f436	nature	dog face
+1f415	nature	dog
+1f9ae	nature	guide dog
+1f415-200d-1f9ba	nature	service dog
+1f429	nature	poodle
+1f43a	nature	wolf
+1f98a	nature	fox
+1f99d	nature	raccoon
+1f431	nature	cat face
+1f408	nature	cat
+1f408-200d-2b1b	nature	black cat
+1f981	nature	lion
+1f42f	nature	tiger face
+1f405	nature	tiger
+1f406	nature	leopard
+1f434	nature	horse face
+1face	nature	moose
+1facf	nature	donkey
+1f40e	nature	horse
+1f984	nature	unicorn
+1f993	nature	zebra
+1f98c	nature	deer
+1f9ac	nature	bison
+1f42e	nature	cow face
+1f402	nature	ox
+1f403	nature	water buffalo
+1f404	nature	cow
+1f437	nature	pig face
+1f416	nature	pig
+1f417	nature	boar
+1f43d	nature	pig nose
+1f40f	nature	ram
+1f411	nature	ewe
+1f410	nature	goat
+1f42a	nature	camel
+1f42b	nature	two-hump camel
+1f999	nature	llama
+1f992	nature	giraffe
+1f418	nature	elephant
+1f9a3	nature	mammoth
+1f98f	nature	rhinoceros
+1f99b	nature	hippopotamus
+1f42d	nature	mouse face
+1f401	nature	mouse
+1f400	nature	rat
+1f439	nature	hamster
+1f430	nature	rabbit face
+1f407	nature	rabbit
+1f43f-fe0f	nature	chipmunk
+1f9ab	nature	beaver
+1f994	nature	hedgehog
+1f987	nature	bat
+1f43b	nature	bear
+1f43b-200d-2744-fe0f	nature	polar bear
+1f428	nature	koala
+1f43c	nature	panda
+1f9a5	nature	sloth
+1f9a6	nature	otter
+1f9a8	nature	skunk
+1f998	nature	kangaroo
+1f9a1	nature	badger
+1f43e	nature	paw prints
+1f983	nature	turkey
+1f414	nature	chicken
+1f413	nature	rooster
+1f423	nature	hatching chick
+1f424	nature	baby chick
+1f425	nature	front-facing baby chick
+1f426	nature	bird
+1f427	nature	penguin
+1f54a-fe0f	nature	dove
+1f985	nature	eagle
+1f986	nature	duck
+1f9a2	nature	swan
+1f989	nature	owl
+1f9a4	nature	dodo
+1fab6	nature	feather
+1f9a9	nature	flamingo
+1f99a	nature	peacock
+1f99c	nature	parrot
+1fabd	nature	wing
+1f426-200d-2b1b	nature	black bird
+1fabf	nature	goose
+1f426-200d-1f525	nature	phoenix
+1f438	nature	frog
+1f40a	nature	crocodile
+1f422	nature	turtle
+1f98e	nature	lizard
+1f40d	nature	snake
+1f432	nature	dragon face
+1f409	nature	dragon
+1f995	nature	sauropod
+1f996	nature	T-Rex
+1f433	nature	spouting whale
+1f40b	nature	whale
+1f42c	nature	dolphin
+1f9ad	nature	seal
+1f41f	nature	fish
+1f420	nature	tropical fish
+1f421	nature	blowfish
+1f988	nature	shark
+1f419	nature	octopus
+1f41a	nature	spiral shell
+1fab8	nature	coral
+1fabc	nature	jellyfish
+1f980	nature	crab
+1f99e	nature	lobster
+1f990	nature	shrimp
+1f991	nature	squid
+1f9aa	nature	oyster
+1f40c	nature	snail
+1f98b	nature	butterfly
+1f41b	nature	bug
+1f41c	nature	ant
+1f41d	nature	honeybee
+1fab2	nature	beetle
+1f41e	nature	lady beetle
+1f997	nature	cricket
+1fab3	nature	cockroach
+1f577-fe0f	nature	spider
+1f578-fe0f	nature	spider web
+1f982	nature	scorpion
+1f99f	nature	mosquito
+1fab0	nature	fly
+1fab1	nature	worm
+1f9a0	nature	microbe
+1f490	nature	bouquet
+1f338	nature	cherry blossom
+1f4ae	nature	white flower
+1fab7	nature	lotus
+1f3f5-fe0f	nature	rosette
+1f339	nature	rose
+1f940	nature	wilted flower
+1f33a	nature	hibiscus
+1f33b	nature	sunflower
+1f33c	nature	blossom
+1f337	nature	tulip
+1fabb	nature	hyacinth
+1f331	nature	seedling
+1fab4	nature	potted plant
+1f332	nature	evergreen tree
+1f333	nature	deciduous tree
+1f334	nature	palm tree
+1f335	nature	cactus
+1f33e	nature	sheaf of rice
+1f33f	nature	herb
+2618-fe0f	nature	shamrock
+1f340	nature	four leaf clover
+1f341	nature	maple leaf
+1f342	nature	fallen leaf
+1f343	nature	leaf fluttering in wind
+1fab9	nature	empty nest
+1faba	nature	nest with eggs
+1f344	nature	mushroom
+1f347	food	grapes
+1f348	food	melon
+1f349	food	watermelon
+1f34a	food	tangerine
+1f34b	food	lemon
+1f34b-200d-1f7e9	food	lime
+1f34c	food	banana
+1f34d	food	pineapple
+1f96d	food	mango
+1f34e	food	red apple
+1f34f	food	green apple
+1f350	food	pear
+1f351	food	peach
+1f352	food	cherries
+1f353	food	strawberry
+1fad0	food	blueberries
+1f95d	food	kiwi fruit
+1f345	food	tomato
+1fad2	food	olive
+1f965	food	coconut
+1f951	food	avocado
+1f346	food	eggplant
+1f954	food	potato
+1f955	food	carrot
+1f33d	food	ear of corn
+1f336-fe0f	food	hot pepper
+1fad1	food	bell pepper
+1f952	food	cucumber
+1f96c	food	leafy green
+1f966	food	broccoli
+1f9c4	food	garlic
+1f9c5	food	onion
+1f95c	food	peanuts
+1fad8	food	beans
+1f330	food	chestnut
+1fada	food	ginger root
+1fadb	food	pea pod
+1f344-200d-1f7eb	food	brown mushroom
+1f35e	food	bread
+1f950	food	croissant
+1f956	food	baguette bread
+1fad3	food	flatbread
+1f968	food	pretzel
+1f96f	food	bagel
+1f95e	food	pancakes
+1f9c7	food	waffle
+1f9c0	food	cheese wedge
+1f356	food	meat on bone
+1f357	food	poultry leg
+1f969	food	cut of meat
+1f953	food	bacon
+1f354	food	hamburger
+1f35f	food	french fries
+1f355	food	pizza
+1f32d	food	hot dog
+1f96a	food	sandwich
+1f32e	food	taco
+1f32f	food	burrito
+1fad4	food	tamale
+1f959	food	stuffed flatbread
+1f9c6	food	falafel
+1f95a	food	egg
+1f373	food	cooking
+1f958	food	shallow pan of food
+1f372	food	pot of food
+1fad5	food	fondue
+1f963	food	bowl with spoon
+1f957	food	green salad
+1f37f	food	popcorn
+1f9c8	food	butter
+1f9c2	food	salt
+1f96b	food	canned food
+1f371	food	bento box
+1f358	food	rice cracker
+1f359	food	rice ball
+1f35a	food	cooked rice
+1f35b	food	curry rice
+1f35c	food	steaming bowl
+1f35d	food	spaghetti
+1f360	food	roasted sweet potato
+1f362	food	oden
+1f363	food	sushi
+1f364	food	fried shrimp
+1f365	food	fish cake with swirl
+1f96e	food	moon cake
+1f361	food	dango
+1f95f	food	dumpling
+1f960	food	fortune cookie
+1f961	food	takeout box
+1f366	food	soft ice cream
+1f367	food	shaved ice
+1f368	food	ice cream
+1f369	food	doughnut
+1f36a	food	cookie
+1f382	food	birthday cake
+1f370	food	shortcake
+1f9c1	food	cupcake
+1f967	food	pie
+1f36b	food	chocolate bar
+1f36c	food	candy
+1f36d	food	lollipop
+1f36e	food	custard
+1f36f	food	honey pot
+1f37c	food	baby bottle
+1f95b	food	glass of milk
+2615	food	hot beverage
+1fad6	food	teapot
+1f375	food	teacup without handle
+1f376	food	sake
+1f37e	food	bottle with popping cork
+1f377	food	wine glass
+1f378	food	cocktail glass
+1f379	food	tropical drink
+1f37a	food	beer mug
+1f37b	food	clinking beer mugs
+1f942	food	clinking glasses
+1f943	food	tumbler glass
+1fad7	food	pouring liquid
+1f964	food	cup with straw
+1f9cb	food	bubble tea
+1f9c3	food	beverage box
+1f9c9	food	mate
+1f9ca	food	ice
+1f962	food	chopsticks
+1f37d-fe0f	food	fork and knife with plate
+1f374	food	fork and knife
+1f944	food	spoon
+1f52a	food	kitchen knife
+1fad9	food	jar
+1f3fa	food	amphora
+1f30d	travel	globe showing Europe-Africa
+1f30e	travel	globe showing Americas
+1f30f	travel	globe showing Asia-Australia
+1f310	travel	globe with meridians
+1f5fa-fe0f	travel	world map
+1f5fe	travel	map of Japan
+1f9ed	travel	compass
+1f3d4-fe0f	travel	snow-capped mountain
+26f0-fe0f	travel	mountain
+1f30b	travel	volcano
+1f5fb	travel	mount fuji
+1f3d5-fe0f	travel	camping
+1f3d6-fe0f	travel	beach with umbrella
+1f3dc-fe0f	travel	desert
+1f3dd-fe0f	travel	desert island
+1f3de-fe0f	travel	national park
+1f3df-fe0f	travel	stadium
+1f3db-fe0f	travel	classical building
+1f3d7-fe0f	travel	building construction
+1f9f1	travel	brick
+1faa8	travel	rock
+1fab5	travel	wood
+1f6d6	travel	hut
+1f3d8-fe0f	travel	houses
+1f3da-fe0f	travel	derelict house
+1f3e0	travel	house
+1f3e1	travel	house with garden
+1f3e2	travel	office building
+1f3e3	travel	Japanese post office
+1f3e4	travel	post office
+1f3e5	travel	hospital
+1f3e6	travel	bank
+1f3e8	travel	hotel
+1f3e9	travel	love hotel
+1f3ea	travel	convenience store
+1f3eb	travel	school
+1f3ec	travel	department store
+1f3ed	travel	factory
+1f3ef	travel	Japanese castle
+1f3f0	travel	castle
+1f492	travel	wedding
+1f5fc	travel	Tokyo tower
+1f5fd	travel	Statue of Liberty
+26ea	travel	church
+1f54c	travel	mosque
+1f6d5	travel	hindu temple
+1f54d	travel	synagogue
+26e9-fe0f	travel	shinto shrine
+1f54b	travel	kaaba
+26f2	travel	fountain
+26fa	travel	tent
+1f301	travel	foggy
+1f303	travel	night with stars
+1f3d9-fe0f	travel	cityscape
+1f304	travel	sunrise over mountains
+1f305	travel	sunrise
+1f306	travel	cityscape at dusk
+1f307	travel	sunset
+1f309	travel	bridge at night
+2668-fe0f	travel	hot springs
+1f3a0	travel	carousel horse
+1f6dd	travel	playground slide
+1f3a1	travel	ferris wheel
+1f3a2	travel	roller coaster
+1f488	travel	barber pole
+1f3aa	travel	circus tent
+1f682	travel	locomotive
+1f683	travel	railway car
+1f684	travel	high-speed train
+1f685	travel	bullet train
+1f686	travel	train
+1f687	travel	metro
+1f688	travel	light rail
+1f689	travel	station
+1f68a	travel	tram
+1f69d	travel	monorail
+1f69e	travel	mountain railway
+1f68b	travel	tram car
+1f68c	travel	bus
+1f68d	travel	oncoming bus
+1f68e	travel	trolleybus
+1f690	travel	minibus
+1f691	travel	ambulance
+1f692	travel	fire engine
+1f693	travel	police car
+1f694	travel	oncoming police car
+1f695	travel	taxi
+1f696	travel	oncoming taxi
+1f697	travel	automobile
+1f698	travel	oncoming automobile
+1f699	travel	sport utility vehicle
+1f6fb	travel	pickup truck
+1f69a	travel	delivery truck
+1f69b	travel	articulated lorry
+1f69c	travel	tractor
+1f3ce-fe0f	travel	racing car
+1f3cd-fe0f	travel	motorcycle
+1f6f5	travel	motor scooter
+1f9bd	travel	manual wheelchair
+1f9bc	travel	motorized wheelchair
+1f6fa	travel	auto rickshaw
+1f6b2	travel	bicycle
+1f6f4	travel	kick scooter
+1f6f9	travel	skateboard
+1f6fc	travel	roller skate
+1f68f	travel	bus stop
+1f6e3-fe0f	travel	motorway
+1f6e4-fe0f	travel	railway track
+1f6e2-fe0f	travel	oil drum
+26fd	travel	fuel pump
+1f6de	travel	wheel
+1f6a8	travel	police car light
+1f6a5	travel	horizontal traffic light
+1f6a6	travel	vertical traffic light
+1f6d1	travel	stop sign
+1f6a7	travel	construction
+2693	travel	anchor
+1f6df	travel	ring buoy
+26f5	travel	sailboat
+1f6f6	travel	canoe
+1f6a4	travel	speedboat
+1f6f3-fe0f	travel	passenger ship
+26f4-fe0f	travel	ferry
+1f6e5-fe0f	travel	motor boat
+1f6a2	travel	ship
+2708-fe0f	travel	airplane
+1f6e9-fe0f	travel	small airplane
+1f6eb	travel	airplane departure
+1f6ec	travel	airplane arrival
+1fa82	travel	parachute
+1f4ba	travel	seat
+1f681	travel	helicopter
+1f69f	travel	suspension railway
+1f6a0	travel	mountain cableway
+1f6a1	travel	aerial tramway
+1f6f0-fe0f	travel	satellite
+1f680	travel	rocket
+1f6f8	travel	flying saucer
+1f6ce-fe0f	travel	bellhop bell
+1f9f3	travel	luggage
+231b	travel	hourglass done
+23f3	travel	hourglass not done
+231a	travel	watch
+23f0	travel	alarm clock
+23f1-fe0f	travel	stopwatch
+23f2-fe0f	travel	timer clock
+1f570-fe0f	travel	mantelpiece clock
+1f55b	travel	twelve o’clock
+1f567	travel	twelve-thirty
+1f550	travel	one o’clock
+1f55c	travel	one-thirty
+1f551	travel	two o’clock
+1f55d	travel	two-thirty
+1f552	travel	three o’clock
+1f55e	travel	three-thirty
+1f553	travel	four o’clock
+1f55f	travel	four-thirty
+1f554	travel	five o’clock
+1f560	travel	five-thirty
+1f555	travel	six o’clock
+1f561	travel	six-thirty
+1f556	travel	seven o’clock
+1f562	travel	seven-thirty
+1f557	travel	eight o’clock
+1f563	travel	eight-thirty
+1f558	travel	nine o’clock
+1f564	travel	nine-thirty
+1f559	travel	ten o’clock
+1f565	travel	ten-thirty
+1f55a	travel	eleven o’clock
+1f566	travel	eleven-thirty
+1f311	travel	new moon
+1f312	travel	waxing crescent moon
+1f313	travel	first quarter moon
+1f314	travel	waxing gibbous moon
+1f315	travel	full moon
+1f316	travel	waning gibbous moon
+1f317	travel	last quarter moon
+1f318	travel	waning crescent moon
+1f319	travel	crescent moon
+1f31a	travel	new moon face
+1f31b	travel	first quarter moon face
+1f31c	travel	last quarter moon face
+1f321-fe0f	travel	thermometer
+2600-fe0f	travel	sun
+1f31d	travel	full moon face
+1f31e	travel	sun with face
+1fa90	travel	ringed planet
+2b50	travel	star
+1f31f	travel	glowing star
+1f320	travel	shooting star
+1f30c	travel	milky way
+2601-fe0f	travel	cloud
+26c5	travel	sun behind cloud
+26c8-fe0f	travel	cloud with lightning and rain
+1f324-fe0f	travel	sun behind small cloud
+1f325-fe0f	travel	sun behind large cloud
+1f326-fe0f	travel	sun behind rain cloud
+1f327-fe0f	travel	cloud with rain
+1f328-fe0f	travel	cloud with snow
+1f329-fe0f	travel	cloud with lightning
+1f32a-fe0f	travel	tornado
+1f32b-fe0f	travel	fog
+1f32c-fe0f	travel	wind face
+1f300	travel	cyclone
+1f308	travel	rainbow
+1f302	travel	closed umbrella
+2602-fe0f	travel	umbrella
+2614	travel	umbrella with rain drops
+26f1-fe0f	travel	umbrella on ground
+26a1	travel	high voltage
+2744-fe0f	travel	snowflake
+2603-fe0f	travel	snowman
+26c4	travel	snowman without snow
+2604-fe0f	travel	comet
+1f525	travel	fire
+1f4a7	travel	droplet
+1f30a	travel	water wave
+1f383	activities	jack-o-lantern
+1f384	activities	Christmas tree
+1f386	activities	fireworks
+1f387	activities	sparkler
+1f9e8	activities	firecracker
+2728	activities	sparkles
+1f388	activities	balloon
+1f389	activities	party popper
+1f38a	activities	confetti ball
+1f38b	activities	tanabata tree
+1f38d	activities	pine decoration
+1f38e	activities	Japanese dolls
+1f38f	activities	carp streamer
+1f390	activities	wind chime
+1f391	activities	moon viewing ceremony
+1f9e7	activities	red envelope
+1f380	activities	ribbon
+1f381	activities	wrapped gift
+1f397-fe0f	activities	reminder ribbon
+1f39f-fe0f	activities	admission tickets
+1f3ab	activities	ticket
+1f396-fe0f	activities	military medal
+1f3c6	activities	trophy
+1f3c5	activities	sports medal
+1f947	activities	1st place medal
+1f948	activities	2nd place medal
+1f949	activities	3rd place medal
+26bd	activities	soccer ball
+26be	activities	baseball
+1f94e	activities	softball
+1f3c0	activities	basketball
+1f3d0	activities	volleyball
+1f3c8	activities	american football
+1f3c9	activities	rugby football
+1f3be	activities	tennis
+1f94f	activities	flying disc
+1f3b3	activities	bowling
+1f3cf	activities	cricket game
+1f3d1	activities	field hockey
+1f3d2	activities	ice hockey
+1f94d	activities	lacrosse
+1f3d3	activities	ping pong
+1f3f8	activities	badminton
+1f94a	activities	boxing glove
+1f94b	activities	martial arts uniform
+1f945	activities	goal net
+26f3	activities	flag in hole
+26f8-fe0f	activities	ice skate
+1f3a3	activities	fishing pole
+1f93f	activities	diving mask
+1f3bd	activities	running shirt
+1f3bf	activities	skis
+1f6f7	activities	sled
+1f94c	activities	curling stone
+1f3af	activities	bullseye
+1fa80	activities	yo-yo
+1fa81	activities	kite
+1f52b	activities	water pistol
+1f3b1	activities	pool 8 ball
+1f52e	activities	crystal ball
+1fa84	activities	magic wand
+1f3ae	activities	video game
+1f579-fe0f	activities	joystick
+1f3b0	activities	slot machine
+1f3b2	activities	game die
+1f9e9	activities	puzzle piece
+1f9f8	activities	teddy bear
+1fa85	activities	piñata
+1faa9	activities	mirror ball
+1fa86	activities	nesting dolls
+2660-fe0f	activities	spade suit
+2665-fe0f	activities	heart suit
+2666-fe0f	activities	diamond suit
+2663-fe0f	activities	club suit
+265f-fe0f	activities	chess pawn
+1f0cf	activities	joker
+1f004	activities	mahjong red dragon
+1f3b4	activities	flower playing cards
+1f3ad	activities	performing arts
+1f5bc-fe0f	activities	framed picture
+1f3a8	activities	artist palette
+1f9f5	activities	thread
+1faa1	activities	sewing needle
+1f9f6	activities	yarn
+1faa2	activities	knot
+1f453	objects	glasses
+1f576-fe0f	objects	sunglasses
+1f97d	objects	goggles
+1f97c	objects	lab coat
+1f9ba	objects	safety vest
+1f454	objects	necktie
+1f455	objects	t-shirt
+1f456	objects	jeans
+1f9e3	objects	scarf
+1f9e4	objects	gloves
+1f9e5	objects	coat
+1f9e6	objects	socks
+1f457	objects	dress
+1f458	objects	kimono
+1f97b	objects	sari
+1fa71	objects	one-piece swimsuit
+1fa72	objects	briefs
+1fa73	objects	shorts
+1f459	objects	bikini
+1f45a	objects	woman’s clothes
+1faad	objects	folding hand fan
+1f45b	objects	purse
+1f45c	objects	handbag
+1f45d	objects	clutch bag
+1f6cd-fe0f	objects	shopping bags
+1f392	objects	backpack
+1fa74	objects	thong sandal
+1f45e	objects	man’s shoe
+1f45f	objects	running shoe
+1f97e	objects	hiking boot
+1f97f	objects	flat shoe
+1f460	objects	high-heeled shoe
+1f461	objects	woman’s sandal
+1fa70	objects	ballet shoes
+1f462	objects	woman’s boot
+1faae	objects	hair pick
+1f451	objects	crown
+1f452	objects	woman’s hat
+1f3a9	objects	top hat
+1f393	objects	graduation cap
+1f9e2	objects	billed cap
+1fa96	objects	military helmet
+26d1-fe0f	objects	rescue worker’s helmet
+1f4ff	objects	prayer beads
+1f484	objects	lipstick
+1f48d	objects	ring
+1f48e	objects	gem stone
+1f507	objects	muted speaker
+1f508	objects	speaker low volume
+1f509	objects	speaker medium volume
+1f50a	objects	speaker high volume
+1f4e2	objects	loudspeaker
+1f4e3	objects	megaphone
+1f4ef	objects	postal horn
+1f514	objects	bell
+1f515	objects	bell with slash
+1f3bc	objects	musical score
+1f3b5	objects	musical note
+1f3b6	objects	musical notes
+1f399-fe0f	objects	studio microphone
+1f39a-fe0f	objects	level slider
+1f39b-fe0f	objects	control knobs
+1f3a4	objects	microphone
+1f3a7	objects	headphone
+1f4fb	objects	radio
+1f3b7	objects	saxophone
+1f3ba	objects	trumpet
+1fa97	objects	accordion
+1f3b8	objects	guitar
+1f3b9	objects	musical keyboard
+1f3bb	objects	violin
+1fa95	objects	banjo
+1f941	objects	drum
+1fa98	objects	long drum
+1fa87	objects	maracas
+1fa88	objects	flute
+1f4f1	objects	mobile phone
+1f4f2	objects	mobile phone with arrow
+260e-fe0f	objects	telephone
+1f4de	objects	telephone receiver
+1f4df	objects	pager
+1f4e0	objects	fax machine
+1f50b	objects	battery
+1faab	objects	low battery
+1f50c	objects	electric plug
+1f4bb	objects	laptop
+1f5a5-fe0f	objects	desktop computer
+1f5a8-fe0f	objects	printer
+2328-fe0f	objects	keyboard
+1f5b1-fe0f	objects	computer mouse
+1f5b2-fe0f	objects	trackball
+1f4bd	objects	computer disk
+1f4be	objects	floppy disk
+1f4bf	objects	optical disk
+1f4c0	objects	dvd
+1f9ee	objects	abacus
+1f3a5	objects	movie camera
+1f39e-fe0f	objects	film frames
+1f4fd-fe0f	objects	film projector
+1f3ac	objects	clapper board
+1f4fa	objects	television
+1f4f7	objects	camera
+1f4f8	objects	camera with flash
+1f4f9	objects	video camera
+1f4fc	objects	videocassette
+1f50d	objects	magnifying glass tilted left
+1f50e	objects	magnifying glass tilted right
+1f56f-fe0f	objects	candle
+1f4a1	objects	light bulb
+1f526	objects	flashlight
+1f3ee	objects	red paper lantern
+1fa94	objects	diya lamp
+1f4d4	objects	notebook with decorative cover
+1f4d5	objects	closed book
+1f4d6	objects	open book
+1f4d7	objects	green book
+1f4d8	objects	blue book
+1f4d9	objects	orange book
+1f4da	objects	books
+1f4d3	objects	notebook
+1f4d2	objects	ledger
+1f4c3	objects	page with curl
+1f4dc	objects	scroll
+1f4c4	objects	page facing up
+1f4f0	objects	newspaper
+1f5de-fe0f	objects	rolled-up newspaper
+1f4d1	objects	bookmark tabs
+1f516	objects	bookmark
+1f3f7-fe0f	objects	label
+1fa99	objects	coin
+1f4b0	objects	money bag
+1f4b4	objects	yen banknote
+1f4b5	objects	dollar banknote
+1f4b6	objects	euro banknote
+1f4b7	objects	pound banknote
+1f4b8	objects	money with wings
+1f4b3	objects	credit card
+1f9fe	objects	receipt
+1f4b9	objects	chart increasing with yen
+2709-fe0f	objects	envelope
+1f4e7	objects	e-mail
+1f4e8	objects	incoming envelope
+1f4e9	objects	envelope with arrow
+1f4e4	objects	outbox tray
+1f4e5	objects	inbox tray
+1f4e6	objects	package
+1f4eb	objects	closed mailbox with raised flag
+1f4ea	objects	closed mailbox with lowered flag
+1f4ec	objects	open mailbox with raised flag
+1f4ed	objects	open mailbox with lowered flag
+1f4ee	objects	postbox
+1f5f3-fe0f	objects	ballot box with ballot
+270f-fe0f	objects	pencil
+2712-fe0f	objects	black nib
+1f58b-fe0f	objects	fountain pen
+1f58a-fe0f	objects	pen
+1f58c-fe0f	objects	paintbrush
+1f58d-fe0f	objects	crayon
+1f4dd	objects	memo
+1f4bc	objects	briefcase
+1f4c1	objects	file folder
+1f4c2	objects	open file folder
+1f5c2-fe0f	objects	card index dividers
+1f4c5	objects	calendar
+1f4c6	objects	tear-off calendar
+1f5d2-fe0f	objects	spiral notepad
+1f5d3-fe0f	objects	spiral calendar
+1f4c7	objects	card index
+1f4c8	objects	chart increasing
+1f4c9	objects	chart decreasing
+1f4ca	objects	bar chart
+1f4cb	objects	clipboard
+1f4cc	objects	pushpin
+1f4cd	objects	round pushpin
+1f4ce	objects	paperclip
+1f587-fe0f	objects	linked paperclips
+1f4cf	objects	straight ruler
+1f4d0	objects	triangular ruler
+2702-fe0f	objects	scissors
+1f5c3-fe0f	objects	card file box
+1f5c4-fe0f	objects	file cabinet
+1f5d1-fe0f	objects	wastebasket
+1f512	objects	locked
+1f513	objects	unlocked
+1f50f	objects	locked with pen
+1f510	objects	locked with key
+1f511	objects	key
+1f5dd-fe0f	objects	old key
+1f528	objects	hammer
+1fa93	objects	axe
+26cf-fe0f	objects	pick
+2692-fe0f	objects	hammer and pick
+1f6e0-fe0f	objects	hammer and wrench
+1f5e1-fe0f	objects	dagger
+2694-fe0f	objects	crossed swords
+1f4a3	objects	bomb
+1fa83	objects	boomerang
+1f3f9	objects	bow and arrow
+1f6e1-fe0f	objects	shield
+1fa9a	objects	carpentry saw
+1f527	objects	wrench
+1fa9b	objects	screwdriver
+1f529	objects	nut and bolt
+2699-fe0f	objects	gear
+1f5dc-fe0f	objects	clamp
+2696-fe0f	objects	balance scale
+1f9af	objects	white cane
+1f517	objects	link
+26d3-fe0f-200d-1f4a5	objects	broken chain
+26d3-fe0f	objects	chains
+1fa9d	objects	hook
+1f9f0	objects	toolbox
+1f9f2	objects	magnet
+1fa9c	objects	ladder
+2697-fe0f	objects	alembic
+1f9ea	objects	test tube
+1f9eb	objects	petri dish
+1f9ec	objects	dna
+1f52c	objects	microscope
+1f52d	objects	telescope
+1f4e1	objects	satellite antenna
+1f489	objects	syringe
+1fa78	objects	drop of blood
+1f48a	objects	pill
+1fa79	objects	adhesive bandage
+1fa7c	objects	crutch
+1fa7a	objects	stethoscope
+1fa7b	objects	x-ray
+1f6aa	objects	door
+1f6d7	objects	elevator
+1fa9e	objects	mirror
+1fa9f	objects	window
+1f6cf-fe0f	objects	bed
+1f6cb-fe0f	objects	couch and lamp
+1fa91	objects	chair
+1f6bd	objects	toilet
+1faa0	objects	plunger
+1f6bf	objects	shower
+1f6c1	objects	bathtub
+1faa4	objects	mouse trap
+1fa92	objects	razor
+1f9f4	objects	lotion bottle
+1f9f7	objects	safety pin
+1f9f9	objects	broom
+1f9fa	objects	basket
+1f9fb	objects	roll of paper
+1faa3	objects	bucket
+1f9fc	objects	soap
+1fae7	objects	bubbles
+1faa5	objects	toothbrush
+1f9fd	objects	sponge
+1f9ef	objects	fire extinguisher
+1f6d2	objects	shopping cart
+1f6ac	objects	cigarette
+26b0-fe0f	objects	coffin
+1faa6	objects	headstone
+26b1-fe0f	objects	funeral urn
+1f9ff	objects	nazar amulet
+1faac	objects	hamsa
+1f5ff	objects	moai
+1faa7	objects	placard
+1faaa	objects	identification card
+1f3e7	symbols	ATM sign
+1f6ae	symbols	litter in bin sign
+1f6b0	symbols	potable water
+267f	symbols	wheelchair symbol
+1f6b9	symbols	men’s room
+1f6ba	symbols	women’s room
+1f6bb	symbols	restroom
+1f6bc	symbols	baby symbol
+1f6be	symbols	water closet
+1f6c2	symbols	passport control
+1f6c3	symbols	customs
+1f6c4	symbols	baggage claim
+1f6c5	symbols	left luggage
+26a0-fe0f	symbols	warning
+1f6b8	symbols	children crossing
+26d4	symbols	no entry
+1f6ab	symbols	prohibited
+1f6b3	symbols	no bicycles
+1f6ad	symbols	no smoking
+1f6af	symbols	no littering
+1f6b1	symbols	non-potable water
+1f6b7	symbols	no pedestrians
+1f4f5	symbols	no mobile phones
+1f51e	symbols	no one under eighteen
+2622-fe0f	symbols	radioactive
+2623-fe0f	symbols	biohazard
+2b06-fe0f	symbols	up arrow
+2197-fe0f	symbols	up-right arrow
+27a1-fe0f	symbols	right arrow
+2198-fe0f	symbols	down-right arrow
+2b07-fe0f	symbols	down arrow
+2199-fe0f	symbols	down-left arrow
+2b05-fe0f	symbols	left arrow
+2196-fe0f	symbols	up-left arrow
+2195-fe0f	symbols	up-down arrow
+2194-fe0f	symbols	left-right arrow
+21a9-fe0f	symbols	right arrow curving left
+21aa-fe0f	symbols	left arrow curving right
+2934-fe0f	symbols	right arrow curving up
+2935-fe0f	symbols	right arrow curving down
+1f503	symbols	clockwise vertical arrows
+1f504	symbols	counterclockwise arrows button
+1f519	symbols	BACK arrow
+1f51a	symbols	END arrow
+1f51b	symbols	ON! arrow
+1f51c	symbols	SOON arrow
+1f51d	symbols	TOP arrow
+1f6d0	symbols	place of worship
+269b-fe0f	symbols	atom symbol
+1f549-fe0f	symbols	om
+2721-fe0f	symbols	star of David
+2638-fe0f	symbols	wheel of dharma
+262f-fe0f	symbols	yin yang
+271d-fe0f	symbols	latin cross
+2626-fe0f	symbols	orthodox cross
+262a-fe0f	symbols	star and crescent
+262e-fe0f	symbols	peace symbol
+1f54e	symbols	menorah
+1f52f	symbols	dotted six-pointed star
+1faaf	symbols	khanda
+2648	symbols	Aries
+2649	symbols	Taurus
+264a	symbols	Gemini
+264b	symbols	Cancer
+264c	symbols	Leo
+264d	symbols	Virgo
+264e	symbols	Libra
+264f	symbols	Scorpio
+2650	symbols	Sagittarius
+2651	symbols	Capricorn
+2652	symbols	Aquarius
+2653	symbols	Pisces
+26ce	symbols	Ophiuchus
+1f500	symbols	shuffle tracks button
+1f501	symbols	repeat button
+1f502	symbols	repeat single button
+25b6-fe0f	symbols	play button
+23e9	symbols	fast-forward button
+23ed-fe0f	symbols	next track button
+23ef-fe0f	symbols	play or pause button
+25c0-fe0f	symbols	reverse button
+23ea	symbols	fast reverse button
+23ee-fe0f	symbols	last track button
+1f53c	symbols	upwards button
+23eb	symbols	fast up button
+1f53d	symbols	downwards button
+23ec	symbols	fast down button
+23f8-fe0f	symbols	pause button
+23f9-fe0f	symbols	stop button
+23fa-fe0f	symbols	record button
+23cf-fe0f	symbols	eject button
+1f3a6	symbols	cinema
+1f505	symbols	dim button
+1f506	symbols	bright button
+1f4f6	symbols	antenna bars
+1f6dc	symbols	wireless
+1f4f3	symbols	vibration mode
+1f4f4	symbols	mobile phone off
+2640-fe0f	symbols	female sign
+2642-fe0f	symbols	male sign
+26a7-fe0f	symbols	transgender symbol
+2716-fe0f	symbols	multiply
+2795	symbols	plus
+2796	symbols	minus
+2797	symbols	divide
+1f7f0	symbols	heavy equals sign
+267e-fe0f	symbols	infinity
+203c-fe0f	symbols	double exclamation mark
+2049-fe0f	symbols	exclamation question mark
+2753	symbols	red question mark
+2754	symbols	white question mark
+2755	symbols	white exclamation mark
+2757	symbols	red exclamation mark
+3030-fe0f	symbols	wavy dash
+1f4b1	symbols	currency exchange
+1f4b2	symbols	heavy dollar sign
+2695-fe0f	symbols	medical symbol
+267b-fe0f	symbols	recycling symbol
+269c-fe0f	symbols	fleur-de-lis
+1f531	symbols	trident emblem
+1f4db	symbols	name badge
+1f530	symbols	Japanese symbol for beginner
+2b55	symbols	hollow red circle
+2705	symbols	check mark button
+2611-fe0f	symbols	check box with check
+2714-fe0f	symbols	check mark
+274c	symbols	cross mark
+274e	symbols	cross mark button
+27b0	symbols	curly loop
+27bf	symbols	double curly loop
+303d-fe0f	symbols	part alternation mark
+2733-fe0f	symbols	eight-spoked asterisk
+2734-fe0f	symbols	eight-pointed star
+2747-fe0f	symbols	sparkle
+a9-fe0f	symbols	copyright
+ae-fe0f	symbols	registered
+2122-fe0f	symbols	trade mark
+23-fe0f-20e3	symbols	keycap #
+2a-fe0f-20e3	symbols	keycap *
+30-fe0f-20e3	symbols	keycap 0
+31-fe0f-20e3	symbols	keycap 1
+32-fe0f-20e3	symbols	keycap 2
+33-fe0f-20e3	symbols	keycap 3
+34-fe0f-20e3	symbols	keycap 4
+35-fe0f-20e3	symbols	keycap 5
+36-fe0f-20e3	symbols	keycap 6
+37-fe0f-20e3	symbols	keycap 7
+38-fe0f-20e3	symbols	keycap 8
+39-fe0f-20e3	symbols	keycap 9
+1f51f	symbols	keycap 10
+1f520	symbols	input latin uppercase
+1f521	symbols	input latin lowercase
+1f522	symbols	input numbers
+1f523	symbols	input symbols
+1f524	symbols	input latin letters
+1f170-fe0f	symbols	A button (blood type)
+1f18e	symbols	AB button (blood type)
+1f171-fe0f	symbols	B button (blood type)
+1f191	symbols	CL button
+1f192	symbols	COOL button
+1f193	symbols	FREE button
+2139-fe0f	symbols	information
+1f194	symbols	ID button
+24c2-fe0f	symbols	circled M
+1f195	symbols	NEW button
+1f196	symbols	NG button
+1f17e-fe0f	symbols	O button (blood type)
+1f197	symbols	OK button
+1f17f-fe0f	symbols	P button
+1f198	symbols	SOS button
+1f199	symbols	UP! button
+1f19a	symbols	VS button
+1f201	symbols	Japanese “here” button
+1f202-fe0f	symbols	Japanese “service charge” button
+1f237-fe0f	symbols	Japanese “monthly amount” button
+1f236	symbols	Japanese “not free of charge” button
+1f22f	symbols	Japanese “reserved” button
+1f250	symbols	Japanese “bargain” button
+1f239	symbols	Japanese “discount” button
+1f21a	symbols	Japanese “free of charge” button
+1f232	symbols	Japanese “prohibited” button
+1f251	symbols	Japanese “acceptable” button
+1f238	symbols	Japanese “application” button
+1f234	symbols	Japanese “passing grade” button
+1f233	symbols	Japanese “vacancy” button
+3297-fe0f	symbols	Japanese “congratulations” button
+3299-fe0f	symbols	Japanese “secret” button
+1f23a	symbols	Japanese “open for business” button
+1f235	symbols	Japanese “no vacancy” button
+1f534	symbols	red circle
+1f7e0	symbols	orange circle
+1f7e1	symbols	yellow circle
+1f7e2	symbols	green circle
+1f535	symbols	blue circle
+1f7e3	symbols	purple circle
+1f7e4	symbols	brown circle
+26ab	symbols	black circle
+26aa	symbols	white circle
+1f7e5	symbols	red square
+1f7e7	symbols	orange square
+1f7e8	symbols	yellow square
+1f7e9	symbols	green square
+1f7e6	symbols	blue square
+1f7ea	symbols	purple square
+1f7eb	symbols	brown square
+2b1b	symbols	black large square
+2b1c	symbols	white large square
+25fc-fe0f	symbols	black medium square
+25fb-fe0f	symbols	white medium square
+25fe	symbols	black medium-small square
+25fd	symbols	white medium-small square
+25aa-fe0f	symbols	black small square
+25ab-fe0f	symbols	white small square
+1f536	symbols	large orange diamond
+1f537	symbols	large blue diamond
+1f538	symbols	small orange diamond
+1f539	symbols	small blue diamond
+1f53a	symbols	red triangle pointed up
+1f53b	symbols	red triangle pointed down
+1f4a0	symbols	diamond with a dot
+1f518	symbols	radio button
+1f533	symbols	white square button
+1f532	symbols	black square button
