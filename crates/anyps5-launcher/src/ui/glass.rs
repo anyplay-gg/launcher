@@ -76,6 +76,15 @@ impl GlassStyle {
     }
 
     /// Full-screen panels (settings, library, trophies): material plus black 0.74.
+    /// The frame of the game panels: a full-screen panel a shade darker (black 0.84), so the danger
+    /// ink of a pressed row keeps its ratio on every theme (ui::contrast).
+    pub const fn game_panel() -> Self {
+        Self {
+            black: 0.84,
+            ..Self::fullscreen_panel()
+        }
+    }
+
     pub const fn fullscreen_panel() -> Self {
         Self {
             radius: 0.0,
@@ -100,18 +109,6 @@ impl GlassStyle {
         Self {
             black: 0.55,
             ..Self::fullscreen_panel()
-        }
-    }
-
-    /// Side panel: material plus a near-black gray at 0.92.
-    pub fn side_panel() -> Self {
-        Self {
-            radius: 0.0,
-            material_mix: 1.0,
-            black: 0.0,
-            overlay: color::side_panel(),
-            stroke: false,
-            alpha: 1.0,
         }
     }
 }

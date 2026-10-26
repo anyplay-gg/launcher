@@ -14,9 +14,9 @@
 //! | `Log` | `log::LogView` | "Open log" row of the game settings |
 //!
 //! The panels animate themselves; the host only keeps them in step with `Model::overlay`: a panel
-//! opens when its overlay becomes the open one and closes (slides out) when another one takes over.
-//! The four side panels share one frame, so changing between them swaps the content without a
-//! slide. Commands the model routes here are queued and handed to the panel in `ui`; panels that
+//! opens when its overlay becomes the open one and closes (leaves) when another one takes over.
+//! The panels of a game share one frame, so changing between them swaps the content without an
+//! exit. Commands the model routes here are queued and handed to the panel in `ui`; panels that
 //! edit settings get a copy, and the host stores it back and marks the preferences for saving when
 //! the panel reports `changed`. Work with I/O (reports, uninstall, toolkit) runs on worker threads
 //! and answers through channels polled in [`OverlayHost::frame`].
@@ -1207,7 +1207,6 @@ impl PanelHost {
         for action in out.actions {
             match action {
                 ControlsAction::Back => self.back_to_game_settings(cx.model, "controls"),
-                ControlsAction::Close => cx.model.dismiss_overlay(),
                 ControlsAction::Toast(ToastRequest { icon, text }) => cx.model.toast(text, icon),
             }
         }
@@ -1250,7 +1249,6 @@ impl PanelHost {
         for action in out.actions {
             match action {
                 AdvancedAction::Back => self.back_to_game_settings(cx.model, "advanced"),
-                AdvancedAction::Close => cx.model.dismiss_overlay(),
                 AdvancedAction::Toast(ToastRequest { icon, text }) => cx.model.toast(text, icon),
             }
         }

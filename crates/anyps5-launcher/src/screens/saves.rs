@@ -138,7 +138,7 @@ impl SavesPanel {
                 for change in &changes {
                     self.handle(change, data, &mut actions);
                 }
-                if drawn.scrim_clicked {
+                if drawn.back_clicked {
                     shell.play(crate::ui::sound::Cue::Close);
                     self.side.close();
                     actions.push(SavesAction::Close);
@@ -312,7 +312,7 @@ impl RestorePanel {
                 for change in &changes {
                     self.handle(change, &mut actions);
                 }
-                if drawn.scrim_clicked {
+                if drawn.back_clicked {
                     self.side.close();
                     actions.push(RestoreAction::Cancel);
                 }

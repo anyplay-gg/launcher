@@ -356,7 +356,11 @@ fn panel(report: &mut Report) {
         } else {
             lit(theme)
         };
-        let panel = over(color::side_panel(), under);
+        // The frame of the game panels is a full-screen area: the game panels' black (GlassStyle::game_panel) over the lit backdrop.
+        let panel = over(
+            crate::ui::theme::black(crate::ui::glass::GlassStyle::game_panel().black),
+            under,
+        );
         let row = over(color::surface_row(), panel);
         let hover = over(color::surface_hover(), panel);
         let focus = over(color::surface_focus(), panel);

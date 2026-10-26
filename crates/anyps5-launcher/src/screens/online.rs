@@ -1466,11 +1466,18 @@ impl OnlinePanel {
             Page::Picker => {
                 let dialog = online.dialog.as_ref();
                 for friend in picker_friends(online) {
-                    rows.push(Row::toggle(
-                        "pick",
-                        friend.account.handle.clone(),
-                        self.picked.contains(&friend.account.id),
-                    ));
+                    rows.push(
+                        Row::toggle(
+                            "pick",
+                            friend.account.handle.clone(),
+                            self.picked.contains(&friend.account.id),
+                        )
+                        .avatar(self.avatar_of(
+                            data,
+                            &friend.account,
+                            Some(&friend.presence),
+                        )),
+                    );
                 }
                 if rows.is_empty() {
                     rows.push(Row::info("none", t(T::NoFriends), None));

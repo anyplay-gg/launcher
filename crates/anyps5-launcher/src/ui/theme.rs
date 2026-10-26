@@ -471,13 +471,6 @@ pub mod color {
         white(0.16)
     }
     // Scrims and panels
-    pub fn scrim_side_panel() -> Color32 {
-        black(0.35)
-    }
-    /// `Color(white: 0.06)` (a near-black gray, not white with alpha) at 0.92: the side panel fill.
-    pub fn side_panel() -> Color32 {
-        rgba(0.06, 0.06, 0.06, 0.92)
-    }
     /// `Color(white: 0.07)` at 0.94: toast and banner card fill.
     pub fn card_fill() -> Color32 {
         rgba(0.07, 0.07, 0.07, 0.94)
@@ -626,7 +619,6 @@ pub mod size {
     pub const INFO_CARD_PADDING: f32 = 18.0;
     pub const INFO_CARD_GAP: f32 = 14.0;
     pub const SIDE_PANEL_WIDTH: f32 = 560.0;
-    pub const SIDE_PANEL_PADDING: f32 = 36.0;
     /// Inset of row lists inside their panel (room for the focused row to grow).
     pub const LIST_INSET: f32 = 6.0;
     pub const SETTINGS_CATEGORY_WIDTH: f32 = 330.0;

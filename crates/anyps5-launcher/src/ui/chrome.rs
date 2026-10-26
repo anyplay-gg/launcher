@@ -1,6 +1,6 @@
 //! Surfaces and compound widgets built from the components (docs/DESIGN.md section 5): the game
 //! tile base, info cards (the "facts" line of the hero), panel rows with all their controls, the
-//! side panel, full-screen panels, the toast and scroll-to-focus.
+//! full-screen panels, the toast and scroll-to-focus.
 
 use egui::text::LayoutJob;
 use egui::{
@@ -1515,147 +1515,6 @@ pub fn centered_scroll_offset(
 // Panels
 // ---------------------------------------------------------------------------------------------
 
-/// Result of drawing the side panel.
-pub struct SidePanelOutput {
-    /// The dimmed area left of the panel was clicked: close the panel.
-    pub scrim_clicked: bool,
-    /// Rect of the panel contents (inside the 36 dp padding).
-    pub content: Rect,
-}
-
-/// The game-settings family of panels: slides in from the trailing edge (spring `Motion::Overlay`
-/// on `open`), dims the rest with black 0.35 and shows the title (30 light, 2 lines) and an optional
-/// subtitle (15, white 0.6). `add_contents` receives the content `Ui` below the title.
-pub fn side_panel<R>(
-    ctx: &Context,
-    id: impl std::hash::Hash + std::fmt::Debug,
-    open: bool,
-    title: &str,
-    subtitle: Option<&str>,
-    question: bool,
-    add_contents: impl FnOnce(&mut Ui) -> R,
-) -> Option<(SidePanelOutput, R)> {
-    let id = Id::unique(id);
-    let v = ctx.animate_to((id, "open"), if open { 1.0 } else { 0.0 }, Motion::Overlay);
-    if v <= 0.001 && !open {
-        return None;
-    }
-    let screen = ctx.content_rect();
-    let width = size::SIDE_PANEL_WIDTH;
-    // Reduced motion: the panel fades where it stands instead of sliding in.
-    let reduced = ctx.reduced_motion();
-    let offset = if reduced { 0.0 } else { (1.0 - v) * width };
-    let panel = Rect::from_min_max(
-        pos2(screen.max.x - width + offset, screen.min.y),
-        pos2(screen.max.x + offset, screen.max.y),
-    );
-    let mut scrim_clicked = false;
-    let mut result = None;
-    Area::new(id.with("area"))
-        .order(Order::Foreground)
-        .fixed_pos(screen.min)
-        .interactable(true)
-        .show(ctx, |ui| {
-            // The area covers the screen, so egui finds it under the pointer: the list scrolls
-            // with the wheel and nothing behind the scrim reacts.
-            ui.expand_to_include_rect(screen);
-            let painter = ui.painter().clone();
-            // Scrim over the rest of the screen.
-            let scrim = Rect::from_min_max(screen.min, pos2(panel.min.x, screen.max.y));
-            painter.rect_filled(
-                screen,
-                0.0,
-                fade(color::scrim_side_panel(), v.clamp(0.0, 1.0)),
-            );
-            let scrim_response = ui.interact(scrim, id.with("scrim"), Sense::click());
-            scrim_clicked = scrim_response.clicked();
-            let mut glass = GlassStyle::side_panel();
-            if reduced {
-                glass.alpha = v.clamp(0.0, 1.0);
-            }
-            paint_glass(ctx, &painter, panel, glass);
-            let edge = Rect::from_min_size(
-                panel.min,
-                vec2(components::hairline_width(&painter), panel.height()),
-            );
-            painter.rect_filled(
-                components::snap_rect(&painter, edge),
-                0.0,
-                color::hairline_panel_edge(),
-            );
-            let pad = size::SIDE_PANEL_PADDING;
-            let inner = panel.shrink(pad);
-            let mut child = ui.new_child(
-                UiBuilder::new()
-                    .max_rect(inner)
-                    .layout(Layout::top_down(Align::Min)),
-            );
-            if reduced {
-                child.set_opacity(v.clamp(0.0, 1.0));
-            }
-            let title_galley = text::layout(
-                &painter,
-                ty::SIDE_PANEL_TITLE,
-                title,
-                Color32::WHITE,
-                inner.width(),
-            );
-            child.add_space(0.0);
-            let title_h = title_galley.size().y;
-            let top = child.cursor().min.y;
-            // Title and subtitle start on the edge of the row cards below them.
-            let edge = inner.min.x + size::LIST_INSET;
-            let ink = if reduced {
-                fade(Color32::WHITE, v)
-            } else {
-                Color32::WHITE
-            };
-            painter.galley(pos2(edge, top), title_galley, ink);
-            child.add_space(title_h + 8.0);
-            if let Some(subtitle) = subtitle {
-                let top = child.cursor().min.y;
-                // Wraps (the confirmation sentence is long, and longer in Turkish).
-                // A confirmation's question is what the player decides on: body size and ink, with
-                // room between the lines. Any other subtitle is a quiet line.
-                let (style, ink, leading) = if question {
-                    (ty::QUESTION, color::text_label(), 1.45)
-                } else {
-                    (
-                        theme::TextStyle::new(15.0, theme::Weight::Regular),
-                        color::text_detail(),
-                        1.2,
-                    )
-                };
-                let galley = text::layout_font_pretty(
-                    &painter,
-                    style.font(),
-                    style.size * leading,
-                    style.tracking,
-                    subtitle,
-                    ink,
-                    inner.width(),
-                );
-                let height = galley.size().y;
-                let shown = if reduced { fade(ink, v) } else { ink };
-                painter.galley(pos2(edge, top), galley, shown);
-                child.add_space(height + 8.0);
-            }
-            child.add_space(18.0);
-            let content = child.available_rect_before_wrap();
-            result = Some((
-                SidePanelOutput {
-                    scrim_clicked: false,
-                    content,
-                },
-                add_contents(&mut child),
-            ));
-        });
-    result.map(|(mut output, r)| {
-        output.scrim_clicked = scrim_clicked;
-        (output, r)
-    })
-}
-
 /// Full-screen overlay panels (settings, library, trophies, log): glass plus black, opacity and
 /// scale 1.03 -> 1 on `Motion::Overlay`. Returns the animated openness; draw contents with `add`.
 pub fn fullscreen_panel<R>(
@@ -1677,7 +1536,7 @@ pub fn fullscreen_panel<R>(
         .fixed_pos(screen.min)
         .interactable(true)
         .show(ctx, |ui| {
-            // Covers the screen so the panel's lists get the wheel (see the side panel).
+            // Covers the screen so the panel's lists get the wheel (see the game panels' frame).
             ui.expand_to_include_rect(screen);
             let painter = ui.painter().clone();
             let faded = GlassStyle {
