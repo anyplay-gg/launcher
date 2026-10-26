@@ -12,33 +12,42 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use anyps5_core::online::api::AccountId;
 use anyps5_core::online::{self as net, CallState, VoiceProvider};
-use egui::{Align2, Area, Color32, Context, Id, Order, Rect, Sense, Ui, UiBuilder, pos2, vec2};
+use egui::{Align2, Area, Context, Id, Order, Rect, Sense, Ui, UiBuilder, pos2, vec2};
 
 use crate::app::model::Model;
+use crate::screens::online::monogram_colour;
 use crate::screens::online_call_strings::CallText as CT;
 use crate::screens::online_voice_strings::VoiceText;
-use crate::screens::shared::paint_gradient_circle;
 use crate::ui::Shell;
 use crate::ui::anim::{AnimExt, Motion};
-use crate::ui::components::{ConsoleButton, paint_shadow};
+use crate::ui::chrome::{RowAvatar, paint_row_avatar};
+use crate::ui::components::{ConsoleButton, ControlSize, paint_shadow};
 use crate::ui::glass::{GlassStyle, paint_glass};
 use crate::ui::i18n::{Arg, Language};
 use crate::ui::icons::Icon;
 use crate::ui::sound::Cue;
 use crate::ui::text;
-use crate::ui::theme::{self, fade, radius, shadows, size, ty, white};
+use crate::ui::theme::{color, fade, radius, shadows, size, space, ty};
 
 /// Where the surfaces hang: below the toast, which owns the top 28 dp.
 const TOP: f32 = size::TOAST_TOP + 72.0;
 const CARD_WIDTH: f32 = 400.0;
-const PAD: f32 = 24.0;
+const PAD: f32 = space::XL;
 const AVATAR: f32 = 56.0;
 /// The gap between controls: 12 dp, as everywhere in the launcher's rows of buttons.
-const GAP: f32 = 12.0;
+const GAP: f32 = size::CONTROL_GAP;
+/// What the strip gives to Leave on top of the gap: it ends the call, so it stands apart from Mute
+/// and Deafen.
+const LEAVE_GAP: f32 = space::XL;
+/// The room of the strip's words, before its controls.
+const STRIP_TEXT: f32 = 260.0;
 /// The height of the ringing card and of the strip, for what hangs below them.
-pub(crate) const CARD_HEIGHT: f32 = PAD * 2.0 + AVATAR + 20.0 + size::BUTTON_MIN_HEIGHT;
-pub(crate) const STRIP_HEIGHT: f32 = PAD + size::BUTTON_MIN_HEIGHT;
+/// The buttons of both surfaces are Medium: the card and the strip hang over what the player does.
+const BUTTON: f32 = ControlSize::Medium.height();
+pub(crate) const CARD_HEIGHT: f32 = PAD * 2.0 + AVATAR + space::L + BUTTON;
+pub(crate) const STRIP_HEIGHT: f32 = PAD + BUTTON;
 /// A ring every this many seconds while a call rings.
 const RING_EVERY: f64 = 3.2;
 
@@ -95,6 +104,7 @@ pub struct DiscordLine {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CardData {
     pub invitation: String,
+    pub account: AccountId,
     pub handle: String,
     pub discord: bool,
 }
@@ -132,14 +142,7 @@ impl CallsUi {
             Motion::Overlay,
         );
         if let Some(data) = card.as_ref().or(self.last_card.as_ref())
-            && let Some(action) = incoming_card(
-                ctx,
-                shell.accent_color(),
-                data,
-                language,
-                shown,
-                card.is_some(),
-            )
+            && let Some(action) = incoming_card(ctx, data, language, shown, card.is_some())
         {
             match action {
                 CardAction::Accept(id) => model.online.accept_call(&id),
@@ -214,6 +217,7 @@ pub fn card_data(online: &net::Online, now: u64) -> Option<CardData> {
     let invitation = online.incoming_call(now)?;
     Some(CardData {
         invitation: invitation.id.clone(),
+        account: invitation.from.id,
         handle: invitation.from.handle.clone(),
         discord: online.voice.provider() == VoiceProvider::Discord,
     })
@@ -305,7 +309,6 @@ fn keyboard_focus(ui: &Ui) -> bool {
 /// The ringing card. `live` is false while it fades out: it can no longer be pressed.
 pub(crate) fn incoming_card(
     ctx: &Context,
-    accent: Color32,
     data: &CardData,
     language: Language,
     shown: f32,
@@ -316,7 +319,7 @@ pub(crate) fn incoming_card(
         return None;
     }
     let screen = ctx.content_rect();
-    let height = PAD * 2.0 + AVATAR + 20.0 + size::BUTTON_MIN_HEIGHT;
+    let height = CARD_HEIGHT;
     let rect = Rect::from_min_size(
         pos2(
             screen.center().x - CARD_WIDTH * 0.5,
@@ -348,31 +351,22 @@ pub(crate) fn incoming_card(
             // The caller: avatar, name, and what is happening.
             let inner = rect.shrink(PAD);
             let centre = pos2(inner.min.x + AVATAR * 0.5, inner.min.y + AVATAR * 0.5);
-            paint_gradient_circle(
-                &painter,
-                centre,
-                AVATAR * 0.5,
-                fade(accent, a),
-                fade(theme::fade(accent, 0.55), a),
+            // The caller has the monogram colour and initial the friends list and a thread give
+            // them (the card has no picture to show).
+            let mut faded = painter.clone();
+            faded.set_opacity(a);
+            paint_row_avatar(
+                &faded,
+                Rect::from_center_size(centre, vec2(AVATAR, AVATAR)),
+                RowAvatar {
+                    texture: None,
+                    colour: monogram_colour(data.account),
+                    initial: data.handle.chars().next(),
+                    dot: None,
+                    away: false,
+                },
             );
-            let initial: String = data
-                .handle
-                .chars()
-                .take(1)
-                .flat_map(char::to_uppercase)
-                .collect();
-            text::paint(
-                &painter,
-                centre,
-                Align2::CENTER_CENTER,
-                ty::ITEM_TITLE,
-                &initial,
-                fade(
-                    theme::readable_ink(crate::screens::home::avatar_middle(accent)),
-                    a,
-                ),
-            );
-            let text_x = inner.min.x + AVATAR + 16.0;
+            let text_x = inner.min.x + AVATAR + space::L;
             let max_width = inner.max.x - text_x;
             let name = text::middle_truncate(&painter, ty::BUTTON, &data.handle, max_width);
             text::paint(
@@ -381,7 +375,7 @@ pub(crate) fn incoming_card(
                 Align2::LEFT_BOTTOM,
                 ty::BUTTON,
                 &name,
-                fade(Color32::WHITE, a),
+                fade(color::text(), a),
             );
             let line = if data.discord {
                 CT::IncomingDiscordLine
@@ -394,7 +388,7 @@ pub(crate) fn incoming_card(
                 Align2::LEFT_TOP,
                 ty::NOTE,
                 line.text(language),
-                fade(white(0.7), a),
+                fade(color::text_detail(), a),
             );
             let status = ui.interact(
                 rect,
@@ -406,10 +400,10 @@ pub(crate) fn incoming_card(
                 egui::WidgetInfo::labeled(egui::Role::Status, true, label.as_str())
             });
 
-            // The two answers: the quiet one first, the primary one at the trailing edge.
+            // The two answers: the primary one first, like in every dialog.
             let buttons = Rect::from_min_size(
-                pos2(inner.min.x, inner.max.y - size::BUTTON_MIN_HEIGHT),
-                vec2(inner.width(), size::BUTTON_MIN_HEIGHT),
+                pos2(inner.min.x, inner.max.y - BUTTON),
+                vec2(inner.width(), BUTTON),
             );
             let mut child = ui.new_child(
                 UiBuilder::new()
@@ -418,21 +412,11 @@ pub(crate) fn incoming_card(
             );
             child.spacing_mut().item_spacing.x = GAP;
             child.set_opacity(a);
-            let half = (inner.width() - GAP) * 0.5 - 6.0;
-            let focused = keyboard_focus(&child);
-            if ConsoleButton::new(CT::Decline.text(language))
-                .icon(Icon::X)
-                .min_width(half)
-                .focused(focused)
-                .enabled(live)
-                .show(&mut child)
-                .clicked()
-            {
-                action = Some(CardAction::Decline(data.invitation.clone()));
-            }
+            let half = (inner.width() - GAP) * 0.5;
             let focused = keyboard_focus(&child);
             if ConsoleButton::new(CT::Accept.text(language))
                 .icon(Icon::CHECK)
+                .size(ControlSize::Medium)
                 .prominent(true)
                 .min_width(half)
                 .focused(focused)
@@ -441,6 +425,18 @@ pub(crate) fn incoming_card(
                 .clicked()
             {
                 action = Some(CardAction::Accept(data.invitation.clone()));
+            }
+            let focused = keyboard_focus(&child);
+            if ConsoleButton::new(CT::Decline.text(language))
+                .icon(Icon::X)
+                .size(ControlSize::Medium)
+                .min_width(half)
+                .focused(focused)
+                .enabled(live)
+                .show(&mut child)
+                .clicked()
+            {
+                action = Some(CardAction::Decline(data.invitation.clone()));
             }
         });
     action
@@ -477,7 +473,7 @@ pub(crate) fn call_strip(
         return None;
     }
     let screen = ctx.content_rect();
-    let button = size::BUTTON_MIN_HEIGHT;
+    let button = BUTTON;
     let calling = matches!(data.kind, StripKind::Calling(_));
     let discord = data.discord.as_ref();
     // Controls: mute, deafen and leave on AnyPlay; the Discord link and leave on Discord; only
@@ -487,28 +483,28 @@ pub(crate) fn call_strip(
         Id::unique("call-measure"),
     ));
     let labelled = |label: &str, icon: bool| {
-        text::width(&measure, ty::BUTTON, label)
-            + size::BUTTON_PADDING * 2.0
+        text::width(&measure, ty::BUTTON_MEDIUM, label)
+            + size::BUTTON_PADDING_MEDIUM * 2.0
             + if icon {
-                size::BUTTON_ICON + size::BUTTON_GAP
+                size::BUTTON_ICON_MEDIUM + size::BUTTON_GAP_MEDIUM
             } else {
                 0.0
             }
     };
-    let icon_only = size::BUTTON_PADDING_ICON_ONLY * 2.0 + size::BUTTON_ICON_ONLY;
+    let icon_only = BUTTON;
     let controls_width = if calling {
         labelled(CT::Cancel.text(language), false)
     } else if let Some(d) = discord {
         icon_only
             + if d.link.is_some() {
-                GAP + labelled(CT::AnswerOnDiscord.text(language), true)
+                LEAVE_GAP + labelled(CT::AnswerOnDiscord.text(language), true)
             } else {
                 0.0
             }
     } else {
-        icon_only * 3.0 + GAP * 2.0
+        icon_only * 3.0 + GAP + LEAVE_GAP
     };
-    let text_width = 260.0;
+    let text_width = STRIP_TEXT;
     let width = PAD + text_width + GAP + controls_width + PAD;
     let height = PAD + button;
     let rect = Rect::from_min_size(
@@ -575,15 +571,15 @@ pub(crate) fn call_strip(
                 Align2::LEFT_TOP,
                 ty::ROW_TITLE,
                 &title,
-                fade(Color32::WHITE, a),
+                fade(color::text(), a),
             );
             if !line.is_empty() {
                 let line = text::middle_truncate(&painter, ty::NOTE, &line, text_width);
                 let ink = if matches!(&data.kind, StripKind::Connected(m) if m.iter().any(|m| m.speaking))
                 {
-                    white(0.95)
+                    color::text()
                 } else {
-                    white(0.7)
+                    color::text_detail()
                 };
                 text::paint(
                     &painter,
@@ -600,21 +596,23 @@ pub(crate) fn call_strip(
                 egui::WidgetInfo::labeled(egui::Role::Status, true, label.as_str())
             });
 
-            // Controls at the trailing edge, 12 dp apart.
+            // The controls stand at the trailing edge, in reading order (so Tab walks them the way
+            // they look), 12 dp apart; Leave stands a little further off.
             let area = Rect::from_min_max(
-                pos2(rect.min.x + PAD + text_width + GAP, rect.min.y),
+                pos2(rect.max.x - PAD - controls_width, rect.min.y),
                 pos2(rect.max.x - PAD, rect.max.y),
             );
             let mut child = ui.new_child(
                 UiBuilder::new()
                     .max_rect(area)
-                    .layout(egui::Layout::right_to_left(egui::Align::Center)),
+                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
             );
             child.spacing_mut().item_spacing.x = GAP;
             child.set_opacity(a);
             if calling {
                 let focused = keyboard_focus(&child);
                 if ConsoleButton::new(CT::Cancel.text(language))
+                    .size(ControlSize::Medium)
                     .focused(focused)
                     .enabled(live)
                     .show(&mut child)
@@ -624,9 +622,57 @@ pub(crate) fn call_strip(
                 }
                 return;
             }
-            // Right to left: the last in reading order is drawn first.
+            if discord.is_none() {
+                let focused = keyboard_focus(&child);
+                let (icon, name) = if data.muted || data.deafened {
+                    (Icon::MICROPHONE_SLASH, CT::Unmute)
+                } else {
+                    (Icon::MICROPHONE, CT::Mute)
+                };
+                if ConsoleButton::icon_only(icon, name.text(language))
+                    .size(ControlSize::Medium)
+                    .focused(focused)
+                    .enabled(live && !data.deafened)
+                    .show(&mut child)
+                    .clicked()
+                {
+                    action = Some(StripAction::ToggleMute);
+                }
+                let focused = keyboard_focus(&child);
+                let (icon, name) = if data.deafened {
+                    (Icon::SPEAKER_SLASH, CT::Undeafen)
+                } else {
+                    (Icon::HEADPHONES, CT::Deafen)
+                };
+                if ConsoleButton::icon_only(icon, name.text(language))
+                    .size(ControlSize::Medium)
+                    .focused(focused)
+                    .enabled(live)
+                    .show(&mut child)
+                    .clicked()
+                {
+                    action = Some(StripAction::ToggleDeafen);
+                }
+            } else if discord.is_some_and(|d| d.link.is_some()) {
+                let focused = keyboard_focus(&child);
+                if ConsoleButton::new(CT::AnswerOnDiscord.text(language))
+                    .icon(Icon::DISCORD_LOGO)
+                    .size(ControlSize::Medium)
+                    .prominent(true)
+                    .focused(focused)
+                    .enabled(live)
+                    .show(&mut child)
+                    .clicked()
+                {
+                    action = Some(StripAction::OpenDiscord);
+                }
+            }
+            if discord.is_none() || discord.is_some_and(|d| d.link.is_some()) {
+                child.add_space(LEAVE_GAP - GAP);
+            }
             let focused = keyboard_focus(&child);
             if ConsoleButton::icon_only(Icon::SIGN_OUT, CT::Leave.text(language))
+                .size(ControlSize::Medium)
                 .destructive(true)
                 .focused(focused)
                 .enabled(live)
@@ -634,50 +680,6 @@ pub(crate) fn call_strip(
                 .clicked()
             {
                 action = Some(StripAction::Leave);
-            }
-            if discord.is_some() {
-                if discord.is_some_and(|d| d.link.is_some()) {
-                    let focused = keyboard_focus(&child);
-                    if ConsoleButton::new(CT::AnswerOnDiscord.text(language))
-                        .icon(Icon::DISCORD_LOGO)
-                        .prominent(true)
-                        .focused(focused)
-                    .enabled(live)
-                    .show(&mut child)
-                    .clicked()
-                    {
-                        action = Some(StripAction::OpenDiscord);
-                    }
-                }
-                return;
-            }
-            let focused = keyboard_focus(&child);
-            let (icon, name) = if data.deafened {
-                (Icon::SPEAKER_SLASH, CT::Undeafen)
-            } else {
-                (Icon::HEADPHONES, CT::Deafen)
-            };
-            if ConsoleButton::icon_only(icon, name.text(language))
-                .focused(focused)
-                .enabled(live)
-                .show(&mut child)
-                .clicked()
-            {
-                action = Some(StripAction::ToggleDeafen);
-            }
-            let focused = keyboard_focus(&child);
-            let (icon, name) = if data.muted || data.deafened {
-                (Icon::MICROPHONE_SLASH, CT::Unmute)
-            } else {
-                (Icon::MICROPHONE, CT::Mute)
-            };
-            if ConsoleButton::icon_only(icon, name.text(language))
-                .focused(focused)
-                .enabled(live && !data.deafened)
-                .show(&mut child)
-                .clicked()
-            {
-                action = Some(StripAction::ToggleMute);
             }
         });
     action
