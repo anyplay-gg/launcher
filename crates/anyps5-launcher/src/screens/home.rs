@@ -1583,7 +1583,7 @@ fn action_row_status(
                     },
                     ty::DETAIL_LARGE,
                     room,
-                    2,
+                    3,
                     1.0,
                 );
             }
@@ -1591,12 +1591,13 @@ fn action_row_status(
     }
 }
 
-/// The glibc notice belongs to the states in which a player unlocks or starts a game; a running
-/// game has started already.
+/// The glibc notice belongs to the states in which a player is about to unlock or start a game and
+/// the status place is free. Installing, preparing and failed have a status of their own there; a
+/// running game has started already.
 fn glibc_notice_applies(state: &GameState) -> bool {
-    !matches!(
+    matches!(
         state,
-        GameState::Running | GameState::Starting | GameState::Unreadable
+        GameState::Locked | GameState::Queued | GameState::Installed { .. }
     )
 }
 

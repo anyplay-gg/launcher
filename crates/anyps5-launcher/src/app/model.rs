@@ -1268,6 +1268,8 @@ impl Model {
             HomeIntent::OpenFriends => self.open(Overlay::Friends),
             // The profile button: the own profile once signed in, the sign-in page before.
             HomeIntent::OpenOnline => self.open_profile_button(),
+            // The empty home shows no button while it scans, so nothing may open then either.
+            HomeIntent::ChooseFolder if self.scanning => {}
             HomeIntent::ChooseFolder => self.request_folder_dialog(),
         }
     }

@@ -11,13 +11,14 @@ use crate::screens::side::commands;
 use crate::ui::Shell;
 use crate::ui::anim::AnimExt;
 use crate::ui::chrome::{TileImage, TileOverlay, TileStyle, fullscreen_panel, paint_tile};
+use crate::ui::components::ConsoleButton;
 use crate::ui::glass::GlassStyle;
 use crate::ui::i18n::{Key, Language};
 use crate::ui::icons::Icon;
 use crate::ui::input::{self, Command, InputEvent};
 use crate::ui::sound::Cue;
 use crate::ui::text;
-use crate::ui::theme::{self, color, pad, size, ty, white};
+use crate::ui::theme::{self, color, pad, size, ty};
 
 /// Columns when the width is not known yet; the grid fills the width it gets (`columns_for`).
 pub const COLUMNS: usize = 6;
@@ -55,6 +56,8 @@ pub struct LibraryEntry {
 pub enum LibraryAction {
     /// Select this game and close the grid.
     Pick(usize),
+    /// No games: close the grid and ask for the games folder.
+    ChooseFolder,
     /// Close without a pick.
     Close,
 }
@@ -64,6 +67,8 @@ pub struct LibraryData<'a> {
     pub entries: &'a [LibraryEntry],
     pub language: Language,
     pub accent: Color32,
+    /// A games folder is set: the empty grid offers to change it, not to pick one.
+    pub folder_set: bool,
 }
 
 /// The grid overlay.
@@ -146,7 +151,12 @@ impl LibraryGrid {
                         self.close();
                         actions.push(LibraryAction::Pick(self.index));
                     }
-                    Command::Select | Command::Back | Command::Options => {
+                    Command::Select => {
+                        shell.play(Cue::Select);
+                        self.close();
+                        actions.push(LibraryAction::ChooseFolder);
+                    }
+                    Command::Back | Command::Options => {
                         shell.play(Cue::Close);
                         self.close();
                         actions.push(LibraryAction::Close);
@@ -158,6 +168,7 @@ impl LibraryGrid {
             }
         }
         let mut clicked = None;
+        let mut folder = false;
         let mut columns = self.columns;
         let index = self.index;
         let open = self.open;
@@ -166,11 +177,16 @@ impl LibraryGrid {
             "library-grid",
             open,
             GlassStyle::fullscreen_panel(),
-            |ui, _| draw(ui, data, index, &mut clicked, &mut columns),
+            |ui, _| draw(ui, data, index, &mut clicked, &mut folder, &mut columns),
         );
         self.columns = columns;
         if drawn.is_none() {
             self.closing = false;
+        }
+        if open && folder {
+            shell.play(Cue::Select);
+            self.close();
+            actions.push(LibraryAction::ChooseFolder);
         }
         if let (true, Some(i)) = (open, clicked) {
             self.index = i;
@@ -187,6 +203,7 @@ fn draw(
     data: &LibraryData<'_>,
     focus: usize,
     clicked: &mut Option<usize>,
+    folder: &mut bool,
     columns_out: &mut usize,
 ) {
     let ctx = ui.ctx().clone();
@@ -202,16 +219,18 @@ fn draw(
         Align2::LEFT_CENTER,
         ty::SCREEN_TITLE,
         language.text(Key::Library),
-        Color32::WHITE,
+        color::text(),
     );
-    text::paint(
-        &painter,
-        pos2(title.max.x + 8.0 + 8.0, area.min.y + title_h * 0.5 + 2.0),
-        Align2::LEFT_CENTER,
-        ty::LIBRARY_COUNT,
-        &data.entries.len().to_string(),
-        color::text_count(),
-    );
+    if !data.entries.is_empty() {
+        text::paint(
+            &painter,
+            pos2(title.max.x + 8.0 + 8.0, area.min.y + title_h * 0.5 + 2.0),
+            Align2::LEFT_CENTER,
+            ty::LIBRARY_COUNT,
+            &data.entries.len().to_string(),
+            color::text_count(),
+        );
+    }
     let header = Rect::from_min_size(area.min, vec2(area.width(), title_h));
     crate::screens::right_aligned_hints(ui, header, language);
 
@@ -234,7 +253,34 @@ fn draw(
             area.width().min(720.0),
             3,
         );
+        let body_height = body.size().y;
         painter.galley(pos2(middle.x, middle.y + 16.0), body, color::text_empty());
+        // The one next action: the same button as the empty home.
+        let button = Rect::from_center_size(
+            pos2(
+                middle.x,
+                middle.y + 16.0 + body_height + 24.0 + size::BUTTON_MIN_HEIGHT * 0.5,
+            ),
+            vec2(260.0, size::BUTTON_MIN_HEIGHT),
+        );
+        let mut child = ui.new_child(
+            UiBuilder::new()
+                .max_rect(button)
+                .layout(egui::Layout::top_down(egui::Align::Center)),
+        );
+        let title = language.text(if data.folder_set {
+            Key::ChangeFolder
+        } else {
+            Key::PickFolder
+        });
+        if ConsoleButton::new(title)
+            .icon(Icon::FOLDER)
+            .prominent(true)
+            .show(&mut child)
+            .clicked()
+        {
+            *folder = true;
+        }
         return;
     }
 
@@ -329,7 +375,11 @@ fn draw(
             );
             // Name (1 line, truncated) and the state line.
             let ns = name_style(focused);
-            let ink = if focused { Color32::WHITE } else { white(0.75) };
+            let ink = if focused {
+                color::text()
+            } else {
+                color::text_detail()
+            };
             let name_g = clamped(&painter, ns, &entry.name, ink, tile, 1);
             let ny = cell.min.y + tile + 10.0;
             painter.galley(pos2(cell.min.x, ny), name_g, ink);

@@ -81,7 +81,6 @@ use crate::ui::chrome::{TileImage, TileOverlay};
 use crate::ui::i18n::Key;
 use crate::ui::icons::Icon;
 use crate::ui::input::InputEvent;
-use crate::ui::theme::white;
 use anyps5_core::gamefiles::{GameInput, parse_input_ini};
 
 /// The page to show.
@@ -2175,7 +2174,7 @@ impl ScreenGallery {
                     StateText {
                         icon: Icon::CHECK_CIRCLE,
                         text: language.text(Key::Ready).into(),
-                        tint: white(0.75),
+                        tint: crate::ui::theme::color::text_detail(),
                         quiet: true,
                     }
                 },
@@ -2417,6 +2416,7 @@ impl ScreenGallery {
                 entries: &entries,
                 language,
                 accent,
+                folder_set: false,
             },
         );
         let diagnosis =
