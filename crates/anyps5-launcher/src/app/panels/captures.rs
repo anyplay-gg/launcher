@@ -42,9 +42,13 @@ impl Media for HostMedia<'_> {
     }
 
     fn full(&mut self, capture: &Capture) -> Thumb {
+        let kind = match capture.kind {
+            captures::Kind::Screenshot => ImageKind::Full,
+            captures::Kind::Clip => ImageKind::ClipFull,
+        };
         self.images.get(Key {
             path: capture.path.clone(),
-            kind: ImageKind::Full,
+            kind,
         })
     }
 

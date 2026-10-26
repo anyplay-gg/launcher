@@ -15,6 +15,7 @@ struct Rig {
     layout: Layout,
     flat: Vec<usize>,
     kinds: Vec<Kind>,
+    deletable: Vec<bool>,
     button: Option<ButtonKind>,
 }
 
@@ -36,6 +37,7 @@ impl Rig {
             screen,
             layout: Layout::build(&[5, 2], 4, M),
             flat: (10..17).collect(),
+            deletable: vec![true; kinds.len()],
             kinds,
             button: None,
         }
@@ -46,6 +48,7 @@ impl Rig {
             layout: &self.layout,
             flat: &self.flat,
             kinds: &self.kinds,
+            deletable: &self.deletable,
             button: self.button,
         };
         self.screen.handle(command, &nav)
@@ -56,6 +59,7 @@ impl Rig {
             layout: &self.layout,
             flat: &self.flat,
             kinds: &self.kinds,
+            deletable: &self.deletable,
             button: self.button,
         };
         self.screen.pressed(pressed, &nav)
@@ -234,6 +238,22 @@ fn the_buttons_of_the_view_differ_by_kind_and_stop_at_the_ends() {
 }
 
 #[test]
+fn a_file_the_launcher_did_not_name_has_no_delete() {
+    let mut rig = Rig::new();
+    rig.deletable[0] = false;
+    rig.screen.mode = Mode::View {
+        place: 0,
+        focus: ViewFocus::Action(1),
+    };
+    // Copy Image and Show in Folder only: Right at the second button has nowhere to go.
+    assert_eq!(rig.press(Command::Right).cues, vec![Cue::Bump]);
+    assert_eq!(
+        ViewAction::list(Kind::Screenshot, false),
+        &[ViewAction::CopyImage, ViewAction::ShowInFolder]
+    );
+}
+
+#[test]
 fn delete_asks_first_opens_on_cancel_and_deletes_only_on_a_second_choice() {
     let mut rig = Rig::new();
     rig.screen.mode = Mode::View {
@@ -377,7 +397,23 @@ fn a_press_with_the_pointer_does_what_the_keys_do() {
         ..Default::default()
     });
     assert_eq!(out.actions, vec![CapturesAction::OpenInPlayer(12)]);
-    // Clicking Delete asks; clicking its Delete answers.
+    // Clicking Delete asks; a click beside the card cancels, back to the Delete button; then
+    // Delete again and its Delete answer.
+    rig.pointer(paint::Pressed {
+        action: Some(2),
+        ..Default::default()
+    });
+    rig.pointer(paint::Pressed {
+        back: true,
+        ..Default::default()
+    });
+    assert_eq!(
+        rig.screen.mode(),
+        Mode::View {
+            place: 2,
+            focus: ViewFocus::Action(2)
+        }
+    );
     rig.pointer(paint::Pressed {
         action: Some(2),
         ..Default::default()

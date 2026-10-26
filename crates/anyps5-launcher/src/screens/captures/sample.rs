@@ -207,6 +207,9 @@ impl Media for SampleMedia {
     }
 
     fn full(&mut self, capture: &Capture) -> Thumb {
+        if capture.kind == Kind::Clip && self.plain_clips {
+            return Thumb::Unavailable;
+        }
         Thumb::Ready(self.picture(&capture.path, true))
     }
 

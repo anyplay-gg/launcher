@@ -70,6 +70,13 @@ pub struct Capture {
 }
 
 impl Capture {
+    /// Whether the launcher offers to delete it: only files the engine or the recorder named, so
+    /// that a folder the player pointed at a general picture folder never puts their own photos
+    /// one confirmation away from the bin.
+    pub fn deletable(&self) -> bool {
+        self.owner != Owner::Unknown
+    }
+
     /// The file's name with its extension.
     pub fn file_name(&self) -> String {
         self.path
@@ -226,17 +233,18 @@ pub fn group<K: Eq + Hash + Clone>(
     order
 }
 
-/// Deletes one capture file. It refuses anything that is not a capture the scan would list, so a
-/// wrong path can never remove another kind of file.
+/// Deletes one capture file. It refuses anything the engine or the recorder would not have named
+/// (see [`Capture::deletable`]), so a wrong path can never remove another kind of file or a
+/// picture the player put there themselves.
 pub fn delete(path: &Path) -> io::Result<()> {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    if classify(&name).is_none() {
+    if !classify(&name).is_some_and(|(_, owner)| owner != Owner::Unknown) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "not a capture file",
+            "not a capture the launcher made",
         ));
     }
     std::fs::remove_file(path)
@@ -597,6 +605,11 @@ mod tests {
         std::fs::write(&other, b"x").unwrap();
         assert!(delete(&other).is_err());
         assert!(other.exists());
+        // A picture of the player's own, with no game in its name, stays too.
+        let mine = dir.path().join("holiday.png");
+        std::fs::write(&mine, b"x").unwrap();
+        assert!(delete(&mine).is_err());
+        assert!(mine.exists());
         delete(&shot).unwrap();
         assert!(!shot.exists());
     }

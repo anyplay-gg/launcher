@@ -160,18 +160,21 @@ pub(crate) enum ViewAction {
 }
 
 impl ViewAction {
-    pub(crate) fn for_kind(kind: Kind) -> &'static [ViewAction] {
-        match kind {
-            Kind::Clip => &[
+    /// The buttons of the view; a file the launcher did not name has no Delete.
+    pub(crate) fn list(kind: Kind, deletable: bool) -> &'static [ViewAction] {
+        match (kind, deletable) {
+            (Kind::Clip, true) => &[
                 ViewAction::OpenInPlayer,
                 ViewAction::ShowInFolder,
                 ViewAction::Delete,
             ],
-            Kind::Screenshot => &[
+            (Kind::Clip, false) => &[ViewAction::OpenInPlayer, ViewAction::ShowInFolder],
+            (Kind::Screenshot, true) => &[
                 ViewAction::CopyImage,
                 ViewAction::ShowInFolder,
                 ViewAction::Delete,
             ],
+            (Kind::Screenshot, false) => &[ViewAction::CopyImage, ViewAction::ShowInFolder],
         }
     }
 }
@@ -182,6 +185,8 @@ pub(crate) struct Nav<'a> {
     /// The capture at every place.
     pub flat: &'a [usize],
     pub kinds: &'a [Kind],
+    /// Whether the capture at a place may be deleted.
+    pub deletable: &'a [bool],
     /// What the state without tiles offers: a button, or nothing.
     pub button: Option<ButtonKind>,
 }
@@ -297,6 +302,7 @@ impl CapturesScreen {
             .flat_map(|s| s.items.iter().copied())
             .collect();
         let kinds: Vec<Kind> = flat.iter().map(|&i| data.captures[i].kind).collect();
+        let deletable: Vec<bool> = flat.iter().map(|&i| data.captures[i].deletable()).collect();
         let sizes: Vec<usize> = data.sections.iter().map(|s| s.items.len()).collect();
         let layout = Layout::build(&sizes, self.columns, paint::metrics(self.tile_w));
         let button = paint::button_for(data).map(|b| b.kind);
@@ -306,6 +312,7 @@ impl CapturesScreen {
                 layout: &layout,
                 flat: &flat,
                 kinds: &kinds,
+                deletable: &deletable,
                 button,
             };
             for command in commands(events) {
@@ -336,6 +343,7 @@ impl CapturesScreen {
                 layout: &layout,
                 flat: &flat,
                 kinds: &kinds,
+                deletable: &deletable,
                 button: paint::button_for(data).map(|b| b.kind),
             };
             let outcome = self.pressed(pressed, &nav);
@@ -453,7 +461,8 @@ impl CapturesScreen {
             },
             Mode::View { place, focus } => {
                 let kind = nav.kinds[place.min(total.saturating_sub(1))];
-                let buttons = ViewAction::for_kind(kind);
+                let buttons =
+                    ViewAction::list(kind, nav.deletable[place.min(total.saturating_sub(1))]);
                 match (focus, command) {
                     (_, Command::Back | Command::Options) => {
                         self.mode = Mode::Browse;
@@ -550,7 +559,9 @@ impl CapturesScreen {
                 Command::Select | Command::Back | Command::Options => {
                     self.mode = Mode::View {
                         place,
-                        focus: ViewFocus::Action(ViewAction::for_kind(nav.kinds[place]).len() - 1),
+                        focus: ViewFocus::Action(
+                            ViewAction::list(nav.kinds[place], nav.deletable[place]).len() - 1,
+                        ),
                     };
                     out.cues.push(Cue::Back);
                 }
@@ -631,10 +642,13 @@ impl CapturesScreen {
                     self.zone = Zone::Grid(place);
                     out.cues.push(Cue::Close);
                 }
+                // A click beside the card is Cancel: back to where Delete was pressed.
                 Mode::Confirm { place, .. } => {
                     self.mode = Mode::View {
                         place,
-                        focus: ViewFocus::Media,
+                        focus: ViewFocus::Action(
+                            ViewAction::list(nav.kinds[place], nav.deletable[place]).len() - 1,
+                        ),
                     };
                     out.cues.push(Cue::Back);
                 }
@@ -654,7 +668,7 @@ impl CapturesScreen {
                 }
             }
             if let Some(i) = pressed.action {
-                let buttons = ViewAction::for_kind(nav.kinds[place]);
+                let buttons = ViewAction::list(nav.kinds[place], nav.deletable[place]);
                 if let Some(&action) = buttons.get(i) {
                     self.mode = Mode::View {
                         place,

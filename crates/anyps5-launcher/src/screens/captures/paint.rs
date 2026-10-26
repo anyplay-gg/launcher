@@ -481,14 +481,7 @@ fn tile(ui: &mut Ui, tile: TileCx<'_>) -> egui::Response {
     } else {
         color::text_detail()
     };
-    let galley = clamped(
-        &painter,
-        ty::STATE_LABEL_SMALL,
-        &caption,
-        ink,
-        rect.width(),
-        1,
-    );
+    let galley = clamped(&painter, ty::STATE_LABEL, &caption, ink, rect.width(), 1);
     painter.galley(pos2(rect.min.x, rect.max.y + 10.0), galley, ink);
     response
 }
@@ -703,18 +696,25 @@ fn view(
     let language = data.language;
     let capture = &data.captures[flat[place]];
     let total = flat.len();
-    let section = data
+    let group = data
         .sections
         .iter()
-        .find(|s| s.items.contains(&flat[place]))
-        .map_or_else(String::new, |s| s.title.clone());
+        .find(|s| s.items.contains(&flat[place]));
+    let section = group.map_or_else(String::new, |s| s.title.clone());
+    // "3 of 4" counts within the game the title names.
+    let (within, of) = group.map_or((place, total), |s| {
+        (
+            s.items.iter().position(|&i| i == flat[place]).unwrap_or(0),
+            s.items.len(),
+        )
+    });
 
     // The top: where it is from, and when.
     let head = header(ui, area, language, &section, None, pressed);
     let date = format::date_text(capture.modified * 1_000_000, data.utc_offset, language);
     let position = CapturesText::Position.format(
         language,
-        &[Arg::Int(place as i64 + 1), Arg::Int(total as i64)],
+        &[Arg::Int(within as i64 + 1), Arg::Int(of as i64)],
     );
     let sub_y = head.max.y + 6.0;
     let sub = format!("{date}   {position}");
@@ -732,7 +732,7 @@ fn view(
         pos2(area.min.x, area.max.y - size::CONTROL_M),
         vec2(area.width(), size::CONTROL_M),
     );
-    let buttons = ViewAction::for_kind(capture.kind);
+    let buttons = ViewAction::list(capture.kind, capture.deletable());
     centred_row(ui, actions_rect, |row| {
         for (i, action) in buttons.iter().enumerate() {
             let (label, icon) = match action {
@@ -784,26 +784,24 @@ fn view(
         pos2(area.max.x - arrow - 24.0, name_y - 18.0),
     );
     let thumb = data.media.thumb(capture);
-    let full = match capture.kind {
-        Kind::Screenshot => data.media.full(capture),
-        Kind::Clip => Thumb::Unavailable,
-    };
+    let full = data.media.full(capture);
     let aspect = match (full, thumb) {
         (Thumb::Ready(i), _) | (_, Thumb::Ready(i)) => i.aspect,
         _ => 16.0 / 9.0,
     }
     .clamp(0.3, 4.0);
     let fit = contain(media_area, aspect);
-    let appear = ctx.animate_from_to(
-        ("captures-view-appear", &capture.path),
-        0.0,
-        1.0,
-        Motion::Hover,
-    );
     let ready = match (full, thumb) {
         (Thumb::Ready(i), _) | (_, Thumb::Ready(i)) => Some(i),
         _ => None,
     };
+    // A picture that has to be waited for fades in; one that is there at once, as when stepping
+    // through the captures, is just there.
+    let appear = ctx.animate_to(
+        ("captures-view-appear", &capture.path),
+        f32::from(ready.is_some()),
+        Motion::Hover,
+    );
     // Behind a picture, black; a clip without one is a plain tile like the grid's.
     if ready.is_some() {
         painter.rect_filled(fit, corner(14.0), theme::black(0.35 * appear));

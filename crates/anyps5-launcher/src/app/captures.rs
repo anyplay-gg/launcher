@@ -31,6 +31,8 @@ pub struct CaptureService {
     generation: u64,
     /// Counts every change of the list, so what is made from it can be kept until it changes.
     revision: u64,
+    /// Files deleted since the area opened: a scan that started before cannot bring them back.
+    deleted: Vec<PathBuf>,
     grouped: Option<((u64, core::Filter, u64), Grouped)>,
 }
 
@@ -47,6 +49,7 @@ impl CaptureService {
             rx,
             generation: 0,
             revision: 0,
+            deleted: Vec::new(),
             grouped: None,
         }
     }
@@ -54,6 +57,7 @@ impl CaptureService {
     /// The area opens: forget the old list and read `folder`.
     pub fn begin(&mut self, folder: &Path) {
         self.captures.clear();
+        self.deleted.clear();
         self.load = Load::Loading;
         self.scan(folder);
     }
@@ -94,7 +98,8 @@ impl CaptureService {
                 continue;
             }
             match result {
-                Ok(list) => {
+                Ok(mut list) => {
+                    list.retain(|c| !self.deleted.contains(&c.path));
                     self.captures = list;
                     self.load = Load::Ready;
                     self.revision += 1;
@@ -143,6 +148,7 @@ impl CaptureService {
     /// A capture was deleted: it leaves the list now, without reading the folder again.
     pub fn remove(&mut self, path: &Path) {
         self.captures.retain(|c| c.path != path);
+        self.deleted.push(path.to_path_buf());
         self.revision += 1;
         self.images.forget(path);
     }

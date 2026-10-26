@@ -75,9 +75,9 @@ impl CapturesText {
             CapturesText::Loading => "Loading captures",
             CapturesText::EmptyTitle => "No captures yet",
             CapturesText::EmptyBody => {
-                "Press F12 in a game to take a screenshot. Turn on Clips to keep the last seconds of play as a video."
+                "Take a screenshot in a game (F12 by default). Turn on Clips to keep the last seconds of play as a video."
             }
-            CapturesText::EmptyBodyShotsOnly => "Press F12 in a game to take a screenshot.",
+            CapturesText::EmptyBodyShotsOnly => "Take a screenshot in a game (F12 by default).",
             CapturesText::OpenClipsSettings => "Open Clips Settings",
             CapturesText::NoScreenshots => "No screenshots yet",
             CapturesText::NoClips => "No clips yet",
@@ -92,7 +92,7 @@ impl CapturesText {
             CapturesText::OpenFolderSettings => "Open Folder Settings",
             CapturesText::FailedTitle => "Captures could not be read",
             CapturesText::FailedBody => {
-                "AnyPlay could not read %@. Check that the folder is open to you, then try again."
+                "AnyPlay could not read %@. Check that you have permission to open the folder, then try again."
             }
             CapturesText::TryAgain => "Try Again",
             CapturesText::OtherGame => "Other Captures",
@@ -130,9 +130,9 @@ impl CapturesText {
             CapturesText::Loading => "Yakalamalar yükleniyor",
             CapturesText::EmptyTitle => "Henüz yakalama yok",
             CapturesText::EmptyBody => {
-                "Ekran görüntüsü almak için oyunda F12'ye bas. Oynayışın son saniyelerini video olarak tutmak için Klipleri aç."
+                "Oyunda ekran görüntüsü al (varsayılan F12). Oynayışın son saniyelerini video olarak tutmak için Klipleri aç."
             }
-            CapturesText::EmptyBodyShotsOnly => "Ekran görüntüsü almak için oyunda F12'ye bas.",
+            CapturesText::EmptyBodyShotsOnly => "Oyunda ekran görüntüsü al (varsayılan F12).",
             CapturesText::OpenClipsSettings => "Klip Ayarlarını Aç",
             CapturesText::NoScreenshots => "Henüz ekran görüntüsü yok",
             CapturesText::NoClips => "Henüz klip yok",
@@ -147,7 +147,7 @@ impl CapturesText {
             CapturesText::OpenFolderSettings => "Klasör Ayarlarını Aç",
             CapturesText::FailedTitle => "Yakalamalar okunamadı",
             CapturesText::FailedBody => {
-                "AnyPlay %@ klasörünü okuyamadı. Klasöre erişimin olduğundan emin ol, sonra tekrar dene."
+                "AnyPlay %@ klasörünü okuyamadı. Klasörü açma iznin olduğundan emin ol, sonra tekrar dene."
             }
             CapturesText::TryAgain => "Tekrar Dene",
             CapturesText::OtherGame => "Diğer Yakalamalar",

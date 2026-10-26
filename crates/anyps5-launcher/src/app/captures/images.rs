@@ -29,9 +29,13 @@ pub const CACHE_BYTES: usize = 160 * 1024 * 1024;
 const THUMB_SIDE: u32 = 512;
 /// The longer side of the big picture.
 const FULL_SIDE: u32 = 2560;
-const WORKERS: usize = 3;
+/// The longer side of a clip's picture in the full view.
+const FULL_CLIP_SIDE: u32 = 1024;
+/// Workers for pictures, and one more for the system's clip thumbnails, which can hang on a bad
+/// file or a slow drive and must not hold up the screenshots.
+const IMAGE_WORKERS: usize = 2;
 /// Pictures bigger than this many pixels are not opened (a decompression bomb, not a screenshot).
-const MAX_PIXELS: u64 = 120_000_000;
+const MAX_PIXELS: u64 = 64_000_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Kind {
@@ -41,6 +45,20 @@ pub enum Kind {
     Full,
     /// A clip: the picture the system has for it, and its length.
     Clip,
+    /// A clip, big, for the full view.
+    ClipFull,
+}
+
+impl Kind {
+    fn is_clip(self) -> bool {
+        matches!(self, Kind::Clip | Kind::ClipFull)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Lane {
+    Pictures,
+    Clips,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -73,6 +91,7 @@ struct Done {
 #[derive(Default)]
 struct Queue {
     jobs: VecDeque<Key>,
+    clip_jobs: VecDeque<Key>,
     /// Taken by a worker and not yet delivered.
     in_flight: HashSet<Key>,
     closed: bool,
@@ -109,11 +128,16 @@ impl Images {
             full_side: AtomicU32::new(FULL_SIDE.min(2048)),
         });
         let (tx, rx) = channel();
-        for n in 0..WORKERS {
+        for n in 0..=IMAGE_WORKERS {
+            let lane = if n == IMAGE_WORKERS {
+                Lane::Clips
+            } else {
+                Lane::Pictures
+            };
             let (shared, tx, ctx) = (shared.clone(), tx.clone(), ctx.clone());
             let spawned = std::thread::Builder::new()
                 .name(format!("capture-images-{n}"))
-                .spawn(move || work(&shared, &tx, &ctx));
+                .spawn(move || work(&shared, &tx, &ctx, lane));
             if let Err(error) = spawned {
                 tracing::warn!("captures: a decoder could not start: {error}");
             }
@@ -147,7 +171,7 @@ impl Images {
                 .unwrap_or_else(|e| e.into_inner())
                 .in_flight
                 .remove(&done.key);
-            if done.key.kind == Kind::Clip {
+            if done.key.kind.is_clip() {
                 self.durations.insert(done.key.path.clone(), done.duration);
             }
             let entry = match done.image {
@@ -177,16 +201,23 @@ impl Images {
         {
             let mut queue = self.shared.queue.lock().unwrap_or_else(|e| e.into_inner());
             let mut jobs = VecDeque::new();
+            let mut clip_jobs = VecDeque::new();
             for key in &asked {
                 if matches!(self.entries.get(key), Some(Entry::Queued)) {
+                    let lane = if key.kind.is_clip() {
+                        &mut clip_jobs
+                    } else {
+                        &mut jobs
+                    };
                     if queue.in_flight.contains(key) {
                         self.entries.insert(key.clone(), Entry::Working);
-                    } else if !jobs.contains(key) {
-                        jobs.push_back(key.clone());
+                    } else if !lane.contains(key) {
+                        lane.push_back(key.clone());
                     }
                 }
             }
             queue.jobs = jobs;
+            queue.clip_jobs = clip_jobs;
         }
         // Queued entries nobody asked for this frame were scrolled past: forget them.
         self.entries
@@ -254,7 +285,7 @@ impl Images {
 
     /// Forgets everything about a file that is gone.
     pub fn forget(&mut self, path: &Path) {
-        for kind in [Kind::Thumb, Kind::Full, Kind::Clip] {
+        for kind in [Kind::Thumb, Kind::Full, Kind::Clip, Kind::ClipFull] {
             let key = Key {
                 path: path.to_path_buf(),
                 kind,
@@ -273,6 +304,7 @@ impl Images {
         self.bytes = 0;
         let mut queue = self.shared.queue.lock().unwrap_or_else(|e| e.into_inner());
         queue.jobs.clear();
+        queue.clip_jobs.clear();
     }
 
     /// How much the textures hold, in bytes.
@@ -317,12 +349,13 @@ impl Drop for Images {
         let mut queue = self.shared.queue.lock().unwrap_or_else(|e| e.into_inner());
         queue.closed = true;
         queue.jobs.clear();
+        queue.clip_jobs.clear();
         drop(queue);
         self.shared.wake.notify_all();
     }
 }
 
-fn work(shared: &Shared, tx: &Sender<Done>, ctx: &Context) {
+fn work(shared: &Shared, tx: &Sender<Done>, ctx: &Context, lane: Lane) {
     loop {
         let key = {
             let mut queue = shared.queue.lock().unwrap_or_else(|e| e.into_inner());
@@ -330,7 +363,11 @@ fn work(shared: &Shared, tx: &Sender<Done>, ctx: &Context) {
                 if queue.closed {
                     return;
                 }
-                if let Some(key) = queue.jobs.pop_front() {
+                let jobs = match lane {
+                    Lane::Pictures => &mut queue.jobs,
+                    Lane::Clips => &mut queue.clip_jobs,
+                };
+                if let Some(key) = jobs.pop_front() {
                     queue.in_flight.insert(key.clone());
                     break key;
                 }
@@ -343,8 +380,16 @@ fn work(shared: &Shared, tx: &Sender<Done>, ctx: &Context) {
                 decode(&key.path, shared.full_side.load(Ordering::Relaxed)),
                 None,
             ),
-            Kind::Clip => (
-                anyps5_core::captures::clip_thumbnail(&key.path, THUMB_SIDE).and_then(|p| {
+            Kind::Clip | Kind::ClipFull => (
+                anyps5_core::captures::clip_thumbnail(
+                    &key.path,
+                    if key.kind == Kind::ClipFull {
+                        FULL_CLIP_SIDE
+                    } else {
+                        THUMB_SIDE
+                    },
+                )
+                .and_then(|p| {
                     (p.width > 0 && p.height > 0).then(|| {
                         ColorImage::from_rgba_unmultiplied(
                             [p.width as usize, p.height as usize],
