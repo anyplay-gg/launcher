@@ -391,6 +391,7 @@ impl PanelHost {
                 capturing: self.settings.clips_capturing(),
             },
             location: cx.model.location_env(),
+            windows_rows: cfg!(windows),
         };
         // Theme, accent, language, motion and sounds reach the shell inside the panel
         // (`apply_preferences`), so the backdrop cross-fades while the choice is made.

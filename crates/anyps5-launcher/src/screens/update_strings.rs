@@ -124,8 +124,8 @@ impl UpdateText {
             UpdateText::Ready => "%@ ready",
             UpdateText::WaitingForGame => "Waiting for your game",
             UpdateText::Available => "%@ available",
-            UpdateText::NotReachable => "Not reachable",
-            UpdateText::NotInstalled => "Not installed",
+            UpdateText::NotReachable => "Could not check",
+            UpdateText::NotInstalled => "Update failed",
             UpdateText::NoteDownloading => "Launcher %@ downloads in the background.",
             UpdateText::NoteReady => {
                 "Restart now, or the update installs the next time you close the launcher."
@@ -188,8 +188,8 @@ impl UpdateText {
             UpdateText::Ready => "%@ hazır",
             UpdateText::WaitingForGame => "Oyunun kapanması bekleniyor",
             UpdateText::Available => "%@ var",
-            UpdateText::NotReachable => "Ulaşılamadı",
-            UpdateText::NotInstalled => "Kurulmadı",
+            UpdateText::NotReachable => "Denetlenemedi",
+            UpdateText::NotInstalled => "Güncelleme başarısız",
             UpdateText::NoteDownloading => "Başlatıcı %@ arka planda indiriliyor.",
             UpdateText::NoteReady => {
                 "Şimdi yeniden başlat ya da güncelleme, başlatıcıyı bir sonraki kapatışında kurulur."
