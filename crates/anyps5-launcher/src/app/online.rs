@@ -45,6 +45,8 @@ struct WaitingStart {
     number: u64,
     since: Instant,
     joining: bool,
+    /// The version rule a failed join is read under ([`Join::effective_rule`]).
+    rule: anyps5_core::online::api::VersionRule,
     /// Play Together: the start asked for a session of the player's own.
     hosting: bool,
 }
@@ -244,6 +246,8 @@ impl OnlineService {
                 build: build(model),
                 join: join.as_ref().map(|j| j.session.clone()),
                 host: host.clone(),
+                version_rule: join.as_ref().map(|j| j.rule).unwrap_or_default(),
+                override_version: join.as_ref().is_some_and(|j| j.override_version),
             },
         );
         self.waiting = Some(WaitingStart {
@@ -251,6 +255,7 @@ impl OnlineService {
             number: self.starts,
             since: Instant::now(),
             joining: join.is_some(),
+            rule: join.as_ref().map(Join::effective_rule).unwrap_or_default(),
             hosting: host.is_some(),
         });
         self.started = Some(game.id.clone());
@@ -500,7 +505,13 @@ impl OnlineService {
                             .game(&waiting.game)
                             .map(|g| (g.name.clone(), g.version.clone()))
                             .unwrap_or_default();
-                        match Blocker::from_failure(&failure, &title, &version, &build(model)) {
+                        match Blocker::from_failure(
+                            &failure,
+                            &title,
+                            &version,
+                            &build(model),
+                            waiting.rule,
+                        ) {
                             Some(blocker) => model.together.block(blocker),
                             None => {
                                 let text = failure_text(&failure, language);
@@ -524,7 +535,13 @@ impl OnlineService {
             (Purpose::CheckJoin(join), Ok(_)) => self.begin_join(model, join),
             (Purpose::CheckJoin(join), Err(failure)) => {
                 // `join.version` and `join.build` are the player's own.
-                match Blocker::from_failure(&failure, &join.title, &join.version, &join.build) {
+                match Blocker::from_failure(
+                    &failure,
+                    &join.title,
+                    &join.version,
+                    &join.build,
+                    join.effective_rule(),
+                ) {
                     Some(blocker) => model.together.block(blocker),
                     None => {
                         let text = failure_text(&failure, language);
@@ -1125,6 +1142,8 @@ mod tests {
             version: "01.000".into(),
             build: "v1".into(),
             friend: "Lumen".into(),
+            rule: Default::default(),
+            override_version: false,
         });
         model.play(&game().id);
         assert!(model.starting.is_some());
@@ -1644,6 +1663,45 @@ mod tests {
         assert!(model.online.take_outbox().is_empty());
     }
 
+    #[test]
+    fn try_anyway_joins_despite_the_version_and_tells_the_net_service() {
+        use crate::app::together::{Action, apply};
+        let mut model = lan_model();
+        let mut online = service();
+        crate::app::together::join(&mut model, offer("01.100.000"));
+        assert!(matches!(
+            model.together.blocked,
+            Some(anyps5_core::play_together::Blocker::WrongVersion { .. })
+        ));
+        assert!(model.online.take_outbox().is_empty());
+
+        apply(&mut model, Action::TryAnyway);
+        assert!(model.together.blocked.is_none());
+        let sent = model.online.take_outbox();
+        assert!(sent[0].contains("\"do\":\"check_join\""), "{}", sent[0]);
+        assert!(sent[0].contains("\"override_version\":true"), "{}", sent[0]);
+
+        // The net service agrees; the start carries the same explicit flag.
+        let mut join = mc_join("01.044.000");
+        join.override_version = true;
+        let mut ready = Vec::new();
+        online.answered(
+            &mut model,
+            Purpose::CheckJoin(join),
+            Ok(serde_json::json!({})),
+            &mut ready,
+        );
+        online.on_play(&mut model, &lan_game());
+        let sent = model.online.take_outbox();
+        assert!(sent[0].contains("\"join\":\"s1\""), "{}", sent[0]);
+        assert!(sent[0].contains("\"override_version\":true"), "{}", sent[0]);
+
+        // A plain join never carries it.
+        let mut model = lan_model();
+        crate::app::together::join(&mut model, offer("01.044.000"));
+        assert!(!model.online.take_outbox()[0].contains("override_version"));
+    }
+
     fn mc_join(version: &str) -> Join {
         Join {
             session: "s1".into(),
@@ -1652,6 +1710,8 @@ mod tests {
             version: version.into(),
             build: "v1".into(),
             friend: "Mira".into(),
+            rule: Default::default(),
+            override_version: false,
         }
     }
 

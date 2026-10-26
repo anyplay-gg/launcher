@@ -320,6 +320,21 @@ pub struct Join {
     pub build: String,
     /// The friend whose session it is, for the messages.
     pub friend: String,
+    /// How far the player's version may differ from the session's (the title's table entry).
+    pub rule: api::VersionRule,
+    /// "Try Anyway": the player chose to join although the rule says the versions do not fit.
+    pub override_version: bool,
+}
+
+impl Join {
+    /// The rule the answers are read under: after "Try Anyway" no version differs.
+    pub fn effective_rule(&self) -> api::VersionRule {
+        if self.override_version {
+            api::VersionRule::Any
+        } else {
+            self.rule
+        }
+    }
 }
 
 /// What a command was sent for.
