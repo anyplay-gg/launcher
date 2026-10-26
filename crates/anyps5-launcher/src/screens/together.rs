@@ -304,9 +304,12 @@ pub(crate) fn paint(
                         &painter,
                         centre,
                         Align2::CENTER_CENTER,
-                        TextStyle::new(24.0, Weight::Bold),
+                        ty::ITEM_TITLE,
                         &initial,
-                        fade(Color32::WHITE, a),
+                        fade(
+                            theme::readable_ink(crate::screens::home::avatar_middle(accent)),
+                            a,
+                        ),
                     );
                 }
                 Lead::Warning => {

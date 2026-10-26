@@ -166,6 +166,7 @@ impl FriendsScreen {
         // A conversation stands on its own, full screen, without the rail.
         let chat = self.panel.chat_screen(data);
         let thread = self.panel.chat_is_thread(data);
+        let asks = self.panel.asks();
         let has_rail = data.online.is_signed_in() && section.is_some() && !chat;
         if !has_rail {
             self.zone = Some(Zone::Page);
@@ -318,6 +319,7 @@ impl FriendsScreen {
                         page_width - 2.0 * inset,
                         &title,
                         note,
+                        asks,
                     );
                     top + used + 22.0
                 };

@@ -84,8 +84,12 @@ pub(super) enum HubMessage {
     Stop,
 }
 
-/// Binds the control port dual-stack (IPv4 and IPv6), the preferred one first, then any.
-pub(super) fn bind_listener(preferred: u16) -> io::Result<TcpListener> {
+/// Binds the control port dual-stack (IPv4 and IPv6), the preferred one first, then any. With
+/// `bind`, only that address (tests bind loopback).
+pub(super) fn bind_listener(bind: Option<IpAddr>, preferred: u16) -> io::Result<TcpListener> {
+    if let Some(ip) = bind {
+        return TcpListener::bind((ip, preferred)).or_else(|_| TcpListener::bind((ip, 0)));
+    }
     for port in [preferred, 0] {
         if let Ok(socket) = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP))
             && socket.set_only_v6(false).is_ok()
