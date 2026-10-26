@@ -1560,15 +1560,15 @@ for new trophy records; each new one raises a banner and refreshes the trophy se
 ### 5.15 Onboarding (first start)
 
 Three steps, four when there is a cloud to sign in to (release builds name AnyPlay’s); left-aligned column on a left-to-right black 0.55 -> 0.1 gradient over the (live) theme backdrop; padding 110 x 80.
-Top: one dot per step (current 46 x 5, others 18 x 5; white 0.95 for steps up to the current one, else 0.22; gap 10; 54 below).
+Top: one dot per step, and the same in words ("Step 2 of 4", `ty::DETAIL`, `text_note`) 16 right of the dots; the content starts `space::XXXL + space::L` below the dots on every step (one offset, so the title never jumps); (current 46 x 5, others 18 x 5; white 0.95 for steps up to the current one, else 0.22; gap 10; 54 below).
 Then the step (animation 18), flexible space, bottom row: `back` button (chevron-left glyph, unfocused, only from step 1) left,
 hint bar (no options) right. Title block: title 54 light, subtitle 19 white 0.7 (max 720 wide), gap 14; step gap 46.
 
 | Step | Title / subtitle | Content |
 |---|---|---|
-| 0 | `welcome` / `welcomeSubtitle` | overline `chooseLanguage`; two cards 280 x 150 (radius 20, padding 26, bottom-left aligned): `TR` or `EN` (15 bold, 0.6) over the language's own name (28 medium). Focused: white fill, black text, scale 1.04, glow; else white 0.10 + 1 px white 0.14 |
-| 1 | `chooseTheme` / `chooseThemeSubtitle` | three theme cards (S-themes): live or still preview 330 x 186 (radius 18, focus ring) above a row: theme name (22) and a 12 dp dot in the theme's default accent; focused card scale 1.04 / opacity 1, others 0.97 / 0.72 |
-| 2 | `chooseFolder` / `chooseFolderSubtitle` | button `pickFolder` (or `changeFolder` once chosen; folder glyph, min 220), and once a folder is set the prominent button `start` (arrow glyph, min 180); a glass card (radius 16, padding 20, max 640) with a status glyph (magnifier while scanning, question-folder if empty, check in accent) + `scanning` / `noGamesFound` / `gamesFound` (18 medium) over the path (13, 0.5, middle truncated); the first 8 games as 84 tiles |
+| 0 | `welcome` / `welcomeSubtitle` (0.2.8: a prominent **Continue** button under the cards; a tap on a card only selects) | overline `chooseLanguage`; two cards 280 x 150 (radius 20, padding 26, bottom-left aligned): `TR` or `EN` (15 bold, 0.6) over the language's own name (28 medium). Focused: white fill, black text, scale 1.04, glow; else white 0.10 + 1 px white 0.14 |
+| 1 | `chooseTheme` / `chooseThemeSubtitle` (0.2.8: **Continue** under the cards; the theme's accent dot follows its name) | three theme cards (S-themes): live or still preview 330 x 186 (radius 18, focus ring) above a row: theme name (22) and a 12 dp dot in the theme's default accent; focused card scale 1.04 / opacity 1, others 0.97 / 0.72 |
+| 2 | `chooseFolder` / `chooseFolderSubtitle` | 0.2.8, the primary first: with no folder the prominent `pickFolder` and **Not Now** (goes on without a folder); with one the prominent **Continue** (`start` when no step follows) and `changeFolder`, all min 180, gap 12; a glass card (radius 16, padding 20, max 640) with a status glyph (magnifier while scanning, question-folder if empty, check in accent) + `scanning` / `noGamesFound` / `gamesFound` (18 medium) over the path (13, 0.5, middle truncated); the first 8 games as 84 tiles |
 | 3 | `Play together` / signing in (`OnboardingText`) | only with a cloud: one row of buttons, Sign In (prominent, sign-in glyph), Create Account (user-plus glyph) and Not Now (arrow glyph), min 180 each, gap 12; under them a detail line (13, 0.6): you can sign in any time from the top bar |
 
 Our own wording replaces the generated table’s for the welcome and folder subtitles, the empty library and the About text
@@ -1576,11 +1576,13 @@ Our own wording replaces the generated table’s for the welcome and folder subt
 
 The **language and theme choices apply live** while moving the focus (left/right change `preferences.language` / `preferences.theme`
 immediately, so the page re-renders in that language and the backdrop switches theme); select confirms and advances (sound
-`select`); Back (Esc/B/button) returns (sound `back`). Step 2 focus: 0 = the folder button, 1 = Start (only once a folder is set; focus
-jumps to Start after picking); select on Start goes on to the online step when there is a cloud, and otherwise finishes: sound `unlocked`, cross-fade
+`select`); Back (Esc/B/button) returns (sound `back`). Step 2 focus (0.2.8): 0 = the primary (Choose Folder, or Continue/Start once a folder is set), 1 = Not Now without a folder, Change Folder
+with one; focus returns to the primary after picking; select on Continue goes on to the online step when there is a cloud, and otherwise finishes: sound `unlocked`, cross-fade
 (animation 19), focus on the tiles, rescan if empty. Step 3 focus: 0 Sign In, 1 Create Account, 2 Not Now. Under the three buttons one line of 13 dp text (`screens::legal`): "By creating an account you agree to the Terms of Service and the Privacy Policy." The two names are links (2026-10-26; underlined, brighter on hover, pointing hand; `https://anyplaynet.com/terms` and `/privacy`, the About pages' addresses in `about_strings.rs`), wrapped at 800 dp, the "You can sign in any time" line under it. The sentence is a template with `{terms}` and `{privacy}` so a language can put the names where its grammar wants them. The links are for the pointer; the pad reaches the same two pages as rows on the Friends screen's Start page. Every choice
 finishes the first start; Sign In and Create Account also open the online area, where the browser sign-in starts as soon as
-the net service has said hello (a missing service drops it). Mouse: tapping a language card selects and confirms; tapping a theme card selects it (sound `move`).
+the net service has said hello (a missing service drops it). Mouse (0.2.8): tapping a language or a theme card only selects it (sound `move`; the page changes at once); the Continue button under the cards, or Enter and A, advance. Without a folder, Not Now on the folder step goes on, and Home shows its no-folder state.
+
+The sign-in page that waits for the browser (`Page::Browser`) shows a quiet spinner (2 dp arc, radius 7; a still arc under reduced motion) after the line "Continue in your browser".
 
 ### 5.16 Icon mapping (SF Symbols -> Phosphor, MIT)
 

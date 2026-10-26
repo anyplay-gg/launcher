@@ -1,7 +1,7 @@
 //! Texts of the first start's last step: signing in, or not yet. English and Turkish like the
 //! rest; button labels in title case, sentences in sentence case.
 
-use crate::ui::i18n::Language;
+use crate::ui::i18n::{Arg, Language, substitute};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum OnboardingText {
@@ -11,14 +11,17 @@ pub enum OnboardingText {
     NotNow,
     /// Under the buttons: where signing in waits later.
     OnlineLater,
+    /// Next to the dots: `%@` = this step, `%@` = how many.
+    StepOf,
 }
 
 impl OnboardingText {
-    pub const ALL: [OnboardingText; 4] = [
+    pub const ALL: [OnboardingText; 5] = [
         OnboardingText::OnlineTitle,
         OnboardingText::OnlineSubtitle,
         OnboardingText::NotNow,
         OnboardingText::OnlineLater,
+        OnboardingText::StepOf,
     ];
 
     pub const fn english(self) -> &'static str {
@@ -29,6 +32,7 @@ impl OnboardingText {
             }
             OnboardingText::NotNow => "Not Now",
             OnboardingText::OnlineLater => "You can sign in any time from the top bar.",
+            OnboardingText::StepOf => "Step %@ of %@",
         }
     }
 
@@ -40,6 +44,7 @@ impl OnboardingText {
             }
             OnboardingText::NotNow => "Şimdi Değil",
             OnboardingText::OnlineLater => "İstediğin zaman üst çubuktan giriş yapabilirsin.",
+            OnboardingText::StepOf => "Adım %@ / %@",
         }
     }
 
@@ -48,6 +53,10 @@ impl OnboardingText {
             Language::Turkish => self.turkish(),
             Language::English => self.english(),
         }
+    }
+
+    pub fn format(self, language: Language, args: &[Arg<'_>]) -> String {
+        substitute(self.text(language), args)
     }
 }
 

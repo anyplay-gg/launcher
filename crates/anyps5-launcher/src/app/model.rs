@@ -683,7 +683,8 @@ impl Model {
         self.forget_known_games();
         self.selected = 0;
         if !self.onboarded() && self.onboarding.step == 2 {
-            self.onboarding.set_choice(2, 1);
+            // Continue is first now.
+            self.onboarding.set_choice(2, 0);
         }
         self.rescan();
     }
@@ -1403,7 +1404,8 @@ impl Model {
                 .position(|l| *l == self.language())
                 .unwrap_or(0),
             1 => self.theme().index() as usize,
-            2 => usize::from(self.prefs.games_folder.is_some()),
+            // The primary button first: Choose Folder, or Continue once a folder is set.
+            2 => 0,
             // Sign In first.
             _ => 0,
         })
@@ -1423,13 +1425,8 @@ impl Model {
         match self.onboarding.step {
             0 => Language::ALL.len(),
             1 => Theme::ALL.len(),
-            2 => {
-                if self.prefs.games_folder.is_some() {
-                    2
-                } else {
-                    1
-                }
-            }
+            // The primary button and Not Now (no folder) or Change Folder (a folder).
+            2 => 2,
             // Sign In, Create Account, Not Now.
             _ => 3,
         }
@@ -1482,13 +1479,13 @@ impl Model {
                 self.preview_choice();
                 self.onboarding_advance();
             }
-            2 => {
-                if choice == 1 && self.prefs.games_folder.is_some() {
-                    self.onboarding_start();
-                } else {
-                    self.request_folder_dialog();
-                }
-            }
+            2 => match (choice, self.prefs.games_folder.is_some()) {
+                // Continue, or Choose Folder while there is none.
+                (0, true) => self.onboarding_start(),
+                (0, false) | (_, true) => self.request_folder_dialog(),
+                // Not Now: go on without a folder; Home explains how to add one.
+                (_, false) => self.onboarding_start(),
+            },
             _ => match choice {
                 0 => self.onboarding_online(Some(false)),
                 1 => self.onboarding_online(Some(true)),
@@ -1545,10 +1542,11 @@ impl Model {
         }
     }
 
-    /// A tap on a language card selects and confirms it.
+    /// A tap on a language card selects it (no advance: Continue does that, as for themes).
     pub fn tap_language(&mut self, index: usize) {
         self.set_onboarding_choice(index);
-        self.onboarding_confirm();
+        self.preview_choice();
+        self.sound(Cue::Move);
     }
 
     /// A tap on a theme card selects it (no advance).
@@ -2147,7 +2145,11 @@ mod tests {
         m.handle(Command::Select);
         assert!(m.effects.contains(&Effect::PickGamesFolder));
         m.choose_folder(Some(PathBuf::from("C:/games")));
-        assert_eq!(m.onboarding_choice(), 1);
+        assert_eq!(
+            m.onboarding_choice(),
+            0,
+            "Continue is first once a folder is set"
+        );
         assert!(m.effects.contains(&Effect::Rescan));
         m.handle(Command::Select);
         assert!(m.onboarded());
@@ -2160,6 +2162,34 @@ mod tests {
         m2.handle(Command::Select);
         m2.handle(Command::Back);
         assert_eq!(m2.onboarding.step, 0);
+    }
+
+    #[test]
+    fn a_tap_on_a_language_selects_and_the_folder_step_can_be_skipped() {
+        let prefs = Preferences {
+            language: settings::Language::English,
+            online_cloud: Some(String::new()),
+            ..Preferences::default()
+        };
+        let mut m = Model::new(
+            prefs,
+            AppPaths::under(std::path::Path::new("C:/none")),
+            false,
+        );
+        m.tap_language(0);
+        assert_eq!(m.language(), Language::Turkish, "the page changes at once");
+        assert_eq!(m.onboarding.step, 0, "a tap does not advance");
+        m.handle(Command::Select);
+        m.handle(Command::Select);
+        assert_eq!(m.onboarding.step, 2);
+        // No folder: the first button picks one, the second (Not Now) goes on without.
+        assert_eq!(m.onboarding_choice(), 0);
+        m.handle(Command::Right);
+        assert_eq!(m.onboarding_choice(), 1);
+        m.effects.clear();
+        m.handle(Command::Select);
+        assert!(!m.effects.contains(&Effect::PickGamesFolder));
+        assert!(m.onboarded(), "no cloud: Not Now ends the first start");
     }
 
     /// A model on the online step: language and theme confirmed, a folder chosen, Start pressed.

@@ -33,6 +33,8 @@ const HANDLE: TextStyle = ty::TITLE;
 const PAGE_TITLE: TextStyle = ty::PANEL_TITLE;
 const PAGE_NOTE: TextStyle = ty::SENTENCE;
 const BADGE: TextStyle = ty::BADGE;
+/// The spinner of a page that waits.
+const SPINNER_RADIUS: f32 = 7.0;
 
 /// Who is signed in, for the header.
 pub struct Header<'a> {
@@ -214,7 +216,16 @@ fn paint_badge(painter: &Painter, row: Rect, count: u32) {
 }
 
 /// The title and the line under it, from `at`. Returns the height they take.
-pub fn page_title(ui: &mut Ui, at: egui::Pos2, width: f32, title: &str, note: Option<&str>) -> f32 {
+/// With `waiting`, a quiet spinner follows the line under the title: the page is waiting for
+/// something outside the launcher (the browser) and says so by moving, not by words alone.
+pub fn page_title(
+    ui: &mut Ui,
+    at: egui::Pos2,
+    width: f32,
+    title: &str,
+    note: Option<&str>,
+    waiting: bool,
+) -> f32 {
     let painter = ui.painter().clone();
     let title = clamped(&painter, PAGE_TITLE, title, Color32::PLACEHOLDER, width, 1);
     let mut height = title.size().y;
@@ -236,7 +247,27 @@ pub fn page_title(ui: &mut Ui, at: egui::Pos2, width: f32, title: &str, note: Op
             Sense::hover(),
         )
         .widget_info(|| WidgetInfo::labeled(Role::Label, true, note.text()));
-        painter.galley(pos2(at.x, at.y + height), note, color::text_detail());
+        let line = Rect::from_min_size(pos2(at.x, at.y + height), note.size());
+        painter.galley(line.min, note, color::text_detail());
+        if waiting {
+            let ctx = ui.ctx().clone();
+            let time = if ctx.reduced_motion() {
+                0.0
+            } else {
+                ctx.input(|i| i.time)
+            };
+            crate::ui::components::paint_spinner_arc(
+                &painter,
+                pos2(line.max.x + space::L, line.center().y),
+                SPINNER_RADIUS,
+                time,
+                2.0,
+                color::text_detail(),
+            );
+            if !ctx.reduced_motion() {
+                ctx.request_repaint();
+            }
+        }
         height += note_h;
     }
     height

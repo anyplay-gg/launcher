@@ -452,6 +452,11 @@ impl OnlinePanel {
         &self.page
     }
 
+    /// The browser has the sign-in and the launcher waits for it.
+    pub fn waiting_for_browser(&self) -> bool {
+        self.page == Page::Browser
+    }
+
     /// The title and the line under it of the page on screen.
     pub fn heading(&self, data: &OnlineData<'_>) -> (String, Option<String>) {
         let (title, subtitle, _) = self.rows(data);

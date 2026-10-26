@@ -571,6 +571,10 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
     if matches!(scene, Scene::HomeScanning | Scene::OnboardingEmpty) {
         m.scanning = matches!(scene, Scene::HomeScanning);
     }
+    if scene == Scene::OnboardingEmpty {
+        // The folder step with a folder that holds no games.
+        m.onboarding.step = 2;
+    }
     if !with_games {
         return;
     }
@@ -609,10 +613,8 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
     match scene {
         Scene::Onboarding(step) => {
             m.onboarding.step = step;
-            if step == 2 {
-                m.set_onboarding_choice(1);
-            }
         }
+
         Scene::HomeActions => m.focus = HomeFocus::Actions(0),
         Scene::HomeTogether => {
             sign_in(m);

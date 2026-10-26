@@ -1699,8 +1699,14 @@ pub fn language_card(
     it.response
 }
 
-/// Capsule dots of the onboarding: current 46 x 5, others 18 x 5; white 0.95 up to the current
-/// step, else 0.22; widths animate with `Motion::Layout`.
+/// The width of the dots at rest: the current one 46, the others 18, a gap of 10 between.
+pub fn onboarding_dots_width(steps: usize) -> f32 {
+    let others = steps.saturating_sub(1) as f32;
+    46.0 + others * (18.0 + 10.0)
+}
+
+/// Capsule dots of the onboarding: current 46 x 5, others 18 x 5; ink up to the current step,
+/// fainter after it; widths animate with `Motion::Layout`.
 pub fn onboarding_dots(ui: &mut Ui, steps: usize, current: usize) {
     let ctx = ui.ctx().clone();
     ui.horizontal(|ui| {

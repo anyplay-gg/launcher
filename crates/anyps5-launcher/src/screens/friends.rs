@@ -320,6 +320,7 @@ impl FriendsScreen {
                         page_width - 2.0 * inset,
                         &title,
                         note,
+                        self.panel.waiting_for_browser(),
                     );
                     top + used + 22.0
                 };

@@ -162,6 +162,12 @@ const fn ours(language: Language, key: Key) -> Option<&'static str> {
         (Language::Turkish, Key::ReportFailed) => {
             "Rapor kaydedilemedi. Diskte yer olduğunu kontrol edip yeniden dene."
         }
+        (Language::English, Key::NoGamesFound) => {
+            "No games in this folder. Choose another, or add dumps to it."
+        }
+        (Language::Turkish, Key::NoGamesFound) => {
+            "Bu klasörde oyun yok. Başka bir klasör seç ya da içine oyun dump'ları ekle."
+        }
         _ => return None,
     })
 }
