@@ -248,13 +248,7 @@ impl FriendsScreen {
                 // bar leaves "Back" out.
                 // A question is a card over this page: it brings its own hints and answers Back.
                 if !asks {
-                    footer_hints_enter(
-                        ui,
-                        screen,
-                        language,
-                        HintSet::BASIC.without_back(),
-                        enter,
-                    );
+                    footer_hints_enter(ui, screen, language, HintSet::BASIC.without_back(), enter);
                     let mut back = ui.new_child(
                         UiBuilder::new()
                             .max_rect(Rect::from_min_size(area.min, vec2(200.0, 32.0)))

@@ -2400,7 +2400,7 @@ fn button_bar(
         events.push(Mouse::Press(ThreadFocus::Bar));
     }
     // The reason is painted, so say it to a screen reader too.
-    ui.interact(rect, ui.id().with(("bar-note", note)), Sense::hover())
+    ui.interact(rect, ui.scope_id(("bar-note", note)), Sense::hover())
         .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, note));
     let line = one_line(
         &painter,

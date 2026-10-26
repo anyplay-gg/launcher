@@ -470,7 +470,9 @@ impl Room {
             cards,
             voice: voice_buttons,
             actions,
+            empty_title: String::new(),
             empty_note: String::new(),
+            empty_action: String::new(),
             primary,
         }
     }
