@@ -556,7 +556,8 @@ impl OnlinePanel {
                 self.queued.push(OnlineAction::CallsSeen(*id));
             }
             Page::Conversation(id) | Page::MessageRequest(id) => {
-                if self.page != page && !matches!(self.page, Page::Message(..)) {
+                if self.page != page && !matches!(self.page, Page::Message(..) | Page::Confirm(..))
+                {
                     self.shown = social::SHOWN;
                 }
                 self.queued.push(OnlineAction::OpenThread(id.clone()));

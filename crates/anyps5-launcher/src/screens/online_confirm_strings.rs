@@ -77,7 +77,7 @@ impl ConfirmText {
             ConfirmText::RemoveMemberNote => "Geri dönmesi için yeni bir davet gerekir.",
             ConfirmText::LeaveConversationTitle => "Sohbetten ayrılınsın mı?",
             ConfirmText::LeaveConversationNote => {
-                "Mesajlarını artık almazsın. Geri dönmen için biri seni yeniden eklemeli."
+                "Bu sohbetin mesajlarını artık almazsın. Geri dönmen için biri seni yeniden eklemeli."
             }
         }
     }
