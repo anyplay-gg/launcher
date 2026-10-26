@@ -812,6 +812,7 @@ fn panels_page(ui: &mut Ui, shell: &Shell, art: &TextureHandle) {
         "gallery-toast",
         Icon::LOCK_OPEN,
         "Hollow Game · Ready to play",
+        None,
         1.0,
     );
 }

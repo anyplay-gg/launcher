@@ -110,6 +110,8 @@ pub enum Scene {
     HomeNoFolder,
     Starting,
     Toast,
+    /// A failure toast: it stays until dismissed, with its Close button.
+    ToastError,
     /// A verified launcher update waits: the notice after the title.
     HomeUpdate,
     /// The same with the notice's first button focused.
@@ -169,6 +171,7 @@ impl Scene {
             "home-nofolder" => Scene::HomeNoFolder,
             "starting" => Scene::Starting,
             "toast" => Scene::Toast,
+            "toast-error" => Scene::ToastError,
             "home-update" => Scene::HomeUpdate,
             "home-update-focus" => Scene::HomeUpdateFocus,
             "home-update-holding" => Scene::HomeUpdateHolding,
@@ -177,7 +180,7 @@ impl Scene {
         })
     }
 
-    pub const ALL_NAMES: [&'static str; 46] = [
+    pub const ALL_NAMES: [&'static str; 47] = [
         "onboarding0",
         "onboarding1",
         "onboarding2",
@@ -224,6 +227,7 @@ impl Scene {
         "home-nofolder",
         "starting",
         "toast",
+        "toast-error",
     ];
 }
 
@@ -840,6 +844,10 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
                 toast.until = 1.0e6;
             }
         }
+        Scene::ToastError => m.toast(
+            "Could not start Lanternfall. The game closed during start-up. Open the log from Game Settings for the details.",
+            Icon::WARNING,
+        ),
         _ => {}
     }
     // The preview has no workers: what the model asked for is dropped.

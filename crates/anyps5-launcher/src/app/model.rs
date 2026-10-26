@@ -79,8 +79,15 @@ pub struct Toast {
     pub id: u64,
     pub text: String,
     pub icon: Icon,
-    /// UI-clock time at which it starts to leave.
+    /// UI-clock time at which it starts to leave; infinite while it stays until dismissed.
     pub until: f64,
+}
+
+impl Toast {
+    /// A failure stays until the player dismisses it; a routine toast fades by itself.
+    pub fn stays(&self) -> bool {
+        self.until.is_infinite()
+    }
 }
 
 /// The launcher update notice on the home screen.
@@ -543,12 +550,28 @@ impl Model {
 
     fn toast_silent(&mut self, text: impl Into<String>, icon: Icon) {
         self.toast_counter += 1;
+        let failure = matches!(
+            icon,
+            Icon::WARNING | Icon::X_CIRCLE | Icon::MICROPHONE_SLASH | Icon::PROHIBIT
+        );
         self.toast = Some(Toast {
             id: self.toast_counter,
             text: text.into(),
             icon,
-            until: self.now + TOAST_SECONDS,
+            until: if failure {
+                f64::INFINITY
+            } else {
+                self.now + TOAST_SECONDS
+            },
         });
+    }
+
+    /// The player put the toast away (its Close button, or Back while a failure is up).
+    pub fn dismiss_toast(&mut self) {
+        let now = self.now;
+        if let Some(toast) = self.toast.as_mut() {
+            toast.until = toast.until.min(now);
+        }
     }
 
     /// The toast is on screen (it is kept after that so it can animate out).
@@ -1190,6 +1213,14 @@ impl Model {
 
     /// One command from keyboard or gamepad.
     pub fn handle(&mut self, command: Command) -> Routed {
+        // A failure toast stays until dismissed: Back puts it away before it navigates.
+        if command == Command::Back
+            && self.toast_visible()
+            && self.toast.as_ref().is_some_and(Toast::stays)
+        {
+            self.dismiss_toast();
+            return Routed::Done;
+        }
         if !self.onboarded() {
             self.onboarding_command(command);
             return Routed::Done;
@@ -2254,6 +2285,19 @@ mod tests {
         m.tick(13.3);
         assert!(!m.toast_visible());
         assert!(m.toast.is_some());
+    }
+
+    #[test]
+    fn a_failure_toast_stays_until_dismissed_and_back_dismisses_it_first() {
+        let mut m = model_with(vec![]);
+        m.toast("Could not start", Icon::WARNING);
+        m.tick(m.now + 60.0);
+        assert!(m.toast_visible(), "a failure does not fade by itself");
+        m.handle(Command::Back);
+        assert!(!m.toast_visible());
+        // A routine toast is not Back's: it fades on its own.
+        m.toast("Saved", Icon::CHECK);
+        assert!(!m.toast.as_ref().unwrap().stays());
     }
 
     /// A model with one game that runs and shows its window.

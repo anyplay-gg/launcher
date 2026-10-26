@@ -10,8 +10,8 @@ use egui::{
 
 use crate::ui::anim::{self, AnimExt, Motion, lerp};
 use crate::ui::components::{
-    self, Force, PRESS_SCALE, corner, key_cap, paint_capsule, paint_hairline, paint_progress,
-    paint_shadow, scale_rect,
+    self, Force, PRESS_SCALE, corner, key_cap, paint_capsule, paint_focus_stroke, paint_hairline,
+    paint_progress, paint_shadow, scale_rect,
 };
 use crate::ui::glass::{GlassStyle, paint_glass};
 use crate::ui::i18n::{Key, Language};
@@ -19,7 +19,7 @@ use crate::ui::icons::Icon;
 use crate::ui::input;
 use crate::ui::text;
 use crate::ui::theme::{
-    self, TextStyle, Weight, black, color, fade, mix, radius, shadows, size, ty, white,
+    self, TextStyle, Weight, black, color, fade, mix, radius, shadows, size, space, ty, white,
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -1560,26 +1560,43 @@ pub fn fullscreen_panel<R>(
     result
 }
 
-/// The toast: a glass pill at the top centre. `v` is the openness from `Motion::Overlay`
-/// (spring in/out, offset -(1 - v) * 80); the caller keeps it up for 3.2 s.
+/// The toast: a glass pill at the top centre. `v` is the openness from `Motion::Overlay`; the
+/// caller keeps a routine toast up for 3.2 s. A toast that stays until dismissed (a failure) gets
+/// `close`, the accessible name of a Close button at its end; the result says it was pressed.
 pub fn toast(
     ctx: &Context,
     id: impl std::hash::Hash + std::fmt::Debug,
     icon: Icon,
     message: &str,
+    close: Option<&str>,
     v: f32,
-) {
+) -> bool {
+    /// Text rows before the toast cuts with an ellipsis.
+    const ROWS: usize = 3;
+    /// The Close button: a circle of the hit-area floor, its glyph, the gap before it.
+    const CLOSE: f32 = 32.0;
+    const CLOSE_GLYPH: f32 = 14.0;
+    const CLOSE_GAP: f32 = space::M;
+    const CLOSE_INSET: f32 = space::S;
     if v <= 0.001 {
-        return;
+        return false;
     }
+    let mut pressed = false;
     let screen = ctx.content_rect();
     Area::new(Id::unique(id))
         .order(Order::Tooltip)
         .fixed_pos(screen.min)
-        .interactable(false)
+        .interactable(close.is_some())
         .show(ctx, |ui| {
             let painter = ui.painter().clone();
-            let max_text = (screen.width() * 0.6).min(760.0);
+            let (glyph, pad_x, pad_y, gap) = (17.0, 22.0, 14.0, 10.0);
+            // What follows the text: the Close button, or the same padding as at the start.
+            let tail = if close.is_some() {
+                CLOSE_GAP + CLOSE + CLOSE_INSET
+            } else {
+                pad_x
+            };
+            let max_text = (screen.width() * 0.6).min(760.0) - tail + pad_x;
             let galley = {
                 let mut job = LayoutJob::simple(
                     message.to_owned(),
@@ -1587,13 +1604,11 @@ pub fn toast(
                     Color32::PLACEHOLDER,
                     max_text,
                 );
-                job.wrap.max_rows = 2;
+                job.wrap.max_rows = ROWS;
                 job.sections[0].format.line_height = Some(ty::TOAST.line_height());
                 painter.layout_job(job)
             };
-            let glyph = 17.0;
-            let (pad_x, pad_y, gap) = (22.0, 14.0, 10.0);
-            let w = pad_x * 2.0 + glyph + gap + galley.size().x;
+            let w = pad_x + glyph + gap + galley.size().x + tail;
             let h = (pad_y * 2.0 + galley.size().y).max(radius::TOAST * 2.0);
             let travel = if ctx.reduced_motion() { 0.0 } else { 80.0 };
             let top = size::TOAST_TOP - (1.0 - v) * travel;
@@ -1622,7 +1637,7 @@ pub fn toast(
                 Align2::CENTER_CENTER,
                 icon.glyph(),
                 icon.font(glyph, true),
-                fade(Color32::WHITE, a),
+                fade(color::text(), a),
             );
             painter.galley(
                 pos2(
@@ -1630,9 +1645,44 @@ pub fn toast(
                     rect.center().y - galley.size().y * 0.5,
                 ),
                 galley,
-                fade(Color32::WHITE, a),
+                fade(color::text(), a),
             );
+            if let Some(name) = close {
+                let button = Rect::from_center_size(
+                    pos2(rect.max.x - CLOSE_INSET - CLOSE * 0.5, rect.center().y),
+                    vec2(CLOSE, CLOSE),
+                );
+                let response =
+                    ui.interact(button, Id::unique(("toast-close", message)), Sense::click());
+                response.widget_info(|| WidgetInfo::labeled(Role::Button, true, name));
+                let hot = input::hovered(ctx, &response);
+                if hot {
+                    ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                }
+                let t = ctx.animate_to(
+                    ("toast-close-hover", message),
+                    f32::from(hot),
+                    Motion::Hover,
+                );
+                painter.circle_filled(
+                    button.center(),
+                    CLOSE * 0.5,
+                    fade(color::surface_hover(), a * t),
+                );
+                painter.text(
+                    button.center(),
+                    Align2::CENTER_CENTER,
+                    Icon::X.glyph(),
+                    Icon::X.font(CLOSE_GLYPH, false),
+                    fade(color::text_label(), a),
+                );
+                if response.has_focus() && input::focus_visible(ctx) {
+                    paint_focus_stroke(&painter, button, CLOSE * 0.5, 1.5, a);
+                }
+                pressed = response.clicked();
+            }
         });
+    pressed
 }
 
 /// A frosted card with a hairline, used by onboarding and diagnosis boxes: glass at `rect`.

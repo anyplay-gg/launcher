@@ -371,20 +371,29 @@ fn draw(
                 Rect::from_min_size(cell.min, vec2(tile, tile)),
                 &style,
             );
-            // Name (1 line, truncated) and the state line.
+            // The name: one line, the focused tile's up to two so a long name reads in full (its state
+            // line moves down inside the cell's own gap, nothing else shifts).
             let ns = name_style(focused);
             let ink = if focused {
                 color::text()
             } else {
                 color::text_detail()
             };
-            let name_g = clamped(&painter, ns, &entry.name, ink, tile, 1);
+            let name_g = clamped(
+                &painter,
+                ns,
+                &entry.name,
+                ink,
+                tile,
+                if focused { 2 } else { 1 },
+            );
+            let extra = (name_g.size().y - ty::SENTENCE.line_height()).max(0.0);
             let ny = cell.min.y + tile + 10.0;
             painter.galley(pos2(cell.min.x, ny), name_g, ink);
             if entry.state.quiet {
                 continue;
             }
-            let sy = ny + ty::SENTENCE.line_height() + 10.0;
+            let sy = ny + ty::SENTENCE.line_height() + extra + 10.0;
             painter.text(
                 pos2(
                     cell.min.x + 6.0,

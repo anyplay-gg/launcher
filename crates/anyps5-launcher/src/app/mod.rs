@@ -66,6 +66,7 @@ use crate::ui::artwork;
 use crate::ui::chrome;
 use crate::ui::i18n::Key;
 use crate::ui::input::InputEvent;
+use crate::ui::sound::Cue;
 
 use self::core_pipeline::CorePipeline;
 use self::model::{Effect, Model, Routed, ui_accent};
@@ -839,10 +840,21 @@ impl LauncherApp {
             f32::from(u8::from(visible)),
             Motion::Overlay,
         );
+        let mut closed = false;
         if let Some(toast) = &self.model.toast {
-            chrome::toast(ctx, "launcher-toast", toast.icon, &toast.text, v);
+            let close = toast
+                .stays()
+                .then(|| self.model.language().text(Key::Close));
+            closed = chrome::toast(ctx, "launcher-toast", toast.icon, &toast.text, close, v);
         }
-        if visible && let Some(toast) = &self.model.toast {
+        if closed {
+            self.shell.play(Cue::Back);
+            self.model.dismiss_toast();
+        }
+        if visible
+            && let Some(toast) = &self.model.toast
+            && !toast.stays()
+        {
             let left = (toast.until - ctx.clock()).max(0.0);
             ctx.request_repaint_after(Duration::from_secs_f64(left + 0.02));
         }
