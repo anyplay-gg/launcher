@@ -2323,6 +2323,7 @@ impl ScreenGallery {
                     worker: Some(("ready".into(), None)),
                 }
             }),
+            windows_rows: true,
             clips: crate::screens::settings::ClipsEnv {
                 count: if self.prefs.clips_seconds > 0 { 3 } else { 0 },
                 capturing: matches!(self.page, ScreenPage::BehaviourClipsKey),
@@ -2783,7 +2784,10 @@ impl ScreenGallery {
                 self.whats_new
                     .open_launcher(&self.launcher_notes.notes, shell.language);
             }
-            ScreenPage::BehaviourLinks => self.settings.open_at(3, true),
+            ScreenPage::BehaviourLinks => {
+                self.settings.open_at(3, true);
+                self.settings.focus_row_id("links");
+            }
             ScreenPage::SettingsCodec(on) => {
                 self.prefs.online_openh264 = on;
                 self.settings.open_at(6, true);
@@ -2801,27 +2805,27 @@ impl ScreenGallery {
             ScreenPage::BehaviourClipsOff => {
                 self.prefs.clips_seconds = 0;
                 self.settings.open_at(3, true);
-                self.settings.focus_row(8);
+                self.settings.focus_row_id("clips");
             }
             ScreenPage::BehaviourClips | ScreenPage::BehaviourClipsKey => {
                 self.prefs.clips_seconds = 30;
                 self.settings.open_at(3, true);
                 self.settings
-                    .focus_row(if self.page == ScreenPage::BehaviourClipsKey {
-                        9
+                    .focus_row_id(if self.page == ScreenPage::BehaviourClipsKey {
+                        "clipsKey"
                     } else {
-                        8
+                        "clips"
                     });
             }
             ScreenPage::BehaviourSteam => {
                 self.settings.open_at(3, true);
-                self.settings.focus_row(12);
+                self.settings.focus_row_id("addToSteam");
             }
             ScreenPage::Phone(look) => {
                 self.settings.open_at(4, true);
                 // The question lands on its first answer.
                 if look == PhoneLook::Pairing {
-                    self.settings.focus_row(4);
+                    self.settings.focus_row_id("pairAllow");
                 }
                 // LudusCtrl's question lands on its first answer; a connected LudusCtrl phone
                 // shows the end of the page, where the app comes from.

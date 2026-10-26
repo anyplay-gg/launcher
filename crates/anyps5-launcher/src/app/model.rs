@@ -649,6 +649,9 @@ impl Model {
             together: crate::app::together::hostable(self).is_some(),
             asking: self.run_question().is_some(),
             notice: self.update_notice().map_or(0, |n| n.buttons),
+            card: crate::app::together::card(self).map_or(0, |card| {
+                crate::screens::together::card_actions(&card).len() as u8
+            }),
         }
     }
 
@@ -1219,6 +1222,15 @@ impl Model {
         if matches!(self.focus, HomeFocus::Update(_)) && self.update_notice().is_none() {
             self.focus = HomeFocus::Tiles;
         }
+        // The same for the Play Together card, which goes when it is answered or put away, or
+        // comes back with fewer buttons.
+        if let HomeFocus::Card(i) = self.focus {
+            let buttons = self.home_context().card;
+            self.focus = match buttons {
+                0 => HomeFocus::Tiles,
+                n => HomeFocus::Card(i.min(n - 1)),
+            };
+        }
         let step = self.focus.navigate(command, self.home_context());
         self.focus = step.focus;
         let moved = step.selected != self.selected;
@@ -1257,6 +1269,7 @@ impl Model {
             HomeIntent::PrimaryAction => self.primary_action(),
             HomeIntent::AnswerRun(i) => self.answer_run(i),
             HomeIntent::UpdateAction(i) => self.update_action(i),
+            HomeIntent::CardAction(i) => self.card_action(i),
             HomeIntent::PlayTogether => {
                 if let Some(id) = crate::app::together::hostable(self).map(|g| g.id.clone()) {
                     crate::app::together::host_game(self, &id);
@@ -1308,6 +1321,22 @@ impl Model {
         }
     }
 
+    /// A button of the Play Together card: the same answers the pointer gives it.
+    fn card_action(&mut self, index: usize) {
+        let Some(card) = crate::app::together::card(self) else {
+            return;
+        };
+        let Some(action) = crate::screens::together::card_actions(&card)
+            .into_iter()
+            .nth(index)
+        else {
+            return;
+        };
+        self.sound(Cue::Select);
+        crate::app::together::apply(self, action);
+        self.focus = HomeFocus::Tiles;
+    }
+
     /// A button of the notice: "Restart Now" and "Later", or while the restart waits, "Cancel".
     fn update_action(&mut self, index: usize) {
         let Some(notice) = self.update_notice() else {
@@ -1338,6 +1367,7 @@ impl Model {
             HomeFocus::Tiles => HomeIntent::PrimaryAction,
             HomeFocus::Ask(i) => HomeIntent::AnswerRun(i),
             HomeFocus::Update(i) => HomeIntent::UpdateAction(usize::from(i)),
+            HomeFocus::Card(i) => HomeIntent::CardAction(usize::from(i)),
         };
         self.apply_intent(intent);
     }

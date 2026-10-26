@@ -311,7 +311,7 @@ fn draw(
     }
     let tile = size::LIBRARY_TILE;
     let name_style = |focused: bool| if focused { ty::FACT } else { ty::SENTENCE };
-    let cell_h = tile + 10.0 + 15.0 * 1.2 + 10.0 + ty::STATE_LABEL_SMALL.line_height();
+    let cell_h = tile + 10.0 + ty::SENTENCE.line_height() + 10.0 + ty::STATE_LABEL_SMALL.line_height();
     let rows = data.entries.len().div_ceil(columns);
     let mut geometry = Vec::with_capacity(rows);
     let output = area_scroll.show(&mut child, |ui| {
@@ -383,7 +383,7 @@ fn draw(
             if entry.state.quiet {
                 continue;
             }
-            let sy = ny + 15.0 * 1.2 + 10.0;
+            let sy = ny + ty::SENTENCE.line_height() + 10.0;
             painter.text(
                 pos2(
                     cell.min.x + 6.0,
