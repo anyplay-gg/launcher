@@ -87,7 +87,11 @@ pub fn rows(
 
     // The address for typing it in.
     if let Some(address) = address {
-        rows.push(Row::info("ludusAddress", p(PhoneText::Address), Some(address)).group_start());
+        rows.push(
+            Row::info("ludusAddress", p(PhoneText::Address), Some(address))
+                .icon(Icon::GLOBE)
+                .group_start(),
+        );
         rows.push(Row::info("ludusAddressNote", p(PhoneText::AddressNote), None).attached());
     }
 
@@ -103,8 +107,7 @@ pub fn rows(
                 PhoneText::Remove.format(language, &[Arg::Str(&phone.name)]),
             )
             .detail(PhoneText::PairedOn.format(language, &[Arg::Str(date_of(&phone.added))]))
-            .icon(Icon::X_CIRCLE)
-            .destructive(),
+            .icon(Icon::X_CIRCLE),
         );
     }
 
