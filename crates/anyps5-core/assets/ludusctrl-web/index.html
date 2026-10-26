@@ -298,9 +298,8 @@
     <div class="fieldLabel spaced">Virtual pad on the PC</div>
     <div class="seg" id="padKind" role="group" aria-label="Virtual pad on the PC">
       <button data-kind="x360" class="on" aria-pressed="true" disabled>Xbox 360</button>
-      <button data-kind="ds4" aria-pressed="false" disabled>DualShock 4</button>
     </div>
-    <div id="padKindNote">Connect first, then choose what Windows sees.</div>
+    <div id="padKindNote">Your PC sees an Xbox 360 controller.</div>
 
     <button id="toggle">Start link</button>
   </div>
@@ -840,7 +839,7 @@ let token = readToken();
 window.addEventListener("hashchange", () => { token = readToken() || token; });
 
 const HINT_NO_TOKEN =
-  "This page needs the full link from the LudusCtrl window on your PC. Scan " +
+  "This page needs the full link from AnyPlay on your PC. Scan " +
   "the QR code shown there, or copy the whole link; it ends in #t= and a code.";
 
 function activePad() {
@@ -968,9 +967,9 @@ function connect() {
       refuse("The LudusCtrl Android app is connected to this PC and has the pad. " +
              "Stop the link in the app, wait two seconds, then press Start link.");
     } else if (msg === "denied") {
-      refuse("This link is out of date: LudusCtrl on the PC was restarted, or " +
+      refuse("This link is out of date: AnyPlay on your PC was restarted, or " +
              "the link was opened without its code. Open the current link from " +
-             "the PC window (scan its QR code), then press Start link.");
+             "AnyPlay on your PC (scan its QR code), then press Start link.");
     }
     // "evicted": the PC stopped counting this socket as the driver after a
     // silence. It closes the socket next, and onclose reconnects.
@@ -1180,10 +1179,10 @@ function linkState() {
 
 const HINTS = {
   OFFLINE: "Pair your controller over Bluetooth, then press Start link. Press a button on the pad first if it does not appear — browsers hide gamepads until one is used.",
-  CONNECTING: "Connecting to the receiver. If this does not change, check that LudusCtrl is still running on the PC and the phone is on the same Wi-Fi.",
+  CONNECTING: "Connecting to the receiver. If this does not change, check that AnyPlay is still running on your PC and the phone is on the same Wi-Fi.",
   LIVE: "Connected. Keep this page open and in front — browsers stop delivering gamepad input to a page you are not looking at.",
   "NO PC PAD": "The PC has no virtual pad right now, so input is not reaching games. Pick a pad type above to create it again.",
-  "NO REPLY": "The PC stopped answering. It reconnects by itself when it can; check that LudusCtrl is still running on the PC.",
+  "NO REPLY": "The PC stopped answering. It reconnects by itself when it can; check that AnyPlay is still running on your PC.",
 };
 
 function render(s, now) {
@@ -1246,11 +1245,7 @@ function setPadKind(kind, pending) {
     b.setAttribute("aria-pressed", on ? "true" : "false");
     b.disabled = !open;
   }
-  el("padKindNote").textContent = !open
-    ? "Connect first, then choose what Windows sees."
-    : pending
-      ? "Switching to " + PAD_LABEL[pending] + "…"
-      : "Windows sees a " + PAD_LABEL[padKind] + ". Switching restarts the virtual pad.";
+  el("padKindNote").textContent = "Your PC sees an Xbox 360 controller.";
 }
 
 el("padKind").addEventListener("click", (e) => {
