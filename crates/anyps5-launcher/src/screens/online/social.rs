@@ -555,7 +555,7 @@ impl OnlinePanel {
             Page::QuickReplies(id) => {
                 let conversation = social.get(id)?;
                 for text in QUICK {
-                    rows.push(Row::command("quick", t(text)).icon(Icon::PAPER_PLANE_RIGHT));
+                    rows.push(Row::command("quick", t(text)));
                 }
                 (
                     t(S::QuickReplies).to_owned(),

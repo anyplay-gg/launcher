@@ -62,6 +62,8 @@ pub enum SocialText {
     CopyText,
     Copied,
     RequestNote,
+    /// What a screen reader says of a quote: `%@` = who, `%@` = the start of the message.
+    InReplyTo,
     /// `%@` = who, `%@` = the start of the message.
     ReplyingTo,
     EditingMessage,
@@ -216,6 +218,7 @@ impl SocialText {
             SocialText::QuickRepliesDetail => "Send a short answer without typing",
             SocialText::OpenFriends => "Open Friends",
             SocialText::ReplyTo => "%@: %@",
+            SocialText::InReplyTo => "In reply to %@: %@",
             SocialText::Quick1 => "On my way",
             SocialText::Quick2 => "One moment",
             SocialText::Quick3 => "Ready when you are",
@@ -319,6 +322,7 @@ impl SocialText {
             SocialText::QuickRepliesDetail => "Yazmadan kısa bir yanıt gönder",
             SocialText::OpenFriends => "Arkadaşları Aç",
             SocialText::ReplyTo => "%@: %@",
+            SocialText::InReplyTo => "%@ kişisine yanıt: %@",
             SocialText::Quick1 => "Geliyorum",
             SocialText::Quick2 => "Bir dakika",
             SocialText::Quick3 => "Sen hazır olunca hazırım",
@@ -368,6 +372,7 @@ mod tests {
         SocialText::TypingOne,
         SocialText::TypingTwo,
         SocialText::ReplyTo,
+        SocialText::InReplyTo,
     ];
 
     #[test]

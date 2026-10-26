@@ -54,6 +54,12 @@ const QUOTE_BAR: f32 = 2.0;
 const QUOTE_INSET: f32 = space::M;
 /// The three dots of somebody typing: their size and the row they stand in.
 const DOT: f32 = 3.0;
+/// Items fade out over this length before they pass under the header (see `top_fade`).
+const FADE_START: f32 = 56.0;
+const FADE_LENGTH: f32 = 36.0;
+/// The count badge: its height and its two widths.
+const BADGE_ONE: f32 = 22.0;
+const BADGE_MANY: f32 = 30.0;
 const TYPING_HEIGHT: f32 = 24.0;
 
 const BODY: TextStyle = ty::BODY;
@@ -74,8 +80,10 @@ const BADGE_HEIGHT: f32 = 22.0;
 /// edit).
 const COMPOSER_HEIGHT: f32 = 44.0;
 const COMPOSER_BUTTON: f32 = 44.0;
-const SEND_BUTTON: f32 = 36.0;
+const SEND_BUTTON: f32 = ControlSize::Small.height();
 const NOTE_BAR: f32 = 36.0;
+/// The room of the two answers (Accept, Decline) or of Block in the request bar.
+const ANSWER_SLOT: f32 = 260.0;
 /// The header of the thread.
 const HEAD_HEIGHT: f32 = 72.0;
 
@@ -107,6 +115,8 @@ pub struct Entry {
     pub muted: bool,
     /// Somebody types: the preview says so.
     pub typing: bool,
+    /// The conversation holds no message at all (not: its newest one is not fetched yet).
+    pub empty: bool,
     /// The people the picture shows: the other for a direct chat, up to two for a group.
     pub faces: Vec<Face>,
 }
@@ -195,6 +205,7 @@ pub fn entries(data: &OnlineData<'_>, local: &Local) -> Vec<Entry> {
             pinned: c.pinned,
             muted: c.muted,
             typing: !typers.is_empty(),
+            empty: c.last == 0,
             faces,
         }
     };
@@ -376,7 +387,13 @@ pub fn thread(data: &OnlineData<'_>, local: &Local, id: &str, shown: usize) -> O
         } else {
             message.sender.handle.clone()
         };
-        let reader = format!("{sender_name}, {text}, {}", parts.join(", "));
+        let answers = quote.as_ref().map_or(String::new(), |(who, line)| {
+            format!(
+                "{}, ",
+                S::InReplyTo.format(language, &[Arg::Str(who), Arg::Str(line)])
+            )
+        });
+        let reader = format!("{sender_name}, {answers}{text}, {}", parts.join(", "));
         items.push(Item::Bubble(Box::new(Bubble {
             index,
             seq: message.seq,
@@ -1192,7 +1209,7 @@ fn list(ui: &mut Ui, entries: &[Entry], focus: Option<usize>, language: Language
 /// Items fade out over the 36 dp before they pass under the header, so a bubble the scroll cuts
 /// does not leave a stray line behind.
 fn top_fade(ui: &Ui, top: f32) -> f32 {
-    ((ui.cursor().min.y - top + 56.0) / 36.0).clamp(0.0, 1.0)
+    ((ui.cursor().min.y - top + FADE_START) / FADE_LENGTH).clamp(0.0, 1.0)
 }
 
 /// The section label of the list ("Message Requests", "Conversations"): the caption of every
@@ -1233,7 +1250,10 @@ fn entry_name(entry: &Entry, language: Language) -> String {
     if entry.muted {
         parts.push(S::Muted.text(language).to_owned());
     }
-    parts.push(entry_preview(entry, language));
+    let preview = entry_preview(entry, language);
+    if !preview.is_empty() {
+        parts.push(preview);
+    }
     if !entry.when.is_empty() {
         parts.push(entry.when.clone());
     }
@@ -1249,8 +1269,11 @@ fn entry_preview(entry: &Entry, language: Language) -> String {
         entry.preview.clone()
     } else if entry.request {
         S::WantsToMessage.text(language).to_owned()
-    } else {
+    } else if entry.empty {
         S::NoPreview.text(language).to_owned()
+    } else {
+        // The newest message is on its way: the line stays empty rather than say something wrong.
+        String::new()
     }
 }
 
@@ -1352,7 +1375,18 @@ fn entry_row(
             x -= space::XS;
         }
     }
-    let title_room = (x - text_x - space::S).max(40.0);
+    let tag = entry.request.then(|| {
+        text::layout(
+            &painter,
+            ty::MICRO,
+            S::RequestTag.text(language),
+            Color32::PLACEHOLDER,
+            f32::INFINITY,
+        )
+    });
+    // The Request tag keeps its room: a long name is cut, never the tag.
+    let tag_room = tag.as_ref().map_or(0.0, |t| t.size().x + 3.0 * space::S);
+    let title_room = (x - text_x - space::S - tag_room).max(40.0);
     let title = one_line(&painter, title_style, &entry.title, title_room);
     let title_w = title.size().x;
     painter.galley(
@@ -1360,15 +1394,7 @@ fn entry_row(
         title,
         color::text(),
     );
-    if entry.request {
-        let label = S::RequestTag.text(language);
-        let tag = text::layout(
-            &painter,
-            ty::MICRO,
-            label,
-            Color32::PLACEHOLDER,
-            f32::INFINITY,
-        );
+    if let Some(tag) = tag {
         let chip = Rect::from_center_size(
             pos2(
                 text_x + title_w + space::S + (tag.size().x + 2.0 * space::S) * 0.5,
@@ -1376,23 +1402,25 @@ fn entry_row(
             ),
             vec2(tag.size().x + 2.0 * space::S, tag.size().y + space::XS),
         );
-        if chip.max.x < x {
-            paint_capsule(&painter, chip, color::surface_hover());
-            painter.galley(
-                pos2(
-                    chip.center().x - tag.size().x * 0.5,
-                    chip.center().y - tag.size().y * 0.5,
-                ),
-                tag,
-                color::text_detail(),
-            );
-        }
+        paint_capsule(&painter, chip, color::surface_hover());
+        painter.galley(
+            pos2(
+                chip.center().x - tag.size().x * 0.5,
+                chip.center().y - tag.size().y * 0.5,
+            ),
+            tag,
+            color::text_detail(),
+        );
     }
 
     // The second line: the newest message, and the count at its end.
     let second_y = top + first_h + space::XS + second_h * 0.5;
     let badge_w = if unread && !entry.request {
-        if entry.unread > 9 { 30.0 } else { 22.0 }
+        if entry.unread > 9 {
+            BADGE_MANY
+        } else {
+            BADGE_ONE
+        }
     } else {
         0.0
     };
@@ -1401,7 +1429,7 @@ fn entry_row(
         color::text()
     } else if unread {
         color::text_label()
-    } else if entry.preview.is_empty() && !entry.request {
+    } else if entry.empty && !entry.request {
         color::text_note()
     } else {
         color::text_detail()
@@ -1717,10 +1745,15 @@ fn typing_view(ui: &mut Ui, who: Option<&Face>, line: &str) {
         paint_avatar(&painter, face, who.avatar, who.account, &who.handle);
         left = face.max.x + FACE_GAP;
     }
-    let y = row.max.y - TYPING_HEIGHT * 0.5;
+    // On the avatar's centre line when there is one, from the edge the words of a bubble start on.
+    let y = if who.is_some() {
+        row.max.y - FACE * 0.5
+    } else {
+        row.max.y - TYPING_HEIGHT * 0.5
+    };
     for (n, alpha) in [1.0, 0.7, 0.4].into_iter().enumerate() {
         painter.circle_filled(
-            pos2(left + space::M + n as f32 * space::M, y),
+            pos2(left + BUBBLE_PAD_X + n as f32 * space::M, y),
             DOT,
             fade(color::text_note(), alpha),
         );
@@ -1772,7 +1805,7 @@ fn removed_view(
     let painter = ui.painter().clone();
     let gap = space::L;
     let galley = text::layout(&painter, ty::NOTE, &b.text, Color32::PLACEHOLDER, row_width);
-    let height = galley.size().y + space::S;
+    let height = (galley.size().y + space::S).max(ControlSize::Small.height());
     let (row, _) = ui.allocate_exact_size(vec2(row_width, gap + height), Sense::hover());
     let pill = Rect::from_center_size(
         pos2(row.center().x, row.max.y - height * 0.5),
@@ -1954,9 +1987,9 @@ fn bubble_view(
     if let Some(meta) = &b.meta {
         let g = text::layout(&painter, META, meta, Color32::PLACEHOLDER, f32::INFINITY);
         let x = if b.mine {
-            bubble.max.x - g.size().x - BUBBLE_PAD_X * 0.5
+            bubble.max.x - g.size().x - BUBBLE_PAD_X
         } else {
-            bubble.min.x + BUBBLE_PAD_X * 0.5
+            bubble.min.x + BUBBLE_PAD_X
         };
         painter.galley(pos2(x, bubble.max.y + space::XS), g, color::text_note());
     }
@@ -2193,8 +2226,8 @@ fn composer_view(
                 note,
                 color::text_note(),
             );
-            paint_capsule(&painter, rect, color::surface());
-            // Accept and Decline lead, Block stands alone at the other end.
+            // Accept and Decline lead, Block stands alone at the other end; the buttons stand on
+            // the page, a box behind them would only hide Decline.
             let answers = [
                 (Answer::Accept, T::Accept.text(language), true, false),
                 (Answer::Decline, T::Decline.text(language), false, false),
@@ -2202,7 +2235,7 @@ fn composer_view(
             ];
             let button_h = ControlSize::Medium.height();
             let slot = |from_start: bool| {
-                let w = 220.0;
+                let w = ANSWER_SLOT;
                 let x = if from_start {
                     rect.min.x + space::S
                 } else {
@@ -2879,12 +2912,40 @@ mod tests {
             pinned: true,
             muted: true,
             typing: false,
+            empty: false,
             faces: Vec::new(),
         };
         let name = entry_name(&entry, Language::English);
         assert_eq!(
-            name, "Mira, Pinned, Muted, No messages yet, 09:41",
+            name, "Mira, Pinned, Muted, 09:41",
             "a muted row speaks no count"
+        );
+    }
+
+    #[test]
+    fn a_line_says_there_is_no_message_only_when_there_is_none() {
+        let mut entry = Entry {
+            id: "c".into(),
+            kind: ConversationKind::Direct,
+            request: false,
+            title: "Mira".into(),
+            preview: String::new(),
+            when: String::new(),
+            unread: 2,
+            pinned: false,
+            muted: false,
+            typing: false,
+            empty: false,
+            faces: Vec::new(),
+        };
+        // The newest message has not been fetched yet: the line stays empty, it does not lie.
+        assert_eq!(entry_preview(&entry, Language::English), "");
+        entry.empty = true;
+        assert_eq!(entry_preview(&entry, Language::English), "No messages yet");
+        entry.request = true;
+        assert_eq!(
+            entry_preview(&entry, Language::English),
+            "Wants to message you"
         );
     }
 
