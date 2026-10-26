@@ -33,7 +33,7 @@ use crate::screens::steam_strings::SteamText;
 use crate::screens::strings::Extra;
 use crate::screens::toolkit_pin::{self, REMOVE_ROWS};
 use crate::ui::Shell;
-use crate::ui::anim::{AnimExt, Motion, lerp};
+use crate::ui::anim::{AnimExt, Motion};
 use crate::ui::chrome::fullscreen_panel;
 use crate::ui::components;
 use crate::ui::focus::PanelNav;
@@ -43,7 +43,7 @@ use crate::ui::icons::Icon;
 use crate::ui::input::{self, InputEvent};
 use crate::ui::sound::Cue;
 use crate::ui::text;
-use crate::ui::theme::{Accent, Theme, pad, radius, size, ty, white};
+use crate::ui::theme::{Accent, Theme, color, pad, radius, size, space, ty};
 
 /// The categories, in the order of the list.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1830,9 +1830,9 @@ fn draw(
         Align2::LEFT_TOP,
         ty::SCREEN_TITLE,
         language.text(Key::Settings),
-        Color32::WHITE,
+        color::text(),
     );
-    let list_top = title.max.y + 31.0;
+    let list_top = title.max.y + space::XXL;
     let mut y = list_top;
     let column_w = size::SETTINGS_CATEGORY_WIDTH;
     for (index, cat) in cats.iter().enumerate() {
@@ -1840,7 +1840,7 @@ fn draw(
             pos2(area.min.x, y),
             vec2(column_w, size::SETTINGS_CATEGORY_ROW),
         );
-        y += size::SETTINGS_CATEGORY_ROW + 6.0;
+        y += size::SETTINGS_CATEGORY_ROW + space::S;
         let selected = index == nav.category;
         let focused = selected && !nav.in_rows;
         let response = ui.interact(
@@ -1871,18 +1871,21 @@ fn draw(
             &painter,
             rect,
             radius::ROW,
-            white(0.12 * t_sel),
+            color::surface().gamma_multiply(t_sel),
             hover_t,
             t_focus,
             0.0,
             size::FOCUS_RING,
         );
-        let ink = white(lerp(0.7, 1.0, t_sel));
+        let ink = color::text_detail().lerp_to_gamma(color::text(), t_sel);
         painter.text(
-            pos2(rect.min.x + 18.0 + 13.0, rect.center().y),
+            pos2(
+                rect.min.x + size::ROW_PADDING_X + size::ROW_ICON_BOX * 0.5,
+                rect.center().y,
+            ),
             Align2::CENTER_CENTER,
             cat.category.icon().glyph(),
-            cat.category.icon().font(18.0, false),
+            cat.category.icon().font(size::ROW_ICON, false),
             ink,
         );
         let style = if selected {
@@ -1892,7 +1895,10 @@ fn draw(
         };
         text::paint(
             &painter,
-            pos2(rect.min.x + 18.0 + 26.0 + 14.0, rect.center().y),
+            pos2(
+                rect.min.x + size::ROW_PADDING_X + size::ROW_ICON_BOX + space::M,
+                rect.center().y,
+            ),
             Align2::LEFT_CENTER,
             style,
             title_text,
@@ -1903,9 +1909,9 @@ fn draw(
     // The rows of the current category, fading in from the side when the category changes.
     let current = nav.category.min(cats.len() - 1);
     let fade_in = ctx.animate_from_to(("settings-switch", switches), 0.0, 1.0, Motion::Focus);
-    let x = area.min.x + column_w + 36.0;
+    let x = area.min.x + column_w + space::XXL;
     let list_rect = Rect::from_min_max(
-        pos2(x + 18.0 * (1.0 - fade_in), list_top - size::LIST_INSET),
+        pos2(x + space::L * (1.0 - fade_in), list_top - size::LIST_INSET),
         area.max,
     );
     let mut child = ui.new_child(UiBuilder::new().max_rect(list_rect));
