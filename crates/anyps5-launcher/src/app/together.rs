@@ -55,8 +55,8 @@ pub enum Card {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Action {
     Join(Offer),
-    /// "Later": the key, and the invitation to decline.
-    Dismiss {
+    /// "Decline": the key, and the invitation to decline.
+    Decline {
         key: String,
         invitation: Option<String>,
     },
@@ -323,7 +323,7 @@ pub fn escape(model: &mut Model) -> bool {
 pub fn apply(model: &mut Model, action: Action) {
     match action {
         Action::Join(offer) => join(model, offer),
-        Action::Dismiss { key, invitation } => {
+        Action::Decline { key, invitation } => {
             model.together.dismiss(&key);
             if let Some(id) = invitation {
                 model.online.send(

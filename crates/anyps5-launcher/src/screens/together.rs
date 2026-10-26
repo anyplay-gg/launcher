@@ -4,9 +4,9 @@
 //! One glass card at the top centre, below the toast and below a call's card or strip, on its own
 //! layer like those. It comes in with the overlay spring (fade and a short slide down) and leaves the
 //! same way. It holds at most one question: the offer has "Join" as its one primary action and a
-//! quiet "Later"; a blocker says what is the case in a headline and what to do under it, and has
+//! secondary "Decline"; a blocker says what is the case in a headline and what to do under it, and has
 //! "Close" (and, for the two it can mend, the remedy as the primary action). The version blocker
-//! also has a quiet "Try anyway" beside Close. Nothing on it moves
+//! also has a secondary "Try Anyway" beside Close. Nothing on it moves
 //! while it stays. The pad reaches every button of the card as a stop of the home screen
 //! (`HomeFocus::Card`, to the left of the library button), and the same actions through the Online
 //! panel (an invitation's Join, a friend's Join); the pointer and Tab press the buttons directly.
@@ -49,10 +49,10 @@ const LEAD_ICON: f32 = 24.0;
 /// The headline is a semibold 16 (the Medium button size), the line under it the note role with
 /// the room a few lines need.
 const HEADLINE: TextStyle = ty::BUTTON_MEDIUM;
-const HEADLINE_LEADING: f32 = 1.3;
+const HEADLINE_LEADING: f32 = 1.4;
 const LINE_LEADING: f32 = 1.45;
-const HEADLINE_ROWS: usize = 3;
-const LINE_ROWS: usize = 4;
+/// How far above its place the card starts and ends its slide (a local distance, not a gap).
+const SLIDE: f32 = 24.0;
 
 /// State kept between frames: what the card showed last, so it can fade out with its content.
 #[derive(Debug, Default)]
@@ -113,8 +113,8 @@ struct View {
     lead: Lead,
     headline: String,
     line: String,
-    /// The quiet answer, when there are two.
-    quiet: Option<(String, Action)>,
+    /// The secondary answer, when there are two.
+    secondary: Option<(String, Action)>,
     primary: (String, Action),
 }
 
@@ -143,9 +143,9 @@ fn view(card: &Card, language: Language) -> View {
                 headline: T::OfferHeadline
                     .format(language, &[Arg::Str(&offer.host), Arg::Str(&offer.title)]),
                 line,
-                quiet: Some((
-                    T::Later.text(language).to_owned(),
-                    Action::Dismiss {
+                secondary: Some((
+                    T::Decline.text(language).to_owned(),
+                    Action::Decline {
                         key: key.clone(),
                         invitation: invitation.clone(),
                     },
@@ -163,7 +163,7 @@ fn view(card: &Card, language: Language) -> View {
                     lead: Lead::Warning,
                     headline,
                     line,
-                    quiet: Some((T::Close.text(language).to_owned(), Action::Close)),
+                    secondary: Some((T::Close.text(language).to_owned(), Action::Close)),
                     primary: (
                         match fix {
                             Fix::SignIn => T::SignIn,
@@ -175,19 +175,19 @@ fn view(card: &Card, language: Language) -> View {
                     ),
                 },
                 // A version blocker keeps Close as its one primary action; trying anyway is the
-                // quiet answer beside it, and the line above already says what it risks.
+                // secondary answer beside it, and the line above already says what it risks.
                 None if can_try_anyway(blocker) => View {
                     lead: Lead::Warning,
                     headline,
                     line,
-                    quiet: Some((T::TryAnyway.text(language).to_owned(), Action::TryAnyway)),
+                    secondary: Some((T::TryAnyway.text(language).to_owned(), Action::TryAnyway)),
                     primary: (T::Close.text(language).to_owned(), Action::Close),
                 },
                 None => View {
                     lead: Lead::Warning,
                     headline,
                     line,
-                    quiet: None,
+                    secondary: None,
                     primary: (T::Close.text(language).to_owned(), Action::Close),
                 },
             }
@@ -195,18 +195,19 @@ fn view(card: &Card, language: Language) -> View {
     }
 }
 
-/// The actions of the card's buttons in the order they are drawn (the quiet answer first, the
+/// The actions of the card's buttons in the order they are drawn (the secondary answer first, the
 /// primary one last): what the pad's focus stops of the card (`HomeFocus::Card`) press.
 pub fn card_actions(card: &Card) -> Vec<Action> {
     let view = view(card, Language::English);
-    view.quiet
+    view.secondary
         .map(|(_, action)| action)
         .into_iter()
         .chain(std::iter::once(view.primary.1))
         .collect()
 }
 
-/// Text in a role with its own leading, cut after `rows` rows.
+/// Text in a role with its own leading. Never cut: the card grows to the words, so the risk note of
+/// a long game title is always read in full.
 fn lay(
     painter: &Painter,
     style: TextStyle,
@@ -214,10 +215,8 @@ fn lay(
     text: &str,
     color: Color32,
     width: f32,
-    rows: usize,
 ) -> Arc<Galley> {
     let mut job = LayoutJob::simple(text.to_owned(), style.font(), color, width.max(1.0));
-    job.wrap.max_rows = rows;
     for section in &mut job.sections {
         section.format.line_height = Some(style.size * leading);
         section.format.extra_letter_spacing = style.tracking;
@@ -225,10 +224,10 @@ fn lay(
     painter.layout_job(job)
 }
 
-/// The slide and fade: the card drops in from one step (24 dp) above and leaves the same way.
+/// The slide and fade: the card drops in from SLIDE (24 dp) above and leaves the same way.
 fn entrance(shown: f32) -> (f32, f32) {
     let v = shown.clamp(0.0, 1.0);
-    (v, -(1.0 - v) * space::XL)
+    (v, -(1.0 - v) * SLIDE)
 }
 
 /// A button's focus from the keyboard: the id it will get, looked up in egui's memory.
@@ -269,7 +268,6 @@ pub(crate) fn paint(
         &view.headline,
         fade(color::text(), a),
         text_width,
-        HEADLINE_ROWS,
     );
     let line = lay(
         &measure,
@@ -278,7 +276,6 @@ pub(crate) fn paint(
         &view.line,
         fade(color::text_detail(), a),
         text_width,
-        LINE_ROWS,
     );
     let text_height = headline.size().y + space::XS + line.size().y;
     let body = text_height.max(LEAD);
@@ -364,7 +361,7 @@ pub(crate) fn paint(
                 egui::WidgetInfo::labeled(egui::Role::Status, true, label.as_str())
             });
 
-            // The answers: the quiet one first, the primary one at the trailing edge.
+            // The answers: the secondary one first, the primary one at the trailing edge.
             let buttons = Rect::from_min_size(
                 pos2(inner.min.x, inner.max.y - size::BUTTON_MIN_HEIGHT),
                 vec2(inner.width(), size::BUTTON_MIN_HEIGHT),
@@ -376,13 +373,13 @@ pub(crate) fn paint(
             );
             child.spacing_mut().item_spacing.x = GAP;
             child.set_opacity(a);
-            let each = if view.quiet.is_some() {
+            let each = if view.secondary.is_some() {
                 (inner.width() - GAP) * 0.5
             } else {
                 inner.width()
             };
-            let first = usize::from(view.quiet.is_some());
-            if let Some((label, quiet)) = &view.quiet {
+            let first = usize::from(view.secondary.is_some());
+            if let Some((label, secondary)) = &view.secondary {
                 let focused = keyboard_focus(&child) || pad == Some(0);
                 if ConsoleButton::new(label)
                     .min_width(each)
@@ -391,7 +388,7 @@ pub(crate) fn paint(
                     .show(&mut child)
                     .clicked()
                 {
-                    action = Some(quiet.clone());
+                    action = Some(secondary.clone());
                 }
             }
             let focused = keyboard_focus(&child) || pad == Some(first);

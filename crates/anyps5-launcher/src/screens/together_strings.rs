@@ -22,7 +22,7 @@ pub enum TogetherText {
     /// Under the headline when the places are not known.
     OfferNoPlaces,
     Join,
-    Later,
+    Decline,
     Close,
     /// The quiet answer on a version blocker: join although the versions do not fit.
     TryAnyway,
@@ -91,7 +91,7 @@ impl TogetherText {
             TogetherText::OfferPlaces => "%@ of %@ players",
             TogetherText::OfferNoPlaces => "Your game starts in their session",
             TogetherText::Join => "Join",
-            TogetherText::Later => "Later",
+            TogetherText::Decline => "Decline",
             TogetherText::Close => "Close",
             TogetherText::TryAnyway => "Try Anyway",
             TogetherText::SignIn => "Sign In",
@@ -150,7 +150,7 @@ impl TogetherText {
             TogetherText::OfferPlaces => "%@ / %@ oyuncu",
             TogetherText::OfferNoPlaces => "Oyunun onların oturumunda açılır",
             TogetherText::Join => "Katıl",
-            TogetherText::Later => "Sonra",
+            TogetherText::Decline => "Reddet",
             TogetherText::Close => "Kapat",
             TogetherText::TryAnyway => "Yine de Dene",
             TogetherText::SignIn => "Giriş Yap",

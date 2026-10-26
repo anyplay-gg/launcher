@@ -1821,7 +1821,7 @@ mod tests {
         };
         crate::app::together::apply(
             &mut model,
-            crate::app::together::Action::Dismiss { key, invitation },
+            crate::app::together::Action::Decline { key, invitation },
         );
         assert!(crate::app::together::card(&model).is_none());
         assert!(model.online.take_outbox()[0].contains("answer_invitation"));
