@@ -48,7 +48,7 @@ impl Share {
             Share::Report => "Report a Problem",
             Share::ReportDetail => "Review the report, then save it or open it on GitHub",
             Share::ReportHint => {
-                "This is the report. Save it as a file, or open it on GitHub, filled in. Nothing is sent until you submit it there."
+                "This is the report. Save it as a file, or open it on GitHub with the form filled in. Nothing is sent until you submit it there."
             }
             Share::ReportPasteHint => {
                 "The log is too long for the link. Open on GitHub copies the full report; paste it into the form."
@@ -56,7 +56,9 @@ impl Share {
             Share::ReportOpen => "Open on GitHub",
             Share::ReportOpenedPaste => "Report copied. Paste it into the GitHub form.",
             Share::ReportOpened => "The form is open in your browser",
-            Share::ReportOpenFailed => "Could not open the browser. The link was copied instead.",
+            Share::ReportOpenFailed => {
+                "Could not open the browser. The link was copied: paste it into your browser."
+            }
         }
     }
 
@@ -84,7 +86,9 @@ impl Share {
             Share::ReportOpen => "GitHub'da Aç",
             Share::ReportOpenedPaste => "Rapor kopyalandı. GitHub formuna yapıştır.",
             Share::ReportOpened => "Form tarayıcında açıldı",
-            Share::ReportOpenFailed => "Tarayıcı açılamadı. Bağlantı panoya kopyalandı.",
+            Share::ReportOpenFailed => {
+                "Tarayıcı açılamadı. Bağlantı panoya kopyalandı: tarayıcına yapıştır."
+            }
         }
     }
 

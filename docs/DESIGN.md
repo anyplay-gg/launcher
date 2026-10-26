@@ -1469,6 +1469,12 @@ If the game never opened a window and no diagnosis was found: toast `startFailed
 | engine error | `diagnosisEngineError` (message, cut at 200 chars + ellipsis) | any other uncaught engine exception |
 | crashed | `diagnosisCrashed` (exception) | the OS crash report, e.g. `EXC_BAD_ACCESS (SIGSEGV)` |
 
+**Every sentence names a way out (0.2.8, `ui/i18n.rs` `ours`).** GPU lost: update the graphics driver, start again. Out of
+memory: close other programs, start again. Engine error and crash: start again, and if it repeats send a report from Options > Log
+(the engine message goes last, so the step stays visible when the hero line clips at two lines). Unsupported function: send a
+report so it can be added. A CPU that lacks an instruction set is a fact about the PC and has no step. `reportFailed` says
+"Choose another folder and try again." (a test in `screens/log.rs` checks that each sentence has a step).
+
 **Report**: "Make a Report" writes a text file (`<titleID>-yyyyMMdd-HHmmss.txt` in the Reports folder) with: title line + ISO date,
 Game (name, title ID, version), machine (model, CPU, RAM GB), OS version, launcher version, toolkit version, Reason (sentence or
 "none found"), Settings (pretty JSON), the crash exception line if any, and the log of the last start (<= 400 KB); then reveals it in

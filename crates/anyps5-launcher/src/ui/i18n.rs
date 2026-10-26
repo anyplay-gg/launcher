@@ -126,6 +126,42 @@ const fn ours(language: Language, key: Key) -> Option<&'static str> {
         (Language::Turkish, Key::AboutText) => {
             "AnyPlay Launcher oyunlarını AnyPS5 ile Windows'ta çalıştırır."
         }
+        (Language::English, Key::DiagnosisUnsupported) => {
+            "The game needs a system function that is not supported yet: %@. Send a report from Options > Log so it can be added."
+        }
+        (Language::English, Key::DiagnosisGpuLost) => {
+            "The GPU stopped responding. Update your graphics driver, then start the game again."
+        }
+        (Language::English, Key::DiagnosisOutOfMemory) => {
+            "The game ran out of memory. Close other programs, then start the game again."
+        }
+        (Language::English, Key::DiagnosisEngineError) => {
+            "Engine error. Start the game again. If it repeats, send a report from Options > Log. %@"
+        }
+        (Language::English, Key::DiagnosisCrashed) => {
+            "The game crashed (%@). Start it again. If it keeps crashing, send a report from Options > Log."
+        }
+        (Language::English, Key::ReportFailed) => {
+            "The report could not be saved. Choose another folder and try again."
+        }
+        (Language::Turkish, Key::DiagnosisUnsupported) => {
+            "Oyun henüz desteklenmeyen bir sistem fonksiyonu istiyor: %@. Eklenebilmesi için Seçenekler > Günlük'ten rapor gönder."
+        }
+        (Language::Turkish, Key::DiagnosisGpuLost) => {
+            "GPU ile bağlantı koptu. Grafik sürücünü güncelle, sonra oyunu yeniden başlat."
+        }
+        (Language::Turkish, Key::DiagnosisOutOfMemory) => {
+            "Bellek yetmedi. Diğer programları kapat, sonra oyunu yeniden başlat."
+        }
+        (Language::Turkish, Key::DiagnosisEngineError) => {
+            "Motor hatası. Oyunu yeniden başlat. Tekrarlarsa Seçenekler > Günlük'ten rapor gönder. %@"
+        }
+        (Language::Turkish, Key::DiagnosisCrashed) => {
+            "Oyun çöktü (%@). Yeniden başlat. Yine çökerse Seçenekler > Günlük'ten rapor gönder."
+        }
+        (Language::Turkish, Key::ReportFailed) => {
+            "Rapor kaydedilemedi. Başka bir klasör seçip yeniden dene."
+        }
         _ => return None,
     })
 }

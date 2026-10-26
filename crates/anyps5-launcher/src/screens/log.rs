@@ -492,6 +492,43 @@ mod tests {
     }
 
     #[test]
+    fn every_sentence_names_a_way_out() {
+        let all = [
+            Diagnosis::MissingModule("a.dll".into()),
+            Diagnosis::Unsupported("sceFoo".into()),
+            Diagnosis::GpuLost,
+            Diagnosis::OutOfMemory,
+            Diagnosis::EngineError("boom".into()),
+            Diagnosis::Crashed("0xC0000005".into()),
+            Diagnosis::HostCpu("AVX2".into()),
+            Diagnosis::NoUdmabuf,
+        ];
+        // Each says what to do: start again, update, close something, add to a group or send a
+        // report. A CPU that lacks an instruction set is a fact about the PC and has no step.
+        let steps = [
+            "again",
+            "Update",
+            "Close",
+            "Add your user",
+            "report",
+            "yeniden",
+            "güncelle",
+            "kapat",
+            "kullanıcını",
+            "rapor",
+        ];
+        for language in Language::ALL {
+            for d in &all {
+                let s = diagnosis_summary(d, language);
+                assert!(
+                    matches!(d, Diagnosis::HostCpu(_)) || steps.iter().any(|w| s.contains(w)),
+                    "{d:?} {language:?} names no way out: {s}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn arguments_land_in_the_sentence() {
         assert_eq!(
             diagnosis_summary(
@@ -505,7 +542,7 @@ mod tests {
                 &Diagnosis::Crashed("0xC0000005 (ACCESS_VIOLATION)".into()),
                 Language::English
             ),
-            "The game crashed (0xC0000005 (ACCESS_VIOLATION))."
+            "The game crashed (0xC0000005 (ACCESS_VIOLATION)). Start it again. If it keeps crashing, send a report from Options > Log."
         );
         assert_eq!(
             diagnosis_summary(&Diagnosis::HostCpu("AVX2".into()), Language::English),
@@ -517,7 +554,13 @@ mod tests {
     fn long_engine_messages_are_cut_at_200_characters() {
         let long = "x".repeat(300);
         let sentence = diagnosis_summary(&Diagnosis::EngineError(long), Language::English);
-        assert_eq!(sentence, format!("Engine error: {}…", "x".repeat(200)));
+        assert_eq!(
+            sentence,
+            format!(
+                "Engine error. Start the game again. If it repeats, send a report from Options > Log. {}…",
+                "x".repeat(200)
+            )
+        );
         assert_eq!(cut_message("short", 200), "short");
     }
 
