@@ -14,8 +14,7 @@ use std::collections::HashSet;
 
 use anyps5_core::trophies::TrophySet;
 use egui::{
-    Align, Align2, Color32, Context, Id, Layout, Rect, Role, Sense, Ui, UiBuilder, WidgetInfo,
-    pos2, vec2,
+    Align2, Color32, Context, Id, Rect, Role, Sense, Ui, UiBuilder, WidgetInfo, pos2, vec2,
 };
 
 pub use view::{Body, Cell, CompareView, Inputs, Press, Ready, Row, view};
@@ -27,18 +26,19 @@ use crate::screens::scroll::Follow;
 use crate::screens::side::commands;
 use crate::screens::strings::Extra;
 use crate::screens::trophies::{IconCache, paint_trophy_icon};
-use crate::screens::{BACK_ROW, back_row, clamped};
+use crate::screens::{BACK_ROW, back_button, clamped, footer_hints};
 use crate::ui::Shell;
 use crate::ui::anim::{AnimExt, Motion};
 use crate::ui::chrome::fullscreen_panel;
-use crate::ui::components::{self, ConsoleButton, corner, paint_progress, paint_spinner_arc};
+use crate::ui::components::{self, HintSet, corner, paint_grade_counts, paint_progress};
 use crate::ui::glass::GlassStyle;
 use crate::ui::i18n::{Key, Language};
 use crate::ui::icons::Icon;
+use crate::ui::state_page::{self, StatePage};
 use crate::ui::input::{Command, InputEvent};
 use crate::ui::sound::Cue;
 use crate::ui::text;
-use crate::ui::theme::{Grade, TextStyle, Weight, color, fade, pad, radius, size, ty, white};
+use crate::ui::theme::{color, fade, pad, radius, size, space, ty};
 
 /// Room around the scrolling rows for the focused card's grow and shadow.
 const LIST_MARGIN: f32 = 8.0;
@@ -51,19 +51,16 @@ const ROW_PAD: f32 = 18.0;
 const ROW_ICON: f32 = 52.0;
 const ROW_GAP: f32 = 10.0;
 const HEAD_ART: f32 = 96.0;
-const HEAD_GAP: f32 = 24.0;
 const AVATAR: f32 = 32.0;
-const BUTTON_HEIGHT: f32 = 54.0;
+/// The bar under a player's level.
+const BAR_HEIGHT: f32 = 6.0;
 /// The "Show" pill on a focused secret, as on the trophy list.
 const SHOW_HEIGHT: f32 = 34.0;
 const SHOW_PAD: f32 = 18.0;
 const SHOW_GAP: f32 = 26.0;
 const SHOW_REACH: f32 = 5.0;
-const SHOW_RADIUS: f32 = 12.0;
+const SHOW_RADIUS: f32 = radius::ROW;
 
-const NAME: TextStyle = TextStyle::new(15.0, Weight::SemiBold);
-const FACT: TextStyle = TextStyle::new(14.0, Weight::Medium);
-const STATE_TITLE: TextStyle = TextStyle::new(22.0, Weight::Medium);
 
 /// What the host has to do after a frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -268,9 +265,11 @@ impl CompareScreen {
         let area = ui
             .max_rect()
             .shrink2(vec2(pad::TROPHIES.0, pad::TROPHIES.1));
-        if back_row(ui, area, language) {
+        // The Back button at the top, the hints at the bottom right, as on every full-screen area.
+        if back_button(ui, area, language) {
             self.back_clicked = true;
         }
+        footer_hints(ui, ui.max_rect(), language, HintSet::BASIC.without_back());
         let header = Rect::from_min_size(
             pos2(area.min.x, area.min.y + BACK_ROW),
             vec2(area.width(), HEAD_ART),
@@ -282,20 +281,20 @@ impl CompareScreen {
             .widget_info(|| WidgetInfo::labeled(Role::Label, true, model.name.as_str()));
         match &model.body {
             Body::Ready(ready) => {
-                let heads_top = header.max.y + HEAD_GAP;
-                let heads = self.draw_heads(ui, area, heads_top, ready, accent);
+                // The two players stand in the header band, over the columns they head.
+                let heads = self.draw_heads(ui, area, header.min.y, ready, accent, language);
                 if let Some(note) = &ready.note {
-                    let width =
-                        (area.max.x - ROW_PAD - 2.0 * COLUMN - 32.0 - area.min.x).max(200.0);
+                    let width = (heads.min.x - space::XL - area.min.x).max(200.0);
                     let galley = clamped(&painter, ty::NOTE, note, Color32::PLACEHOLDER, width, 3);
                     painter.galley(
-                        pos2(area.min.x, heads_top + 4.0),
+                        pos2(area.min.x, header.max.y + space::M),
                         galley,
                         color::text_detail(),
                     );
                 }
+                let list_top = heads.max.y.max(header.max.y) + space::L;
                 let list = Rect::from_min_max(
-                    pos2(area.min.x - LIST_MARGIN, heads.max.y + 16.0 - LIST_MARGIN),
+                    pos2(area.min.x - LIST_MARGIN, list_top - LIST_MARGIN),
                     pos2(area.max.x + LIST_MARGIN, area.max.y),
                 );
                 let mut child = ui.new_child(UiBuilder::new().max_rect(list));
@@ -330,12 +329,12 @@ impl CompareScreen {
             title,
             &model.game,
             Color32::PLACEHOLDER,
-            (header.max.x - x).max(200.0),
+            (header.max.x - ROW_PAD - 2.0 * COLUMN - space::XL - x).max(200.0),
             1,
         );
         let title_y = top + overline.line_height() + 10.0;
         let title_h = galley.size().y;
-        painter.galley(pos2(x, title_y), galley, Color32::WHITE);
+        painter.galley(pos2(x, title_y), galley, color::text());
         if !model.handle.is_empty() {
             let line = C::With.format(language, &[crate::ui::i18n::Arg::Str(&model.handle)]);
             text::paint(
@@ -349,7 +348,8 @@ impl CompareScreen {
         }
     }
 
-    /// The two heads over the columns; returns the rectangle they take.
+    /// The two players over the columns they head: who, the level as a figure with the way to
+    /// the next, the game's trophies by grade and its points. Returns the rectangle they take.
     fn draw_heads(
         &self,
         ui: &mut Ui,
@@ -357,94 +357,86 @@ impl CompareScreen {
         top: f32,
         ready: &Ready,
         accent: Color32,
+        language: Language,
     ) -> Rect {
         let painter = ui.painter().clone();
         let left = area.max.x - ROW_PAD - 2.0 * COLUMN;
+        let level_word = C::Level.text(language).replace("%@", "");
+        let level_word = level_word.trim();
         let mut bottom = top;
         for (n, side) in [&ready.you, &ready.them].into_iter().enumerate() {
             let x = left + n as f32 * COLUMN;
+            let width = COLUMN - space::L;
             let mut y = top;
             // Who.
             let avatar = Rect::from_min_size(pos2(x, y), vec2(AVATAR, AVATAR));
             paint_avatar(&painter, avatar, side.avatar, side.account, &side.handle);
             let name = clamped(
                 &painter,
-                NAME,
+                ty::FACT,
                 &side.name,
                 Color32::PLACEHOLDER,
-                COLUMN - AVATAR - 10.0 - 12.0,
+                width - AVATAR - space::S,
                 1,
             );
             let name_h = name.size().y;
             painter.galley(
-                pos2(avatar.max.x + 10.0, avatar.center().y - name_h * 0.5),
+                pos2(avatar.max.x + space::S, avatar.center().y - name_h * 0.5),
                 name,
-                Color32::WHITE,
+                color::text(),
             );
-            y += AVATAR + 12.0;
-            // The level, its points and the way to the next.
-            let level = text::paint(
+            y += AVATAR + space::S;
+            // The level as a figure, its word beside it, the points at the trailing edge.
+            let figure = text::paint_tabular(
                 &painter,
                 pos2(x, y),
-                Align2::LEFT_TOP,
-                FACT,
-                &side.level_text,
-                white(0.92),
+                ty::PANEL_TITLE,
+                &side.level.to_string(),
+                color::text(),
             );
-            text::paint_tabular(
+            let word = text::paint(
                 &painter,
-                pos2(level.max.x + 10.0, y),
-                FACT,
-                &side.points_text,
+                pos2(figure.max.x + space::S, figure.max.y - space::XS),
+                Align2::LEFT_BOTTOM,
+                ty::LABEL,
+                level_word,
                 color::text_detail(),
             );
-            y += FACT.line_height() + 8.0;
-            let bar = Rect::from_min_size(pos2(x, y), vec2(COLUMN - 40.0, 4.0));
-            paint_progress(&painter, bar, side.fraction, accent);
-            y += 4.0 + 12.0;
-            // This game's trophies by grade and their points.
-            let mut cx = x;
-            for (grade, count) in Grade::ALL.into_iter().zip(side.grades) {
-                if count == 0 {
-                    continue;
-                }
-                painter.text(
-                    pos2(cx + 6.5, y + 8.0),
-                    Align2::CENTER_CENTER,
-                    Icon::TROPHY.glyph(),
-                    Icon::TROPHY.font(13.0, true),
-                    grade.color(),
-                );
-                cx += 17.0;
-                let w = text::paint_tabular(
+            let points_w = text::tabular_width(&painter, ty::NOTE, &side.points_text);
+            if word.max.x + space::M + points_w <= x + width {
+                text::paint_tabular(
                     &painter,
-                    pos2(cx, y),
-                    ty::DETAIL_LARGE,
-                    &count.to_string(),
-                    white(0.8),
-                )
-                .width();
-                cx += w + 12.0;
+                    pos2(x + width - points_w, figure.max.y - ty::NOTE.line_height() - space::XS),
+                    ty::NOTE,
+                    &side.points_text,
+                    color::text_detail(),
+                );
             }
-            y += 20.0 + 4.0;
+            y += ty::PANEL_TITLE.line_height() + space::S;
+            let bar = Rect::from_min_size(pos2(x, y), vec2(width, BAR_HEIGHT));
+            paint_progress(&painter, bar, side.fraction, accent);
+            y += BAR_HEIGHT + space::M;
+            // This game's trophies by grade and their points.
+            paint_grade_counts(&painter, pos2(x, y), side.grades);
+            y += ty::CHIP.line_height() + space::XS;
             text::paint(
                 &painter,
                 pos2(x, y),
                 Align2::LEFT_TOP,
-                ty::DETAIL_LARGE,
+                ty::NOTE,
                 &side.game_points_text,
                 color::text_detail(),
             );
-            y += ty::DETAIL_LARGE.line_height();
+            y += ty::NOTE.line_height();
             bottom = bottom.max(y);
             ui.interact(
-                Rect::from_min_max(pos2(x, top), pos2(x + COLUMN - 12.0, y)),
+                Rect::from_min_max(pos2(x, top), pos2(x + COLUMN - space::M, y)),
                 Id::unique(("compare-head", n)),
                 Sense::hover(),
             )
             .widget_info(|| WidgetInfo::labeled(Role::Label, true, side.label.as_str()));
         }
-        Rect::from_min_max(pos2(area.min.x, top), pos2(area.max.x, bottom))
+        Rect::from_min_max(pos2(left, top), pos2(area.max.x, bottom))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -558,7 +550,7 @@ impl CompareScreen {
         let painter = ui.painter().clone();
         let width = ui.available_width();
         let show_label = Extra::TrophyShow.text(language);
-        let show_style = TextStyle::new(15.0, Weight::SemiBold);
+        let show_style = ty::FACT;
         let show_w = if row.secret {
             text::width(&painter, show_style, show_label) + 2.0 * SHOW_PAD
         } else {
@@ -617,13 +609,13 @@ impl CompareScreen {
             vec2(ROW_ICON, ROW_ICON),
         );
         if row.secret {
-            painter.rect_filled(icon_rect, corner(12.0), white(0.07));
+            painter.rect_filled(icon_rect, corner(radius::ROW), color::surface_row());
             painter.text(
                 icon_rect.center(),
                 Align2::CENTER_CENTER,
                 Icon::LOCK.glyph(),
                 Icon::LOCK.font(22.0, true),
-                white(0.5),
+                color::text_note(),
             );
         } else {
             let trophy = row.index.and_then(|i| set.and_then(|s| s.trophies.get(i)));
@@ -641,7 +633,7 @@ impl CompareScreen {
         painter.galley(
             pos2(x, top),
             name_g,
-            fade(Color32::WHITE, if you_earned { 1.0 } else { 0.86 }),
+            fade(color::text(), if you_earned { 1.0 } else { 0.86 }),
         );
         painter.galley(pos2(x, top + name_h + 6.0), detail_g, color::text_detail());
         if let Some(grade) = row.grade
@@ -666,7 +658,7 @@ impl CompareScreen {
                         Align2::CENTER_CENTER,
                         Icon::CHECK_CIRCLE.glyph(),
                         Icon::CHECK_CIRCLE.font(17.0, true),
-                        white(0.88),
+                        color::text_label(),
                     );
                     text::paint(
                         &painter,
@@ -674,7 +666,7 @@ impl CompareScreen {
                         Align2::LEFT_CENTER,
                         ty::DETAIL_LARGE,
                         day,
-                        white(0.88),
+                        color::text_label(),
                     );
                 }
                 Cell::NotYet => {
@@ -692,36 +684,40 @@ impl CompareScreen {
 
         // The "Show" pill of a focused secret, left of the columns.
         let mut pill = None;
-        if row.secret && t > 0.0 {
+        // The pill shows on the focused row and under the pointer: one click reveals.
+        let shown_t = t.max(hover_t);
+        if row.secret && shown_t > 0.0 {
             let right_edge = cells_left - SHOW_GAP;
             let mut area = Rect::from_center_size(
                 pos2(right_edge - show_w * 0.5, rect.center().y),
                 vec2(show_w, SHOW_HEIGHT),
             );
-            let hovered = focused
-                && ctx
-                    .pointer_hover_pos()
-                    .is_some_and(|p| area.expand(SHOW_REACH).contains(p));
+            let hovered = ctx
+                .pointer_hover_pos()
+                .is_some_and(|p| area.expand(SHOW_REACH).contains(p));
             if hovered && ctx.input(|i| i.pointer.primary_down()) {
                 area = area.shrink2(vec2(show_w, SHOW_HEIGHT) * 0.02);
             }
-            let fill = white(if hovered { 0.28 } else { 0.18 });
-            painter.rect_filled(area, corner(SHOW_RADIUS), fade(fill, t));
+            let fill = if hovered {
+                color::surface_pressed()
+            } else {
+                color::surface_focus()
+            };
+            painter.rect_filled(area, corner(SHOW_RADIUS), fade(fill, shown_t));
             text::paint(
                 &painter,
                 area.center(),
                 Align2::CENTER_CENTER,
                 show_style,
                 show_label,
-                fade(Color32::WHITE, t),
+                fade(color::text(), shown_t),
             );
-            pill = focused.then_some(area);
+            pill = (focused || under_pointer).then_some(area);
         }
         (rect, pill)
     }
 
     /// Loading, offline, failed, hidden and empty: one block of words under the header.
-    #[allow(clippy::too_many_arguments)]
     fn draw_state(
         &self,
         ui: &mut Ui,
@@ -732,114 +728,46 @@ impl CompareScreen {
         open: bool,
         clicked: &mut Option<usize>,
     ) {
-        let ctx = ui.ctx().clone();
-        let painter = ui.painter().clone();
         let handle = crate::ui::i18n::Arg::Str(&model.handle);
-        let (icon, title, note): (Icon, String, String) = match &model.body {
+        let (icon, title, note) = match &model.body {
             Body::Loading => (
                 Icon::CIRCLE_DASHED,
                 C::LoadingNote.text(language).to_owned(),
-                String::new(),
+                None,
             ),
             Body::Offline => (
                 Icon::CLOUD,
                 C::OfflineTitle.text(language).to_owned(),
-                C::OfflineNote.text(language).to_owned(),
+                Some(C::OfflineNote.text(language).to_owned()),
             ),
             Body::Failed => (
                 Icon::WARNING,
                 C::FailedTitle.text(language).to_owned(),
-                C::FailedNote.text(language).to_owned(),
+                Some(C::FailedNote.text(language).to_owned()),
             ),
             Body::Hidden => (
                 Icon::LOCK,
                 C::HiddenTitle.text(language).to_owned(),
-                C::HiddenNote.format(language, &[handle]),
+                Some(C::HiddenNote.format(language, &[handle])),
             ),
             Body::Empty => (
                 Icon::TROPHY,
                 C::EmptyTitle.text(language).to_owned(),
-                C::EmptyNote.text(language).to_owned(),
+                Some(C::EmptyNote.text(language).to_owned()),
             ),
             Body::Ready(_) => return,
         };
-        // A screen reader hears the words of the state, which are only painted.
-        let block_rect = Rect::from_center_size(
-            pos2(area.center().x, header.max.y + 120.0),
-            vec2(560.0, 240.0),
-        );
-        let said = if note.is_empty() {
-            title.clone()
-        } else {
-            format!("{title}. {note}")
-        };
-        ui.interact(block_rect, Id::unique("compare-state"), Sense::hover())
-            .widget_info(|| WidgetInfo::labeled(Role::Label, true, said.as_str()));
         let failed = matches!(model.body, Body::Failed);
-        let block =
-            56.0 + 18.0 + 30.0 + 8.0 + 44.0 + if failed { 24.0 + BUTTON_HEIGHT } else { 0.0 };
-        let body_top = header.max.y + 28.0;
-        let room = area.max.y - body_top;
-        let top = body_top + ((room - block) * 0.5 - 24.0).max(12.0);
-        let centre = area.center().x;
-        let disc = Rect::from_center_size(pos2(centre, top + 28.0), vec2(56.0, 56.0));
-        painter.circle_filled(disc.center(), 28.0, color::surface_row());
-        if matches!(model.body, Body::Loading) && !ctx.reduced_motion() {
-            let time = ctx.input(|i| i.time);
-            paint_spinner_arc(&painter, disc.center(), 12.0, time, 2.5, white(0.8));
-            ctx.request_repaint();
-        } else {
-            painter.text(
-                disc.center(),
-                Align2::CENTER_CENTER,
-                icon.glyph(),
-                icon.font(24.0, false),
-                white(0.75),
-            );
-        }
-        let mut y = disc.max.y + 18.0;
-        let galley = clamped(
-            &painter,
-            STATE_TITLE,
-            &title,
-            Color32::PLACEHOLDER,
-            520.0,
-            1,
-        );
-        let title_h = galley.size().y;
-        painter.galley(
-            pos2(centre - galley.size().x * 0.5, y),
-            galley,
-            Color32::WHITE,
-        );
-        y += title_h + 8.0;
-        if !note.is_empty() {
-            let mut job =
-                egui::text::LayoutJob::simple(note, ty::NOTE.font(), Color32::PLACEHOLDER, 420.0);
-            job.halign = Align::Center;
-            job.sections[0].format.line_height = Some(1.45 * ty::NOTE.size);
-            let galley = painter.layout_job(job);
-            painter.galley(pos2(centre, y), galley, color::text_detail());
-        }
-        if failed {
-            let label = FeedText::TryAgain.text(language);
-            let w = text::width(&painter, ty::BUTTON, label) + 2.0 * size::BUTTON_PADDING;
-            let button_y = top + 56.0 + 18.0 + 30.0 + 8.0 + 44.0 + 24.0;
-            let mut row = ui.new_child(
-                UiBuilder::new()
-                    .max_rect(Rect::from_min_size(
-                        pos2(centre - w * 0.5 - 3.0, button_y),
-                        vec2(w + 12.0, BUTTON_HEIGHT + 8.0),
-                    ))
-                    .layout(Layout::left_to_right(Align::Min)),
-            );
-            let response = ConsoleButton::new(label)
-                .prominent(true)
-                .focused(open)
-                .show(&mut row);
-            if response.clicked() {
-                *clicked = Some(0);
-            }
+        let page = StatePage {
+            icon,
+            title: &title,
+            note: note.as_deref(),
+            loading: matches!(model.body, Body::Loading),
+            action: failed.then(|| FeedText::TryAgain.text(language)),
+        };
+        let room = Rect::from_min_max(pos2(area.min.x, header.max.y + space::XL), area.max);
+        if state_page::show(ui, room, &page, open) {
+            *clicked = Some(0);
         }
     }
 }

@@ -19,14 +19,14 @@ use super::nav::{Column, Slot};
 use super::view::{ActivityRow, Body, GameRow, Press, ProfileView, Ready, Stat, TrophyRow};
 use crate::screens::online::paint_avatar;
 use crate::screens::profile_strings::ProfileText as P;
-use crate::screens::{BACK_ROW, back_row, clamped};
+use crate::screens::{BACK_ROW, back_button, clamped, footer_hints};
 use crate::ui::anim::AnimExt;
-use crate::ui::components::{ConsoleButton, corner};
+use crate::ui::components::{ConsoleButton, HintSet, corner, paint_grade_counts, paint_progress};
 use crate::ui::i18n::Language;
 use crate::ui::icons::Icon;
 use crate::ui::state_page::{self, StatePage};
 use crate::ui::text;
-use crate::ui::theme::{self, Grade, TextStyle, Weight, color, fade, pad, radius, ty, white};
+use crate::ui::theme::{TextStyle, color, fade, pad, radius, space, ty};
 
 // Sizes in dp.
 const AVATAR: f32 = 120.0;
@@ -51,12 +51,15 @@ const BODY_GAP: f32 = 28.0;
 /// The height of the block of words of a state: disc, title, note.
 
 const NAME: TextStyle = ty::SCREEN_TITLE;
-const ABOUT: TextStyle = TextStyle::new(17.0, Weight::Regular);
-const SECTION: TextStyle = TextStyle::new(20.0, Weight::SemiBold);
-const FIGURE: TextStyle = TextStyle::new(34.0, Weight::Light);
-const GRADE_COUNT: TextStyle = TextStyle::new(14.0, Weight::Medium);
-const FACT: TextStyle = TextStyle::new(15.0, Weight::SemiBold);
-const SENTENCE: TextStyle = TextStyle::new(15.0, Weight::Regular);
+const ABOUT: TextStyle = ty::BODY;
+const SECTION: TextStyle = ty::CATEGORY_SELECTED;
+const FIGURE: TextStyle = ty::HEADING;
+const GRADE_COUNT: TextStyle = ty::CHIP;
+const FACT: TextStyle = ty::FACT;
+const SENTENCE: TextStyle = ty::SENTENCE;
+/// The way to the next level: wide enough to read as progress, and the bar of a game row.
+const LEVEL_BAR: (f32, f32) = (120.0, 6.0);
+const ROW_BAR: f32 = 4.0;
 
 /// What the painter needs besides the view.
 pub struct Settings {
@@ -151,7 +154,7 @@ fn stat_width(painter: &Painter, stat: &Stat, language: Language) -> f32 {
     );
     let grades = stat.grades.map_or(0.0, |g| grades_width(painter, g));
     let points = stat.level.as_ref().map_or(0.0, |l| {
-        text::tabular_width(painter, GRADE_COUNT, &l.points).max(96.0)
+        text::tabular_width(painter, GRADE_COUNT, &l.points).max(LEVEL_BAR.0)
     });
     figure.max(label).max(grades).max(points)
 }
@@ -160,9 +163,9 @@ fn grades_width(painter: &Painter, grades: [u32; 4]) -> f32 {
     grades
         .iter()
         .filter(|n| **n > 0)
-        .map(|n| 17.0 + text::tabular_width(painter, GRADE_COUNT, &n.to_string()) + 12.0)
+        .map(|n| 14.0 + space::XS + text::tabular_width(painter, GRADE_COUNT, &n.to_string()) + space::M)
         .sum::<f32>()
-        - 12.0
+        - space::M
 }
 
 fn activity_text_width(width: f32) -> f32 {
@@ -409,7 +412,8 @@ pub fn draw(
     let screen = ui.max_rect();
     paint_wash(ui.painter(), screen, model.tint);
     let area = screen.shrink2(vec2(pad::TROPHIES.0, pad::TROPHIES.1));
-    drawn.back_clicked = back_row(ui, area, settings.language);
+    drawn.back_clicked = back_button(ui, area, settings.language);
+    footer_hints(ui, screen, settings.language, HintSet::BASIC.without_back());
     drawn.slots.clear();
     drawn.presses.clear();
     drawn.geometry.clear();
@@ -583,15 +587,15 @@ fn paint_header(
     painter.galley(
         at(pos2(header.identity_x, 0.0)),
         header.name.clone(),
-        Color32::WHITE,
+        color::text(),
     );
     if let Some((rect, galley)) = &header.chip {
         let rect = rect.translate(origin.to_vec2());
-        painter.rect_filled(rect, corner(rect.height() * 0.5), white(0.12));
+        painter.rect_filled(rect, corner(rect.height() * 0.5), color::surface());
         painter.galley(
             pos2(rect.min.x + 12.0, rect.center().y - galley.size().y * 0.5),
             galley.clone(),
-            white(0.92),
+            color::text_label(),
         );
     }
     if let Some((pos, galley, online)) = &header.status {
@@ -606,7 +610,7 @@ fn paint_header(
         painter.galley(pos, galley.clone(), color::text_subtitle());
     }
     if let Some((pos, galley)) = &header.about {
-        painter.galley(at(*pos), galley.clone(), white(0.86));
+        painter.galley(at(*pos), galley.clone(), color::text_label());
     }
     if let Some((pos, galley)) = &header.note {
         painter.galley(at(*pos), galley.clone(), color::text_detail());
@@ -708,7 +712,7 @@ fn paint_columns(
             Align2::LEFT_TOP,
             SECTION,
             title.text(language),
-            white(0.94),
+            color::text(),
         );
         if let Some(count) = caption.count {
             painter.text(
@@ -785,58 +789,34 @@ fn paint_stat(
     language: Language,
     accent: Color32,
 ) {
-    text::paint_tabular(painter, pos, FIGURE, &stat.figure, Color32::WHITE);
-    let label_y = pos.y + FIGURE.line_height() + 2.0;
+    text::paint_tabular(painter, pos, FIGURE, &stat.figure, color::text());
+    let label_y = pos.y + FIGURE.line_height() + space::XS;
     text::paint(
         painter,
         pos2(pos.x, label_y),
         Align2::LEFT_TOP,
-        ty::INFO_OVERLINE,
+        ty::OVERLINE,
         &text::to_upper(&stat.label, language),
-        color::text_overline(),
+        color::text_detail(),
     );
+    let under = label_y + ty::OVERLINE.line_height() + space::S;
     if let Some(level) = &stat.level {
-        // The points, and under them the way to the next level: a track and its fill.
-        let y = label_y + ty::INFO_OVERLINE.line_height() + 8.0;
+        // The points, and under them the way to the next level, as wide as the points above.
         let words = text::paint_tabular(
             painter,
-            pos2(pos.x, y),
+            pos2(pos.x, under),
             GRADE_COUNT,
             &level.points,
-            white(0.8),
+            color::text_label(),
         );
         let bar = Rect::from_min_size(
-            pos2(pos.x, words.max.y + 8.0),
-            vec2(words.width().max(96.0), 4.0),
+            pos2(pos.x, words.max.y + space::S),
+            vec2(words.width().max(LEVEL_BAR.0), LEVEL_BAR.1),
         );
-        painter.rect_filled(bar, corner(2.0), white(0.16));
-        paint_progress_fill(painter, bar, level.fraction, accent);
+        paint_progress(painter, bar, level.fraction, accent);
     }
     if let Some(grades) = stat.grades {
-        let mut x = pos.x;
-        let y = label_y + ty::INFO_OVERLINE.line_height() + 8.0;
-        for (grade, count) in Grade::ALL.into_iter().zip(grades) {
-            if count == 0 {
-                continue;
-            }
-            painter.text(
-                pos2(x + 6.5, y + 8.0),
-                Align2::CENTER_CENTER,
-                Icon::TROPHY.glyph(),
-                Icon::TROPHY.font(13.0, true),
-                grade.color(),
-            );
-            x += 17.0;
-            let w = text::paint_tabular(
-                painter,
-                pos2(x, y),
-                GRADE_COUNT,
-                &count.to_string(),
-                white(0.8),
-            )
-            .width();
-            x += w + 12.0;
-        }
+        paint_grade_counts(painter, pos2(pos.x, under), grades);
     }
 }
 
@@ -907,7 +887,7 @@ fn surface(
     }
     Surface {
         response,
-        ink: Color32::WHITE,
+        ink: color::text(),
         t,
     }
 }
@@ -989,9 +969,9 @@ fn paint_game(
                     rect.max.x - ROW_PAD - bar_width,
                     y + FACT.line_height() + 8.0,
                 ),
-                vec2(bar_width, 4.0),
+                vec2(bar_width, ROW_BAR),
             );
-            painter.rect_filled(bar, corner(2.0), white(0.16));
+            painter.rect_filled(bar, corner(2.0), color::track());
             let fill = settings.accent;
             paint_progress_fill(&painter, bar, fraction, fill);
         }

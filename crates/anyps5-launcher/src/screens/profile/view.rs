@@ -390,6 +390,18 @@ pub fn view(inputs: &Inputs<'_>) -> ProfileView {
         other_parts(inputs, page, &mut ready);
     }
     activity(inputs, &mut ready);
+    // A new player's page: one line in place of three empty sections.
+    if own
+        && ready.note.is_none()
+        && ready.games.rows.is_empty()
+        && ready.trophies.rows.is_empty()
+        && ready.activity.rows.is_empty()
+    {
+        ready.games.empty = None;
+        ready.trophies.empty = None;
+        ready.activity.empty = None;
+        ready.note = Some(P::OwnNothingYet.text(language).to_owned());
+    }
     // One figure alone only repeats a caption: the strip needs two to be a strip.
     if ready.stats.len() < 2 {
         ready.stats.clear();

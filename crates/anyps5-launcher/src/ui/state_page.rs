@@ -3,7 +3,7 @@
 //! what to do, and at most one primary button that does it. Profile, Compare and the feed share
 //! it, so a state looks and stands the same on every page.
 
-use egui::{Align, Align2, Layout, Rect, Role, Sense, Ui, UiBuilder, WidgetInfo, pos2, vec2};
+use egui::{Align, Align2, Id, Layout, Rect, Role, Sense, Ui, UiBuilder, WidgetInfo, pos2, vec2};
 
 use crate::ui::anim::AnimExt;
 use crate::ui::components::{ConsoleButton, paint_spinner_arc};
@@ -31,13 +31,16 @@ pub struct StatePage<'a> {
     pub action: Option<&'a str>,
 }
 
-/// Draws the page centred in `room`; `focused` is whether the button holds the focus. Returns
-/// whether the button was clicked.
-pub fn show(ui: &mut Ui, room: Rect, page: &StatePage<'_>, focused: bool) -> bool {
-    let ctx = ui.ctx().clone();
-    let painter = ui.painter().clone();
+/// The text of a page laid out, and the height of the block.
+struct Laid {
+    title: std::sync::Arc<egui::Galley>,
+    note: Option<std::sync::Arc<egui::Galley>>,
+    height: f32,
+}
+
+fn lay_out(painter: &egui::Painter, page: &StatePage<'_>) -> Laid {
     let title = crate::screens::clamped(
-        &painter,
+        painter,
         ty::STATE_TITLE,
         page.title,
         egui::Color32::PLACEHOLDER,
@@ -55,16 +58,38 @@ pub fn show(ui: &mut Ui, room: Rect, page: &StatePage<'_>, focused: bool) -> boo
         job.sections[0].format.line_height = Some(1.45 * ty::NOTE.size);
         painter.layout_job(job)
     });
-    let button = size::BUTTON_MIN_HEIGHT;
     let height = DISC
         + space::L
         + title.size().y
         + note.as_ref().map_or(0.0, |n| space::S + n.size().y)
         + if page.action.is_some() {
-            space::XL + button
+            space::XL + size::BUTTON_MIN_HEIGHT
         } else {
             0.0
         };
+    Laid {
+        title,
+        note,
+        height,
+    }
+}
+
+/// How tall the block of a page is, for a screen that places it in a flow.
+pub fn height(painter: &egui::Painter, page: &StatePage<'_>) -> f32 {
+    lay_out(painter, page).height
+}
+
+/// Draws the page centred in `room`; `focused` is whether the button holds the focus. Returns
+/// whether the button was clicked.
+pub fn show(ui: &mut Ui, room: Rect, page: &StatePage<'_>, focused: bool) -> bool {
+    let ctx = ui.ctx().clone();
+    let painter = ui.painter().clone();
+    let Laid {
+        title,
+        note,
+        height,
+    } = lay_out(&painter, page);
+    let button = size::BUTTON_MIN_HEIGHT;
     let top = room.min.y + ((room.height() - height) * 0.5 - LIFT).max(space::M);
     let centre = room.center().x;
 
@@ -77,7 +102,7 @@ pub fn show(ui: &mut Ui, room: Rect, page: &StatePage<'_>, focused: bool) -> boo
         pos2(centre, top + height * 0.5),
         vec2(TITLE_WIDTH, height),
     );
-    ui.interact(block, ui.id().with("state-page"), Sense::hover())
+    ui.interact(block, Id::unique("state-page"), Sense::hover())
         .widget_info(|| WidgetInfo::labeled(Role::Label, true, said.as_str()));
 
     let disc = Rect::from_center_size(pos2(centre, top + DISC * 0.5), vec2(DISC, DISC));

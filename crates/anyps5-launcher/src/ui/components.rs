@@ -19,7 +19,7 @@ use crate::ui::icons::Icon;
 use crate::ui::input::{self, Device};
 use crate::ui::pad_info;
 use crate::ui::text;
-use crate::ui::theme::{TextStyle, black, color, fade, mix, radius, shadows, size, ty, white};
+use crate::ui::theme::{self, TextStyle, black, color, fade, mix, radius, shadows, size, space, ty, white};
 
 /// Forces a visual state so galleries and tests can show hover or press without a pointer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -859,6 +859,37 @@ pub fn paint_progress(painter: &Painter, rect: Rect, fraction: f32, accent: Colo
         shadows::progress_glow(accent),
     );
     paint_capsule(painter, fill, accent);
+}
+
+/// A player's trophies by grade, platinum first, from `pos`: the grade's cup in its colour and
+/// the count in ink beside it; a grade with none is left out. Returns the width it took. The cup
+/// carries the colour, the count carries the number: nothing rests on colour alone.
+pub fn paint_grade_counts(painter: &Painter, pos: Pos2, grades: [u32; 4]) -> f32 {
+    let style = ty::CHIP;
+    let glyph = 14.0;
+    let mut x = pos.x;
+    for (grade, count) in theme::Grade::ALL.into_iter().zip(grades) {
+        if count == 0 {
+            continue;
+        }
+        painter.text(
+            pos2(x + glyph * 0.5, pos.y + style.line_height() * 0.5),
+            Align2::CENTER_CENTER,
+            Icon::TROPHY.glyph(),
+            Icon::TROPHY.font(glyph, true),
+            grade.color(),
+        );
+        x += glyph + space::XS;
+        let counted = text::paint_tabular(
+            painter,
+            pos2(x, pos.y),
+            style,
+            &count.to_string(),
+            color::text_label(),
+        );
+        x += counted.width() + space::M;
+    }
+    (x - pos.x - space::M).max(0.0)
 }
 
 /// An endless sweep for steps of unknown length: a 35 %-wide gradient (clear, accent, clear)

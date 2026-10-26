@@ -69,6 +69,8 @@ pub enum ProfileText {
     OwnGamesEmpty,
     OwnTrophiesEmpty,
     OwnActivityEmpty,
+    /// A new player's page, instead of three empty sections.
+    OwnNothingYet,
     /// Under the header of the player's own profile while the cloud is out of reach.
     OwnOfflineNote,
     /// On a friend's profile: `%@` = how many of their games the player has too.
@@ -126,6 +128,9 @@ impl ProfileText {
             ProfileText::OwnGamesEmpty => "Games in your library show up here with your time.",
             ProfileText::OwnTrophiesEmpty => "Earn a trophy in a game and it shows up here.",
             ProfileText::OwnActivityEmpty => "Trophies, new friends and first games show up here.",
+            ProfileText::OwnNothingYet => {
+                "Play a game and your hours, trophies and activity show up here."
+            }
             ProfileText::OwnOfflineNote => {
                 "You are offline. Your activity comes back when you are online again."
             }
@@ -182,6 +187,9 @@ impl ProfileText {
             ProfileText::EmptyNote => "%@ henüz bir şey oynamadı veya paylaşmadı.",
             ProfileText::OwnGamesEmpty => "Kitaplığındaki oyunlar süreleriyle burada görünür.",
             ProfileText::OwnTrophiesEmpty => "Bir oyunda kupa kazan, burada görünsün.",
+            ProfileText::OwnNothingYet => {
+                "Bir oyun oyna; süren, kupaların ve etkinliğin burada görünür."
+            }
             ProfileText::OwnActivityEmpty => {
                 "Kupalar, yeni arkadaşlar ve ilk oyunlar burada görünür."
             }

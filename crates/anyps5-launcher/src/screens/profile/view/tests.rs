@@ -450,9 +450,9 @@ fn the_own_profile_names_what_an_empty_section_waits_for_and_a_friends_stays_out
     set(&mut online, page(who(1, "Mira")));
     let library = OwnLibrary::default();
     let own = ready(view(&inputs(&online, &local, Some(&library), 1)));
-    assert!(own.games.empty.is_some() && own.trophies.empty.is_some());
-    assert!(own.activity.empty.is_some());
-    assert!(own.games.shown() && own.trophies.shown() && own.activity.shown());
+    // Nothing at all: one line under the header, no three empty sections.
+    assert!(own.note.is_some());
+    assert!(!own.games.shown() && !own.trophies.shown() && !own.activity.shown());
     // A new player has no figures: zeros say nothing.
     assert!(own.stats.is_empty());
 }

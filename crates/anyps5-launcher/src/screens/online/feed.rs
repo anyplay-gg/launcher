@@ -25,7 +25,10 @@ use crate::ui::icons::Icon;
 use crate::ui::input::{self, Command};
 use crate::ui::sound::Cue;
 use crate::ui::text;
-use crate::ui::theme::{self, TextStyle, Weight, black, color, fade, mix, radius, size, ty, white};
+use crate::ui::state_page::{self, StatePage};
+use crate::ui::theme::{
+    self, TextStyle, Weight, black, color, fade, mix, radius, size, space, ty, white,
+};
 
 /// Items from the end at which the next older page is fetched.
 const PREFETCH: usize = 3;
@@ -837,19 +840,32 @@ fn show_card(
         }
         // At rest a pill is a quiet shape of the card's own ink; yours is stronger and carries a
         // check, so it never rests on colour alone; the focused one has the ring.
+        // A pill with no count that is not yours is only text until its card is the one in use
+        // (pointer or focus): four shapes on every card were noise. The label stays, so it is
+        // still a control to read; the shape comes with the card.
+        let quiet = count == 0 && !own;
+        let card_up = t.max(hover_t);
         let rest_fill = if pill_down {
             dim(0.34)
         } else if own {
             dim(0.24)
         } else if pill_hover {
             dim(0.18)
+        } else if quiet {
+            fade(color::surface(), card_up)
         } else {
-            dim(0.10)
+            color::surface()
         };
         let fill = mix(rest_fill, dim(0.34), pt);
         paint_capsule(&painter, pill, fill);
         components::paint_focus_ring(&painter, pill, REACTION_HEIGHT * 0.5, pt);
-        let ink = dim(if own { 1.0 } else { 0.88 });
+        let ink = if own {
+            dim(1.0)
+        } else if quiet {
+            mix(color::text_detail(), color::text_label(), card_up)
+        } else {
+            color::text_label()
+        };
         // The label and the check sit in the middle of the pill.
         let content = galley.size().x + check;
         let mut text_x = pill.center().x - content * 0.5;
@@ -873,57 +889,21 @@ fn show_card(
     rect
 }
 
-/// The headline of a page without cards: an icon on a quiet disc, the headline and a note, in
-/// the middle of the room the rows below leave.
+/// The headline of a page without cards: the shared state page (an icon on a quiet disc, the
+/// headline and a note) in the middle of the room the rows below leave.
 pub(super) fn paint_state(ui: &mut Ui, icon: Icon, title: &str, note: Option<&str>) {
-    let painter = ui.painter().clone();
+    let page = StatePage {
+        icon,
+        title,
+        note,
+        loading: false,
+        action: None,
+    };
     let width = ui.available_width();
-    let wrap = (width - 2.0 * 24.0).min(380.0);
-    let title_galley = text::layout(&painter, ty::INFO_VALUE, title, Color32::PLACEHOLDER, wrap);
-    let note_galley = note.map(|note| {
-        let mut job = egui::text::LayoutJob::simple(
-            note.to_owned(),
-            ty::NOTE.font(),
-            Color32::PLACEHOLDER,
-            wrap,
-        );
-        job.halign = egui::Align::Center;
-        job.sections[0].format.line_height = Some(1.4 * ty::NOTE.size);
-        painter.layout_job(job)
-    });
-    let disc = 56.0;
-    let height = disc
-        + 16.0
-        + title_galley.size().y
-        + note_galley.as_ref().map_or(0.0, |n| 6.0 + n.size().y);
-    let top_space = (ui.available_height() * 0.5 - height * 0.5 - 40.0).clamp(24.0, 160.0);
-    ui.add_space(top_space);
-    let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, title));
-    if !ui.is_rect_visible(rect) {
-        return;
-    }
-    let centre = pos2(rect.center().x, rect.min.y + disc * 0.5);
-    painter.circle_filled(centre, disc * 0.5, color::surface_row());
-    painter.text(
-        centre,
-        Align2::CENTER_CENTER,
-        icon.glyph(),
-        icon.font(24.0, false),
-        white(0.75),
-    );
-    let mut y = rect.min.y + disc + 16.0;
-    let title_height = title_galley.size().y;
-    painter.galley(
-        pos2(rect.center().x - title_galley.size().x * 0.5, y),
-        title_galley,
-        Color32::WHITE,
-    );
-    y += title_height + 6.0;
-    if let Some(note) = note_galley {
-        painter.galley(pos2(rect.center().x, y), note, color::text_detail());
-    }
-    ui.add_space(12.0);
+    let height = state_page::height(ui.painter(), &page);
+    let room_height = ui.available_height().max(height + 2.0 * space::XL);
+    let (room, _) = ui.allocate_exact_size(vec2(width, room_height), Sense::hover());
+    state_page::show(ui, room, &page, false);
 }
 
 /// A round picture, or the first letter of the handle on a calm colour.
