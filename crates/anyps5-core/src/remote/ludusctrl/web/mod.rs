@@ -480,3 +480,6 @@ fn serve(ctx: &Context, tcp: TcpStream, peer: SocketAddr, connection: u64) {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod garbage;
