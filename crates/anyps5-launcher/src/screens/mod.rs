@@ -48,6 +48,7 @@ pub mod game_settings;
 pub mod glibc_strings;
 pub mod home;
 pub mod ingame;
+pub mod legal;
 pub mod library;
 pub mod location_strings;
 pub mod log;
@@ -165,6 +166,35 @@ pub fn footer_hints(
             .layout(Layout::left_to_right(Align::Center)),
     );
     hint_bar_set(&mut bar, language, set);
+}
+
+/// The room the top row of a full-screen area takes: the Back button and, level with it, the hint
+/// bar. What the screen shows starts this far under the top of its area.
+pub const BACK_ROW: f32 = 60.0;
+
+/// The top row of a full-screen area: the Back button at the leading edge and the hint bar at the
+/// trailing one, as on the Friends screen. Returns true when the button was clicked; the screen
+/// answers it like the Back command.
+pub fn back_row(ui: &mut egui::Ui, area: egui::Rect, language: crate::ui::i18n::Language) -> bool {
+    use crate::ui::components::{ConsoleButton, ControlSize};
+    use crate::ui::i18n::Key;
+    use crate::ui::icons::Icon;
+    use egui::{Align, Layout, Rect, UiBuilder, vec2};
+    right_aligned_hints(
+        ui,
+        Rect::from_min_size(area.min, vec2(area.width(), 26.0)),
+        language,
+    );
+    let mut back = ui.new_child(
+        UiBuilder::new()
+            .max_rect(Rect::from_min_size(area.min, vec2(200.0, 32.0)))
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    ConsoleButton::new(language.text(Key::Back))
+        .icon(Icon::CARET_LEFT)
+        .size(ControlSize::Small)
+        .show(&mut back)
+        .clicked()
 }
 
 /// A message for the host's toast (section 5.6): a glyph and a sentence.
