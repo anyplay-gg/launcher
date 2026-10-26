@@ -383,6 +383,27 @@ mod tests {
     }
 
     #[test]
+    fn a_focused_backup_still_maps_to_its_index_with_the_note_before_the_list() {
+        let list = [
+            backup(2_000, Reason::BeforeRestore, 12_300_000),
+            backup(1_000, Reason::Manual, 900),
+        ];
+        let d = data(&list, true, true);
+        let rows = build_rows(&d);
+        let first = rows::position(&rows, "restore").unwrap();
+        let mut side = SideState::default();
+        side.open_at(first + 1);
+        let mut actions = Vec::new();
+        SavesPanel::handle(
+            &side,
+            &rows::Change::Run { row: "restore" },
+            &d,
+            &mut actions,
+        );
+        assert_eq!(actions, [SavesAction::Ask(1)]);
+    }
+
+    #[test]
     fn a_running_game_gets_a_note_instead_of_a_refusal_later() {
         let list = [backup(1_000, Reason::Manual, 900)];
         let rows = build_rows(&data(&list, true, true));

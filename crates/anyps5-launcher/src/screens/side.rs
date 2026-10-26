@@ -13,7 +13,7 @@ use crate::screens::{BACK_ROW, back_button, footer_hints};
 use crate::ui::Shell;
 use crate::ui::chrome;
 use crate::ui::components::{Force, HintSet};
-use crate::ui::focus::PanelNav;
+use crate::ui::focus::{PanelNav, RowKind};
 use crate::ui::glass::GlassStyle;
 use crate::ui::i18n::Language;
 use crate::ui::input::{Command, InputEvent};
@@ -143,12 +143,7 @@ impl SideState {
         if self.is_open() {
             let rows = build(data);
             // A caption is no stop: a panel that opens on one starts on the first row after it.
-            let kinds = rows::kinds(&rows);
-            if kinds.get(self.nav.row).is_some_and(|k| !k.focusable())
-                && let Some(next) = (self.nav.row..kinds.len()).find(|&i| kinds[i].focusable())
-            {
-                self.nav.row = next;
-            }
+            self.nav.row = settle(&rows::kinds(&rows), self.nav.row);
             // One command at a time: a change names the row that was focused when it ran.
             for command in commands(events) {
                 let driven = rows::drive(shell, &mut self.nav, &rows, &[command]);
@@ -191,6 +186,21 @@ impl SideState {
             Some(_) => {}
             None => self.finished(),
         }
+    }
+}
+
+/// The row a panel stands on when it opens on `row`: a caption is no stop, so it is the first row
+/// after it that can be focused (the caption itself when nothing follows).
+fn settle(kinds: &[RowKind], row: usize) -> usize {
+    match kinds.get(row..) {
+        Some(tail) if tail.first().is_some_and(|k| !k.focusable()) => {
+            if tail.iter().any(|k| k.focusable()) {
+                row + PanelNav::first_focusable(tail)
+            } else {
+                row
+            }
+        }
+        _ => row,
     }
 }
 
@@ -345,6 +355,19 @@ fn panel<R>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_panel_opening_on_a_caption_starts_on_the_first_row_after_it() {
+        use RowKind::{Action, Info};
+        // caption, row, row, caption, row, caption
+        let kinds = [Info, Action, Action, Info, Action, Info];
+        assert_eq!(settle(&kinds, 0), 1, "the first focusable row");
+        assert_eq!(settle(&kinds, 2), 2, "a row stays");
+        assert_eq!(settle(&kinds, 3), 4, "the next group's first row");
+        assert_eq!(settle(&kinds, 5), 5, "a trailing caption stays put");
+        assert_eq!(settle(&kinds, 9), 9, "past the end stays");
+        assert_eq!(settle(&[], 0), 0);
+    }
 
     #[test]
     fn open_close_and_switch() {

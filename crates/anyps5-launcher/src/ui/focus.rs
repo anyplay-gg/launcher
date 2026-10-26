@@ -392,7 +392,7 @@ impl PanelNav {
         self.categories > 1
     }
 
-    fn first_focusable(rows: &[RowKind]) -> usize {
+    pub fn first_focusable(rows: &[RowKind]) -> usize {
         rows.iter().position(|k| k.focusable()).unwrap_or(0)
     }
 

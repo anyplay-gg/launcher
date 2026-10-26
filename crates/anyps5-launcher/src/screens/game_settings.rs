@@ -329,7 +329,7 @@ pub fn build_rows(data: &GameSettingsData<'_>) -> Vec<Row> {
             Row::command("uninstall", t(Key::Uninstall))
                 .icon(Icon::TRASH)
                 .destructive()
-                .group_start(),
+                .section_start(),
         );
     }
     rows
