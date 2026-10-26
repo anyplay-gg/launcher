@@ -56,6 +56,7 @@ pub mod onboarding;
 pub mod onboarding_strings;
 pub mod online;
 pub mod online_call_strings;
+pub mod online_confirm_strings;
 pub mod online_feed_strings;
 pub mod online_restriction_strings;
 pub mod online_screen_strings;

@@ -762,6 +762,13 @@ impl OnlinePanel {
             | super::Page::QuickReplies(_)
             | super::Page::Keyboard(_)
             | super::Page::ChatOptions(_) => true,
+            super::Page::Confirm(_, from) => matches!(
+                **from,
+                super::Page::Conversation(_)
+                    | super::Page::MessageRequest(_)
+                    | super::Page::Message(..)
+                    | super::Page::ChatOptions(_)
+            ),
             _ => false,
         }
     }
@@ -912,14 +919,7 @@ impl OnlinePanel {
                 self.go(Page::Messages, data);
             }
             ThreadFocus::Answer(Answer::Block) => {
-                let me = super::OnlinePanel::me(data);
-                if let Some(c) = data.online.social.get(id) {
-                    for other in others(c, me) {
-                        actions.push(A::Block(other.id));
-                    }
-                }
-                actions.push(A::LeaveConversation(id.to_owned()));
-                self.go(Page::Messages, data);
+                self.ask(super::Ask::BlockRequest(id.to_owned()), data);
             }
             ThreadFocus::Bar => match composer {
                 Composer::Paused { .. } => {

@@ -18,7 +18,8 @@
 //!                           online-party|online-party-picker|online-messages|online-conversation|
 //!                           online-message|online-request|
 //!                           friends-message-own|friends-quick-replies|friends-keyboard|
-//!                           friends-chat-options|
+//!                           friends-chat-options|friends-confirm|friends-confirm-unsend|
+//!                           friends-confirm-party|
 //!                           online-party-voice|online-party-member|online-voice|online-voice-key|
 //!                           online-voice-devices|online-voice-denied|
 //!                           online-screen-ready|online-screen-hosting|online-screen-offer|
@@ -303,6 +304,10 @@ pub enum OnlineLook {
     Keyboard,
     /// Mute, pin, report, block.
     ChatOptions,
+    /// The question before a block, an unsend and leaving the party.
+    Confirm,
+    ConfirmUnsend,
+    ConfirmParty,
     /// A stranger's first messages, waiting for an answer.
     Request,
     /// The party with voice on: Lumen speaks, Kit is muted for the player.
@@ -630,6 +635,9 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "friends-quick-replies" => ScreenPage::Online(OnlineLook::QuickReplies),
         "friends-keyboard" => ScreenPage::Online(OnlineLook::Keyboard),
         "friends-chat-options" => ScreenPage::Online(OnlineLook::ChatOptions),
+        "friends-confirm" => ScreenPage::Online(OnlineLook::Confirm),
+        "friends-confirm-unsend" => ScreenPage::Online(OnlineLook::ConfirmUnsend),
+        "friends-confirm-party" => ScreenPage::Online(OnlineLook::ConfirmParty),
         "friends-request" => ScreenPage::Online(OnlineLook::Request),
         "friends-party-voice" => ScreenPage::Online(OnlineLook::PartyVoice),
         "friends-party-member" => ScreenPage::Online(OnlineLook::PartyMember),
@@ -2452,7 +2460,7 @@ impl ScreenGallery {
             ScreenPage::Saves | ScreenPage::SavesEmpty => self.saves.open(),
             ScreenPage::Restore => self.restore.open(),
             ScreenPage::Online(look) => {
-                use crate::screens::online::Page;
+                use crate::screens::online::{Ask, Page};
                 let language = shell.language;
                 let data = online_data(
                     &self.online,
@@ -2561,6 +2569,26 @@ impl ScreenGallery {
                     OnlineLook::Request => self
                         .friends
                         .show_page(Page::MessageRequest("c-nyx".into()), &data),
+                    OnlineLook::Confirm => {
+                        let lumen = anyps5_core::online::api::AccountId(2);
+                        self.friends.show_page(
+                            Page::Confirm(Ask::Block(lumen), Box::new(Page::Friend(lumen))),
+                            &data,
+                        );
+                    }
+                    OnlineLook::ConfirmUnsend => self.friends.show_page(
+                        Page::Confirm(
+                            Ask::Unsend {
+                                conversation: "c-lumen".into(),
+                                seq: 4,
+                            },
+                            Box::new(Page::Message("c-lumen".into(), 4)),
+                        ),
+                        &data,
+                    ),
+                    OnlineLook::ConfirmParty => self
+                        .friends
+                        .show_page(Page::Confirm(Ask::LeaveParty, Box::new(Page::Party)), &data),
                     OnlineLook::Muted => self.friends.show_page(Page::Home, &data),
                     OnlineLook::Restriction => self
                         .friends

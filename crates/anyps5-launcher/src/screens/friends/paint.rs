@@ -213,8 +213,17 @@ fn paint_badge(painter: &Painter, row: Rect, count: u32) {
     );
 }
 
-/// The title and the line under it, from `at`. Returns the height they take.
-pub fn page_title(ui: &mut Ui, at: egui::Pos2, width: f32, title: &str, note: Option<&str>) -> f32 {
+/// The title and the line under it, from `at`. Returns the height they take. A `question` is the
+/// line a confirmation asks with: body size and ink, up to three lines, since the player decides
+/// on it.
+pub fn page_title(
+    ui: &mut Ui,
+    at: egui::Pos2,
+    width: f32,
+    title: &str,
+    note: Option<&str>,
+    question: bool,
+) -> f32 {
     let painter = ui.painter().clone();
     let title = clamped(&painter, PAGE_TITLE, title, Color32::PLACEHOLDER, width, 1);
     let mut height = title.size().y;
@@ -227,7 +236,20 @@ pub fn page_title(ui: &mut Ui, at: egui::Pos2, width: f32, title: &str, note: Op
     painter.galley(at, title, Color32::WHITE);
     if let Some(note) = note {
         height += 6.0;
-        let note = clamped(&painter, PAGE_NOTE, note, Color32::PLACEHOLDER, width, 2);
+        let note = if question {
+            // Body size with room between the lines: three lines or more need 1.4 and over.
+            text::layout_font_pretty(
+                &painter,
+                ty::QUESTION.font(),
+                ty::QUESTION.size * 1.45,
+                ty::QUESTION.tracking,
+                note,
+                Color32::PLACEHOLDER,
+                width,
+            )
+        } else {
+            clamped(&painter, PAGE_NOTE, note, Color32::PLACEHOLDER, width, 2)
+        };
         let note_h = note.size().y;
         // The line under the title is text on the painter: a label gives it to the screen reader.
         ui.interact(
@@ -236,7 +258,12 @@ pub fn page_title(ui: &mut Ui, at: egui::Pos2, width: f32, title: &str, note: Op
             Sense::hover(),
         )
         .widget_info(|| WidgetInfo::labeled(Role::Label, true, note.text()));
-        painter.galley(pos2(at.x, at.y + height), note, color::text_detail());
+        let ink = if question {
+            color::text_label()
+        } else {
+            color::text_detail()
+        };
+        painter.galley(pos2(at.x, at.y + height), note, ink);
         height += note_h;
     }
     height

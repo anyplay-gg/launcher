@@ -3,6 +3,7 @@
 //! and asks; the net service acts, and the host turns the panel's actions into commands for it.
 
 mod chat;
+mod confirm;
 mod feed;
 mod local;
 mod profile;
@@ -12,6 +13,7 @@ pub mod screen;
 mod social;
 mod voice;
 
+pub use confirm::Ask;
 pub use feed::{ago_text, monogram_colour, paint_avatar, rarity_text, sentence, theme_grade};
 pub use local::{Avatar, Local, OwnedGame};
 pub use voice::talk_key;
@@ -214,7 +216,7 @@ pub enum Page {
     Messages,
     Conversation(String),
     MessageRequest(String),
-    /// One message in full: answer it, react, edit, unsend, copy, report.
+    /// One message in full: reply, edit, unsend, copy, report.
     Message(String, u64),
     /// Short answers to send without typing.
     QuickReplies(String),
@@ -230,6 +232,8 @@ pub enum Page {
     Restriction(String),
     /// What the player and their friends did.
     Feed,
+    /// Asks before something that cannot be taken back; Back and Cancel lead to the page boxed.
+    Confirm(Ask, Box<Page>),
 }
 
 /// The sections of the Friends screen: one entry of its rail each, with a page of its own to start
@@ -294,6 +298,7 @@ impl Page {
             | Page::Message(..) => Some(Section::Messages),
             Page::Feed => Some(Section::Activity),
             Page::Account | Page::Blocked(_) | Page::Restriction(_) => Some(Section::Settings),
+            Page::Confirm(_, from) => from.section(),
         }
     }
 
@@ -623,6 +628,7 @@ impl OnlinePanel {
                 Some(Page::Home)
             }
             Page::Picker if online.dialog.is_none() => Some(Page::Home),
+            Page::Confirm(..) => self.confirm_follow(data),
             _ => self.social_follow(data),
         };
         if let Some(page) = wanted {
@@ -641,6 +647,7 @@ impl OnlinePanel {
             Page::Voice | Page::VoiceDevices(_) => self.voice_back(),
             Page::Restriction(_) => Some(self.restriction_back(data)),
             Page::Report(id) => Some(self.report_from.clone().unwrap_or(Page::Friend(id))),
+            Page::Confirm(_, ref from) => Some((**from).clone()),
             _ => self.social_back(data).unwrap_or(Some(Page::Home)),
         }
     }
@@ -971,6 +978,7 @@ impl OnlinePanel {
     fn run(&mut self, row: &str, data: &OnlineData<'_>, actions: &mut Vec<OnlineAction>) {
         let online = data.online;
         if self.profile_feed_run(row, actions)
+            || self.confirm_run(row, data, actions)
             || self.social_run(row, data, actions)
             || self.restriction_run(row, data, actions)
             || self.voice_run(row, data, actions)
@@ -1037,14 +1045,18 @@ impl OnlinePanel {
             ("accept", Page::Request(id)) => actions.push(OnlineAction::Accept(*id)),
             ("decline", Page::Request(id)) => actions.push(OnlineAction::Decline(*id)),
             ("block", Page::Request(id) | Page::Friend(id)) => {
-                actions.push(OnlineAction::Block(*id));
+                let id = *id;
+                self.ask(Ask::Block(id), data);
             }
             ("withdraw", Page::Outgoing(id)) => actions.push(OnlineAction::Decline(*id)),
             ("unblock", Page::Blocked(id)) => actions.push(OnlineAction::Unblock(*id)),
             ("join", Page::Friend(id)) => actions.push(OnlineAction::Join(*id)),
             ("call", Page::Friend(id)) => actions.push(OnlineAction::Call(*id)),
             ("invite", Page::Friend(id)) => actions.push(OnlineAction::Invite(*id)),
-            ("remove", Page::Friend(id)) => actions.push(OnlineAction::RemoveFriend(*id)),
+            ("remove", Page::Friend(id)) => {
+                let id = *id;
+                self.ask(Ask::RemoveFriend(id), data);
+            }
             ("report", Page::Friend(id)) => {
                 let id = *id;
                 self.report_from = None;
@@ -1232,9 +1244,17 @@ impl OnlinePanel {
                 if let Some(card) = online.cards.get(id) {
                     rows.push(trophy_row(card.as_ref(), language).group_start());
                 }
+                // The trust actions come last and apart: report first, then the two that end
+                // something, both in the danger ink and both asked about first.
+                rows.push(
+                    Row::action("report", t(T::Report))
+                        .icon(Icon::FLAG)
+                        .group_start(),
+                );
                 rows.push(
                     Row::command("remove", t(T::RemoveFriend))
                         .icon(Icon::USER_MINUS)
+                        .destructive()
                         .group_start(),
                 );
                 rows.push(
@@ -1242,7 +1262,6 @@ impl OnlinePanel {
                         .icon(Icon::PROHIBIT)
                         .destructive(),
                 );
-                rows.push(Row::action("report", t(T::Report)).icon(Icon::FLAG));
                 (handle_of(*id), presence)
             }
             Page::Request(id) => {
@@ -1408,6 +1427,7 @@ impl OnlinePanel {
                     Some(subtitle.text(language).to_owned()),
                 )
             }
+            Page::Confirm(ask, _) => self.confirm_rows(ask, data, &mut rows),
             Page::Party
             | Page::PartyMember(_)
             | Page::PartyPicker
@@ -2408,15 +2428,68 @@ mod tests {
                 "inviteToParty",
                 "call",
                 "viewProfile",
+                "report",
                 "remove",
-                "block",
-                "report"
+                "block"
             ]
         );
         assert_eq!(rows[0].detail.as_deref(), Some("1 of 4 players"));
         let mut actions = Vec::new();
         panel.run("join", &data(&online), &mut actions);
         assert_eq!(actions, [OnlineAction::Join(AccountId(2))]);
+    }
+
+    #[test]
+    fn what_cannot_be_taken_back_asks_first_and_cancel_holds_the_focus() {
+        let online = signed_in();
+        let mut panel = OnlinePanel::default();
+        panel.go(Page::Friend(AccountId(2)), &data(&online));
+        for (row, title) in [
+            ("block", "Block Lumen?"),
+            ("remove", "Remove Lumen as a friend?"),
+        ] {
+            let mut actions = Vec::new();
+            panel.go(Page::Friend(AccountId(2)), &data(&online));
+            panel.run(row, &data(&online), &mut actions);
+            assert!(actions.is_empty(), "{row} must not run before the answer");
+            assert!(panel.asks());
+            let (heading, question, rows) = panel.rows(&data(&online));
+            assert_eq!(heading, title);
+            assert!(question.is_some());
+            assert_eq!(ids(&rows), ["confirmCancel", "confirmYes"]);
+            assert!(rows[1].destructive && !rows[0].destructive);
+            // The page opens on Cancel; Back and Cancel lead to where the question was asked.
+            assert_eq!(panel.side.nav.row, 0);
+            assert_eq!(
+                panel.back_page(&data(&online)),
+                Some(Page::Friend(AccountId(2)))
+            );
+            panel.run("confirmCancel", &data(&online), &mut actions);
+            assert_eq!(panel.page, Page::Friend(AccountId(2)));
+            assert!(actions.is_empty());
+        }
+        let mut actions = Vec::new();
+        panel.run("block", &data(&online), &mut actions);
+        panel.run("confirmYes", &data(&online), &mut actions);
+        assert_eq!(actions, [OnlineAction::Block(AccountId(2))]);
+        assert_eq!(panel.page, Page::Home);
+    }
+
+    #[test]
+    fn a_confirmation_belongs_to_the_section_it_was_asked_in_and_ends_when_its_subject_is_gone() {
+        let online = signed_in();
+        let mut panel = OnlinePanel::default();
+        panel.go(Page::Friend(AccountId(2)), &data(&online));
+        panel.run("remove", &data(&online), &mut Vec::new());
+        assert_eq!(panel.section(), Some(Section::Friends));
+        // A friend who is gone leaves nothing to ask about.
+        let mut gone = signed_in();
+        gone.friends.friends.clear();
+        assert_eq!(
+            panel.confirm_follow(&data(&gone)),
+            Some(Page::Friend(AccountId(2)))
+        );
+        assert_eq!(panel.confirm_follow(&data(&online)), None);
     }
 
     #[test]
@@ -2443,9 +2516,9 @@ mod tests {
                 "call",
                 "viewProfile",
                 "trophies",
+                "report",
                 "remove",
-                "block",
-                "report"
+                "block"
             ]
         );
         assert_eq!(rows[5].control, Control::Info(Some("35".into())));
