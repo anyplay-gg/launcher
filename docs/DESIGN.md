@@ -100,6 +100,8 @@ theme's default accent).
 
 #### UI colours (all sRGB, straight alpha)
 
+*The text, surface and hairline values in this table are the first round; 3.10 and 3.12 hold the values in use.*
+
 | Role | Value |
 |---|---|
 | Primary text / icons | white 1.0 (title text), white 0.9 (secondary labels), white 0.85 (values), white 0.72 (hints) |
@@ -136,6 +138,8 @@ theme's default accent).
 Percent = `unlocked points * 100 / total points` (integer division, 0 when total is 0).
 
 ### 1.3 Radii
+
+*3.12 reduces these to five values; the table is the first round.*
 
 SwiftUI uses `.continuous` (superellipse "squircle") corners everywhere. egui only has circular corners; use them (difference
 is invisible at these radii). An optional refinement is Figma "corner smoothing 60 %", which matches Apple's continuous curve.
@@ -270,6 +274,8 @@ Bundling in egui:
   include Japanese, Korean, Chinese and Arabic names: load Windows' own fonts as egui fallbacks at runtime if present (Yu Gothic UI /
   Malgun Gothic / Microsoft YaHei UI / Segoe UI) instead of bundling large CJK fonts; trophy texts in game languages need the same.
 - Icons: SF Symbols cannot be redistributed. Use **Phosphor Icons** (MIT; `egui-phosphor` crate or the font file), mapping in 5.16.
+
+*The scale in use is in 3.12 (twelve sizes); the table below is the first round.*
 
 Type scale (size dp / weight; weight numbers: light 300, regular 400, medium 500, semibold 600, bold 700):
 
@@ -988,6 +994,58 @@ The white ring was loud, and it stayed after a click. Now it behaves like `:focu
   and out with the 120 ms ease of the hover (`Motion::Hover`): opacity and colour only, the same under reduced motion.
 - The pointer resting on a tile or a primary button still draws the hover ring at 45 % of this ring (3.9): that is the hover, not a lingering focus.
 - Gallery: `--noring` renders any scene as it looks after a click.
+
+### 3.12 Round 6 (0.2.8): the system, fewer values (2026-10-26, replaces the value tables of 1.2, 1.3 and 1.6)
+
+The audit is `polish028/audit/system.md`. The tokens were many and close together: eleven white alphas for text, nineteen font
+sizes, eight radii, and 14 different text alphas as literals in the screens. The rule of this round is that a value is chosen
+from a short list, and a page holds no literal that has a token. Where 1.2, 1.3 and 1.6 differ, this section wins.
+
+**Text ink: four levels** (`ui::theme::color`). The contrast test keeps every one of them above its ratio.
+
+| Level | White | Tokens |
+|---|---|---|
+| Text | 1.00 | `text` |
+| Label | 0.90 | `text_label`, `text_value`, `text_clock`, `text_active` |
+| Detail | 0.78 | `text_detail`, `text_subtitle`, `text_empty`, `text_overline`, `text_row_detail`, `text_inert`, `text_hint`, `state_neutral` |
+| Note | 0.55 | `text_note`, `text_caption`, `text_count`, `text_path` |
+| Inactive (exempt) | 0.40 | `text_inactive` |
+
+**Surfaces and hairlines.** Fills: 0.07 row (`surface_row`, `surface_trophy_row`, `surface_tile_placeholder`), 0.10 control, 0.16
+hover (also track, keycap, switch track off), 0.20 focus, 0.26 pressed. Hairlines: 0.08 panel and glass edge, 0.12 control and
+card, 0.32 under the pointer. Removed (unused): `hairline`, `selected_category`, `surface_prominent`, `panel_fullscreen`,
+`panel_log`, `splash_overlay`.
+
+**Type scale: twelve sizes.** 12, 13, 14, 15, 16, 17, 19, 22, 28, 34, 40, 56. Light only from 28 up; no Bold. A page takes a
+`ty::` token by role, it does not build a style.
+
+| Token | Size / weight | Was |
+|---|---|---|
+| `DISPLAY` (`HERO_TITLE`, `ONBOARDING_TITLE`) | 56 light | 58 and 54 |
+| `TITLE` (`SCREEN_TITLE`) | 40 light | |
+| `HEADING` (`EMPTY_TITLE`, `SPLASH_TITLE`, `TROPHY_LIST_TITLE`) | 34 light | trophy list 36 |
+| `PANEL_TITLE` (`SIDE_PANEL_TITLE`, `LOG_TITLE`) | 28 light | 30 |
+| `LANGUAGE_NAME` | 28 medium | |
+| `ITEM_TITLE` (`TOP_BAR_TITLE`, `TILE_NAME`, `PERCENT`) | 22 semibold | top bar 24 |
+| `STATE_TITLE` (`LIBRARY_COUNT`) | 22 medium | |
+| `BUTTON`, `CATEGORY`, `CATEGORY_SELECTED`, `BANNER_NAME` | 19 | |
+| `BUTTON_MEDIUM`, `TOAST` (`PROFILE`, `DIAGNOSIS_LOG`), `CHOICE_VALUE` | 16 | |
+| `BODY` (`QUESTION`), `ROW_TITLE` (`CLOCK`, `ONBOARDING_STATUS`), `INFO_VALUE` (`TROPHY_NAME`) | 17 regular, medium, semibold | trophy name and onboarding status 18 |
+| `LABEL` (`ROW_INFO`, `HINT_LABEL`, `PROGRESS_LABEL`), `FACT` (`PROGRESS_PERCENT`), `SENTENCE` | 15 medium, semibold, regular | |
+| `NOTE` (`DETAIL_LARGE`), `CHIP` (`STATE_LABEL`), `SECTION_CAPTION` | 14 regular, medium, semibold | |
+| `DETAIL`, `BADGE` (`HINT_KEY`, `KEY_CAP`, `BANNER_LABEL`), `OVERLINE` (tracking 0.8 for all three overlines) | 13 regular, semibold | key cap 13.5; info overline tracking 0.6; onboarding overline 14 |
+| `MICRO` (`STATE_LABEL_SMALL`) | 12 medium | |
+
+**Radius: five values.** Keycap 7, row 12, card 16, large 20, capsule (and the toast, 28). `TROPHY_ROW` and `BOX` are 16 (the box was 14),
+`LANGUAGE_CARD`, `THEME_CARD` (was 18) and `BANNER` are 20. Removed: `CONSOLE_BUTTON`, `ICON_BUTTON`, `KEYCAP_HINT` (now 7, was 6).
+
+**Spacing: `ui::theme::space`.** 4, 8, 12 (the control gap), 16, 24, 32, 48. Gaps of 6, 10, 14, 18, 20, 26 and 28 are off the grid and
+move to the nearest step when a page is touched.
+
+**Rules for the rest** (one source for the area work: `polish028/SYSTEM.md`): one primary button per view and destructive is a
+secondary with the danger ink; icons are 14, 17, 18, 20, 24 or 36 dp; the only motion is `Motion::*`; one action has one cue; a
+page draws no focus ring of its own; the case rule of 3.10 stands, and the verbs are Cancel, Back, Close, Done, Continue, Try
+Again, Remove, Delete, Sign In, Later.
 
 ## 4. Materials and blur on the GPU
 
