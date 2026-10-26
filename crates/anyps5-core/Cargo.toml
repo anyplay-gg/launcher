@@ -17,6 +17,7 @@ tracing.workspace = true
 notify.workspace = true
 regex.workspace = true
 sha2.workspace = true
+crc32fast = "1"
 # Cisco's OpenH264 comes as a bzip2 archive (MIT or Apache-2.0; its pure Rust libbz2 is
 # under the bzip2-1.0.6 licence).
 bzip2 = "0.6"
@@ -33,6 +34,9 @@ socket2 = "0.6"
 getrandom = "0.4"
 base64 = "0.22"
 if-addrs = "0.15"
+# A game's theme song (sce_sys/snd0.at9) is ATRAC9: LibAtrac9 (MIT), built from the vendored
+# source in crates/atrac9.
+anyplay-atrac9 = { path = "../atrac9" }
 # LudusCtrl pairing and input signatures (RustCrypto, MIT or Apache-2.0): ECDH on P-256, HKDF and
 # HMAC. The 0.14 line of p256 carries the constant-time fixes of crypto-bigint 0.7 (RUSTSEC-2026-0387
 # is about 0.5); it goes with the 0.11 line of sha2, beside the workspace's 0.10. The LudusCtrl test

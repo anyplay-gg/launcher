@@ -1,0 +1,69 @@
+name: Bug report
+description: Something in the launcher does not work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for a bug in the launcher itself. If a game does not start or does not run well, use "Game report" instead.
+        Security problems go through the private link on the issue chooser, not here.
+  - type: input
+    id: version
+    attributes:
+      label: Launcher version
+      description: Shown in Settings, About.
+      placeholder: "0.2.5"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - Linux
+        - macOS
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os-details
+    attributes:
+      label: System details
+      description: For Linux, the distribution and version, and X11 or Wayland. For any system, the GPU and driver if the problem is about drawing.
+      placeholder: "Ubuntu 24.04, Wayland, AMD RX 6600, Mesa 25.2"
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected to see instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps from a fresh start of the launcher. Say whether it happens every time.
+      placeholder: |
+        1. Open Settings.
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Launcher log
+      description: |
+        The launcher writes its own log to `launcher.log` in the `Logs` folder of its data folder:
+        Windows `%LOCALAPPDATA%\AnyPS5\Logs\launcher.log`, Linux `~/.local/share/anyps5/Logs/launcher.log` (or below `$XDG_DATA_HOME`),
+        macOS `~/Library/Application Support/AnyPlay Launcher/Logs/launcher.log`.
+        Paste the last lines from the time of the problem. `launcher.log.1` is the previous log. Read the lines first: remove anything you do not want to share, such as your user name in a path.
+      render: text
+  - type: checkboxes
+    id: no-game-data
+    attributes:
+      label: Game data
+      options:
+        - label: I attached no game files, saves or keys, and no crash or memory dumps of a game.
+          required: true

@@ -65,8 +65,12 @@ The folder the launcher makes for one game: the relinked executable, the toolkit
 _Avoid_: Bundle, install, build, cache
 
 **Store**:
-The hidden `.AnyPS5` folder inside the games folder, on the same volume as the dumps, where unlocked copies and work folders live.
+The hidden `.AnyPS5` folder where unlocked copies and work folders live. It sits inside the games folder (same volume as the dumps, so copies are hard links) or inside the **Unlocked games location**.
 _Avoid_: Cache, output folder
+
+**Unlocked games location**:
+The folder the player picked in Settings > Library to hold the **Store** away from the dumps, for example on a faster drive. Its copies are full copies unless it is on the dumps' volume. Changing it moves the existing copies.
+_Avoid_: Install folder, games drive
 
 **Unlock record**:
 The small file inside an unlocked copy that says which dump and which toolkit made it, and when.
@@ -257,6 +261,12 @@ _Avoid_: Default app, association
 **Single instance**:
 Only one launcher runs per user. A second launch hands its link to the running launcher, which comes to the front, and exits.
 _Avoid_: Lock, mutex (how it is done)
+
+### Steam
+
+**Steam entry**:
+A non-Steam shortcut the launcher writes into the player's own Steam library, for itself or for one game, so that it shows in Big Picture and on the Steam Deck. It starts the launcher; for a game it starts it on that game. Only written while Steam is closed.
+_Avoid_: Steam game, Steam version
 
 ### Online
 

@@ -92,6 +92,14 @@ pub struct Manifest {
     pub expires: String,
     /// The oldest running version that may update from this manifest.
     pub minimum_version: String,
+    /// The oldest running version that may keep running: a launcher below it must update before
+    /// it goes online (docs/UPDATES.md, "Retiring a version"). Absent means every version may.
+    /// It is a different thing from `minimum_version` above (which versions can *take* this
+    /// update), and it has its own name because launchers up to v0.2.x read `minimum_version`
+    /// as "may not update from this manifest", so reusing it would have locked them out.
+    /// Launchers that do not know the field ignore it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_supported_version: Option<String>,
     /// Per platform ([`WINDOWS_X64`], [`LINUX_X64`]).
     pub platforms: BTreeMap<String, Artifact>,
 }
@@ -100,6 +108,20 @@ impl Manifest {
     /// The file for `platform`, if the manifest has one.
     pub fn artifact(&self, platform: &str) -> Option<&Artifact> {
         self.platforms.get(platform)
+    }
+
+    /// Whether a launcher running `current` is below [`Manifest::min_supported_version`], so the
+    /// update this manifest offers is required and not optional. `false` without the field and
+    /// for a running version that is not a version at all (that one is never updated anyway).
+    pub fn requires_update_from(&self, current: &str) -> bool {
+        let Some(supported) = self
+            .min_supported_version
+            .as_deref()
+            .and_then(Version::parse)
+        else {
+            return false;
+        };
+        Version::parse(current).is_some_and(|running| running < supported)
     }
 
     /// The instant after which the manifest is void.
@@ -161,6 +183,19 @@ impl Manifest {
         if minimum > version {
             return bad("minimum_version is above version");
         }
+        if let Some(supported) = &self.min_supported_version {
+            if supported.starts_with('v') || supported.contains('+') {
+                return bad("min_supported_version must be plain semver");
+            }
+            match Version::parse(supported) {
+                None => return bad("min_supported_version is not a version"),
+                // A release cannot demand a version above itself: nobody could ever satisfy it.
+                Some(supported) if supported > version => {
+                    return bad("min_supported_version is above version");
+                }
+                Some(_) => {}
+            }
+        }
         let published = parse_time("published", &self.published)?;
         let expires = self.expires_at()?;
         if expires <= published {
@@ -187,6 +222,29 @@ impl Manifest {
         }
         Ok(())
     }
+}
+
+/// Reads the `MIN_SUPPORTED_VERSION` file of the repository: the lowest launcher version that may keep
+/// running, as plain semver on one line. Blank lines and lines starting with `#` are comments;
+/// a file with nothing else (or no file) switches the mechanism off. **Anything else is an error,
+/// never "off"**: a typo must not silently let a retired version keep going.
+pub fn parse_supported_file(text: &str) -> Result<Option<String>, ManifestError> {
+    let text = text.strip_prefix('﻿').unwrap_or(text);
+    let mut lines = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'));
+    let Some(line) = lines.next() else {
+        return Ok(None);
+    };
+    let bad = |why: &str| ManifestError::Malformed(format!("MIN_SUPPORTED_VERSION: {why}"));
+    if lines.next().is_some() {
+        return Err(bad("more than one version"));
+    }
+    if line.starts_with('v') || line.contains('+') || Version::parse(line).is_none() {
+        return Err(bad("expected plain semver such as 0.3.0"));
+    }
+    Ok(Some(line.to_owned()))
 }
 
 fn parse_time(field: &str, text: &str) -> Result<OffsetDateTime, ManifestError> {

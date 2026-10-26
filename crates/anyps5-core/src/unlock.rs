@@ -127,9 +127,12 @@ pub enum UnlockError {
         needed: u64,
         free: u64,
         folder: PathBuf,
-        /// The game files must be copied because the games folder cannot hard-link to the dump.
+        /// The game files must be copied because this drive cannot hard-link to the dump (another
+        /// drive than the dumps', or a file system without links).
         copying: bool,
     },
+    #[error("the folder for unlocked games is not there: {}", .0.display())]
+    LocationMissing(PathBuf),
     #[error("{context}: {source}")]
     Io { context: String, source: io::Error },
     #[error(transparent)]
@@ -150,7 +153,7 @@ fn gb_down(bytes: u64) -> String {
 
 fn copy_note(copying: bool) -> &'static str {
     if copying {
-        " (the games folder cannot hard-link to the dump, so the game files are copied)"
+        " (this drive cannot hard-link to the dump, so the game files are copied)"
     } else {
         ""
     }
@@ -161,8 +164,10 @@ fn copy_note(copying: bool) -> &'static str {
 pub enum FailureKind {
     /// No toolkit is installed.
     ToolkitMissing,
-    /// The drive of the games folder is full.
+    /// The drive that holds the unlocked copies is full.
     DiskFull,
+    /// The folder for unlocked games is not there (a disconnected drive).
+    LocationMissing,
     /// Another program holds a file (a virus scanner, a backup, a file manager).
     FileInUse,
     /// The dump cannot be used: encrypted, or not a PS5 executable.
@@ -192,6 +197,7 @@ impl UnlockError {
                 },
             },
             UnlockError::NotEnoughSpace { .. } => FailureKind::DiskFull,
+            UnlockError::LocationMissing(_) => FailureKind::LocationMissing,
             UnlockError::Cancelled | UnlockError::Toolkit(_) => FailureKind::Other,
         }
     }
@@ -1071,6 +1077,10 @@ pub fn run_unlock(
             .map_err(io_context("Rosetta 2"))?;
     }
     let root = std::path::absolute(&request.root).unwrap_or_else(|_| request.root.clone());
+    // A location on a drive that is gone must not be made up on the wrong disk.
+    if !root.is_dir() {
+        return Err(UnlockError::LocationMissing(root));
+    }
     let name = crate::paths::unlocked_copy_name(&request.title_id, &request.game);
     let copy = games_dir(&root).join(&name);
     let partial = games_dir(&root).join(format!("{name}.partial"));

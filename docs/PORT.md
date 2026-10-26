@@ -220,7 +220,7 @@ Scan rules, `inspect`, SELF unwrap, module discovery, relink progress parsing, q
 ### 4.2 Unlocked copy layout
 
 ```text
-<games folder>\.AnyPS5\
+<store root>\.AnyPS5\          store root = the games folder, or the player's unlocked games location (6.4a)
     Games\
         <TITLEID>-<hex>\               the unlocked copy; also the game's working directory
             eboot.exe                  relinked executable (patched, section 6.9)
@@ -556,7 +556,7 @@ If no toolkit is found at start, the first-run screen offers: download latest re
 
 ### 6.4 `unlock`: names, record, store (Installer.swift)
 
-`Store` paths: `store(root) = root\.AnyPS5`; `games = store\Games`; `work = store\Work`.
+`Store` paths: `store(root) = root\.AnyPS5`; `games = store\Games`; `work = store\Work`. `root` is the **store root**: `Preferences::store_root()` = `unlocked_folder`, else `games_folder`. `unlocked_copy_dir(root, ...)`, `UnlockRequest.root`, `remove_leftovers(root)` and `library::scan_with_store(games, root)` all take the store root; the dump scan, the watcher and the link probe's source keep using the games folder.
 
 `unlocked_copy(game, root)`: `name = alnum(game.title_id) + "-" + hex(fnv1a64(game.id) & 0xFFFFFF)` and the folder is `store\Games\<name>`.
 
@@ -570,6 +570,18 @@ Vectors: macOS formula, `title_id=PPSA02100`, path `/Users/x/Games/Stray` -> `PP
 Record file `anyps5-unlock.json`: `{"date": "2026-10-22T09:30:00Z", "source": "<dump folder, OS path>", "titleID": "...", "toolkit": "..."}` keys sorted, pretty printed with 2 spaces. `read_record(copy)` requires `copy\eboot.exe` to exist and the JSON to parse; else `None`. (ARM: `Contents/MacOS/eboot` exists.) Reading also accepts `anyps5-install.json` (name used by ARM) for the same folder.
 
 `remove_leftovers(root)`: delete `store\Work` and every `store\Games\*.partial` directory (ignore errors), and settle every `store\Games\<name>.previous` with `settle_previous(copy, previous)` (errors ignored; the folder is tried again at the next call). It is not only a delete: a `.previous` becomes the copy again when there is none (rename), otherwise what it holds is merged into the copy first (below). The app calls it only when no unlock is queued or running (`installer == nil`), at each rescan.
+
+### 6.4a `location` and `relocate`: where the store is (launcher#35, no Swift original)
+
+`location` (UI free): `check(candidate, games)` refuses a path that is not absolute or not an existing folder, lies inside the games folder (compared as game IDs: case-insensitive, `/`, symlinks resolved when the path exists), or has a `.AnyPS5` component (inside a store, so inside an unlocked copy); the games folder itself passes. `adopt` runs `check`, then creates `<candidate>\.AnyPS5` and writes and removes one probe file there (never anywhere else), and returns `None` for the games folder (the default). `availability(root, custom)` is `Ready` when the folder is a directory and, for a custom location, its `.AnyPS5` exists too. `report` adds `fsx::free_space(root)` and `is_network(root)` (Windows: UNC prefix or `GetDriveTypeW == DRIVE_REMOTE`; Linux: longest mount point in `/proc/mounts` with type nfs, nfs4, cifs, smb3, smbfs, fuse.sshfs, 9p or afs). Network locations are allowed.
+
+`run_unlock` fails with `LocationMissing` (failure kind of its own) when the store root is not a directory, before it writes anything: a drive that is gone never gets a folder made on the wrong disk. The space preflight measures the store root's drive (`free_space`), and `link_probe` runs against `<store>\Games`, so a drive that cannot link the dump counts the copy in full.
+
+`relocate::move_all(from, to, mode, running, cancel, progress)` moves the folders of `copies_dir(from)` (no `.partial`, no `.previous`) one by one, sorted by name. Per copy: if `copies_dir(to)\<name>` exists and the file count and total size equal the old tree's, the old one is removed (a cut-off move finishing); a different one at the target is an error and nothing is overwritten. Else `fs::rename` (same volume; skipped when `mode` is `ForceCopy`), else free space (size plus 256 MB), then `link_tree_planned` with `ForceCopy` into `<name>.partial`, size check, `rename_retry` to the name, `remove_tree_retry` of the old copy (failure is reported as a duplicate, not an error). Cancel removes the `.partial` and returns `Cancelled`; the first failure stops the run, everything after it is `Left`. When nothing is left the empty old store folders are removed. `Report::complete` is true when nothing was left and nothing cancelled.
+
+Preferences: `unlocked_folder` (`unlockedFolder`) and `unlocked_moving_from` (`unlockedMovingFrom`, set when the location changes, cleared when a move completes or the player leaves the rest). While `unlockedMovingFrom` is set, `CorePipeline::submit` answers Unlock, Retry, Unlock again, Prepare and Play with a failure (no work is queued) and `prepare_tick` is idle.
+
+Tests: `location::tests` (accept, default, inside games folder, sibling, inside store, missing and relative, unwritable, availability, report, mount table), `relocate::tests` (rename move with saves and links, cross-volume copy via `ForceCopy`, cancel between copies and in the middle of one, running game, leftover partial, finished-but-not-removed, different copy at the target, progress), `tests/pipeline.rs` (unlock into a store on another folder, missing location).
 
 ### 6.5 `unlock`: the pipeline (Installer.run)
 
@@ -837,7 +849,7 @@ UP: titles run natively and need AVX2, FMA, F16C, BMI1, BMI2, LZCNT and MOVBE; t
 | Reports | `%LOCALAPPDATA%\AnyPS5\Logs\Reports\` | `report` |
 | Shader caches | `%LOCALAPPDATA%\AnyPS5\Cache\org.anyps5.<titleid>\shader_cache` | engine (`ANYPS5_SHADER_CACHE_DIR`); "clear" deletes `Cache\org.anyps5.<titleid>` |
 | Screenshots | `Pictures\AnyPS5` default | engine (`ANYPS5_SCREENSHOTS`) |
-| Unlocked copies, work | `<games folder>\.AnyPS5\` | `unlock` |
+| Unlocked copies, work | `<store root>\.AnyPS5\` (store root: the games folder, or `unlockedFolder`) | `unlock`, `relocate` |
 
 `AppPaths` is a struct with these roots, constructed once (from known folders) and injected everywhere, so tests use temp directories. `bundle identifier` for caches = `"org.anyps5." + lowercased alphanumerics of the title ID` (Game.bundleIdentifier).
 
@@ -1019,7 +1031,7 @@ Log samples in `log_samples` are written from the formats in 3.5 (no real logs):
 | A11 | `ANYPS5_SHADER_CACHE_DIR` outside the run dir is accepted for paths with non-ASCII characters | UP INPUT_MAPPING.md says paths may contain `ü`/`日本` for the input file only |
 | Q1 | Ask upstream for `ANYPS5_WINDOW_SIZE`/`ANYPS5_FULLSCREEN`-like variables or a `--set` for patches to remove D9/D10 | upstream PR |
 | Q2 | Per-title input profiles (PR7499, `anyps5-input.<TITLEID>.ini` beside the shared file) are not in `origin/main`. The launcher writes one complete file per game and sets `ANYPS5_INPUT_CONFIG`, so it does not depend on them. When PR7499 merges, nothing changes unless the shared file sits beside the executable (then a profile would override the launcher's file for that title: the run dir must not contain `anyps5-input.ini`, so the launcher must never create one there) | track PR7499 |
-| Q3 | `.AnyPS5` store location when the games folder is on a network share or exFAT (no hard links): copying doubles space. Offer a setting "store folder" on another volume? (defeats linking) | decide with first user feedback |
+| Q3 | `.AnyPS5` store location when the games folder is on a network share or exFAT (no hard links): copying doubles space. Offer a setting "store folder" on another volume? (defeats linking) | answered (launcher#35): setting "Unlocked Games Location", section 6.4a. Default unchanged; another folder gets full copies. |
 
 First real run (22.10., release v0.1.3 toolkit downloaded by `download_and_install`, Minecraft Dungeons II dump PPSA16064, unlocked with `run_unlock`, started with `Launcher::start`): A2 holds (`--module-dir .` plus the module folders works; 58 modules converted), A3 holds (the relinker prints its progress lines through the pipe and they parse), A4 holds (`libs\` with the MinGW DLLs was enough, nothing next to `eboot.exe`), A6 holds (the original modules stay in `app0`), the first window was found and reported. Not checked: A5 (icon), A7 and A8 (window placement and F11 were posted but the result was not looked at), A10, A11 (the shader cache folder had an ASCII path). New finding: this dump holds a second copy of its modules under `decrypted/`, and the relinker refuses two modules with one file name ("Conflicting guest output filename"); `module_directories` therefore skips a folder whose file names were already taken. The game was started although the lab lock's 13 GiB RAM gate was not met (about 9 GiB were free); it ran for about ten seconds and was killed with no crash.
 

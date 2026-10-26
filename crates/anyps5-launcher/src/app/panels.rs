@@ -40,6 +40,7 @@ use anyps5_core::recommended::{self, Catalog, Kind, Plan};
 use anyps5_core::report::{self, ReportInput, SystemInfo};
 use anyps5_core::saves::{self, Backup, Reason, SaveData, SavesError};
 use anyps5_core::settings::{GameSettings, ToolkitChannel};
+use anyps5_core::steam_shortcuts;
 use anyps5_core::toolkit::{self, GameToolkit};
 use anyps5_core::unlock;
 use egui::{Context, Ui, ViewportCommand};
@@ -50,6 +51,7 @@ use crate::app::model::UpdateRequest;
 use crate::app::model::{Effect, GameState, Model};
 use crate::app::overlay::{Overlay, OverlayCx, OverlayHost};
 use crate::app::selfupdate::{Restart, SelfUpdateService};
+use crate::app::steam;
 use crate::app::toolkit::{EngineFailure, NotesState, ToolkitEvent, ToolkitService};
 use crate::screens::advanced::{AdvancedAction, AdvancedData, AdvancedPanel};
 use crate::screens::banner::{BannerHost, BannerTrophy};
@@ -69,6 +71,7 @@ use crate::screens::saves::{
 };
 use crate::screens::settings::{Category, SettingsAction, SettingsEnv, SettingsPanel};
 use crate::screens::share_strings::Share;
+use crate::screens::steam_strings::SteamText;
 use crate::screens::strings::Extra;
 use crate::screens::toolkit_pin::{MissingAction, MissingData, MissingPanel, Pin, PinChoices};
 use crate::screens::trophies::{TrophyAction, TrophyData, TrophyListPanel};
@@ -110,6 +113,12 @@ enum Work {
     BackedUp(Result<Backup, SavesError>),
     /// A backup was put back; the backup of what it replaced comes with it.
     Restored(Result<Option<Backup>, SavesError>),
+    /// Add to Steam finished. `games` is how many game entries were asked for (none for the
+    /// launcher's own).
+    Steam {
+        games: Option<usize>,
+        result: Result<steam_shortcuts::Outcome, steam_shortcuts::Error>,
+    },
 }
 
 /// What the game sheet and the save panels know of the selected game's backups, read when one of
@@ -157,6 +166,8 @@ pub struct PanelHost {
     /// The backup to land on when the list opens again after the question.
     saves_return: Option<usize>,
     whats_new: WhatsNewPanel,
+    /// "Update required" (docs/DESIGN.md 9.5.1).
+    required: crate::screens::required::RequiredScreen,
     /// The release the notes panel is about, without a leading `v`.
     whats_new_tag: String,
     /// The settings category to open on when coming back from the notes.
@@ -244,6 +255,7 @@ impl PanelHost {
             restore_stamp: String::new(),
             saves_return: None,
             whats_new: WhatsNewPanel::default(),
+            required: crate::screens::required::RequiredScreen::default(),
             whats_new_tag: String::new(),
             settings_return: None,
             clips_counted: None,
@@ -343,6 +355,7 @@ impl PanelHost {
                 count
             }
         };
+        cx.model.ask_location();
         let env = SettingsEnv {
             games_found: cx.model.games.len(),
             app_version: env!("CARGO_PKG_VERSION"),
@@ -371,6 +384,7 @@ impl PanelHost {
                 count: clips_count,
                 capturing: self.settings.clips_capturing(),
             },
+            location: cx.model.location_env(),
         };
         // Theme, accent, language, motion and sounds reach the shell inside the panel
         // (`apply_preferences`), so the backdrop cross-fades while the choice is made.
@@ -398,10 +412,16 @@ impl PanelHost {
         match action {
             SettingsAction::Close => model.dismiss_overlay(),
             SettingsAction::GamesFolderChosen(_) => {
+                model.games_folder_changed();
                 model.forget_known_games();
                 model.selected = 0;
                 model.rescan();
             }
+            SettingsAction::UnlockedFolderPicked(folder) => model.choose_unlocked_folder(folder),
+            SettingsAction::UseDefaultLocation => model.use_default_location(),
+            SettingsAction::CancelMove => model.cancel_move(),
+            SettingsAction::ContinueMove => model.continue_move(),
+            SettingsAction::LeaveOldCopies => model.leave_old_copies(),
             SettingsAction::Rescan => model.rescan(),
             SettingsAction::ShowScreenshots => {
                 let folder = model.prefs.screenshots_dir(&model.paths);
@@ -512,6 +532,11 @@ impl PanelHost {
             SettingsAction::CheckLauncherUpdate => self.launcher.check_now(),
             SettingsAction::OpenLauncherNotes => self.open_launcher_notes(model),
             SettingsAction::SetLinks(on) => self.set_links(model, on),
+            SettingsAction::AddToSteam => self.add_to_steam(model, steam::Request::Launcher),
+            SettingsAction::AddGamesToSteam => {
+                let games = model.games.clone();
+                self.add_to_steam(model, steam::Request::Games(games));
+            }
             SettingsAction::OpenPage(page) => open_known_url(page),
             SettingsAction::Phone(crate::screens::phone::PhoneAction::OpenDriverPage) => {
                 open_known_url(crate::screens::phone::driver_page());
@@ -523,6 +548,34 @@ impl PanelHost {
             SettingsAction::Ludus(action) => model.ludus.commands.push(action),
             SettingsAction::Quit => cx.ctx.send_viewport_cmd(ViewportCommand::Close),
         }
+    }
+
+    /// "Add to Steam" and "Add My Games to Steam": the work (pictures, files) runs on a thread and
+    /// the answer comes back as a toast. The demo and the tests write nothing.
+    fn add_to_steam(&mut self, model: &mut Model, request: steam::Request) {
+        let language = model.language();
+        let games = match &request {
+            steam::Request::Launcher => None,
+            steam::Request::Games(games) => Some(games.len()),
+        };
+        if games == Some(0) {
+            model.toast(SteamText::NoGames.text(language), Icon::INFO);
+            return;
+        }
+        if self.simulated {
+            let done = match games {
+                Some(n) => SteamText::GamesAdded.format(language, &[Arg::Int(n as i64)]),
+                None => SteamText::Added.text(language).to_owned(),
+            };
+            model.toast(done, Icon::CHECK_CIRCLE);
+            return;
+        }
+        let (tx, ctx) = (self.work_tx.clone(), self.ctx.clone());
+        spawn("steam", move || {
+            let result = steam::run(request);
+            let _ = tx.send(Work::Steam { games, result });
+            ctx.request_repaint();
+        });
     }
 
     /// Reads who answers the links from the registry.
@@ -707,11 +760,9 @@ impl PanelHost {
             }
             GameSettingsAction::ShowInExplorer => {
                 let target = model
-                    .prefs
-                    .games_folder
-                    .as_deref()
+                    .store_root()
                     .map(|root| {
-                        anyps5_core::paths::unlocked_copy_dir(root, &game.title_id, &game.id)
+                        anyps5_core::paths::unlocked_copy_dir(&root, &game.title_id, &game.id)
                     })
                     .filter(|copy| copy.exists())
                     .unwrap_or_else(|| game.folder.clone());
@@ -755,10 +806,9 @@ impl PanelHost {
                 UninstallAction::Cancel => model.dismiss_overlay(),
                 UninstallAction::Confirm => {
                     model.dismiss_overlay();
-                    if let (Some(game), Some(root)) = (
-                        model.selected_game().cloned(),
-                        model.prefs.games_folder.clone(),
-                    ) {
+                    if let (Some(game), Some(root)) =
+                        (model.selected_game().cloned(), model.store_root())
+                    {
                         let backups = model.paths.game_backups_dir(&game.title_id);
                         self.start_uninstall(&game, root, backups, model.language());
                     }
@@ -924,8 +974,8 @@ impl PanelHost {
 
     /// The save data of `game`: where its copy is and where its backups go.
     fn save_data(model: &Model, game: &Game) -> Option<SaveData> {
-        let root = model.prefs.games_folder.as_deref()?;
-        let copy = anyps5_core::paths::unlocked_copy_dir(root, &game.title_id, &game.id);
+        let root = model.store_root()?;
+        let copy = anyps5_core::paths::unlocked_copy_dir(&root, &game.title_id, &game.id);
         Some(SaveData::for_title(&model.paths, &game.title_id, copy))
     }
 
@@ -1358,6 +1408,44 @@ impl PanelHost {
         }
     }
 
+    /// "Update required": the update is the launcher's ordinary one, shown here and restarted
+    /// from here; Play Offline leaves and keeps the online area closed.
+    fn required_ui(&mut self, cx: &mut OverlayCx<'_>, wanted: bool) {
+        use crate::screens::required::{self as screen, Reason, RequiredAction, RequiredData};
+        let events = self.take_events(wanted);
+        if wanted && !self.required.is_open() {
+            self.required.open();
+        } else if !wanted && self.required.is_open() {
+            self.required.close();
+        }
+        let notes = self
+            .launcher
+            .notes()
+            .map(|notes| screen::note_lines(&notes))
+            .unwrap_or_default();
+        let data = RequiredData {
+            language: cx.model.language(),
+            update: &self.launcher.state,
+            reason: if cx.model.required_online {
+                Reason::OnlineClosed
+            } else {
+                Reason::Retired
+            },
+            notes: &notes,
+        };
+        let actions = self.required.show(cx.shell, cx.ctx, &events, &data);
+        for action in actions {
+            match action {
+                RequiredAction::UpdateNow => self.restart_launcher(cx.model, cx.ctx),
+                RequiredAction::TryAgain => self.launcher.check_now(),
+                RequiredAction::Download => {
+                    open_known_url(crate::screens::update_strings::RELEASES);
+                }
+                RequiredAction::PlayOffline => cx.model.play_offline(),
+            }
+        }
+    }
+
     // --- full-screen panels --------------------------------------------------------------------
 
     fn trophies_ui(&mut self, cx: &mut OverlayCx<'_>, wanted: bool) {
@@ -1660,6 +1748,10 @@ impl PanelHost {
                     self.community.insert(title_id, layouts);
                 }
                 Work::Catalog(catalog) => self.catalog = *catalog,
+                Work::Steam { games, result } => {
+                    let (text, icon) = steam_message(games, result, language);
+                    model.toast(text, icon);
+                }
                 Work::BackedUp(result) => {
                     model.saves_busy = None;
                     self.saves_stale = true;
@@ -1803,6 +1895,18 @@ impl PanelHost {
         if model.update != self.launcher.state {
             model.update.clone_from(&self.launcher.state);
         }
+        // The cloud turned this launcher away: the update is required, whatever the manifest said.
+        if std::mem::take(&mut model.cloud_too_old) && !self.launcher.required() {
+            self.launcher.require_from_cloud();
+        }
+        let required = self.launcher.required();
+        if model.update_required != required {
+            model.update_required = required;
+            if required {
+                // The online area closes at once: the net service stops talking to the cloud.
+                model.effects.push(Effect::StopOnline);
+            }
+        }
         match model.update_request.take() {
             Some(UpdateRequest::Restart) => self.restart_launcher(model, cx.ctx),
             Some(UpdateRequest::CancelRestart) => self.launcher.cancel_hold(),
@@ -1887,6 +1991,7 @@ impl OverlayHost for PanelHost {
             Overlay::Log => self.log_ui(cx, wanted),
             Overlay::Recommended => self.recommended_ui(cx, wanted),
             Overlay::WhatsNew => self.whats_new_ui(cx, wanted),
+            Overlay::Required => self.required_ui(cx, wanted),
             Overlay::Friends => self.friends_ui(cx, wanted),
             Overlay::Profile => self.profile_ui(cx, wanted),
             Overlay::Compare => self.compare_ui(cx, wanted),
@@ -1924,6 +2029,10 @@ impl OverlayHost for PanelHost {
         let paths = cx.model.paths.clone();
         self.launcher.tick(&paths, cx.model.prefs.check_for_updates);
         self.poll_launcher(cx);
+        // A retired version meets "Update required" once, as soon as nothing else is going on.
+        if cx.model.required_screen_due() {
+            cx.model.show_required();
+        }
         // No toolkit on this PC: fetch it now, already during the onboarding, so the first unlock
         // needs no visit to the settings. The result shows as a toast (see `poll_toolkit`).
         if !self.toolkit_auto_tried && cx.model.toolkit.is_none() {
@@ -2016,6 +2125,52 @@ fn open_upstream(ctx: &Context, model: &mut Model, prepared: &issue::Prepared) {
             tracing::warn!("cannot open the browser: {error}");
             ctx.copy_text(prepared.url.clone());
             model.toast(Share::ReportOpenFailed.text(language), Icon::WARNING);
+        }
+    }
+}
+
+/// What the player is told after Add to Steam.
+fn steam_message(
+    games: Option<usize>,
+    result: Result<steam_shortcuts::Outcome, steam_shortcuts::Error>,
+    language: Language,
+) -> (String, Icon) {
+    use steam_shortcuts::Error;
+    let said = |text: SteamText| text.text(language).to_owned();
+    match result {
+        Ok(outcome) => {
+            // The entries that were written, not the games that were asked for: a game whose
+            // title ID the link parser refuses has none.
+            let written = (outcome.added + outcome.updated) / outcome.users.max(1);
+            let text = match games.map(|_| written) {
+                Some(0) => said(SteamText::NoGames),
+                Some(1) => said(SteamText::GameAdded),
+                Some(n) => SteamText::GamesAdded.format(language, &[Arg::Int(n as i64)]),
+                None if outcome.added == 0 => said(SteamText::Updated),
+                None => said(SteamText::Added),
+            };
+            (text, Icon::CHECK_CIRCLE)
+        }
+        Err(error) => {
+            let text = match error {
+                Error::SteamRunning => SteamText::Running,
+                Error::NoSteam => SteamText::NoSteam,
+                Error::NoUsers => SteamText::NoUsers,
+                Error::Unreadable(path) => {
+                    tracing::warn!("Steam shortcut list in an unknown form: {}", path.display());
+                    SteamText::Unreadable
+                }
+                Error::Io(error) => {
+                    tracing::warn!("cannot write to Steam: {error}");
+                    SteamText::Failed
+                }
+            };
+            let icon = if matches!(text, SteamText::Running | SteamText::NoUsers) {
+                Icon::INFO
+            } else {
+                Icon::WARNING
+            };
+            (said(text), icon)
         }
     }
 }
@@ -2227,6 +2382,7 @@ mod tests {
             Overlay::ConfirmRestore,
             Overlay::Recommended,
             Overlay::WhatsNew,
+            Overlay::Required,
         ] {
             rig.app.model.open(overlay);
             rig.frames(3);

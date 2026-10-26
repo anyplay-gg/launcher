@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest a change or an addition to the launcher.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The launcher works the same for every game. A request for something that helps one title only is better as a game report, or as a data entry (see `data/README.md`).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What do you want to do
+      description: The problem or goal, in your own words. Start from what you are trying to do, not from the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you propose
+      description: How it could work. If you suggest a screen, say where it lives and how you reach it with a controller as well as with a mouse.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do instead today
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Checks
+      options:
+        - label: This would work for every game, not for one title.
+          required: true
+        - label: I searched the open issues and found no duplicate.
+          required: true

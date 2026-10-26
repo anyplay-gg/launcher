@@ -96,10 +96,17 @@ const MAX_DEPTH: u32 = 3;
 
 /// All games below `root`, sorted by name (case-insensitive). A found game is not searched further.
 pub fn scan(root: &Path) -> Vec<Game> {
+    scan_with_store(root, root)
+}
+
+/// [`scan`] for unlocked copies kept elsewhere: `store_root` is the folder that holds the
+/// `.AnyPS5` store (the player's unlocked-games location). A store that is not reachable (a drive
+/// that is unplugged) simply finds no copies.
+pub fn scan_with_store(root: &Path, store_root: &Path) -> Vec<Game> {
     let mut games = Vec::new();
     visit(root, 0, &mut games);
     for game in &mut games {
-        game.unlocked_with = unlocked_with(root, game);
+        game.unlocked_with = unlocked_with(store_root, game);
     }
     games.sort_by_cached_key(|g| (g.name.to_lowercase(), g.name.clone()));
     games

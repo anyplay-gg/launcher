@@ -30,6 +30,7 @@ use crate::screens::phone::{self, PhoneAction};
 use crate::screens::phone_strings::PhoneText;
 use crate::screens::rows::{self, Change, ListOptions, Row};
 use crate::screens::side::{Output, commands};
+use crate::screens::steam_strings::SteamText;
 use crate::screens::strings::Extra;
 use crate::screens::toolkit_pin::{self, REMOVE_ROWS};
 use crate::ui::Shell;
@@ -213,9 +214,29 @@ pub struct SettingsEnv<'a> {
     /// What the LudusCtrl receiver is doing.
     pub ludus: &'a LudusState,
     pub clips: ClipsEnv,
+    pub location: LocationEnv,
     /// Linux with share screen on: Cisco's OpenH264 and what the share worker made of it. `None`
     /// shows no codec row.
     pub openh264: Option<Openh264Env>,
+}
+
+/// What the unlocked games location row shows (docs/DESIGN.md 5.7).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LocationEnv {
+    /// The last look at the location, from a worker; `None` before the first answer.
+    pub report: Option<anyps5_core::location::Report>,
+    /// A move runs: copies done, copies in all, thousandths of the bytes.
+    pub moving: Option<MoveEnv>,
+    /// A move stopped with copies left: where they are, and how many (0: not known).
+    pub left: Option<(PathBuf, usize)>,
+}
+
+/// How far a move is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MoveEnv {
+    pub done: usize,
+    pub total: usize,
+    pub permille: u16,
 }
 
 /// The codec row's facts.
@@ -233,6 +254,16 @@ pub enum SettingsAction {
     Close,
     /// A new games folder was chosen (already stored in the preferences): rescan and watch it.
     GamesFolderChosen(PathBuf),
+    /// A folder was picked for the unlocked games (not stored yet: the host checks it).
+    UnlockedFolderPicked(PathBuf),
+    /// "Use Default Location".
+    UseDefaultLocation,
+    /// "Cancel Move".
+    CancelMove,
+    /// "Continue Moving".
+    ContinueMove,
+    /// "Leave Games Where They Are".
+    LeaveOldCopies,
     Rescan,
     ShowScreenshots,
     /// "Show Clips": the folder the clips are in.
@@ -270,6 +301,10 @@ pub enum SettingsAction {
     OpenPage(&'static str),
     /// "Open AnyPlay Links with This Launcher" was switched: write or remove the registration.
     SetLinks(bool),
+    /// "Add to Steam": put the launcher into the Steam library.
+    AddToSteam,
+    /// "Add My Games to Steam": one entry for each game.
+    AddGamesToSteam,
     /// A row of the Phone as Controller page asks for something.
     Phone(PhoneAction),
     /// A LudusCtrl row of the same page asks for something.
@@ -299,6 +334,74 @@ fn path_text(path: &Option<PathBuf>) -> String {
     path.as_ref()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "—".to_owned())
+}
+
+/// The rows of the unlocked games location: the place and its free space, a note that says what
+/// that means, and the commands that fit the state (use the default, cancel or continue a move).
+fn location_rows(prefs: &Preferences, location: &LocationEnv, language: Language) -> Vec<Row> {
+    use crate::screens::location_strings as words;
+    use anyps5_core::location::Availability;
+    let custom = prefs.unlocked_folder.as_deref();
+    let report = location.report.as_ref();
+    let missing = report.is_some_and(|r| r.availability == Availability::Missing);
+    let free = report.and_then(|r| r.free);
+    let title = words::title(language);
+    let mut rows = Vec::new();
+    if let Some(moving) = location.moving {
+        // A move in progress: the row is a status, nothing to pick.
+        let percent = u32::from(moving.permille) / 10;
+        rows.push(
+            Row::info(
+                "unlockedLocation",
+                title,
+                Some(words::moving(moving.done, moving.total, percent, language)),
+            )
+            .icon(Icon::HARD_DRIVE),
+        );
+        rows.push(Row::info("unlockedNote", words::note_moving(language), None).attached());
+        rows.push(Row::command("moveCancel", words::cancel_move(language)).icon(Icon::X_CIRCLE));
+        return rows;
+    }
+    rows.push(
+        Row::action("unlockedLocation", title)
+            .detail(words::detail(custom, free, missing, language))
+            .icon(Icon::HARD_DRIVE),
+    );
+    if let Some((from, count)) = &location.left {
+        rows.push(
+            Row::info(
+                "unlockedNote",
+                words::note_left(*count, from, language),
+                None,
+            )
+            .attached()
+            .warning(),
+        );
+        rows.push(Row::command("moveContinue", words::continue_move(language)).icon(Icon::PLAY));
+        rows.push(
+            Row::command("moveLeave", words::leave(language))
+                .detail(words::leave_detail(language))
+                .icon(Icon::PROHIBIT),
+        );
+        return rows;
+    }
+    let note = if missing {
+        Row::info("unlockedNote", words::note_missing(language), None).warning()
+    } else if report.is_some_and(|r| r.network) {
+        Row::info("unlockedNote", words::note_network(language), None).warning()
+    } else if custom.is_some() {
+        Row::info("unlockedNote", words::note_custom(language), None)
+    } else {
+        Row::info("unlockedNote", words::note_default(language), None)
+    };
+    rows.push(note.attached());
+    if custom.is_some() {
+        rows.push(
+            Row::command("unlockedDefault", words::use_default(language))
+                .icon(Icon::ARROW_COUNTER_CLOCKWISE),
+        );
+    }
+    rows
 }
 
 /// The releases the pinned channel offers: the last ones, plus the pinned one and the installed
@@ -442,15 +545,15 @@ pub fn build_categories(
     );
 
     // Library
-    let library = vec![
+    let mut library = vec![
         Row::action("folder", t(Key::Folder))
             .detail(path_text(&prefs.games_folder))
             .icon(Icon::FOLDER),
         Row::command("rescan", t(Key::Rescan))
             .detail(language.format(Key::GamesFound, &[Arg::Int(env.games_found as i64)]))
             .icon(Icon::ARROW_CLOCKWISE),
-        Row::info("clones", t(Key::InstalledSize), None),
     ];
+    library.extend(location_rows(prefs, &env.location, language));
 
     // Language
     let languages = vec![
@@ -476,6 +579,13 @@ pub fn build_categories(
         Row::toggle("music", Extra::HomeMusic.text(language), prefs.music)
             .detail(Extra::HomeMusicDetail.text(language))
             .icon(Icon::MUSIC_NOTES),
+        Row::toggle(
+            "gameMusic",
+            Extra::GameMusic.text(language),
+            prefs.game_music,
+        )
+        .detail(Extra::GameMusicDetail.text(language))
+        .icon(Icon::GAME_CONTROLLER),
         Row::toggle(
             "discord",
             Extra::DiscordPresence.text(language),
@@ -564,6 +674,21 @@ pub fn build_categories(
             .detail(detail.text(language))
             .icon(Icon::LINK),
         );
+    }
+    // Steam keeps its shortcuts in files of the user folder; the rows write them (DESIGN.md 9.9).
+    if cfg!(any(windows, target_os = "linux")) {
+        behaviour.push(
+            Row::command("addToSteam", SteamText::Add.text(language))
+                .detail(SteamText::AddDetail.text(language))
+                .icon(Icon::STEAM_LOGO),
+        );
+        if env.games_found > 0 {
+            behaviour.push(
+                Row::command("addGamesToSteam", SteamText::AddGames.text(language))
+                    .detail(SteamText::AddGamesDetail.text(language))
+                    .icon(Icon::STEAM_LOGO),
+            );
+        }
     }
 
     // Phone as Controller
@@ -1136,6 +1261,10 @@ pub fn apply_value(prefs: &mut Preferences, change: &Change) -> bool {
             index,
         } => prefs.vibration = convert::vibration_to_core(*index),
         Change::Toggle { row: "music", on } => prefs.music = *on,
+        Change::Toggle {
+            row: "gameMusic",
+            on,
+        } => prefs.game_music = *on,
         Change::Toggle { row: "discord", on } => prefs.discord_presence = *on,
         Change::Toggle {
             row: "discordJoin",
@@ -1438,6 +1567,30 @@ impl SettingsPanel {
                 ctx.request_repaint();
             }
             Change::Run { row: "rescan" } => out.actions.push(SettingsAction::Rescan),
+            Change::Run {
+                row: "unlockedLocation",
+            } => {
+                let start = prefs
+                    .unlocked_folder
+                    .clone()
+                    .or_else(|| prefs.games_folder.clone());
+                if let Some(folder) = dialogs::pick_folder(
+                    shell,
+                    crate::screens::location_strings::dialog(language),
+                    start.as_deref(),
+                ) {
+                    out.actions
+                        .push(SettingsAction::UnlockedFolderPicked(folder));
+                }
+            }
+            Change::Run {
+                row: "unlockedDefault",
+            } => out.actions.push(SettingsAction::UseDefaultLocation),
+            Change::Run { row: "moveCancel" } => out.actions.push(SettingsAction::CancelMove),
+            Change::Run {
+                row: "moveContinue",
+            } => out.actions.push(SettingsAction::ContinueMove),
+            Change::Run { row: "moveLeave" } => out.actions.push(SettingsAction::LeaveOldCopies),
             change if phone::action(env.phone, change).is_some() => {
                 out.actions
                     .extend(phone::action(env.phone, change).map(SettingsAction::Phone));
@@ -1461,6 +1614,10 @@ impl SettingsPanel {
                 row: "showScreenshots",
             } => out.actions.push(SettingsAction::ShowScreenshots),
             Change::Run { row: "showClips" } => out.actions.push(SettingsAction::ShowClips),
+            Change::Run { row: "addToSteam" } => out.actions.push(SettingsAction::AddToSteam),
+            Change::Run {
+                row: "addGamesToSteam",
+            } => out.actions.push(SettingsAction::AddGamesToSteam),
             Change::Capture { row: "clipsKey" } => {
                 self.clip_capture = true;
                 shell.input.capture_keys = true;
@@ -1683,7 +1840,7 @@ fn draw(
             *picked = Some(index);
         }
         let t_focus = ctx.focus_t(("category-focus", index), focused);
-        let t_sel = ctx.focus_t(("category-selected", index), selected);
+        let t_sel = ctx.choice_t(("category-selected", index), selected);
         let hover_t = ctx.animate_to(
             ("category-hover", index),
             f32::from(input::hovered(&ctx, &response) && !selected),
@@ -1770,6 +1927,7 @@ mod tests {
             phone: Box::leak(Box::new(PhoneState::default())),
             ludus: Box::leak(Box::new(LudusState::default())),
             clips: ClipsEnv::default(),
+            location: LocationEnv::default(),
             openh264: None,
         }
     }

@@ -437,6 +437,8 @@ impl OnlineService {
                 let text = restriction_text::toast(&restriction, None, None, language);
                 model.toast(text, Icon::WARNING);
             }
+            // The update becomes required; the host sees the flag in the next frame.
+            Notice::ClientTooOld(_) => model.cloud_too_old = true,
             Notice::Banned(restriction) => {
                 let text = restriction_text::toast(&restriction, None, None, language);
                 model.toast(text, Icon::WARNING);
@@ -1301,7 +1303,7 @@ mod tests {
             updated: 0,
             request: true,
             party: None,
-            unread: 0,
+            unread: 1,
             muted: false,
             pinned: false,
             rev: 0,
@@ -1379,6 +1381,18 @@ mod tests {
         assert_eq!(
             model.toast.as_ref().map(|t| t.text.as_str()),
             Some("This account is banned. Open Online to read why and how to appeal.")
+        );
+    }
+
+    #[test]
+    fn the_cloud_turning_the_launcher_away_marks_the_update_as_required() {
+        let mut model = signed_in_model();
+        let mut ready = Vec::new();
+        assert!(!model.cloud_too_old);
+        service().notice(&mut model, Notice::ClientTooOld("0.3.0".into()), &mut ready);
+        assert!(
+            model.cloud_too_old,
+            "the panel host turns it into a required update"
         );
     }
 
@@ -1670,10 +1684,10 @@ mod tests {
         let mut online = service();
         let mut ready = Vec::new();
         let mut mismatch = Failure::new("version_mismatch", "x");
-        mismatch.expected = Some(anyps5_core::online::api::Expected {
+        mismatch.expected = Some(Box::new(anyps5_core::online::api::Expected {
             version: "01.044.000".into(),
             build: "v1".into(),
-        });
+        }));
         online.answered(
             &mut model,
             Purpose::CheckJoin(mc_join("01.008.000")),

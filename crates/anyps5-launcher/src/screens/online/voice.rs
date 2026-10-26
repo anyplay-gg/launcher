@@ -195,7 +195,7 @@ impl OnlinePanel {
         let leads = party
             .zip(online.account.as_ref())
             .is_some_and(|(p, me)| p.leader == me.id);
-        if leads && self.page == Page::Party {
+        if leads && matches!(self.page, Page::Party | Page::Voice) {
             rows.push(
                 Row::text(
                     "discordLink",
@@ -425,14 +425,16 @@ impl OnlinePanel {
                     actions.push(OnlineAction::OpenDiscord(link));
                 }
             }
-            ("saveLink", Page::Party) => {
+            ("saveLink", Page::Party | Page::Voice) => {
                 let link = self.link_text.trim().to_owned();
                 if anyps5_core::online::api::is_discord_link(&link) {
                     actions.push(OnlineAction::PartyLink(link));
                     self.link_text.clear();
                 }
             }
-            ("removeLink", Page::Party) => actions.push(OnlineAction::PartyLink(String::new())),
+            ("removeLink", Page::Party | Page::Voice) => {
+                actions.push(OnlineAction::PartyLink(String::new()))
+            }
             ("voiceInput", _) => self.go(Page::VoiceDevices(DeviceKind::Input), data),
             ("voiceOutput", _) => self.go(Page::VoiceDevices(DeviceKind::Output), data),
             ("refreshDevices", _) => actions.push(OnlineAction::RefreshVoiceDevices),

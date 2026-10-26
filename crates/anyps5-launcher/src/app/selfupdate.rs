@@ -32,6 +32,9 @@ pub enum SelfUpdateEvent {
     Checking,
     /// The check found nothing newer.
     UpToDate,
+    /// The update that follows is required, not optional: the signed manifest says the running
+    /// version is below the oldest one that may keep running. Sent before `Found`/`Manual`.
+    Required,
     /// A newer release exists; its download begins.
     Found(String),
     /// The download of this version, in thousandths.
@@ -73,6 +76,9 @@ pub struct SelfUpdateService {
     /// Where the new launcher should open: a deep link, set with the restart.
     resume: Option<String>,
     cancel: CancelToken,
+    /// This launcher must update before it goes online: the signed manifest or the cloud said so.
+    /// Sticky for the rest of the run (an installed update ends the run).
+    required: bool,
     /// What the interface shows.
     pub state: LauncherUpdate,
 }
@@ -95,6 +101,7 @@ impl SelfUpdateService {
             restart: false,
             resume: None,
             cancel: CancelToken::new(),
+            required: false,
             state: LauncherUpdate::None,
         }
     }
@@ -113,6 +120,28 @@ impl SelfUpdateService {
         }
         service.notes = notes.map(str::to_owned);
         service.state = state;
+        service
+    }
+
+    /// The update is required (see [`SelfUpdateService::require_from_cloud`] and
+    /// [`SelfUpdateEvent::Required`]); an optional one keeps today's behaviour.
+    pub fn required(&self) -> bool {
+        self.required
+    }
+
+    /// The cloud turned this launcher away (`client_too_old`): the update is required whatever the
+    /// manifest says, and a check starts at the next frame even when *Check for Updates* is off
+    /// and the last one was a moment ago, because the player cannot go online without it.
+    pub fn require_from_cloud(&mut self) {
+        self.required = true;
+        self.force = true;
+        self.next_check = None;
+    }
+
+    /// A service that shows `state` as a required update (the previews).
+    pub fn showing_required(ctx: &Context, state: LauncherUpdate, notes: Option<&str>) -> Self {
+        let mut service = Self::showing(ctx, state, notes);
+        service.required = true;
         service
     }
 
@@ -199,6 +228,7 @@ impl SelfUpdateService {
                     self.state = LauncherUpdate::UpToDate;
                 }
             }
+            SelfUpdateEvent::Required => self.required = true,
             SelfUpdateEvent::Found(version) => {
                 if idle {
                     self.state = LauncherUpdate::Available(version.clone());
@@ -392,8 +422,11 @@ fn work(
     let release = match selfupdate::check_cached(paths, current) {
         Ok(Some(release)) => release,
         Ok(None) => return send(SelfUpdateEvent::UpToDate),
-        Err(error) => return send(SelfUpdateEvent::Failed(error.failure(), error.to_string())),
+        Err(error) => return send_failure(&error, send),
     };
+    if release.required() {
+        send(SelfUpdateEvent::Required);
+    }
     let notes = release.notes().map(str::to_owned);
     // Already downloaded: only the notes are new.
     // (the file must also be the one the signed manifest of this check states).
@@ -429,13 +462,29 @@ fn work(
 /// newer version is on the releases page.
 fn notice_only(paths: &AppPaths, send: &dyn Fn(SelfUpdateEvent)) {
     send(SelfUpdateEvent::Checking);
-    send(
-        match selfupdate::check_cached(paths, env!("CARGO_PKG_VERSION")) {
-            Ok(Some(release)) => SelfUpdateEvent::Manual(release.version().to_owned()),
-            Ok(None) => SelfUpdateEvent::UpToDate,
-            Err(error) => SelfUpdateEvent::Failed(error.failure(), error.to_string()),
-        },
-    );
+    match selfupdate::check_cached(paths, env!("CARGO_PKG_VERSION")) {
+        Ok(Some(release)) => {
+            if release.required() {
+                send(SelfUpdateEvent::Required);
+            }
+            send(SelfUpdateEvent::Manual(release.version().to_owned()));
+        }
+        Ok(None) => send(SelfUpdateEvent::UpToDate),
+        Err(error) => send_failure(&error, send),
+    }
+}
+
+/// A failed check. The one refusal that is a message to the player and not a quiet log line: the
+/// manifest requires an update and this launcher is too old to take it by itself, so it is
+/// required and comes from the releases page, like the `.tar.gz`.
+fn send_failure(error: &SelfUpdateError, send: &dyn Fn(SelfUpdateEvent)) {
+    match error.required_by_hand() {
+        Some(version) => {
+            send(SelfUpdateEvent::Required);
+            send(SelfUpdateEvent::Manual(version.to_owned()));
+        }
+        None => send(SelfUpdateEvent::Failed(error.failure(), error.to_string())),
+    }
 }
 
 /// Whether the thread started.
@@ -552,6 +601,54 @@ mod tests {
         again.sha256 = Some("bb".into());
         feed(&mut s, SelfUpdateEvent::Ready(again.clone(), None));
         assert_eq!(s.staged, Some(again));
+    }
+
+    #[test]
+    fn an_update_is_optional_until_the_manifest_or_the_cloud_says_otherwise() {
+        let mut s = service();
+        feed(&mut s, SelfUpdateEvent::Checking);
+        feed(&mut s, SelfUpdateEvent::Found("0.3.0".into()));
+        feed(&mut s, SelfUpdateEvent::Ready(staged("0.3.0"), None));
+        assert!(!s.required(), "today's behaviour: nothing is demanded");
+        // The manifest of the check says it is required.
+        feed(&mut s, SelfUpdateEvent::Required);
+        assert!(s.required());
+        // It stays so: a later check that finds nothing does not take the demand back.
+        feed(&mut s, SelfUpdateEvent::UpToDate);
+        assert!(s.required());
+        assert_eq!(s.state, LauncherUpdate::Ready("0.3.0".into()));
+    }
+
+    #[test]
+    fn the_cloud_requires_the_update_and_forces_a_check_even_when_checks_are_off() {
+        let mut s = service();
+        s.last_started = Some(Instant::now());
+        s.next_check = Some(Instant::now() + CHECK_EVERY);
+        s.require_from_cloud();
+        assert!(s.required());
+        assert!(s.force && s.next_check.is_none());
+        assert!(s.due(Instant::now()));
+    }
+
+    #[test]
+    fn a_launcher_too_old_to_update_itself_gets_a_download_link() {
+        let seen = std::cell::RefCell::new(Vec::new());
+        let send = |event| seen.borrow_mut().push(event);
+        send_failure(&SelfUpdateError::RequiredByHand("0.3.0".into()), &send);
+        let mut s = service();
+        for event in seen.take() {
+            s.apply(&event);
+        }
+        assert!(s.required());
+        assert_eq!(s.state, LauncherUpdate::Manual("0.3.0".into()));
+        // Any other refusal stays what it was: quiet, and nothing is required.
+        send_failure(&SelfUpdateError::Digest, &send);
+        let mut s = service();
+        for event in seen.take() {
+            s.apply(&event);
+        }
+        assert!(!s.required());
+        assert_eq!(s.state, LauncherUpdate::Failed(UpdateFailure::Refused));
     }
 
     #[test]

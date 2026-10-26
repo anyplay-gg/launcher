@@ -54,7 +54,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-The details for each system and for releases are in [docs/BUILDING.md](docs/BUILDING.md); how the code fits together is in [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md). Words are defined in [CONTEXT.md](CONTEXT.md). Until the network is live, only the AnyPlay team opens issues and pull requests; see [CONTRIBUTING.md](CONTRIBUTING.md).
+The details for each system and for releases are in [docs/BUILDING.md](docs/BUILDING.md); how the code fits together is in [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md). Words are defined in [CONTEXT.md](CONTEXT.md). Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Community
 

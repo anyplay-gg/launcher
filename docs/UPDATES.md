@@ -22,6 +22,7 @@ Every release carries two extra assets next to the binaries: `latest.json` and `
   "published": "2026-11-01T12:00:00Z",
   "expires": "2026-12-01T12:00:00Z",
   "minimum_version": "0.1.0",
+  "min_supported_version": "0.2.0",
   "platforms": {
     "windows-x86_64": {
       "name": "AnyPlay-Launcher-0.2.0-x64.exe",
@@ -45,6 +46,7 @@ Every release carries two extra assets next to the binaries: `latest.json` and `
 | `version` | The version this manifest offers, plain semver without `v`. |
 | `published`, `expires` | RFC 3339, UTC. After `expires` the manifest is void. The release workflow sets 30 days; the tool refuses more than 90. |
 | `minimum_version` | The oldest running version that may update from this manifest. A launcher below it refuses (it needs an intermediate release or the installer). The workflow takes it from the repository variable `UPDATE_MINIMUM_VERSION`, default `0.1.0`. |
+| `min_supported_version` | **Optional.** The oldest running version that may keep going online. A launcher below it, which has verified this manifest, treats the update as *required* ([Retiring a version](#retiring-a-version)). Absent means every version may; launchers that do not know the field ignore it. Plain semver, not above `version`. It is a different thing from `minimum_version` (which versions can take *this* update) and has its own name because launchers up to v0.2.x read `minimum_version` as "may not update from here". The workflow takes it from the file `MIN_SUPPORTED_VERSION` of the repository, empty by default. |
 | `platforms` | Per platform the download's `name`, `url`, `sha256` and `size`: `windows-x86_64` (the portable exe) and `linux-x86_64` (the AppImage). A manifest without a Linux entry (every one up to v0.2.4) offers Linux nothing, quietly: it is no error. Windows always needs its entry. |
 
 `latest.json.sig` is one line: the Ed25519 signature in hex over `anyplay-launcher-update-manifest-v1\n` followed by the exact bytes of `latest.json`. The prefix means a signature made for this purpose is good for nothing else. The bytes are verified before they are parsed; nothing is canonicalised.
@@ -58,7 +60,7 @@ Once a key is trusted ([Migration](#migration)), an update is taken only when al
 3. The manifest is well formed: schema `1`, plain versions, `minimum_version` not above `version`, `expires` after `published`, lower-case hex hash, a size above zero.
 4. It has not expired.
 5. `version` is newer than the running version (semver, pre-releases below their release). An equal or older version offers nothing: this is the rollback check.
-6. The running version is not below `minimum_version`.
+6. The running version is not below `minimum_version`. (A launcher that is below it *and* below `min_supported_version` is told to install the new version by hand from the releases page, on the same "Update required" screen, instead of getting a quiet refusal.)
 7. The download's `name` is exactly `AnyPlay-Launcher-<version>-x64.exe` (or the old `AnyPS5-Launcher-<version>-x64.exe`) on Windows and `AnyPlay-Launcher-<version>-x86_64.AppImage` on Linux, and its `url` is https.
 8. The download's SHA-256 **and** size are the manifest's. The file gets its final name only after that, and a `.verified` marker holding the hash is written beside it.
 
@@ -81,6 +83,27 @@ The same signed manifest updates the AppImage. Every rule above (signature, expi
 - **The swap.** The staged file is copied to a sibling `<name>.new`, hashed against the manifest (a mismatch removes the copy and refuses), set to mode 0755, synced and renamed over the original in one atomic step. Linux allows that while the old image runs: the running process keeps its open file. The original is untouched until the rename, and a failure at any step leaves it as it was. A restart starts the new file with the same arguments.
 - **No AppImage, no swap.** A launcher from the `.tar.gz` (no `APPIMAGE`) cannot replace itself. It still checks the signed manifest, and About shows "<v> available" with *Download from GitHub*; nothing is downloaded.
 - **The download** must be a 64-bit ELF with the AppImage type 2 magic after its header, on top of the hash and the size.
+
+## Retiring a version
+
+Retiring means: a launcher below some version must update before it goes online. It can still play offline (DESIGN.md [9.5.1](DESIGN.md#951-a-required-update)). Two independent switches do it, alone or together. Both are **off** by default, and nothing in the repositories sets them.
+
+**Switch 1: the signed manifest** (the launcher's own, every platform).
+
+1. Release the version everyone should be on, say 0.3.0, as usual, and wait until it is the latest release (the release workflow signs its `latest.json`).
+2. Open a pull request that puts the version on a line of `MIN_SUPPORTED_VERSION` (the file at the root of anyplaynet/launcher; `#` lines are comments), for example `0.3.0`, and merge it. The file holds one plain version or nothing. A typo, `v0.3.0`, or a version above the source's own fails `cargo test -p anyplay-update-manifest` on the pull request, and would fail the release and the renewal too; it is never read as "off".
+3. Apply it now instead of on Monday: run the workflow *resign* by hand (Actions, resign, Run workflow). It takes the file from the default branch and signs a new `latest.json` of the latest release with `min_supported_version`. From then on, every launcher below 0.3.0 that checks for updates shows *Update required*. The weekly renewal and every later release keep copying the file, so it stays until the file changes. The version must not be above the latest release (the renewal fails loudly if it is): release first, then raise the file.
+4. Check: `gh release download --repo anyplaynet/launcher --pattern latest.json -O - | grep min_supported_version`.
+
+To switch it **off**, leave only comments in the file, merge, and run *resign*. To retire further, put a higher version in.
+
+The field also reaches a launcher that is too old to update itself (below `UPDATE_MINIMUM_VERSION`, the "can take this update" floor): it shows the same screen with *Download from GitHub*. Launchers that predate this mechanism (v0.1.x, v0.2.x) do not know the field and keep their optional update.
+
+A player who turned *Check for Updates* off does not read the manifest; the cloud (switch 2) still reaches them when they go online.
+
+**Switch 2: the cloud** (online services only). On the cloud, set `min_launcher_version` (environment `ANYPLAY_CLOUD_MIN_LAUNCHER_VERSION`, see the cloud's docs/configuration.md) to the version and redeploy. A launcher below it, which sends `X-AnyPlay-Client: launcher/<version>` through the net service, gets `client_too_old` and shows the same screen. Launchers that send no header, the web and other clients are not affected. To switch it off, empty the variable and redeploy.
+
+Order for a retirement: release, set the file (switch 1), and only some days later the cloud floor (switch 2), so players who update on their own are not caught by the cloud first.
 
 ## Provenance of a release
 
@@ -197,7 +220,7 @@ The new manifest has its own attestation, made by `resign.yml`; `gh attestation 
 | Command | Does |
 |---|---|
 | `keygen --secret-out <file> [--public-out <file>] [--label <text>]` | Makes a key pair. Prints only the public line. |
-| `manifest --version <v> --exe <file> --out <file> [--appimage <file>] [--minimum <v>] [--days 30] [--base-url <url>]` | Hashes the exe (and the AppImage, when given) and writes the manifest. The exe must be named `AnyPlay-Launcher-<v>-x64.exe`, the AppImage `AnyPlay-Launcher-<v>-x86_64.AppImage`. Without `--appimage` the manifest is Windows-only. `release.yml` always passes it; `resign.yml` only when the release it renews has an AppImage. |
+| `manifest --version <v> --exe <file> --out <file> [--appimage <file>] [--minimum <v>] [--supported-file <MIN_SUPPORTED_VERSION>] [--days 30] [--base-url <url>]` | Hashes the exe (and the AppImage, when given) and writes the manifest. The exe must be named `AnyPlay-Launcher-<v>-x64.exe`, the AppImage `AnyPlay-Launcher-<v>-x86_64.AppImage`. Without `--appimage` the manifest is Windows-only. `--supported-file` reads the repository's `MIN_SUPPORTED_VERSION` into `min_supported_version`; a file with only comments leaves the field out, and anything but one plain version (not above `--version`) is an error. `release.yml` always passes it; `resign.yml` only when the release it renews has an AppImage. |
 | `sign --manifest <file> --out <file> (--key-env <NAME> \| --key-file <file>)` | Signs, after checking that the manifest is well formed, and verifies the new signature before writing it. Never prints the key. |
 | `verify --manifest <file> --sig <file> --keys <file> [--current <v>]` | What the launcher does, for a release candidate. |
 
