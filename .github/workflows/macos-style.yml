@@ -34,7 +34,7 @@ defaults:
 jobs:
   shots:
     name: shots (${{ matrix.os }})
-    runs-on: blacksmith-6vcpu-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     strategy:
       fail-fast: false

@@ -82,7 +82,7 @@ jobs:
 
   windows:
     needs: notices
-    runs-on: blacksmith-16vcpu-windows-2025
+    runs-on: windows-latest
     defaults:
       run:
         shell: pwsh
@@ -218,7 +218,7 @@ jobs:
   # does without them. The linux job below carries it.
   linux-share-worker:
     needs: notices
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -248,7 +248,7 @@ jobs:
   # with, and an older one runs on more distributions.
   linux:
     needs: [notices, linux-share-worker]
-    runs-on: blacksmith-16vcpu-ubuntu-2204
+    runs-on: ubuntu-22.04
     defaults:
       run:
         working-directory: launcher
@@ -354,7 +354,7 @@ jobs:
   # not in the signed update manifest.
   flatpak:
     needs: [notices, linux]
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     continue-on-error: true
     timeout-minutes: 30
     steps:
@@ -390,7 +390,7 @@ jobs:
   # Apple silicon app, signed ad hoc. No Developer ID or notarization secret is used.
   macos:
     needs: notices
-    runs-on: blacksmith-6vcpu-macos-15
+    runs-on: macos-15
     env:
       MACOSX_DEPLOYMENT_TARGET: '11.0'
     defaults:

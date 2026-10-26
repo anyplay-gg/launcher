@@ -27,7 +27,7 @@ defaults:
 jobs:
   build:
     # GitHub's Windows runner: several core tests need an interactive desktop session, which
-    # Blacksmith's headless Windows VM lacks (being sorted out; the release builds run on Blacksmith).
+    # a headless CI machine lacks.
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -71,7 +71,7 @@ jobs:
           if-no-files-found: error
 
   linux:
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -141,7 +141,7 @@ jobs:
   # deadlock where a release build only hangs (0.2.8 shipped one in the chat composer). A panic,
   # a hang (60 s per scene) or a missing picture fails the job and names the scene.
   scenes:
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -175,10 +175,10 @@ jobs:
       - name: Debug build
         run: cargo build -p anyps5-launcher
       - name: Render every scene
-        run: tools/gallery-sweep.sh target/debug/anyplay-launcher 8 60
+        run: tools/gallery-sweep.sh target/debug/anyplay-launcher 4 60
 
   macos:
-    runs-on: blacksmith-6vcpu-macos-15
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
