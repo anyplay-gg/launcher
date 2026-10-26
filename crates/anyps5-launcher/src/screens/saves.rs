@@ -9,7 +9,7 @@ use egui::{Color32, Context};
 use crate::app::clock;
 use crate::screens::dialog;
 use crate::screens::rows::{self, Row};
-use crate::screens::side::{self, SideState, SideView};
+use crate::screens::side::{self, Frame, Leave, SideState, SideView};
 use crate::screens::strings::Extra;
 use crate::ui::Shell;
 use crate::ui::i18n::{Arg, Key, Language, byte_text};
@@ -73,7 +73,7 @@ impl SavesPanel {
     }
 
     fn handle(
-        &mut self,
+        side: &SideState,
         change: &rows::Change,
         data: &SavesData<'_>,
         actions: &mut Vec<SavesAction>,
@@ -86,7 +86,7 @@ impl SavesPanel {
             "restore" => {
                 let rows = build_rows(data);
                 let first = rows::position(&rows, "restore").unwrap_or(0);
-                let index = self.side.nav.row.saturating_sub(first);
+                let index = side.nav.row.saturating_sub(first);
                 if index < data.backups.len() {
                     actions.push(SavesAction::Ask(index));
                 }
@@ -103,51 +103,25 @@ impl SavesPanel {
         data: &SavesData<'_>,
     ) -> Vec<SavesAction> {
         let mut actions = Vec::new();
-        if !self.side.is_active() {
-            return actions;
-        }
-        if self.side.is_open() {
-            let rows = build_rows(data);
-            // One command at a time: a change names the row that was focused when it ran.
-            for command in side::commands(events) {
-                let driven = rows::drive(shell, &mut self.side.nav, &rows, &[command]);
-                for change in &driven.changes {
-                    self.handle(change, data, &mut actions);
-                }
-                if driven.close {
-                    self.side.close();
-                    actions.push(SavesAction::Close);
-                    break;
-                }
-            }
-        }
-        let mut rows = build_rows(data);
-        let view = SideView {
+        let frame = Frame {
             title: data.title,
             subtitle: Some(Extra::SavesTitle.text(data.language)),
-            question: false,
             list_id: "saves-rows",
-            nav: &self.side.nav,
             accent: data.accent,
             language: data.language,
-            force: None,
         };
-        match side::draw(ctx, self.side.is_open(), &view, &mut rows) {
-            Some(drawn) if self.side.is_open() => {
-                let (changes, _) =
-                    rows::apply_mouse(shell, &mut self.side.nav, &rows, drawn.events);
-                for change in &changes {
-                    self.handle(change, data, &mut actions);
-                }
-                if drawn.back_clicked {
-                    shell.play(crate::ui::sound::Cue::Close);
-                    self.side.close();
-                    actions.push(SavesAction::Close);
-                }
-            }
-            Some(_) => {}
-            None => self.side.finished(),
-        }
+        self.side.show_rows(
+            shell,
+            ctx,
+            events,
+            &mut { data },
+            &frame,
+            Leave::Slide,
+            |data| build_rows(data),
+            |side, _, data, change, actions| Self::handle(side, change, data, actions),
+            SavesAction::Close,
+            &mut actions,
+        );
         actions
     }
 }
@@ -178,7 +152,8 @@ pub fn row_detail(count: usize, language: Language) -> String {
     }
 }
 
-/// The rows: the command, then the backups (or a note that there are none), then what is kept.
+/// The rows: the command, then the caption with what is kept, then the backups (or a note that
+/// there are none).
 pub fn build_rows(data: &SavesData<'_>) -> Vec<Row> {
     let language = data.language;
     let mut rows = Vec::new();
@@ -193,6 +168,15 @@ pub fn build_rows(data: &SavesData<'_>) -> Vec<Row> {
         return rows;
     }
     rows.push(Row::caption("caption", Extra::SavesCaption.text(language)).group_start());
+    // What is kept is the rule of the list: it stands under the caption, before the items.
+    rows.push(
+        Row::info(
+            "kept",
+            Extra::SavesKept.format(language, &[Arg::Int(data.keep as i64)]),
+            None,
+        )
+        .attached(),
+    );
     if data.running {
         rows.push(Row::info(
             "running",
@@ -212,14 +196,6 @@ pub fn build_rows(data: &SavesData<'_>) -> Vec<Row> {
                 .icon(Icon::CLOCK_COUNTER_CLOCKWISE),
         );
     }
-    rows.push(
-        Row::info(
-            "kept",
-            Extra::SavesKept.format(language, &[Arg::Int(data.keep as i64)]),
-            None,
-        )
-        .group_start(),
-    );
     rows
 }
 
@@ -393,18 +369,39 @@ mod tests {
         let rows = build_rows(&data(&list, true, false));
         assert_eq!(
             ids(&rows),
-            ["backup", "caption", "restore", "restore", "kept"]
+            ["backup", "caption", "kept", "restore", "restore"]
         );
-        assert_eq!(rows[2].control, rows::Control::Action);
+        assert_eq!(rows[3].control, rows::Control::Action);
         assert_eq!(
-            rows[2].detail.as_deref(),
+            rows[3].detail.as_deref(),
             Some("12.3 MB · Before a restore")
         );
-        assert_eq!(rows[3].detail.as_deref(), Some("900 bytes · Manual"));
+        assert_eq!(rows[4].detail.as_deref(), Some("900 bytes · Manual"));
         assert_eq!(
-            rows[4].title,
+            rows[2].title,
             "Up to 10 backups are kept. Backups made after playing go first."
         );
+    }
+
+    #[test]
+    fn a_focused_backup_still_maps_to_its_index_with_the_note_before_the_list() {
+        let list = [
+            backup(2_000, Reason::BeforeRestore, 12_300_000),
+            backup(1_000, Reason::Manual, 900),
+        ];
+        let d = data(&list, true, true);
+        let rows = build_rows(&d);
+        let first = rows::position(&rows, "restore").unwrap();
+        let mut side = SideState::default();
+        side.open_at(first + 1);
+        let mut actions = Vec::new();
+        SavesPanel::handle(
+            &side,
+            &rows::Change::Run { row: "restore" },
+            &d,
+            &mut actions,
+        );
+        assert_eq!(actions, [SavesAction::Ask(1)]);
     }
 
     #[test]

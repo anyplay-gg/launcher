@@ -118,6 +118,7 @@ pub enum Scene {
     ToastErrorLong,
     /// A verified launcher update waits: the notice after the title.
     HomeUpdate,
+    HomeUpdateNarrow,
     /// The same with the notice's first button focused.
     HomeUpdateFocus,
     /// "Restart Now" was pressed while a game runs: the restart waits.
@@ -180,6 +181,7 @@ impl Scene {
             "toast-error" => Scene::ToastError,
             "toast-error-long" => Scene::ToastErrorLong,
             "home-update" => Scene::HomeUpdate,
+            "home-update-narrow" => Scene::HomeUpdateNarrow,
             "home-update-focus" => Scene::HomeUpdateFocus,
             "home-update-holding" => Scene::HomeUpdateHolding,
             "home-update-later" => Scene::HomeUpdateLater,
@@ -672,20 +674,31 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
                 crate::screens::prepare_strings::failure(
                     anyps5_core::unlock::FailureKind::DiskFull,
                     m.language(),
-                )
-                .to_owned(),
+                ),
             );
         }
         Scene::HomeFailedLong => {
+            // The longest sentence a failure can say in this language (`--tr` for Turkish).
+            use anyps5_core::unlock::FailureKind as K;
             m.selected = at(4);
-            m.failures.insert(
-                ids[at(4)].clone(),
-                crate::screens::prepare_strings::failure(
-                    anyps5_core::unlock::FailureKind::LocationMissing,
-                    m.language(),
-                )
-                .to_owned(),
-            );
+            let language = m.language();
+            let longest = [
+                K::ToolkitMissing,
+                K::DiskFull,
+                K::LocationMissing,
+                K::FileInUse,
+                K::BadDump,
+                K::Converter,
+                K::Other,
+            ]
+            .into_iter()
+            .map(|kind| crate::screens::prepare_strings::failure(kind, language))
+            .chain([crate::screens::prepare_strings::pinned_toolkit_missing(
+                language,
+            )])
+            .max_by_key(|text| text.chars().count())
+            .unwrap_or_default();
+            m.failures.insert(ids[at(4)].clone(), longest);
         }
         Scene::HomeLongTitle => {
             m.selected = at(1);
@@ -863,6 +876,11 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
         Scene::Starting => {
             m.starting = Some(ids[at(1)].clone());
             m.running = Some(ids[at(1)].clone());
+        }
+        // No room for the notice beside the title: only the dot on the gear says it.
+        Scene::HomeUpdateNarrow => {
+            m.phone.connected = Some("Pixel 8 Pro of a Long Name".into());
+            m.ludus.connected = Some("Galaxy Tab S9 Ultra".into());
         }
         Scene::HomeUpdateFocus => m.focus = HomeFocus::Update(0),
         // The restart waits because a game runs.
@@ -1065,12 +1083,15 @@ impl PreviewApp {
                 use crate::screens::settings::LauncherUpdate;
                 let host = crate::app::panels::PanelHost::new(&cc.egui_ctx, true);
                 match options.scene {
-                    Some(Scene::HomeUpdate | Scene::HomeUpdateFocus | Scene::HomeUpdateLater) => {
-                        host.showing_launcher_update(
-                            &cc.egui_ctx,
-                            LauncherUpdate::Ready("0.1.4".into()),
-                        )
-                    }
+                    Some(
+                        Scene::HomeUpdate
+                        | Scene::HomeUpdateNarrow
+                        | Scene::HomeUpdateFocus
+                        | Scene::HomeUpdateLater,
+                    ) => host.showing_launcher_update(
+                        &cc.egui_ctx,
+                        LauncherUpdate::Ready("0.1.4".into()),
+                    ),
                     Some(Scene::HomeUpdateHolding) => host.showing_launcher_update(
                         &cc.egui_ctx,
                         LauncherUpdate::Holding("0.1.4".into()),

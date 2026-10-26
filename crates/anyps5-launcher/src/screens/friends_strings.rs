@@ -28,8 +28,21 @@ pub enum FriendsText {
     ConnectingNote,
     OfflineNote,
     TryAgain,
+    /// A friend request while offline: it cannot be answered yet.
+    RequestOffline,
+    /// The bar where the composer would be, while offline.
+    ComposerOffline,
     NotInParty,
     NotInPartyNote,
+    /// The empty Friends page: what it is, and how to fill it.
+    NoFriendsTitle,
+    NoFriendsNote,
+    /// The empty Messages page.
+    NoConversationsTitle,
+    NoConversationsNote,
+    /// The state title of a page that needs the cloud while it is out.
+    OfflineTitle,
+    PartyOfflineNote,
     /// The rail's name for an item with something waiting: `%@` = the item, `%@` = how many.
     WaitingName,
 }
@@ -54,6 +67,22 @@ impl FriendsText {
                 "You are offline. Friends and messages update when the connection is back."
             }
             FriendsText::TryAgain => "Try Again",
+            FriendsText::RequestOffline => "Wants to be your friend. Answer when you are online.",
+            FriendsText::ComposerOffline => {
+                "You are offline. You can write again when the connection is back."
+            }
+            FriendsText::NoFriendsTitle => "No friends yet",
+            FriendsText::NoFriendsNote => {
+                "Friends show up here with what they play. Add one by the name they chose."
+            }
+            FriendsText::NoConversationsTitle => "No conversations yet",
+            FriendsText::NoConversationsNote => {
+                "Messages with friends and groups are kept here. Open a friend's page and choose Send Message."
+            }
+            FriendsText::OfflineTitle => "You are offline",
+            FriendsText::PartyOfflineNote => {
+                "A party needs a connection. Try again when it is back."
+            }
             FriendsText::NotInParty => "You are not in a party",
             FriendsText::NotInPartyNote => {
                 "A party keeps you together across games, with chat and voice."
@@ -81,6 +110,20 @@ impl FriendsText {
                 "Çevrimdışısın. Arkadaşlar ve mesajlar bağlantı gelince güncellenir."
             }
             FriendsText::TryAgain => "Tekrar Dene",
+            FriendsText::RequestOffline => "Arkadaşın olmak istiyor. Çevrimiçi olunca yanıtla.",
+            FriendsText::ComposerOffline => "Çevrimdışısın. Bağlantı gelince yine yazabilirsin.",
+            FriendsText::NoFriendsTitle => "Henüz arkadaşın yok",
+            FriendsText::NoFriendsNote => {
+                "Arkadaşlar oynadıklarıyla burada görünür. Seçtikleri adla birini ekle."
+            }
+            FriendsText::NoConversationsTitle => "Henüz sohbet yok",
+            FriendsText::NoConversationsNote => {
+                "Arkadaşlarınla ve gruplarla yazışmalar burada durur. Bir arkadaşın sayfasını aç ve Mesaj Gönder'i seç."
+            }
+            FriendsText::OfflineTitle => "Çevrimdışısın",
+            FriendsText::PartyOfflineNote => {
+                "Parti için bağlantı gerekir. Geri gelince tekrar dene."
+            }
             FriendsText::NotInParty => "Bir partide değilsin",
             FriendsText::NotInPartyNote => {
                 "Parti, sohbet ve sesle oyunlar arasında seni arkadaşlarınla bir arada tutar."

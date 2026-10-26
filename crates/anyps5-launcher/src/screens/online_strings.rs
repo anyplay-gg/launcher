@@ -11,6 +11,8 @@ pub enum OnlineText {
     Subtitle,
     Cloud,
     CloudNotSet,
+    /// The note under Sign Out: which cloud the account is on. `%@` = the address.
+    SignedInOn,
     /// The cloud AnyPlay runs, as the cloud row names it.
     CloudOfficial,
     CloudUseOfficial,
@@ -173,6 +175,7 @@ impl OnlineText {
         match self {
             OnlineText::Online => "Online",
             OnlineText::Subtitle => "Play with your friends over the internet",
+            OnlineText::SignedInOn => "Signed in on %@.",
             OnlineText::Cloud => "Cloud",
             OnlineText::CloudNotSet => "Not set up yet",
             OnlineText::CloudOfficial => "AnyPlay",
@@ -326,6 +329,7 @@ impl OnlineText {
         match self {
             OnlineText::Online => "Çevrimiçi",
             OnlineText::Subtitle => "Arkadaşlarınla internet üzerinden oyna",
+            OnlineText::SignedInOn => "%@ üzerinde oturum açık.",
             OnlineText::Cloud => "Bulut",
             OnlineText::CloudNotSet => "Henüz ayarlanmadı",
             OnlineText::CloudOfficial => "AnyPlay",

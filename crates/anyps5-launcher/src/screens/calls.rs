@@ -43,6 +43,8 @@ const GAP: f32 = size::CONTROL_GAP;
 const LEAVE_GAP: f32 = space::XL;
 /// The room of the strip's words, before its controls.
 const STRIP_TEXT: f32 = 260.0;
+/// How far the strip grows for its words, on a window that has the room.
+const STRIP_TEXT_MAX: f32 = 520.0;
 /// The height of the ringing card and of the strip, for what hangs below them.
 /// The buttons of both surfaces are Medium: the card and the strip hang over what the player does.
 const BUTTON: f32 = ControlSize::Medium.height();
@@ -369,6 +371,7 @@ pub(crate) fn incoming_card(
             let text_x = inner.min.x + AVATAR + space::L;
             let max_width = inner.max.x - text_x;
             let name = text::middle_truncate(&painter, ty::BUTTON, &data.handle, max_width);
+            let name_cut = name != data.handle;
             text::paint(
                 &painter,
                 pos2(text_x, centre.y - 2.0),
@@ -395,6 +398,16 @@ pub(crate) fn incoming_card(
                 Id::unique(("incoming-call-status", &data.invitation)),
                 Sense::hover(),
             );
+            if name_cut {
+                crate::ui::reveal::full_text(
+                    ctx,
+                    status.id,
+                    rect,
+                    &data.handle,
+                    crate::ui::input::hovered(ctx, &status),
+                    true,
+                );
+            }
             let label = CT::IncomingName.format(language, &[Arg::Str(&data.handle)]);
             status.widget_info(|| {
                 egui::WidgetInfo::labeled(egui::Role::Status, true, label.as_str())
@@ -504,7 +517,43 @@ pub(crate) fn call_strip(
     } else {
         icon_only * 3.0 + GAP + LEAVE_GAP
     };
-    let text_width = STRIP_TEXT;
+    // Title and the people.
+    let (title, line) = match (&data.kind, discord) {
+        (StripKind::Calling(who), _) => (
+            CT::Calling.format(language, &[Arg::Str(who)]),
+            String::new(),
+        ),
+        (StripKind::Connected(members), Some(_)) => (
+            CT::VoiceOnDiscord.text(language).to_owned(),
+            members_line(members, language),
+        ),
+        (StripKind::Connected(members), None) => {
+            // A mute or deafen outranks the mode: it is what the player must know first.
+            let state = if data.deafened {
+                Some(CT::YouDeafened.text(language))
+            } else if data.muted {
+                Some(CT::YouMuted.text(language))
+            } else if data.mode_override {
+                Some(VoiceText::VoiceActivity.text(language))
+            } else {
+                None
+            };
+            let title = match state {
+                Some(state) => format!("{} · {state}", CT::InCall.text(language)),
+                None => CT::InCall.text(language).to_owned(),
+            };
+            (title, members_line(members, language))
+        }
+    };
+    // The words take the room they need, up to a limit; what is still cut is read in full from the
+    // chip while the pointer is on the strip, and the party page lists everyone.
+    let need = text::width(&measure, ty::ROW_TITLE, &title).max(if line.is_empty() {
+        0.0
+    } else {
+        text::width(&measure, ty::NOTE, &line)
+    });
+    let text_width = need.clamp(STRIP_TEXT, STRIP_TEXT_MAX);
+    let cut = need > text_width;
     let width = PAD + text_width + GAP + controls_width + PAD;
     let height = PAD + button;
     let rect = Rect::from_min_size(
@@ -532,34 +581,6 @@ pub(crate) fn call_strip(
             style.alpha = a;
             paint_glass(ctx, &painter, rect, style);
 
-            // Title and the people.
-            let (title, line) = match (&data.kind, discord) {
-                (StripKind::Calling(who), _) => (
-                    CT::Calling.format(language, &[Arg::Str(who)]),
-                    String::new(),
-                ),
-                (StripKind::Connected(members), Some(_)) => (
-                    CT::VoiceOnDiscord.text(language).to_owned(),
-                    members_line(members, language),
-                ),
-                (StripKind::Connected(members), None) => {
-                    // A mute or deafen outranks the mode: it is what the player must know first.
-                    let state = if data.deafened {
-                        Some(CT::YouDeafened.text(language))
-                    } else if data.muted {
-                        Some(CT::YouMuted.text(language))
-                    } else if data.mode_override {
-                        Some(VoiceText::VoiceActivity.text(language))
-                    } else {
-                        None
-                    };
-                    let title = match state {
-                        Some(state) => format!("{} · {state}", CT::InCall.text(language)),
-                        None => CT::InCall.text(language).to_owned(),
-                    };
-                    (title, members_line(members, language))
-                }
-            };
             let text_x = rect.min.x + PAD;
             let title = text::middle_truncate(&painter, ty::ROW_TITLE, &title, text_width);
             let lines = if line.is_empty() { 1.0 } else { 2.0 };
@@ -591,6 +612,16 @@ pub(crate) fn call_strip(
                 );
             }
             let status = ui.interact(rect, Id::unique("call-strip-status"), Sense::hover());
+            if cut {
+                crate::ui::reveal::full_text(
+                    ctx,
+                    status.id,
+                    rect,
+                    &format!("{title}\n{line}"),
+                    crate::ui::input::hovered(ctx, &status),
+                    true,
+                );
+            }
             let label = format!("{title} {line}");
             status.widget_info(|| {
                 egui::WidgetInfo::labeled(egui::Role::Status, true, label.as_str())

@@ -89,6 +89,16 @@ fn failure_text(error: &UnlockError, language: Language) -> String {
     sentence.to_owned()
 }
 
+/// The sentence when the toolkit for a game could not be opened: a pinned release that is gone
+/// is chosen again under the game's Options, anything else is "try again" with the log.
+fn toolkit_failure_text(error: &toolkit::ToolkitError, language: Language) -> String {
+    use crate::screens::prepare_strings::{failure, pinned_toolkit_missing};
+    match error {
+        toolkit::ToolkitError::PinMissing(_) => pinned_toolkit_missing(language),
+        _ => failure(unlock::FailureKind::Other, language),
+    }
+}
+
 /// How often the idle gate looks at the machine.
 const GATE_PERIOD: Duration = Duration::from_secs(2);
 
@@ -341,15 +351,9 @@ impl CorePipeline {
                 // The technical reason goes to the log; the game page says what to do.
                 tracing::warn!("no toolkit for {}: {error}", game.id.as_str());
                 let language = *self.language.lock().expect("language lock");
-                let kind = match error {
-                    toolkit::ToolkitError::PinMissing(_) => unlock::FailureKind::ToolkitMissing,
-                    _ => unlock::FailureKind::Other,
-                };
                 self.push(PipelineEvent::UnlockFinished {
                     game: game.id.clone(),
-                    result: Err(
-                        crate::screens::prepare_strings::failure(kind, language).to_owned()
-                    ),
+                    result: Err(toolkit_failure_text(&error, language)),
                 });
                 return;
             }
@@ -664,5 +668,24 @@ impl Pipeline for CorePipeline {
             .as_ref()
             .filter(|t| compat::supports(Feature::Patches, t.version()))
             .map(|t| t.patches().to_path_buf())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_gone_pin_is_chosen_under_the_game_and_other_errors_point_to_the_log() {
+        let gone = toolkit::ToolkitError::PinMissing("v1.2".into());
+        for language in Language::ALL {
+            let text = toolkit_failure_text(&gone, language);
+            assert!(!text.contains("%@"), "{text}");
+            assert!(text.contains(language.text(Key::Options)), "{text}");
+            assert_ne!(
+                text,
+                crate::screens::prepare_strings::failure(unlock::FailureKind::Other, language)
+            );
+        }
     }
 }

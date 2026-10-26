@@ -785,10 +785,11 @@ impl<'a> PanelRow<'a> {
     pub fn show(mut self, ui: &mut Ui) -> RowOutput {
         let painter = ui.painter().clone();
         let ctx = ui.ctx().clone();
-        if matches!(
-            self.control,
-            RowControl::Caption | RowControl::Info { value: None }
-        ) {
+        // A note is a block of text; a note with a picture or a second line is a quiet row.
+        let plain = self.avatar.is_none() && self.detail.is_none();
+        if matches!(self.control, RowControl::Caption)
+            || (plain && matches!(self.control, RowControl::Info { value: None }))
+        {
             return self.show_text_block(ui);
         }
         if let RowControl::Qr { data } = self.control {
@@ -970,6 +971,24 @@ impl<'a> PanelRow<'a> {
             x += icon_block;
         }
         let top = rect.center().y - text_height * 0.5;
+        // A line that ends in an ellipsis shows its words in full while the pointer or the focus
+        // is on the row.
+        let cut = title_galley.elided || detail_galley.as_ref().is_some_and(|d| d.elided);
+        if cut {
+            let said = match self.detail {
+                Some(detail) => format!("{}\n{detail}", self.title),
+                None => self.title.to_owned(),
+            };
+            crate::ui::reveal::full_text(
+                &ctx,
+                out.response.id,
+                rect,
+                &said,
+                input::hovered(&ctx, &out.response)
+                    || (self.focused && focusable && input::focus_visible(&ctx)),
+                true,
+            );
+        }
         let title_color = if destructive {
             color::destructive_text()
         } else if warning {

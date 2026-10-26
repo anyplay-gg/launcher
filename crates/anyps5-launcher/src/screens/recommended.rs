@@ -7,7 +7,7 @@ use anyps5_core::settings::ConsoleLanguage;
 use egui::{Color32, Context};
 
 use crate::screens::rows::{self, Row};
-use crate::screens::side::{self, SideState, SideView};
+use crate::screens::side::{Frame, Leave, SideState};
 use crate::screens::strings::Extra;
 use crate::ui::Shell;
 use crate::ui::i18n::{Key, Language};
@@ -55,9 +55,9 @@ impl RecommendedPanel {
         self.side.is_active()
     }
 
-    fn handle(&mut self, change: &rows::Change, actions: &mut Vec<RecommendedAction>) {
+    fn handle(side: &mut SideState, change: &rows::Change, actions: &mut Vec<RecommendedAction>) {
         if let rows::Change::Run { row } = change {
-            self.side.close();
+            side.close();
             actions.push(if *row == "apply" {
                 RecommendedAction::Apply
             } else {
@@ -74,46 +74,25 @@ impl RecommendedPanel {
         data: &RecommendedData<'_>,
     ) -> Vec<RecommendedAction> {
         let mut actions = Vec::new();
-        if !self.side.is_active() {
-            return actions;
-        }
-        if self.side.is_open() {
-            let rows = build_rows(data.plan, data.language);
-            let driven = rows::drive(shell, &mut self.side.nav, &rows, &side::commands(events));
-            for change in &driven.changes {
-                self.handle(change, &mut actions);
-            }
-            if driven.close {
-                self.side.close();
-                actions.push(RecommendedAction::Close);
-            }
-        }
-        let mut rows = build_rows(data.plan, data.language);
-        let view = SideView {
+        let frame = Frame {
             title: data.title,
             subtitle: Some(Extra::RecTitle.text(data.language)),
-            question: false,
             list_id: "recommended-rows",
-            nav: &self.side.nav,
             accent: data.accent,
             language: data.language,
-            force: None,
         };
-        match side::draw(ctx, self.side.is_open(), &view, &mut rows) {
-            Some(drawn) if self.side.is_open() => {
-                let (changes, _) =
-                    rows::apply_mouse(shell, &mut self.side.nav, &rows, drawn.events);
-                for change in &changes {
-                    self.handle(change, &mut actions);
-                }
-                if drawn.back_clicked {
-                    self.side.close();
-                    actions.push(RecommendedAction::Close);
-                }
-            }
-            Some(_) => {}
-            None => self.side.finished(),
-        }
+        self.side.show_rows(
+            shell,
+            ctx,
+            events,
+            &mut { data },
+            &frame,
+            Leave::Slide,
+            |data| build_rows(data.plan, data.language),
+            |side, _, _, change, actions| Self::handle(side, change, actions),
+            RecommendedAction::Close,
+            &mut actions,
+        );
         actions
     }
 }

@@ -279,6 +279,8 @@ pub enum Composer {
     Blocked { who: String },
     /// A message request: the player answers it.
     Request,
+    /// Offline: writing and answering need the cloud; the bar says so and offers Try Again.
+    Offline,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -435,7 +437,8 @@ pub fn thread(data: &OnlineData<'_>, local: &Local, id: &str, shown: usize) -> O
         }
     }
     let typers = social.typers(id, u64::try_from(now).unwrap_or(0), me);
-    if let Some(first) = typers.first() {
+    // Offline nobody is typing for the player: the dots would be stale.
+    if let Some(first) = typers.first().filter(|_| online.is_online()) {
         let line = super::social::typing_text(&typers, language);
         let crowd = conversation.kind != ConversationKind::Direct;
         items.push(Item::Typing(crowd.then(|| face(data, local, first)), line));
@@ -464,6 +467,9 @@ pub fn composer(data: &OnlineData<'_>, id: &str) -> Option<Composer> {
     let conversation = social.get(id)?;
     let language = data.language;
     let me = online.account.as_ref().map_or(AccountId(0), |a| a.id);
+    if !online.is_online() {
+        return Some(Composer::Offline);
+    }
     if conversation.request {
         return Some(Composer::Request);
     }
@@ -764,6 +770,12 @@ pub enum Mouse {
     Submit,
 }
 
+/// The widest button a bar in the composer's place holds.
+const BAR_BUTTON: f32 = 160.0;
+
+/// The memory key under which the thread says whether the player is typing in the field.
+const TYPING: &str = "thread-typing";
+
 /// What the panel keeps of the chat screens between frames.
 #[derive(Clone, Debug, Default)]
 pub struct ChatState {
@@ -782,6 +794,38 @@ impl OnlinePanel {
     pub fn set_chat_focus(&mut self, conversation: &str, index: usize) {
         self.chat.opened = Some(conversation.to_owned());
         self.chat.focus = ThreadFocus::Message(index);
+    }
+
+    /// What Enter does on the thread's focus, for the hint bar: the field writes (a draft that
+    /// can go out is sent with the next press), Send sends. `None`: "Select".
+    pub(super) fn chat_enter_hint(
+        &self,
+        ctx: &egui::Context,
+        data: &OnlineData<'_>,
+    ) -> Option<&'static str> {
+        let (super::Page::Conversation(id) | super::Page::MessageRequest(id)) = &self.page else {
+            return None;
+        };
+        let language = data.language;
+        // A bar in the field's place (offline, paused, blocked) has no field to edit or send from.
+        if !matches!(composer(data, id), Some(Composer::Write { .. })) {
+            return None;
+        }
+        match self.chat.focus {
+            ThreadFocus::Composer(Slot::Send) => Some(S::Send.text(language)),
+            ThreadFocus::Composer(Slot::Field) => {
+                let typing = ctx
+                    .data(|d| d.get_temp::<bool>(egui::Id::NULL.with(TYPING)))
+                    .unwrap_or(false);
+                let ready = anyps5_core::online::api::is_message_text(data.online.social.draft(id));
+                Some(if typing && ready {
+                    S::Send.text(language)
+                } else {
+                    S::Edit.text(language)
+                })
+            }
+            _ => None,
+        }
     }
 
     /// The list of conversations shows: the page is Messages and there is a conversation.
@@ -972,6 +1016,7 @@ impl OnlinePanel {
                 Composer::Paused { .. } => {
                     self.run("pausedSend", data, actions);
                 }
+                Composer::Offline => actions.push(A::Reconnect),
                 Composer::Blocked { .. } => {
                     let me = super::OnlinePanel::me(data);
                     if let Some(other) = data
@@ -1387,6 +1432,7 @@ fn entry_row(
     let tag_room = tag.as_ref().map_or(0.0, |t| t.size().x + 3.0 * space::S);
     let title_room = (x - text_x - space::S - tag_room).max(40.0);
     let title = one_line(&painter, title_style, &entry.title, title_room);
+    let mut cut = title.elided;
     let title_w = title.size().x;
     painter.galley(
         pos2(text_x, first_y - title.size().y * 0.5),
@@ -1433,12 +1479,9 @@ fn entry_row(
     } else {
         color::text_detail()
     };
-    let preview = one_line(
-        &painter,
-        preview_style,
-        &entry_preview(entry, language),
-        preview_room,
-    );
+    let said = entry_preview(entry, language);
+    let preview = one_line(&painter, preview_style, &said, preview_room);
+    cut |= preview.elided;
     painter.galley(
         pos2(text_x, second_y - preview.size().y * 0.5),
         preview,
@@ -1462,6 +1505,18 @@ fn entry_row(
             ty::BADGE,
             &count,
             color::on_primary(),
+        );
+    }
+    // A name or a line cut to the row's width is read in full while the pointer or the focus is
+    // on it.
+    if cut {
+        crate::ui::reveal::full_text(
+            &ctx,
+            response.id,
+            rect,
+            &format!("{}\n{said}", entry.title),
+            hovered || (focused && input::focus_visible(&ctx)),
+            true,
         );
     }
     rect
@@ -2125,6 +2180,7 @@ fn composer_view(
             if type_now {
                 response.request_focus();
             }
+            ctx.data_mut(|d| d.insert_temp(egui::Id::NULL.with(TYPING), response.has_focus()));
             if response.changed() {
                 events.push(Mouse::Typed(text.clone()));
             }
@@ -2172,45 +2228,24 @@ fn composer_view(
             }
         }
         Composer::Blocked { who } => {
-            let rect = inner;
-            let focused = focus == Some(ThreadFocus::Bar);
-            let label = T::Unblock.text(language);
-            paint_capsule(&painter, rect, color::surface());
-            let button_h = ControlSize::Small.height();
-            let slot = Rect::from_min_size(
-                pos2(
-                    rect.max.x - space::S - 160.0,
-                    rect.center().y - button_h * 0.5,
-                ),
-                vec2(160.0, button_h),
-            );
-            let mut child = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(slot)
-                    .layout(egui::Layout::right_to_left(Align::Center)),
-            );
-            let response = ConsoleButton::new(label)
-                .size(ControlSize::Small)
-                .focused(focused)
-                .show(&mut child);
-            crate::ui::a11y::follow(&ctx, response.id, focused);
-            if response.clicked() {
-                events.push(Mouse::Press(ThreadFocus::Bar));
-            }
             let note = S::BlockedNote.format(language, &[Arg::Str(who)]);
-            let line = one_line(
-                &painter,
-                ty::LABEL,
+            button_bar(
+                ui,
+                inner,
+                T::Unblock.text(language),
                 &note,
-                rect.width() - response.rect.width() - 3.0 * space::XL,
+                focus == Some(ThreadFocus::Bar),
+                events,
             );
-            painter.galley(
-                pos2(
-                    rect.min.x + space::XL,
-                    rect.center().y - line.size().y * 0.5,
-                ),
-                line,
-                color::text_detail(),
+        }
+        Composer::Offline => {
+            button_bar(
+                ui,
+                inner,
+                crate::screens::friends_strings::FriendsText::TryAgain.text(language),
+                crate::screens::friends_strings::FriendsText::ComposerOffline.text(language),
+                focus == Some(ThreadFocus::Bar),
+                events,
             );
         }
         Composer::Request => {
@@ -2327,6 +2362,63 @@ fn icon_button(
         } else {
             color::text_inactive()
         },
+    );
+}
+
+/// A bar in the composer's place: a line that says why there is no field, and the one button that
+/// leads on. The press is the bar's own (`ThreadFocus::Bar`).
+fn button_bar(
+    ui: &mut Ui,
+    rect: Rect,
+    label: &str,
+    note: &str,
+    focused: bool,
+    events: &mut Vec<Mouse>,
+) {
+    let ctx = ui.ctx().clone();
+    let painter = ui.painter().clone();
+    paint_capsule(&painter, rect, color::surface());
+    let button_h = ControlSize::Small.height();
+    let slot = Rect::from_min_size(
+        pos2(
+            rect.max.x - space::S - BAR_BUTTON,
+            rect.center().y - button_h * 0.5,
+        ),
+        vec2(BAR_BUTTON, button_h),
+    );
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(slot)
+            .layout(egui::Layout::right_to_left(Align::Center)),
+    );
+    let response = ConsoleButton::new(label)
+        .size(ControlSize::Small)
+        .focused(focused)
+        .show(&mut child);
+    crate::ui::a11y::follow(&ctx, response.id, focused);
+    if response.clicked() {
+        events.push(Mouse::Press(ThreadFocus::Bar));
+    }
+    // The reason is painted, so say it to a screen reader too.
+    ui.interact(
+        rect,
+        ui.make_persistent_id(("bar-note", note)),
+        Sense::hover(),
+    )
+    .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, note));
+    let line = one_line(
+        &painter,
+        ty::LABEL,
+        note,
+        rect.width() - response.rect.width() - 3.0 * space::XL,
+    );
+    painter.galley(
+        pos2(
+            rect.min.x + space::XL,
+            rect.center().y - line.size().y * 0.5,
+        ),
+        line,
+        color::text_detail(),
     );
 }
 
@@ -2961,6 +3053,42 @@ mod tests {
         assert_eq!(go(F::Note, Command::Up), F::Message(1));
         assert_eq!(go(F::Message(1), Command::Down), F::Note);
         assert_eq!(go(F::Note, Command::Down), F::Composer(Slot::Field));
+    }
+
+    #[test]
+    fn offline_the_composer_is_a_bar_and_enter_says_what_it_does_on_the_field() {
+        let mut online = online();
+        put(
+            &mut online,
+            vec![chat("d", ConversationKind::Direct, &[(2, "Lumen")], 1)],
+            vec![],
+        );
+        assert!(matches!(
+            composer(&data(&online), "d"),
+            Some(Composer::Write { .. })
+        ));
+        let ctx = egui::Context::default();
+        let mut panel = OnlinePanel {
+            page: super::super::Page::Conversation("d".into()),
+            ..OnlinePanel::default()
+        };
+        panel.chat.focus = ThreadFocus::Composer(Slot::Field);
+        // A field that is not written in is edited, one with a message in it sends.
+        assert_eq!(panel.chat_enter_hint(&ctx, &data(&online)), Some("Edit"));
+        online.social.set_draft("d", "On my way".into());
+        assert_eq!(panel.chat_enter_hint(&ctx, &data(&online)), Some("Edit"));
+        ctx.data_mut(|d| d.insert_temp(egui::Id::NULL.with(TYPING), true));
+        assert_eq!(panel.chat_enter_hint(&ctx, &data(&online)), Some("Send"));
+        panel.chat.focus = ThreadFocus::Composer(Slot::Send);
+        assert_eq!(panel.chat_enter_hint(&ctx, &data(&online)), Some("Send"));
+        panel.chat.focus = ThreadFocus::Message(0);
+        assert_eq!(panel.chat_enter_hint(&ctx, &data(&online)), None);
+        // Offline there is no field to write in.
+        online.cloud = Some(Cloud::Offline);
+        assert_eq!(composer(&data(&online), "d"), Some(Composer::Offline));
+        // The field is gone, so is its hint, even with the focus still on it.
+        panel.chat.focus = ThreadFocus::Composer(Slot::Field);
+        assert_eq!(panel.chat_enter_hint(&ctx, &data(&online)), None);
     }
 
     #[test]

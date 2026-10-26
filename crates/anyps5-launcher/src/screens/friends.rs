@@ -14,7 +14,7 @@ mod paint;
 use anyps5_core::online::api::AccountId;
 use egui::{Align, Context, Layout, Rect, UiBuilder, pos2, vec2};
 
-use crate::screens::footer_hints;
+use crate::screens::footer_hints_enter;
 use crate::screens::friends_strings::FriendsText as FX;
 use crate::screens::online::{
     OnlineAction, OnlineData, OnlinePanel, Page, Section, monogram_colour, status_line,
@@ -222,6 +222,12 @@ impl FriendsScreen {
         // The rail has the focus: the page takes the other events (a captured key) but no
         // command, and draws without a focused row.
         let page_focus = self.focus().zone == Zone::Page;
+        // What Enter does where the focus stands: the rail selects, the page may edit or send.
+        let enter = if page_focus && open {
+            self.panel.enter_hint(ctx, data)
+        } else {
+            None
+        };
         actions.extend(self.panel.update(shell, ctx, &pass, data));
 
         let language = data.language;
@@ -242,7 +248,7 @@ impl FriendsScreen {
                 // bar leaves "Back" out.
                 // A question is a card over this page: it brings its own hints and answers Back.
                 if !asks {
-                    footer_hints(ui, screen, language, HintSet::BASIC.without_back());
+                    footer_hints_enter(ui, screen, language, HintSet::BASIC.without_back(), enter);
                     let mut back = ui.new_child(
                         UiBuilder::new()
                             .max_rect(Rect::from_min_size(area.min, vec2(200.0, 32.0)))

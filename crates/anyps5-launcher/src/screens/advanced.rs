@@ -9,14 +9,13 @@ use anyps5_core::settings::{GameSettings, SharedSettings};
 use egui::{Color32, Context};
 
 use crate::screens::format;
-use crate::screens::rows::{self, Change, Row};
-use crate::screens::side::{self, Output, SideState, SideView};
+use crate::screens::rows::{Change, Row};
+use crate::screens::side::{Frame, Leave, Output, SideState};
 use crate::screens::{ToastRequest, dialogs};
 use crate::ui::Shell;
 use crate::ui::i18n::{Arg, Key, Language};
 use crate::ui::icons::Icon;
 use crate::ui::input::InputEvent;
-use crate::ui::sound::Cue;
 
 /// What the host has to do after a frame.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -365,77 +364,56 @@ impl AdvancedPanel {
         data: &mut AdvancedData<'_>,
     ) -> Output<AdvancedAction> {
         let mut out = Output::default();
-        if !self.side.is_active() {
-            return out;
-        }
-        if self.side.is_open() {
-            let rows = build_rows(data.settings, data.language);
-            let driven = rows::drive(shell, &mut self.side.nav, &rows, &side::commands(events));
-            for change in &driven.changes {
-                self.apply(shell, data, change, &mut out);
-            }
-            if driven.close {
-                // Back and options return to the game settings: no slide.
-                self.side.dismiss();
-                out.actions.push(AdvancedAction::Back);
-                return out;
-            }
-        }
-        let mut rows = build_rows(data.settings, data.language);
-        let view = SideView {
-            title: &data.game.name,
+        let game = data.game;
+        let frame = Frame {
+            title: &game.name,
             subtitle: Some(data.language.text(Key::AdvancedTitle)),
-            question: false,
             list_id: "advanced-rows",
-            nav: &self.side.nav,
             accent: data.accent,
             language: data.language,
-            force: None,
         };
-        match side::draw(ctx, self.side.is_open(), &view, &mut rows) {
-            Some(drawn) if self.side.is_open() => {
-                let (changes, _) =
-                    rows::apply_mouse(shell, &mut self.side.nav, &rows, drawn.events);
-                for change in &changes {
-                    self.apply(shell, data, change, &mut out);
-                }
-                if drawn.back_clicked {
-                    // The Back button is the Back key: one step up, to the game settings.
-                    shell.play(Cue::Close);
-                    self.side.dismiss();
-                    out.actions.push(AdvancedAction::Back);
-                }
-            }
-            Some(_) => {}
-            None => self.side.finished(),
-        }
+        let mut changed = false;
+        // Back and options return to the game settings, one step up: no slide.
+        self.side.show_rows(
+            shell,
+            ctx,
+            events,
+            data,
+            &frame,
+            Leave::Dismiss,
+            |data| build_rows(data.settings, data.language),
+            |_, shell, data, change, actions| {
+                changed |= Self::apply(shell, data, change, actions);
+            },
+            AdvancedAction::Back,
+            &mut out.actions,
+        );
+        out.changed = changed;
         out
     }
 
     fn apply(
-        &mut self,
         shell: &mut Shell,
         data: &mut AdvancedData<'_>,
         change: &Change,
-        out: &mut Output<AdvancedAction>,
-    ) {
-        if apply_change(data.settings, change) {
-            out.changed = true;
-        }
+        actions: &mut Vec<AdvancedAction>,
+    ) -> bool {
+        let mut changed = apply_change(data.settings, change);
         match change {
             Change::Run { row: "export" } => {
                 if let Some(toast) = export_flow(shell, data) {
-                    out.actions.push(AdvancedAction::Toast(toast));
+                    actions.push(AdvancedAction::Toast(toast));
                 }
             }
             Change::Run { row: "import" } => {
-                if let Some((toast, changed)) = import_flow(shell, data) {
-                    out.changed |= changed;
-                    out.actions.push(AdvancedAction::Toast(toast));
+                if let Some((toast, imported)) = import_flow(shell, data) {
+                    changed |= imported;
+                    actions.push(AdvancedAction::Toast(toast));
                 }
             }
             _ => {}
         }
+        changed
     }
 }
 
@@ -484,6 +462,7 @@ fn import_flow(shell: &mut Shell, data: &mut AdvancedData<'_>) -> Option<(ToastR
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::screens::rows;
     use anyps5_core::paths::GameId;
 
     fn game(title_id: &str, name: &str) -> Game {

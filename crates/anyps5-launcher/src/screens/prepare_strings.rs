@@ -4,7 +4,10 @@
 
 use anyps5_core::unlock::FailureKind;
 
-use crate::ui::i18n::{Arg, Language, substitute};
+use crate::screens::share_strings::Share;
+use crate::screens::strings::Extra;
+use crate::screens::toolkit_pin::Pin;
+use crate::ui::i18n::{Arg, Key, Language, substitute};
 
 /// The label under a tile that is being prepared: `percent` is known once the work has started.
 /// "Preparing…", "Preparing… 40%", "Paused · 40%".
@@ -86,17 +89,22 @@ pub fn time_left(seconds: f32, language: Language) -> String {
     }
 }
 
-/// The sentence of a failed unlock: what stopped it and the next step, in one line.
-pub fn failure(kind: FailureKind, language: Language) -> &'static str {
-    match (language, kind) {
+/// The sentence of a failed unlock: what stopped it and the next step. The places it names are
+/// written from the labels the player will find there, so the words cannot drift.
+pub fn failure(kind: FailureKind, language: Language) -> String {
+    let t = |key: Key| language.text(key);
+    let (settings, options) = (t(Key::Settings), t(Key::Options));
+    let (toolkit, library) = (Extra::Toolkit.text(language), t(Key::Storage));
+    let (log, report) = (t(Key::OpenLog), Share::Report.text(language));
+    let template = match (language, kind) {
         (Language::English, FailureKind::ToolkitMissing) => {
-            "No toolkit is installed. Install it under Settings > Toolkit, then unlock again."
+            "No toolkit is installed. Install it under %@ > %@, then unlock again."
         }
         (Language::English, FailureKind::DiskFull) => {
             "The drive for your unlocked games is full. Free some space on it, then try again."
         }
         (Language::English, FailureKind::LocationMissing) => {
-            "The folder for unlocked games is not there. Connect its drive, or pick another folder in Settings > Library."
+            "The folder for unlocked games is not there. Connect its drive, or pick another folder in %@ > %@."
         }
         (Language::English, FailureKind::FileInUse) => {
             "Another program holds a file of the game. Close it or pause its scan of the games folder, then try again."
@@ -105,33 +113,56 @@ pub fn failure(kind: FailureKind, language: Language) -> &'static str {
             "This dump cannot be used. Dump the game again from your console and replace the folder."
         }
         (Language::English, FailureKind::Converter) => {
-            "The converter stopped. Try again. If it stops again, Options > Log shows why, and Report a Problem sends it to us."
+            "The converter stopped. Try again. If it stops again, %@ > %@ shows why, and %@ sends it to us."
         }
         (Language::English, FailureKind::Other) => {
-            "Try again. If it stops again, Options > Log shows why, and Report a Problem sends it to us."
+            "Try again. If it stops again, %@ > %@ shows why, and %@ sends it to us."
         }
         (Language::Turkish, FailureKind::ToolkitMissing) => {
-            "Ara\u{e7} seti kurulu de\u{11f}il. Ayarlar > Ara\u{e7} seti b\u{f6}l\u{fc}m\u{fc}nden kur, sonra yeniden kilidi a\u{e7}."
+            "Araç seti kurulu değil. %@ > %@ bölümünden kur, sonra yeniden kilidi aç."
         }
         (Language::Turkish, FailureKind::DiskFull) => {
-            "Kilidi a\u{e7}\u{131}lan oyunlar\u{131}n s\u{fc}r\u{fc}c\u{fc}s\u{fc} dolu. Yer a\u{e7}, sonra yeniden dene."
+            "Kilidi açılan oyunların sürücüsü dolu. Yer aç, sonra yeniden dene."
         }
         (Language::Turkish, FailureKind::LocationMissing) => {
-            "Kilidi a\u{e7}\u{131}lan oyunlar\u{131}n klas\u{f6}r\u{fc} bulunamad\u{131}. S\u{fc}r\u{fc}c\u{fc}y\u{fc} tak ya da Ayarlar > K\u{fc}t\u{fc}phane b\u{f6}l\u{fc}m\u{fc}nden ba\u{15f}ka bir klas\u{f6}r se\u{e7}."
+            "Kilidi açılan oyunların klasörü bulunamadı. Sürücüyü tak ya da %@ > %@ bölümünden başka bir klasör seç."
         }
         (Language::Turkish, FailureKind::FileInUse) => {
-            "Ba\u{15f}ka bir program oyunun bir dosyas\u{131}n\u{131} tutuyor. Onu kapat ya da oyun klas\u{f6}r\u{fc}n\u{fc} taramas\u{131}n\u{131} duraklat, sonra yeniden dene."
+            "Başka bir program oyunun bir dosyasını tutuyor. Onu kapat ya da oyun klasörünü taramasını duraklat, sonra yeniden dene."
         }
         (Language::Turkish, FailureKind::BadDump) => {
-            "Bu d\u{f6}k\u{fc}m kullan\u{131}lamaz. Oyunu konsolundan yeniden d\u{f6}k ve klas\u{f6}r\u{fc} de\u{11f}i\u{15f}tir."
+            "Bu döküm kullanılamaz. Oyunu konsolundan yeniden dök ve klasörü değiştir."
         }
         (Language::Turkish, FailureKind::Converter) => {
-            "D\u{f6}n\u{fc}\u{15f}t\u{fc}r\u{fc}c\u{fc} durdu. Yeniden dene. Yine durursa Se\u{e7}enekler > G\u{fc}nl\u{fc}k nedenini g\u{f6}sterir; Sorun bildir bunu bize g\u{f6}nderir."
+            "Dönüştürücü durdu. Yeniden dene. Yine durursa %@ > %@ nedenini gösterir; %@ bunu bize gönderir."
         }
         (Language::Turkish, FailureKind::Other) => {
-            "Yeniden dene. Yine durursa Se\u{e7}enekler > G\u{fc}nl\u{fc}k nedenini g\u{f6}sterir; Sorun bildir bunu bize g\u{f6}nderir."
+            "Yeniden dene. Yine durursa %@ > %@ nedenini gösterir; %@ bunu bize gönderir."
         }
-    }
+    };
+    let names: &[&str] = match kind {
+        FailureKind::ToolkitMissing => &[settings, toolkit],
+        FailureKind::LocationMissing => &[settings, library],
+        FailureKind::Converter | FailureKind::Other => &[options, log, report],
+        FailureKind::DiskFull | FailureKind::FileInUse | FailureKind::BadDump => &[],
+    };
+    let args: Vec<Arg<'_>> = names.iter().map(|n| Arg::Str(n)).collect();
+    substitute(template, &args)
+}
+
+/// The sentence when the toolkit a game stays on is gone: the choice is under that game's
+/// Options, not in Settings.
+pub fn pinned_toolkit_missing(language: Language) -> String {
+    let (options, row) = (language.text(Key::Options), Pin::Title.text(language));
+    let template = match language {
+        Language::English => {
+            "The toolkit this game stays on is gone. Pick another under %@ > %@, then unlock again."
+        }
+        Language::Turkish => {
+            "Bu oyunun kullandığı araç seti yok. %@ > %@ bölümünden başka birini seç, sonra yeniden kilidi aç."
+        }
+    };
+    substitute(template, &[Arg::Str(options), Arg::Str(row)])
 }
 
 /// The headline of a failed unlock (the sentence under it says what to do).
@@ -182,6 +213,54 @@ mod tests {
         FailureKind::Converter,
         FailureKind::Other,
     ];
+
+    /// The game page gives a failure 520 dp and three lines of the detail type.
+    #[test]
+    fn every_failure_fits_the_game_page_in_three_lines() {
+        let ctx = egui::Context::default();
+        crate::ui::theme::install(&ctx);
+        let mut texts = Vec::new();
+        for language in Language::ALL {
+            for kind in KINDS {
+                texts.push(failure(kind, language));
+            }
+            texts.push(pinned_toolkit_missing(language));
+        }
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let painter = ui.painter().clone();
+            for text in &texts {
+                let galley = crate::screens::wrapped(
+                    &painter,
+                    crate::ui::theme::ty::DETAIL_LARGE,
+                    text,
+                    egui::Color32::WHITE,
+                    520.0,
+                    3,
+                );
+                assert!(!galley.elided, "{text}");
+            }
+        });
+        output.textures_delta.clear();
+    }
+
+    #[test]
+    fn the_places_a_failure_names_carry_the_labels_the_player_finds() {
+        for language in Language::ALL {
+            let log = language.text(Key::OpenLog);
+            for kind in [FailureKind::Converter, FailureKind::Other] {
+                assert!(
+                    failure(kind, language).contains(log),
+                    "{kind:?} {language:?}"
+                );
+            }
+            let place = language.text(Key::Storage);
+            assert!(failure(FailureKind::LocationMissing, language).contains(place));
+            assert!(
+                failure(FailureKind::ToolkitMissing, language)
+                    .contains(Extra::Toolkit.text(language))
+            );
+        }
+    }
 
     #[test]
     fn every_failure_names_a_next_step_in_both_languages() {

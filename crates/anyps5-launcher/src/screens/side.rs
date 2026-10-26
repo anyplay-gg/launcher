@@ -8,14 +8,16 @@
 use egui::{Context, Ui, UiBuilder, pos2, vec2};
 
 use crate::screens::dialog::{self, Card};
-use crate::screens::rows::{self, ListEvent, ListOptions, Row};
+use crate::screens::rows::{self, Change, ListEvent, ListOptions, Row};
 use crate::screens::{BACK_ROW, back_button, footer_hints};
+use crate::ui::Shell;
 use crate::ui::chrome;
 use crate::ui::components::{Force, HintSet};
-use crate::ui::focus::PanelNav;
+use crate::ui::focus::{PanelNav, RowKind};
 use crate::ui::glass::GlassStyle;
 use crate::ui::i18n::Language;
 use crate::ui::input::{Command, InputEvent};
+use crate::ui::sound::Cue;
 use crate::ui::text;
 use crate::ui::theme::{color, pad, size, space, ty};
 
@@ -91,6 +93,115 @@ pub fn commands(events: &[InputEvent]) -> Vec<Command> {
             _ => None,
         })
         .collect()
+}
+
+/// How a panel leaves when the player steps back.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Leave {
+    /// With the exit of a full-screen area: the panel was the last one.
+    Slide,
+    /// Without an exit: another panel of the family takes the frame over.
+    Dismiss,
+}
+
+/// What a row-list panel says about itself; the rows come from a builder.
+pub struct Frame<'a> {
+    pub title: &'a str,
+    pub subtitle: Option<&'a str>,
+    pub list_id: &'static str,
+    pub accent: egui::Color32,
+    pub language: Language,
+}
+
+impl SideState {
+    /// One frame of a panel that is a list of rows, the routine every such panel shares: drive the
+    /// commands, draw the frame, apply the pointer, and turn Back (key or button) into `back`.
+    /// `build` makes the rows (twice a frame, as the focus may move between the two); `handle`
+    /// turns one change into the panel's own actions; both see `data`, the panel's own state
+    /// (a panel that only reads passes its borrowed data, one that edits passes `&mut`). Draws nothing once the panel is not active.
+    #[allow(clippy::too_many_arguments)]
+    pub fn show_rows<A: Clone, D>(
+        &mut self,
+        shell: &mut Shell,
+        ctx: &Context,
+        events: &[InputEvent],
+        data: &mut D,
+        frame: &Frame<'_>,
+        leave: Leave,
+        build: impl Fn(&D) -> Vec<Row>,
+        mut handle: impl FnMut(&mut SideState, &mut Shell, &mut D, &Change, &mut Vec<A>),
+        back: A,
+        actions: &mut Vec<A>,
+    ) {
+        if !self.is_active() {
+            return;
+        }
+        let step_back = |state: &mut SideState| match leave {
+            Leave::Slide => state.close(),
+            Leave::Dismiss => state.dismiss(),
+        };
+        if self.is_open() {
+            let rows = build(data);
+            // A caption is no stop: a panel that opens on one starts on the first row after it.
+            self.nav.row = settle(&rows::kinds(&rows), self.nav.row);
+            // One command at a time: a change names the row that was focused when it ran.
+            for command in commands(events) {
+                let driven = rows::drive(shell, &mut self.nav, &rows, &[command]);
+                for change in &driven.changes {
+                    handle(self, shell, data, change, actions);
+                }
+                if driven.close {
+                    step_back(self);
+                    actions.push(back.clone());
+                    break;
+                }
+            }
+            if !self.is_active() {
+                return;
+            }
+        }
+        let mut rows = build(data);
+        let view = SideView {
+            title: frame.title,
+            subtitle: frame.subtitle,
+            question: false,
+            list_id: frame.list_id,
+            nav: &self.nav,
+            accent: frame.accent,
+            language: frame.language,
+            force: None,
+        };
+        match draw(ctx, self.is_open(), &view, &mut rows) {
+            Some(drawn) if self.is_open() => {
+                let (changes, _) = rows::apply_mouse(shell, &mut self.nav, &rows, drawn.events);
+                for change in &changes {
+                    handle(self, shell, data, change, actions);
+                }
+                if drawn.back_clicked {
+                    shell.play(Cue::Close);
+                    step_back(self);
+                    actions.push(back);
+                }
+            }
+            Some(_) => {}
+            None => self.finished(),
+        }
+    }
+}
+
+/// The row a panel stands on when it opens on `row`: a caption is no stop, so it is the first row
+/// after it that can be focused (the caption itself when nothing follows).
+fn settle(kinds: &[RowKind], row: usize) -> usize {
+    match kinds.get(row..) {
+        Some(tail) if tail.first().is_some_and(|k| !k.focusable()) => {
+            if tail.iter().any(|k| k.focusable()) {
+                row + PanelNav::first_focusable(tail)
+            } else {
+                row
+            }
+        }
+        _ => row,
+    }
 }
 
 /// What a panel frame produced: actions for the host and whether the settings it edits changed
@@ -244,6 +355,19 @@ fn panel<R>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_panel_opening_on_a_caption_starts_on_the_first_row_after_it() {
+        use RowKind::{Action, Info};
+        // caption, row, row, caption, row, caption
+        let kinds = [Info, Action, Action, Info, Action, Info];
+        assert_eq!(settle(&kinds, 0), 1, "the first focusable row");
+        assert_eq!(settle(&kinds, 2), 2, "a row stays");
+        assert_eq!(settle(&kinds, 3), 4, "the next group's first row");
+        assert_eq!(settle(&kinds, 5), 5, "a trailing caption stays put");
+        assert_eq!(settle(&kinds, 9), 9, "past the end stays");
+        assert_eq!(settle(&[], 0), 0);
+    }
 
     #[test]
     fn open_close_and_switch() {

@@ -8,7 +8,7 @@ use egui::Context;
 use crate::screens::captures_strings::CapturesText;
 use crate::screens::dialog;
 use crate::screens::rows::{self, Change, Row};
-use crate::screens::side::{self, SideState, SideView};
+use crate::screens::side::{self, Frame, Leave, SideState, SideView};
 use crate::ui::Shell;
 use crate::ui::i18n::{Arg, Key, Language, substitute};
 use crate::ui::icons::Icon;
@@ -37,7 +37,7 @@ impl InGameText {
         match self {
             InGameText::Setting => "Home Button Opens the Launcher",
             InGameText::SettingDetail => {
-                "While a game runs, the Home button on your controller or phone brings the launcher in front of it. Press it again to go back to the game."
+                "While a game runs, the Home button brings the launcher in front. Press it again to return."
             }
             InGameText::Running => "The game keeps running behind the launcher.",
             InGameText::BackToGame => "Back to Game",
@@ -55,7 +55,7 @@ impl InGameText {
         match self {
             InGameText::Setting => "Ana Düğme Başlatıcıyı Açar",
             InGameText::SettingDetail => {
-                "Bir oyun açıkken denetleyicideki ya da telefondaki Ana Sayfa düğmesi başlatıcıyı oyunun önüne getirir. Oyuna dönmek için tekrar bas."
+                "Oyun açıkken Ana Sayfa düğmesi başlatıcıyı öne getirir. Dönmek için tekrar bas."
             }
             InGameText::Running => "Oyun, başlatıcının arkasında çalışmaya devam ediyor.",
             InGameText::BackToGame => "Oyuna Dön",
@@ -167,7 +167,7 @@ impl InGamePanel {
         self.side.is_active()
     }
 
-    fn handle(&mut self, change: &Change, actions: &mut Vec<InGameAction>) {
+    fn handle(side: &mut SideState, change: &Change, actions: &mut Vec<InGameAction>) {
         let Change::Run { row } = change else {
             return;
         };
@@ -182,7 +182,7 @@ impl InGamePanel {
         // The pages and the question take the frame over without a slide; only the way back to
         // the game slides out.
         if action == InGameAction::Resume {
-            self.side.close();
+            side.close();
         }
         actions.push(action);
     }
@@ -195,47 +195,25 @@ impl InGamePanel {
         data: &InGameData<'_>,
     ) -> Vec<InGameAction> {
         let mut actions = Vec::new();
-        if !self.side.is_active() {
-            return actions;
-        }
-        if self.side.is_open() {
-            let rows = rows_of(data);
-            let driven = rows::drive(shell, &mut self.side.nav, &rows, &side::commands(events));
-            for change in &driven.changes {
-                self.handle(change, &mut actions);
-            }
-            if driven.close {
-                self.side.close();
-                actions.push(InGameAction::Dismiss);
-            }
-        }
-        let mut rows = rows_of(data);
-        let running = InGameText::Running.text(data.language);
-        let view = SideView {
+        let frame = Frame {
             title: data.title,
-            subtitle: Some(running),
-            question: false,
+            subtitle: Some(InGameText::Running.text(data.language)),
             list_id: "in-game-rows",
-            nav: &self.side.nav,
             accent: data.accent,
             language: data.language,
-            force: None,
         };
-        match side::draw(ctx, self.side.is_open(), &view, &mut rows) {
-            Some(drawn) if self.side.is_open() => {
-                let (changes, _) =
-                    rows::apply_mouse(shell, &mut self.side.nav, &rows, drawn.events);
-                for change in &changes {
-                    self.handle(change, &mut actions);
-                }
-                if drawn.back_clicked {
-                    self.side.close();
-                    actions.push(InGameAction::Dismiss);
-                }
-            }
-            Some(_) => {}
-            None => self.side.finished(),
-        }
+        self.side.show_rows(
+            shell,
+            ctx,
+            events,
+            &mut { data },
+            &frame,
+            Leave::Slide,
+            |data| rows_of(data),
+            |side, _, _, change, actions| Self::handle(side, change, actions),
+            InGameAction::Dismiss,
+            &mut actions,
+        );
         actions
     }
 }
