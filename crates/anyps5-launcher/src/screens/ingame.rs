@@ -6,6 +6,7 @@ use egui::Color32;
 use egui::Context;
 
 use crate::screens::captures_strings::CapturesText;
+use crate::screens::dialog;
 use crate::screens::rows::{self, Change, Row};
 use crate::screens::side::{self, Frame, Leave, SideState, SideView};
 use crate::ui::Shell;
@@ -268,7 +269,7 @@ impl CloseGamePanel {
         };
         if self.side.is_open() {
             let rows = build();
-            let driven = rows::drive(shell, &mut self.side.nav, &rows, &side::commands(events));
+            let driven = dialog::drive(shell, &mut self.side.nav, &rows, &side::commands(events));
             for change in &driven.changes {
                 self.handle(change, &mut actions);
             }

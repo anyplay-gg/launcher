@@ -337,7 +337,8 @@ impl OnlinePanel {
                         Row::command("removeMember", t(S::RemoveFromParty))
                             .icon(Icon::USER_MINUS)
                             .detail(S::RemoveDetail.format(language, &[Arg::Str(&handle)]))
-                            .destructive(),
+                            .destructive()
+                            .group_start(),
                     );
                 }
                 let presence = online.friend(*id).map(|f| presence_text(f, language));
@@ -353,6 +354,7 @@ impl OnlinePanel {
                             friend.account.handle.clone(),
                             self.picked.contains(&friend.account.id),
                         )
+                        .avatar(self.avatar_of(data, &friend.account, Some(&friend.presence)))
                         .detail(presence_text(friend, language)),
                     );
                 }

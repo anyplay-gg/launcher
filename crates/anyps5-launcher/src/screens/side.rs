@@ -2,11 +2,12 @@
 //! recommended settings, the toolkit pin, the Home-button panel and the confirmations are panels on
 //! one frame. The frame is a full-screen area like Friends and Captures: the Back row on top, a
 //! content column under it, the enter and exit of every full-screen area. Switching from one panel
-//! to another keeps the area on screen and only swaps the content. A confirmation is the same area
-//! without the Back row, its question centred higher up, so the choice stands alone.
+//! to another keeps the area on screen and only swaps the content. A confirmation is not a panel
+//! of the frame: it is the centred card of `screens::dialog` over the dimmed page.
 
 use egui::{Context, Ui, UiBuilder, pos2, vec2};
 
+use crate::screens::dialog::{self, Card};
 use crate::screens::rows::{self, Change, ListEvent, ListOptions, Row};
 use crate::screens::{BACK_ROW, back_button, footer_hints};
 use crate::ui::Shell;
@@ -25,10 +26,7 @@ const SIDE_ID: &str = "game-side-panel";
 
 /// The content column: as wide as a row list reads well, centred in the area.
 const COLUMN: f32 = 720.0;
-/// Where a confirmation's question starts, as a share of the screen height.
-const QUESTION_TOP: f32 = 0.28;
-/// The leading of a confirmation's question, and of a quiet subtitle.
-const QUESTION_LEADING: f32 = 1.45;
+/// The leading of a quiet subtitle.
 const SUBTITLE_LEADING: f32 = 1.2;
 
 /// Open and closing state plus the focus model of one side panel.
@@ -217,7 +215,8 @@ impl<A> Default for Output<A> {
 pub struct SideView<'a> {
     pub title: &'a str,
     pub subtitle: Option<&'a str>,
-    /// The subtitle is the question of a confirmation: set in body size and ink, not as a quiet line.
+    /// The view is a confirmation: drawn as the card of `screens::dialog` (title, the subtitle as
+    /// its sentence, the command rows as its buttons), not as a panel.
     pub question: bool,
     pub list_id: &'static str,
     pub nav: &'a PanelNav,
@@ -247,21 +246,29 @@ pub fn draw_with_header(
     rows: &mut [Row],
     header: impl FnOnce(&mut Ui),
 ) -> Option<SideDrawn> {
+    if view.question {
+        let card = Card {
+            id: view.list_id,
+            title: view.title,
+            message: view.subtitle,
+            language: view.language,
+            focus: view.nav.row,
+            force: view.force,
+        };
+        return dialog::draw(ctx, open, &card, rows).map(|events| SideDrawn {
+            back_clicked: false,
+            events,
+        });
+    }
     let opts = ListOptions {
         accent: view.accent,
         language: view.language,
         focus: Some(view.nav.row),
         force: view.force,
     };
-    panel(
-        ctx,
-        open,
-        view.title,
-        view.subtitle,
-        view.question,
-        view.language,
-        |ui| rows::list_with_header(ui, view.list_id, rows, &opts, header),
-    )
+    panel(ctx, open, view.title, view.subtitle, view.language, |ui| {
+        rows::list_with_header(ui, view.list_id, rows, &opts, header)
+    })
     .map(|(back_clicked, events)| SideDrawn {
         back_clicked,
         events,
@@ -276,7 +283,6 @@ fn panel<R>(
     open: bool,
     title: &str,
     subtitle: Option<&str>,
-    question: bool,
     language: crate::ui::i18n::Language,
     contents: impl FnOnce(&mut Ui) -> R,
 ) -> Option<(bool, R)> {
@@ -284,17 +290,11 @@ fn panel<R>(
         let screen = ui.max_rect();
         let area = screen.shrink2(vec2(pad::TROPHIES.0, pad::TROPHIES.1));
         let painter = ui.painter().clone();
-        let mut back = false;
         // The hint bar is the footer's, as everywhere (DESIGN.md 3.12); "Back" is left out where a
         // Back button is on screen.
-        let top = if question {
-            footer_hints(ui, screen, language, HintSet::BASIC);
-            (screen.min.y + screen.height() * QUESTION_TOP).max(area.min.y)
-        } else {
-            footer_hints(ui, screen, language, HintSet::BASIC.without_back());
-            back = back_button(ui, area, language);
-            area.min.y + BACK_ROW
-        };
+        footer_hints(ui, screen, language, HintSet::BASIC.without_back());
+        let back = back_button(ui, area, language);
+        let top = area.min.y + BACK_ROW;
         let width = COLUMN.min(area.width());
         let x = area.center().x - width * 0.5;
         // Title and subtitle start on the text of the rows below them (the icon's edge).
@@ -313,14 +313,8 @@ fn panel<R>(
         painter.galley(pos2(edge, y), title_galley, color::text());
         y += title_h + space::S;
         if let Some(subtitle) = subtitle {
-            // Wraps (the confirmation sentence is long, and longer in Turkish). A
-            // confirmation's question is what the player decides on: body size and ink, with
-            // room between the lines. Any other subtitle is a quiet line.
-            let (style, ink, leading) = if question {
-                (ty::QUESTION, color::text_label(), QUESTION_LEADING)
-            } else {
-                (ty::SENTENCE, color::text_detail(), SUBTITLE_LEADING)
-            };
+            // Wraps, and is a quiet line.
+            let (style, ink, leading) = (ty::SENTENCE, color::text_detail(), SUBTITLE_LEADING);
             let galley = text::layout_font_pretty(
                 &painter,
                 style.font(),

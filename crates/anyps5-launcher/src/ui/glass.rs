@@ -3,7 +3,7 @@
 //! [`paint_glass`] draws one panel; [`GlassStyle`] has a preset for every use in the original
 //! (info cards, toast, log boxes, full-screen panels, side panel, splash).
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use bytemuck::{Pod, Zeroable};
 use eframe::egui_wgpu::{self, wgpu};
@@ -338,6 +338,21 @@ pub(crate) fn begin_frame() {
 /// Whether a glass panel was painted since [`begin_frame`].
 pub(crate) fn panels_painted() -> bool {
     PANELS.load(Ordering::Relaxed) > 0
+}
+
+/// Mac style: the window is see-through this frame (docs/DESIGN.md 19.2).
+static WINDOW_GLASS: AtomicBool = AtomicBool::new(false);
+/// How much of the game artwork is drawn while the window is see-through: the rest is the window.
+pub const WINDOW_GLASS_ARTWORK: f32 = 0.40;
+
+/// Whether the window is see-through this frame.
+pub(crate) fn window_glass() -> bool {
+    WINDOW_GLASS.load(Ordering::Relaxed)
+}
+
+/// Set by the backdrop at the start of a frame.
+pub(crate) fn set_window_glass(on: bool) {
+    WINDOW_GLASS.store(on, Ordering::Relaxed);
 }
 
 /// Next free position in this pass's uniform ring.

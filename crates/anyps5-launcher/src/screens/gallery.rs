@@ -11,7 +11,7 @@
 //!                           recommended|recommended-warning|whats-new|whats-new-loading|
 //!                           update-required|update-required-downloading|update-required-failed|
 //!                           update-required-download|update-required-offline|
-//!                           saves|saves-empty|restore|
+//!                           saves|saves-empty|restore|toolkit-missing|
 //!                           online|online-browser|online-friends|online-friends-busy|
 //!                           online-friends-empty|online-requests|online-friend|
 //!                           online-account|online-account-appearing|online-picker|
@@ -148,6 +148,8 @@ pub enum ScreenPage {
     SavesEmpty,
     /// The question before one is put back.
     Restore,
+    /// The question when the release a game stays on is gone.
+    ToolkitMissing,
     /// The online area on one of its pages, over invented friends.
     Online(OnlineLook),
     /// The Phone as Controller page in one of its states.
@@ -777,6 +779,7 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "saves" => ScreenPage::Saves,
         "saves-empty" => ScreenPage::SavesEmpty,
         "restore" => ScreenPage::Restore,
+        "toolkit-missing" => ScreenPage::ToolkitMissing,
         "friends-signin" => ScreenPage::Online(OnlineLook::Start),
         "friends-browser" => ScreenPage::Online(OnlineLook::Browser),
         "friends" => ScreenPage::Online(OnlineLook::Friends),
@@ -1904,6 +1907,7 @@ pub struct ScreenGallery {
     uninstall: UninstallPanel,
     saves: SavesPanel,
     restore: RestorePanel,
+    missing: crate::screens::toolkit_pin::MissingPanel,
     friends: crate::screens::friends::FriendsScreen,
     online: anyps5_core::online::Online,
     profile: crate::screens::profile::ProfileScreen,
@@ -2020,6 +2024,7 @@ impl ScreenGallery {
             uninstall: UninstallPanel::default(),
             saves: SavesPanel::default(),
             restore: RestorePanel::default(),
+            missing: crate::screens::toolkit_pin::MissingPanel::default(),
             friends: crate::screens::friends::FriendsScreen::default(),
             profile: crate::screens::profile::ProfileScreen::default(),
             compare: crate::screens::compare::CompareScreen::default(),
@@ -2458,6 +2463,18 @@ impl ScreenGallery {
             self.game_panel.show(shell, &ctx, &events, &mut data);
         }
         self.uninstall.show(shell, &ctx, &events, language, accent);
+        self.missing.show(
+            shell,
+            &ctx,
+            &events,
+            &crate::screens::toolkit_pin::MissingData {
+                title: name,
+                tag: "0.1.2",
+                downloading: false,
+                language,
+                accent,
+            },
+        );
         {
             let backups = if self.page == ScreenPage::SavesEmpty {
                 Vec::new()
@@ -2650,6 +2667,7 @@ impl ScreenGallery {
             ScreenPage::Confirm => self.uninstall.open(),
             ScreenPage::Saves | ScreenPage::SavesEmpty => self.saves.open(),
             ScreenPage::Restore => self.restore.open(),
+            ScreenPage::ToolkitMissing => self.missing.open(),
             ScreenPage::Online(look) => {
                 use crate::screens::online::{Ask, Page};
                 let language = shell.language;

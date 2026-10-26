@@ -1,0 +1,153 @@
+name: macos-style
+
+# Renders the Mac style (docs/DESIGN.md 19) on the Metal runners: the launcher's own frame, and a
+# screenshot of the screen with the window on it, which is the only way to see the system blur.
+# Run it by hand, or it runs on pull requests that touch the Mac style.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "crates/anyps5-launcher/src/macstyle.rs"
+      - "crates/anyps5-launcher/src/ui/background.rs"
+      - "crates/anyps5-launcher/src/ui/glass.rs"
+      - "crates/anyps5-launcher/src/ui/artwork.rs"
+      - "crates/anyps5-launcher/src/ui/contrast.rs"
+      - "crates/anyps5-launcher/src/app/mod.rs"
+      - "crates/anyps5-launcher/src/screens/settings.rs"
+      - "crates/anyps5-launcher/Cargo.toml"
+      - ".github/workflows/macos-style.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+defaults:
+  run:
+    working-directory: launcher
+
+jobs:
+  shots:
+    name: shots (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS 26 has Liquid Glass; macOS 15 takes the older blur.
+        os: [macos-26, macos-15]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: launcher
+      - id: network-pin
+        name: Read the pinned network revision
+        shell: bash
+        run: |
+          ref=$(tr -d '[:space:]' < "$GITHUB_WORKSPACE/launcher/network.ref")
+          [[ $ref =~ ^[0-9a-f]{40}$ ]] || { echo "network.ref must hold one full commit SHA" >&2; exit 1; }
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          repository: anyplaynet/network
+          ref: ${{ steps.network-pin.outputs.ref }}
+          path: network
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: launcher
+          key: style-${{ matrix.os }}
+      - name: Release build
+        run: cargo build --release
+      - name: System
+        run: |
+          sw_vers
+          system_profiler SPDisplaysDataType | head -20
+          defaults read com.apple.universalaccess reduceTransparency 2>&1 || true
+      # The runner images ask for reduced transparency, which (rightly) turns the glass off. Turn it
+      # back on for the captures, and say what the system answers afterwards.
+      - name: Transparency
+        run: |
+          defaults write com.apple.universalaccess reduceTransparency -bool false || true
+          killall cfprefsd 2>/dev/null || true
+          sleep 2
+          defaults read com.apple.universalaccess reduceTransparency 2>&1 || true
+      # The launcher's own frame: transparent where the window is see-through.
+      - name: Frames
+        run: |
+          mkdir -p shots
+          for mode in glass solid; do
+            flag="--glass-anyway"; [ "$mode" = solid ] && flag="--solid"
+            for scene in home settings controls; do
+              target/release/anyplay-launcher --gallery="$scene" $flag --frames=90 \
+                --screenshot="shots/$scene-$mode-frame.png"
+            done
+          done
+      # A bright wallpaper to see the glass against: white and saturated bars, the worst case for
+      # white text on a dark material. Setting it may be refused; the captures are then taken over
+      # whatever the desktop shows.
+      - name: Wallpaper
+        run: |
+          python3 - <<'PY'
+          w, h = 1600, 1000
+          bars = [(255, 80, 60), (255, 220, 60), (60, 200, 90), (60, 140, 255), (200, 90, 255)]
+          rows = []
+          for y in range(h):
+              left = bytes((255, 255, 255)) * (w // 2)
+              right = bytes(bars[(y * 5) // h]) * (w // 2)
+              rows.append(left + right)
+          open("/tmp/wall.ppm", "wb").write(b"P6 %d %d 255\n" % (w, h) + b"".join(rows))
+          PY
+          sips -s format png /tmp/wall.ppm --out /tmp/wall.png
+          osascript -e 'tell application "System Events" to tell every desktop to set picture to "/tmp/wall.png"' \
+            || osascript -e 'tell application "Finder" to set desktop picture to POSIX file "/tmp/wall.png"' \
+            || echo "wallpaper not set"
+          sleep 3
+      # The screen with the window on it. The launcher stays up (a long --frames) and is stopped
+      # after the capture; it is the only window this job starts.
+      - name: Screen
+        run: |
+          for mode in glass solid; do
+            flag="--glass-anyway"; [ "$mode" = solid ] && flag="--solid"
+            for scene in home home-noartwork settings; do
+              target/release/anyplay-launcher --gallery="$scene" $flag --frames=100000 --size=760x520 \
+                --screenshot="shots/unused.png" &
+              pid=$!
+              sleep 14
+              screencapture -x "shots/$scene-$mode-screen.png" || echo "screencapture failed"
+              kill "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+            done
+          done
+          ls -l shots
+      # The system's blur alone (no plate, no theme), and the backdrop alone, against the same
+      # wallpaper: what the glass is made of.
+      - name: Layers
+        run: |
+          for kind in blur backdrop; do
+            if [ "$kind" = blur ]; then export ANYPLAY_GLASS_PROBE=1; else unset ANYPLAY_GLASS_PROBE; fi
+            target/release/anyplay-launcher --gallery=bg0 --glass-anyway --frames=100000 --size=760x520               --screenshot="shots/unused.png" &
+            pid=$!
+            sleep 14
+            screencapture -x "shots/layer-$kind-screen.png" || echo "screencapture failed"
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          done
+      - name: Launcher log
+        if: always()
+        run: |
+          grep -h "mac style" "$HOME/Library/Application Support/AnyPlay Launcher/Logs/launcher.log" | tail -20
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mac-style-${{ matrix.os }}
+          path: launcher/shots/*.png
+          if-no-files-found: error

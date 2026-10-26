@@ -16,6 +16,9 @@ use crate::screens::rows::Row;
 use crate::ui::i18n::{Arg, Key};
 use crate::ui::icons::Icon;
 
+/// Cancel is the second button of the card, and where its focus opens.
+const CANCEL_ROW: usize = 1;
+
 /// What is being asked about.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Ask {
@@ -61,6 +64,8 @@ impl OnlinePanel {
         let from = self.page.clone();
         self.confirm_row = self.side.nav.row;
         self.go(Page::Confirm(ask, Box::new(from)), data);
+        // The safe answer holds the focus: Cancel, the last button.
+        self.side.open_at(CANCEL_ROW);
     }
 
     /// The page on screen is a confirmation.
@@ -155,14 +160,10 @@ impl OnlinePanel {
                 Icon::SIGN_OUT,
             ),
         };
-        // Cancel comes first: a page opens on its first row, so the safe answer holds the focus.
+        // The card shows the destructive answer first and Cancel last (SYSTEM.md 3); the focus
+        // opens on Cancel (`ask`).
+        rows.push(Row::command("confirmYes", label).icon(icon).destructive());
         rows.push(Row::command("confirmCancel", language.text(Key::Cancel)).icon(Icon::X));
-        rows.push(
-            Row::command("confirmYes", label)
-                .icon(icon)
-                .destructive()
-                .group_start(),
-        );
         (title, Some(note))
     }
 

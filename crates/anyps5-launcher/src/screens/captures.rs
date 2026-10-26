@@ -536,7 +536,8 @@ impl CapturesScreen {
             }
             Mode::Confirm { place, button } => match command {
                 Command::Left | Command::Right => {
-                    let next = if command == Command::Left { 0 } else { 1 };
+                    // Delete stands left, Cancel right (screens::dialog).
+                    let next = if command == Command::Left { 1 } else { 0 };
                     if next == button {
                         out.cues.push(Cue::Bump);
                     } else {
