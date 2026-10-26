@@ -1223,18 +1223,35 @@ impl Hint<'_> {
     }
 }
 
-fn hint_list(language: Language, options: bool) -> Vec<Hint<'static>> {
-    let mut hints = vec![
-        Hint {
-            action: HintAction::Select,
-            label: language.text(Key::HintSelect),
-        },
-        Hint {
+/// Which keys a screen has to name. A hint is shown only for a key that does something there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HintSet {
+    pub back: bool,
+    pub options: bool,
+}
+
+/// A bare `bool` is "with or without Options"; Back is shown, as on every panel.
+impl From<bool> for HintSet {
+    fn from(options: bool) -> Self {
+        Self {
+            back: true,
+            options,
+        }
+    }
+}
+
+fn hint_list(language: Language, set: HintSet) -> Vec<Hint<'static>> {
+    let mut hints = vec![Hint {
+        action: HintAction::Select,
+        label: language.text(Key::HintSelect),
+    }];
+    if set.back {
+        hints.push(Hint {
             action: HintAction::Back,
             label: language.text(Key::HintBack),
-        },
-    ];
-    if options {
+        });
+    }
+    if set.options {
         hints.push(Hint {
             action: HintAction::Options,
             label: language.text(Key::HintOptions),
@@ -1243,21 +1260,22 @@ fn hint_list(language: Language, options: bool) -> Vec<Hint<'static>> {
     hints
 }
 
-/// The hint bar: Select, Back and, optionally, Options, in the keys of the device in use.
+/// The hint bar: Select and, where they do something, Back and Options, in the keys of the device in use.
 /// Moving needs no hint.
-pub fn hint_bar(ui: &mut Ui, language: Language, options: bool) {
+pub fn hint_bar(ui: &mut Ui, language: Language, set: impl Into<HintSet>) {
+    let set = set.into();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = size::HINT_BAR_GAP;
-        for hint in hint_list(language, options) {
+        for hint in hint_list(language, set) {
             hint.show(ui);
         }
     });
 }
 
 /// Width and height of [`hint_bar`], for screens that align it to the right.
-pub fn hint_bar_size(painter: &Painter, language: Language, options: bool) -> (f32, f32) {
+pub fn hint_bar_size(painter: &Painter, language: Language, set: impl Into<HintSet>) -> (f32, f32) {
     let device = input::device(painter.ctx());
-    let hints = hint_list(language, options);
+    let hints = hint_list(language, set.into());
     let width = hints.iter().map(|h| h.width(painter, device)).sum::<f32>()
         + size::HINT_BAR_GAP * hints.len().saturating_sub(1) as f32;
     (width, size::HINT_CAP.max(ty::HINT_LABEL.line_height()))

@@ -1141,7 +1141,7 @@ Row sketch (S-home):
 
 **Hint bar** (right aligned, padding h 64 v 28, item gap 22): `← → ↑ ↓` "Move", `↩ / ✕` "Select", `esc / ○` "Back", `O / △` "Options"
 (keys in a keycap: 12 bold, padding 7 x 3, white 0.16 fill, radius 5; label 13 medium; all white 0.72; gap 8). Library, trophies and
-onboarding show it without "Options". The glyphs are the fixed text above (PlayStation face names), not adapted to the pad in use.
+onboarding show it without "Options". A hint names only a key that does something: on the home screen "Back" is shown only while the launcher is in front because of the Home button (Back returns to the game) or a Play Together card is up (Back closes it); otherwise the bar is "Select" and "Options". The glyphs are the fixed text above (PlayStation face names), not adapted to the pad in use.
 
 **Empty library** (no games): centred column, gap 18: icon 54 thin (magnifier while scanning, otherwise a stack-slash icon, white
 0.8), title (`scanning` or `emptyLibraryTitle`, 34 light), text `emptyLibraryText` (17, white 0.65), the games folder path if set
@@ -1199,7 +1199,7 @@ splash is up **all other input is swallowed** except back.
 Layout: full-window overlay (blurred backdrop + black 0.55); centred column, gap 26: tile 200 (radius 24, same placeholder rules),
 breathing glow (animation 26); game name (34 light, centred, 2 lines); a 380-wide block (gap 14): row `starting` (16 medium, white
 0.88) and the elapsed `m:ss` (16 semibold tabular, counting from 0:00, tick 1 s), the indeterminate sweep (accent), and
-`startingText` (14, white 0.6, centred, wraps). At the bottom, 40 above the edge, a hint `esc / ○` "Cancel". After the window shows,
+`startingText` (14, white 0.6, centred, wraps). At the bottom, 40 above the edge, a secondary 44 dp button "Cancel" (X glyph, 240 wide): the pointer's way to the same stop as Esc or the pad's back, which stay. After the window shows,
 the splash leaves (overlay spring), the launcher optionally hides ("Hide Launcher While Playing"). (S-starting.)
 
 ### 5.6 Toast
