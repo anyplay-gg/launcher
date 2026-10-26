@@ -492,6 +492,27 @@ mod tests {
     }
 
     #[test]
+    fn the_way_out_comes_before_the_long_part() {
+        // The hero line clips at two lines: whatever varies in length (a function name, an
+        // engine message, an exception) stands last, so the step is never what is cut.
+        let long = "x".repeat(60);
+        for language in Language::ALL {
+            for d in [
+                Diagnosis::Unsupported(long.clone()),
+                Diagnosis::EngineError(long.clone()),
+                Diagnosis::Crashed(long.clone()),
+            ] {
+                let s = diagnosis_summary(&d, language);
+                let at = s.find(&long).expect("the argument is in the sentence");
+                assert!(
+                    s[..at].contains("Options > Log") || s[..at].contains("Seçenekler > Günlük"),
+                    "{d:?} {language:?}: the step must come first: {s}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn every_sentence_names_a_way_out() {
         let all = [
             Diagnosis::MissingModule("a.dll".into()),
@@ -542,7 +563,7 @@ mod tests {
                 &Diagnosis::Crashed("0xC0000005 (ACCESS_VIOLATION)".into()),
                 Language::English
             ),
-            "The game crashed (0xC0000005 (ACCESS_VIOLATION)). Start it again. If it keeps crashing, send a report from Options > Log."
+            "The game crashed. Start the game again. If it keeps happening, send a report from Options > Log. (0xC0000005 (ACCESS_VIOLATION))"
         );
         assert_eq!(
             diagnosis_summary(&Diagnosis::HostCpu("AVX2".into()), Language::English),
@@ -557,7 +578,7 @@ mod tests {
         assert_eq!(
             sentence,
             format!(
-                "Engine error. Start the game again. If it repeats, send a report from Options > Log. {}…",
+                "Engine error. Start the game again. If it keeps happening, send a report from Options > Log. Details: {}…",
                 "x".repeat(200)
             )
         );

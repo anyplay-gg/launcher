@@ -57,7 +57,7 @@ impl Share {
             Share::ReportOpenedPaste => "Report copied. Paste it into the GitHub form.",
             Share::ReportOpened => "The form is open in your browser",
             Share::ReportOpenFailed => {
-                "Could not open the browser. The link was copied: paste it into your browser."
+                "Could not open the browser. The link was copied. Paste it into your browser."
             }
         }
     }
@@ -87,7 +87,7 @@ impl Share {
             Share::ReportOpenedPaste => "Rapor kopyalandı. GitHub formuna yapıştır.",
             Share::ReportOpened => "Form tarayıcında açıldı",
             Share::ReportOpenFailed => {
-                "Tarayıcı açılamadı. Bağlantı panoya kopyalandı: tarayıcına yapıştır."
+                "Tarayıcı açılamadı. Bağlantı panoya kopyalandı. Tarayıcına yapıştır."
             }
         }
     }
