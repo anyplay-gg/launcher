@@ -103,6 +103,7 @@ pub enum SocialText {
     KeyDelete,
     ChatOptions,
     QuickRepliesDetail,
+    OpenFriends,
     /// `%@` = who, `%@` = the start of the quoted message.
     ReplyTo,
     Quick1,
@@ -212,6 +213,7 @@ impl SocialText {
             SocialText::KeyDelete => "Delete",
             SocialText::ChatOptions => "Conversation Options",
             SocialText::QuickRepliesDetail => "Send a short answer without typing",
+            SocialText::OpenFriends => "Open Friends",
             SocialText::ReplyTo => "%@: %@",
             SocialText::Quick1 => "On my way",
             SocialText::Quick2 => "One moment",
@@ -314,6 +316,7 @@ impl SocialText {
             SocialText::KeyDelete => "Sil",
             SocialText::ChatOptions => "Sohbet Seçenekleri",
             SocialText::QuickRepliesDetail => "Yazmadan kısa bir yanıt gönder",
+            SocialText::OpenFriends => "Arkadaşları Aç",
             SocialText::ReplyTo => "%@: %@",
             SocialText::Quick1 => "Geliyorum",
             SocialText::Quick2 => "Bir dakika",

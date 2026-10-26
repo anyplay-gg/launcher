@@ -118,6 +118,11 @@ impl FriendsScreen {
         self.panel.set_feed_focus(item, slot);
     }
 
+    /// Puts the focus on a message of the open thread (previews).
+    pub fn set_chat_focus(&mut self, conversation: &str, index: usize) {
+        self.panel.set_chat_focus(conversation, index);
+    }
+
     /// Waits for the key of the talk-key row (previews).
     pub fn begin_capture(&mut self) {
         self.panel.begin_capture();

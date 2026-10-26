@@ -459,6 +459,9 @@ impl OnlinePanel {
                     );
                 } else if rows.is_empty() {
                     rows.push(Row::info("none", t(S::NoConversations), None));
+                    rows.push(
+                        Row::command("openFriends", t(S::OpenFriends)).icon(Icon::USER_CIRCLE),
+                    );
                 }
                 let unread = social.unread_total();
                 let subtitle = if unread > 0 {
@@ -568,11 +571,6 @@ impl OnlinePanel {
                 let conversation = social.get(id)?;
                 let message = social.messages(id).iter().find(|m| m.seq == *seq)?;
                 let mine = message.sender.id == me;
-                if message.deleted {
-                    rows.push(Row::info("body", t(S::Removed), None));
-                } else {
-                    rows.push(Row::info("body", plain(&message.text), None));
-                }
                 if let Some(quote) = &message.reply {
                     rows.push(Row::info(
                         "quote",
@@ -589,6 +587,11 @@ impl OnlinePanel {
                         ),
                         None,
                     ));
+                }
+                if message.deleted {
+                    rows.push(Row::info("body", t(S::Removed), None));
+                } else {
+                    rows.push(Row::info("body", plain(&message.text), None));
                 }
                 if !message.deleted {
                     if !conversation.request {
@@ -985,6 +988,7 @@ impl OnlinePanel {
                     self.go(Page::Conversation(id), data);
                 }
             }
+            ("openFriends", _) => self.go(Page::Home, data),
             ("retryList", _) => actions.push(OnlineAction::RetryMessages(None)),
             ("toggleMute", Page::ChatOptions(id)) => {
                 if let Some(c) = social.get(&id) {
@@ -1509,7 +1513,7 @@ mod tests {
         panel.go(Page::Messages, &data(&online));
         let (_, subtitle, rows) = panel.rows(&data(&online));
         assert_eq!(subtitle.as_deref(), Some("Talk to your friends"));
-        assert_eq!(ids(&rows), ["none"]);
+        assert_eq!(ids(&rows), ["none", "openFriends"]);
     }
 
     #[test]

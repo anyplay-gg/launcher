@@ -274,6 +274,8 @@ pub enum OnlineLook {
     Conversation,
     /// No conversation yet.
     MessagesEmpty,
+    /// A thread with a message in the middle of a run focused.
+    ConversationFocus,
     /// A group: names and pictures beside the bubbles, runs of messages, answers.
     ConversationGroup,
     /// A conversation of two lines.
@@ -591,6 +593,7 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "friends-message" => ScreenPage::Online(OnlineLook::Message),
         "friends-conversation" => ScreenPage::Online(OnlineLook::Conversation),
         "friends-messages-empty" => ScreenPage::Online(OnlineLook::MessagesEmpty),
+        "friends-conversation-focus" => ScreenPage::Online(OnlineLook::ConversationFocus),
         "friends-conversation-group" => ScreenPage::Online(OnlineLook::ConversationGroup),
         "friends-conversation-short" => ScreenPage::Online(OnlineLook::ConversationShort),
         "friends-message-own" => ScreenPage::Online(OnlineLook::MessageOwn),
@@ -2378,6 +2381,11 @@ impl ScreenGallery {
                     OnlineLook::ConversationGroup => self
                         .friends
                         .show_page(Page::Conversation("c-raid".into()), &data),
+                    OnlineLook::ConversationFocus => {
+                        self.friends
+                            .show_page(Page::Conversation("c-raid".into()), &data);
+                        self.friends.set_chat_focus("c-raid", 3);
+                    }
                     OnlineLook::ConversationShort => self
                         .friends
                         .show_page(Page::Conversation("c-juno".into()), &data),
