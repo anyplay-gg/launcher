@@ -1560,32 +1560,40 @@ pub fn fullscreen_panel<R>(
     result
 }
 
+/// Toast geometry: text rows of a routine toast and of one that stays (it shows the longest message
+/// the launcher writes), the glyph, the widest pill, what the top bar keeps free on each side of the
+/// centre (its buttons are 430 wide, plus 12 of air), the slide of the entrance, the Close button's
+/// inset (concentric with the pill) and the leading from three rows on.
+const TOAST_ROWS: usize = 3;
+const TOAST_STAYING_ROWS: usize = 8;
+const TOAST_GLYPH: f32 = 17.0;
+const TOAST_MAX_WIDTH: f32 = 760.0;
+const TOAST_BAR_RESERVE: f32 = 442.0;
+const TOAST_TRAVEL: f32 = 80.0;
+const TOAST_CLOSE_INSET: f32 = space::M;
+const TOAST_LONG_LEADING: f32 = 1.4;
+
 /// The toast: a glass pill at the top centre. `v` is the openness from `Motion::Overlay`; the
 /// caller keeps a routine toast up for 3.2 s. A toast that stays until dismissed (a failure) gets
 /// `close`, the word of its Close button and of the Back hint beside it; the result says the
-/// button was pressed. It never grows into the top bar's buttons and shows its whole message.
+/// button was pressed; `live` is false while the toast leaves, when the button does nothing.
+/// It never grows into the top bar's buttons and shows its whole message.
 pub fn toast(
     ctx: &Context,
     id: impl std::hash::Hash + std::fmt::Debug,
     icon: Icon,
     message: &str,
     close: Option<&str>,
+    live: bool,
     v: f32,
 ) -> bool {
-    /// Text rows of a routine toast before it is cut; a toast that stays shows up to
-    /// `STAYING_ROWS`, which fits the longest message the launcher writes.
-    const ROWS: usize = 3;
-    const STAYING_ROWS: usize = 8;
-    const GLYPH: f32 = 17.0;
+    const ROWS: usize = TOAST_ROWS;
+    const STAYING_ROWS: usize = TOAST_STAYING_ROWS;
+    const GLYPH: f32 = TOAST_GLYPH;
     const PAD_X: f32 = space::XL;
     const PAD_Y: f32 = space::M;
     const GAP: f32 = space::M;
-    const MAX_WIDTH: f32 = 760.0;
-    /// Each side of the centre the top bar keeps for its title and its buttons.
-    const BAR_RESERVE: f32 = 440.0;
-    const TRAVEL: f32 = 80.0;
-    /// The Close button sits CLOSE_INSET from the end.
-    const CLOSE_INSET: f32 = space::S;
+    const CLOSE_INSET: f32 = TOAST_CLOSE_INSET;
     if v <= 0.001 {
         return false;
     }
@@ -1614,22 +1622,36 @@ pub fn toast(
             } else {
                 PAD_X
             };
-            let max_width = (screen.width() - 2.0 * BAR_RESERVE).clamp(320.0, MAX_WIDTH);
+            let max_width =
+                (screen.width() - 2.0 * TOAST_BAR_RESERVE).clamp(320.0, TOAST_MAX_WIDTH);
             let max_text = max_width - PAD_X - GLYPH - GAP - tail;
             let galley = {
-                let mut job = LayoutJob::simple(
-                    message.to_owned(),
-                    ty::TOAST.font(),
-                    Color32::PLACEHOLDER,
-                    max_text,
-                );
-                job.wrap.max_rows = if close.is_some() { STAYING_ROWS } else { ROWS };
-                job.sections[0].format.line_height = Some(ty::TOAST.line_height());
-                painter.layout_job(job)
+                let layout = |line_height: f32| {
+                    let mut job = LayoutJob::simple(
+                        message.to_owned(),
+                        ty::TOAST.font(),
+                        Color32::PLACEHOLDER,
+                        max_text,
+                    );
+                    job.wrap.max_rows = if close.is_some() { STAYING_ROWS } else { ROWS };
+                    job.sections[0].format.line_height = Some(line_height);
+                    painter.layout_job(job)
+                };
+                let one_line = layout(ty::TOAST.line_height());
+                // Three rows or more read at the open leading of running text.
+                if one_line.rows.len() >= 3 {
+                    layout(ty::TOAST.size * TOAST_LONG_LEADING)
+                } else {
+                    one_line
+                }
             };
             let w = PAD_X + GLYPH + GAP + galley.size().x + tail;
             let h = (PAD_Y * 2.0 + galley.size().y).max(radius::TOAST * 2.0);
-            let travel = if ctx.reduced_motion() { 0.0 } else { TRAVEL };
+            let travel = if ctx.reduced_motion() {
+                0.0
+            } else {
+                TOAST_TRAVEL
+            };
             let top = size::TOAST_TOP - (1.0 - v) * travel;
             let rect = Rect::from_min_size(
                 pos2(screen.center().x - w * 0.5, screen.min.y + top),
@@ -1675,11 +1697,12 @@ pub fn toast(
                         .layout(Layout::top_down(Align::Center)),
                 );
                 child.set_opacity(a);
-                let name = format!("{word}: {message}");
-                pressed = ConsoleButton::icon_only(Icon::X, name)
-                    .size(ControlSize::Small)
-                    .show(&mut child)
-                    .clicked();
+                // The status node above carries the message; the button is named by its word.
+                pressed = live
+                    && ConsoleButton::icon_only(Icon::X, word)
+                        .size(ControlSize::Small)
+                        .show(&mut child)
+                        .clicked();
                 if let Some(hint) = hint {
                     let at = Rect::from_min_size(
                         pos2(

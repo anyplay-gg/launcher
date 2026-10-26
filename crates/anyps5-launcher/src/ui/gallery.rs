@@ -833,6 +833,7 @@ fn panels_page(ui: &mut Ui, shell: &Shell, art: &TextureHandle) {
         Icon::LOCK_OPEN,
         "Hollow Game · Ready to play",
         None,
+        true,
         1.0,
     );
 }

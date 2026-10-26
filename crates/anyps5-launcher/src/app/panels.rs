@@ -1848,7 +1848,7 @@ impl PanelHost {
                 }
                 ToolkitEvent::PinInstalled(Err(error)) => {
                     tracing::warn!("toolkit install for a game: {error}");
-                    model.toast(Extra::ToolkitFailed.text(language), Icon::WARNING);
+                    model.toast_failure(Extra::ToolkitFailed.text(language));
                 }
                 ToolkitEvent::Removed(Ok(tag)) => {
                     self.pin_installed = None;
@@ -1857,7 +1857,7 @@ impl PanelHost {
                 }
                 ToolkitEvent::Removed(Err(error)) => {
                     tracing::warn!("toolkit removal: {error}");
-                    model.toast(Pin::RemoveFailed.text(language), Icon::WARNING);
+                    model.toast_failure(Pin::RemoveFailed.text(language));
                 }
                 ToolkitEvent::Installed(Ok(version)) => {
                     self.pin_installed = None;
@@ -1896,7 +1896,7 @@ impl PanelHost {
                 }
                 ToolkitEvent::Installed(Err(error)) => {
                     tracing::warn!("toolkit install: {error}");
-                    model.toast(Extra::ToolkitFailed.text(language), Icon::WARNING);
+                    model.toast_failure(Extra::ToolkitFailed.text(language));
                 }
                 ToolkitEvent::Adopted(Err(error)) => {
                     tracing::warn!("toolkit folder: {error}");
@@ -2145,7 +2145,7 @@ fn open_upstream(ctx: &Context, model: &mut Model, prepared: &issue::Prepared) {
         Err(error) => {
             tracing::warn!("cannot open the browser: {error}");
             ctx.copy_text(prepared.url.clone());
-            model.toast(Share::ReportOpenFailed.text(language), Icon::WARNING);
+            model.toast_failure(Share::ReportOpenFailed.text(language));
         }
     }
 }

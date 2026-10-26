@@ -570,10 +570,22 @@ impl Model {
 
     /// The player put the toast away (its Close button, or Back while a failure is up): the Back cue.
     pub fn dismiss_toast(&mut self) {
+        if !self.toast_visible() {
+            return;
+        }
         let now = self.now;
         if let Some(toast) = self.toast.as_mut() {
             toast.until = toast.until.min(now);
             self.sound(Cue::Back);
+        }
+    }
+
+    /// A new start or unlock begins: a failure left from the last try goes without a sound, so Back
+    /// reaches the splash and not the stale toast.
+    fn end_staying_toast(&mut self) {
+        let now = self.now;
+        if let Some(toast) = self.toast.as_mut().filter(|t| t.stays()) {
+            toast.until = now;
         }
     }
 
@@ -1005,6 +1017,7 @@ impl Model {
         if self.prefs.games_folder.is_none() {
             return;
         }
+        self.end_staying_toast();
         if self.is_preparing(id) {
             self.promote(id);
             return;
@@ -1075,6 +1088,7 @@ impl Model {
             p.last_played.insert(id.as_str().to_owned(), stamp);
         });
         self.sound(Cue::Select);
+        self.end_staying_toast();
         self.starting = Some(id.clone());
         self.effects
             .push(Effect::Pipeline(PipelineCommand::Play(id.clone())));
@@ -2288,6 +2302,29 @@ mod tests {
         m.tick(13.3);
         assert!(!m.toast_visible());
         assert!(m.toast.is_some());
+    }
+
+    #[test]
+    fn a_new_start_clears_a_stale_failure_so_back_reaches_the_splash() {
+        let g = game("a", Some("v1"), ExecutableKind::Elf);
+        let id = g.id.clone();
+        let mut m = model_with(vec![g]);
+        m.toast_failure("Could not start");
+        m.play(&id);
+        assert!(!m.toast_visible());
+        assert!(m.starting.is_some());
+        m.handle(Command::Back);
+        assert!(m.starting.is_none(), "the first Back cancels the start");
+    }
+
+    #[test]
+    fn dismissing_a_toast_that_is_leaving_does_nothing() {
+        let mut m = model_with(vec![]);
+        m.toast_failure("Could not start");
+        m.dismiss_toast();
+        m.effects.clear();
+        m.dismiss_toast();
+        assert!(m.effects.is_empty(), "no second cue during the exit");
     }
 
     #[test]

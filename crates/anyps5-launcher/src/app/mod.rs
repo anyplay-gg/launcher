@@ -890,9 +890,17 @@ impl LauncherApp {
             let close = toast
                 .stays()
                 .then(|| self.model.language().text(Key::Close));
-            closed = chrome::toast(ctx, "launcher-toast", toast.icon, &toast.text, close, v);
+            closed = chrome::toast(
+                ctx,
+                "launcher-toast",
+                toast.icon,
+                &toast.text,
+                close,
+                visible,
+                v,
+            );
         }
-        if closed {
+        if closed && visible {
             self.model.dismiss_toast();
         }
         if visible
