@@ -1606,13 +1606,15 @@ impl OnlinePanel {
                 ));
             }
         }
-        let mut add = Row::command("addFriend", t(T::AddFriend)).icon(Icon::USER_PLUS);
-        add.group_start = !rows.is_empty();
-        rows.push(add);
         let friends = online.sorted_friends();
+        // Without friends the page says what it is for, then offers the one next step, as the
+        // empty message list does.
         if friends.is_empty() {
             rows.push(Row::info("noFriends", t(T::NoFriends), None).group_start());
         }
+        let mut add = Row::command("addFriend", t(T::AddFriend)).icon(Icon::USER_PLUS);
+        add.group_start = !rows.is_empty() && !friends.is_empty();
+        rows.push(add);
         let mut group = None;
         for friend in friends {
             let rank = friend_group(friend);

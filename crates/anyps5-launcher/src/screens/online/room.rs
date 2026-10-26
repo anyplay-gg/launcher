@@ -37,7 +37,7 @@ use crate::ui::icons::Icon;
 use crate::ui::input::{self, Command};
 use crate::ui::sound::Cue;
 use crate::ui::text;
-use crate::ui::theme::{TextStyle, Weight, black, color, fade, radius, size, ty, white};
+use crate::ui::theme::{TextStyle, black, color, fade, radius, size, space, ty};
 
 /// Members per row of the grid when the page has the room for it.
 const COLUMNS: usize = 5;
@@ -51,12 +51,12 @@ const TILE_GAP: f32 = size::CONTROL_GAP;
 const AVATAR: f32 = 88.0;
 const CARD_HEIGHT: f32 = 76.0;
 /// The air between two groups of the page: at least twice the gap inside one.
-const GROUP_GAP: f32 = 28.0;
+const GROUP_GAP: f32 = space::XL;
 
 const NAME: TextStyle = ty::ROW_TITLE;
 const STATE: TextStyle = ty::DETAIL_LARGE;
 const GAME: TextStyle = ty::DETAIL;
-const CHIP: TextStyle = TextStyle::new(12.0, Weight::SemiBold);
+const CHIP: TextStyle = ty::MICRO;
 
 /// Something on the page the focus can stand on and the player can press.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -896,9 +896,6 @@ fn draw(
 
                 if !room.voice.is_empty() {
                     let top = ui.cursor().min.y;
-                    if room.in_party {
-                        caption(ui, V::Voice.text(language));
-                    }
                     let pressed = button_row(
                         ui,
                         &room.voice,
@@ -938,28 +935,8 @@ fn draw(
     view
 }
 
-/// A small caption over a group of buttons.
-fn caption(ui: &mut Ui, label: &str) {
-    let painter = ui.painter().clone();
-    let galley = text::layout(
-        &painter,
-        ty::SECTION_CAPTION,
-        label,
-        color::text_overline(),
-        f32::INFINITY,
-    );
-    let (rect, response) =
-        ui.allocate_exact_size(vec2(ui.available_width(), galley.size().y), Sense::hover());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Heading, true, label));
-    painter.galley(
-        rect.min + vec2(size::ROW_PADDING_X, 0.0),
-        galley,
-        color::text_overline(),
-    );
-    ui.add_space(size::CONTROL_GAP);
-}
-
-/// A row of buttons, 12 dp apart, wrapping at the width of the page. Returns the one pressed.
+/// A row of buttons, 12 dp apart, wrapping at the width of the page. The ones that end something
+/// (Leave Party) stand alone at the far end, apart from the everyday ones. Returns the one pressed.
 fn button_row(
     ui: &mut Ui,
     buttons: &[Button],
@@ -967,21 +944,43 @@ fn button_row(
     focus: Option<RoomFocus>,
 ) -> Option<usize> {
     let mut pressed = None;
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = vec2(size::CONTROL_GAP, size::CONTROL_GAP);
-        for (col, button) in buttons.iter().enumerate() {
-            let response = ConsoleButton::new(&button.label)
-                .icon(button.icon)
-                .size(ControlSize::Medium)
-                .prominent(primary == Some(button.stop))
-                .destructive(button.destructive)
-                .focused(focus.is_some_and(|f| f.col == col))
-                .show(ui);
-            if response.clicked() {
-                pressed = Some(col);
-            }
+    let mut one = |ui: &mut Ui, col: usize, button: &Button| {
+        let response = ConsoleButton::new(&button.label)
+            .icon(button.icon)
+            .size(ControlSize::Medium)
+            .prominent(primary == Some(button.stop))
+            .destructive(button.destructive)
+            .focused(focus.is_some_and(|f| f.col == col))
+            .show(ui);
+        if response.clicked() {
+            pressed = Some(col);
         }
-    });
+    };
+    if buttons.iter().any(|b| b.destructive) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing = vec2(size::CONTROL_GAP, size::CONTROL_GAP);
+            for (col, button) in buttons.iter().enumerate().filter(|(_, b)| !b.destructive) {
+                one(ui, col, button);
+            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                for (col, button) in buttons
+                    .iter()
+                    .enumerate()
+                    .rev()
+                    .filter(|(_, b)| b.destructive)
+                {
+                    one(ui, col, button);
+                }
+            });
+        });
+    } else {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(size::CONTROL_GAP, size::CONTROL_GAP);
+            for (col, button) in buttons.iter().enumerate() {
+                one(ui, col, button);
+            }
+        });
+    }
     pressed
 }
 
@@ -1063,27 +1062,27 @@ fn tile(
     if let Some(mark) = tile.mark {
         let at = centre + vec2(AVATAR * 0.35, AVATAR * 0.35);
         painter.circle_filled(at, 15.0, black(0.72));
-        painter.circle_stroke(at, 15.0, egui::Stroke::new(1.0, white(0.22)));
+        painter.circle_stroke(at, 15.0, egui::Stroke::new(1.0, color::hairline_control()));
         painter.text(
             at,
             Align2::CENTER_CENTER,
             mark.icon().glyph(),
             mark.icon().font(16.0, false),
-            egui::Color32::WHITE,
+            color::text(),
         );
     }
     if tile.leader {
         let label = S::Leader.text(data.language);
-        let galley = text::layout(&painter, CHIP, label, egui::Color32::WHITE, f32::INFINITY);
+        let galley = text::layout(&painter, CHIP, label, color::text(), f32::INFINITY);
         let chip = Rect::from_min_size(
             rect.min + vec2(12.0, 12.0),
             vec2(galley.size().x + 16.0, 20.0),
         );
-        paint_capsule(&painter, chip, white(0.14));
+        paint_capsule(&painter, chip, color::surface_hover());
         painter.galley(
             pos2(chip.min.x + 8.0, chip.center().y - galley.size().y * 0.5),
             galley,
-            egui::Color32::WHITE,
+            color::text(),
         );
     }
 
@@ -1101,11 +1100,11 @@ fn tile(
     painter.galley(
         pos2(rect.center().x - name.size().x * 0.5, y),
         name,
-        egui::Color32::WHITE,
+        color::text(),
     );
     y += name_height + 2.0;
     let state_ink = if tile.speaking {
-        egui::Color32::WHITE
+        color::text()
     } else {
         color::text_row_detail()
     };
@@ -1147,15 +1146,19 @@ fn seat_tile(ui: &mut Ui, width: f32, focused: bool, language: Language) -> bool
         return response.clicked();
     }
     surface(ui, rect, &response, focused, egui::Color32::TRANSPARENT);
-    components::paint_hairline(&painter, rect, radius::CARD, white(0.14));
+    components::paint_hairline(&painter, rect, radius::CARD, color::hairline_control());
     let centre = pos2(rect.center().x, rect.min.y + AVATAR_TOP + AVATAR * 0.5);
-    painter.circle_stroke(centre, AVATAR * 0.5, egui::Stroke::new(1.5, white(0.30)));
+    painter.circle_stroke(
+        centre,
+        AVATAR * 0.5,
+        egui::Stroke::new(1.5, color::hairline_hover()),
+    );
     painter.text(
         centre,
         Align2::CENTER_CENTER,
         Icon::PLUS.glyph(),
         Icon::PLUS.font(28.0, false),
-        white(0.80),
+        color::text_detail(),
     );
     let name = clamped(
         &painter,
@@ -1180,7 +1183,7 @@ fn seat_tile(ui: &mut Ui, width: f32, focused: bool, language: Language) -> bool
 fn empty_state(ui: &mut Ui, room: &Room, focused: bool, language: Language) -> bool {
     let painter = ui.painter().clone();
     let width = ui.available_width();
-    ui.add_space(24.0);
+    ui.add_space(space::XL);
     let disc = 96.0;
     let (rect, response) = ui.allocate_exact_size(vec2(width, disc), Sense::hover());
     response.widget_info(|| {
@@ -1188,15 +1191,19 @@ fn empty_state(ui: &mut Ui, room: &Room, focused: bool, language: Language) -> b
     });
     let centre = rect.center();
     painter.circle_filled(centre, disc * 0.5, color::surface_row());
-    painter.circle_stroke(centre, disc * 0.5, egui::Stroke::new(1.0, white(0.14)));
+    painter.circle_stroke(
+        centre,
+        disc * 0.5,
+        egui::Stroke::new(1.0, color::hairline_control()),
+    );
     painter.text(
         centre,
         Align2::CENTER_CENTER,
         Icon::USERS.glyph(),
         Icon::USERS.font(36.0, false),
-        white(0.75),
+        color::text_detail(),
     );
-    ui.add_space(20.0);
+    ui.add_space(space::L);
     let wrap = (width - 48.0).min(360.0);
     let mut job = egui::text::LayoutJob::simple(
         room.empty_note.clone(),
@@ -1213,7 +1220,7 @@ fn empty_state(ui: &mut Ui, room: &Room, focused: bool, language: Language) -> b
         galley,
         color::text_detail(),
     );
-    ui.add_space(24.0);
+    ui.add_space(space::XL);
     ui.allocate_ui_with_layout(
         vec2(width, size::CONTROL_L),
         Layout::top_down(Align::Center),
@@ -1250,13 +1257,13 @@ fn show_card(ui: &mut Ui, card: &Card, focused: bool, primary: bool, width: f32)
         pos2(rect.min.x + 20.0 + 20.0, rect.center().y),
         vec2(40.0, 40.0),
     );
-    painter.circle_filled(disc.center(), 20.0, white(0.10));
+    painter.circle_filled(disc.center(), 20.0, color::surface());
     painter.text(
         disc.center(),
         Align2::CENTER_CENTER,
         card.icon.glyph(),
         card.icon.font(20.0, false),
-        egui::Color32::WHITE,
+        color::text(),
     );
     let mut pressed = false;
     let mut button_left = rect.max.x - 16.0;
@@ -1298,7 +1305,7 @@ fn show_card(ui: &mut Ui, card: &Card, focused: bool, primary: bool, width: f32)
     let block = title.size().y + 2.0 + detail.size().y;
     let top = rect.center().y - block * 0.5;
     let title_height = title.size().y;
-    painter.galley(pos2(x, top), title, egui::Color32::WHITE);
+    painter.galley(pos2(x, top), title, color::text());
     painter.galley(
         pos2(x, top + title_height + 2.0),
         detail,

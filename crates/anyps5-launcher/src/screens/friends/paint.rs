@@ -14,7 +14,7 @@ use crate::ui::chrome::{RowAvatar, paint_row_avatar};
 use crate::ui::components::{self, corner, paint_capsule};
 use crate::ui::icons::Icon;
 use crate::ui::text;
-use crate::ui::theme::{self, TextStyle, Weight, color, fade, radius, size, ty, white};
+use crate::ui::theme::{TextStyle, color, fade, radius, size, ty};
 
 /// The width of the rail (dp).
 pub const RAIL_WIDTH: f32 = 248.0;
@@ -29,12 +29,12 @@ const ACTION_GAP: f32 = 16.0;
 const AVATAR: f32 = 64.0;
 const AVATAR_GAP: f32 = 20.0;
 
-const HANDLE: TextStyle = theme::ty::SCREEN_TITLE;
-const PAGE_TITLE: TextStyle = theme::ty::SIDE_PANEL_TITLE;
+const HANDLE: TextStyle = ty::TITLE;
+const PAGE_TITLE: TextStyle = ty::PANEL_TITLE;
 /// The leading of a confirmation's question: three lines and more need 1.4 and over.
 const QUESTION_LEADING: f32 = 1.45;
-const PAGE_NOTE: TextStyle = TextStyle::new(15.0, Weight::Regular);
-const BADGE: TextStyle = TextStyle::new(13.0, Weight::SemiBold);
+const PAGE_NOTE: TextStyle = ty::SENTENCE;
+const BADGE: TextStyle = ty::BADGE;
 
 /// Who is signed in, for the header.
 pub struct Header<'a> {
@@ -76,7 +76,7 @@ pub fn header(ui: &mut Ui, at: egui::Pos2, width: f32, header: &Header<'_>) {
     let block = name.size().y + 4.0 + status.size().y;
     let top = avatar.center().y - block * 0.5;
     let name_h = name.size().y;
-    painter.galley(pos2(x, top), name, Color32::WHITE);
+    painter.galley(pos2(x, top), name, color::text());
     let dot = if header.connected { 18.0 } else { 0.0 };
     let line_y = top + name_h + 4.0;
     if header.connected {
@@ -132,7 +132,7 @@ pub fn rail(ui: &mut Ui, at: egui::Pos2, entries: &[Entry], focus: Option<usize>
         let t = ctx.focus_t((response.id, "focus"), focused);
         let hover_t = ctx.animate_to((response.id, "hover"), f32::from(hovered), Motion::Hover);
         let rest = if entry.current {
-            white(0.10)
+            color::surface()
         } else {
             Color32::TRANSPARENT
         };
@@ -150,12 +150,12 @@ pub fn rail(ui: &mut Ui, at: egui::Pos2, entries: &[Entry], focus: Option<usize>
             // The section on screen has a mark that is not a colour.
             let bar =
                 Rect::from_center_size(pos2(rect.min.x + 6.0, rect.center().y), vec2(3.0, 22.0));
-            painter.rect_filled(bar, corner(1.5), Color32::WHITE);
+            painter.rect_filled(bar, corner(1.5), color::text());
         }
         let ink = if entry.current || focused {
-            Color32::WHITE
+            color::text()
         } else {
-            white(0.80)
+            color::text_detail()
         };
         painter.text(
             pos2(
@@ -204,7 +204,7 @@ fn paint_badge(painter: &Painter, row: Rect, count: u32) {
         pos2(row.max.x - 14.0 - width * 0.5, row.center().y),
         vec2(width, 22.0),
     );
-    paint_capsule(painter, rect, white(0.92));
+    paint_capsule(painter, rect, color::text());
     text::paint_tabular_aligned(
         painter,
         rect,
@@ -235,7 +235,7 @@ pub fn page_title(
         Sense::hover(),
     )
     .widget_info(|| WidgetInfo::labeled(Role::Heading, true, title.text()));
-    painter.galley(at, title, Color32::WHITE);
+    painter.galley(at, title, color::text());
     if let Some(note) = note {
         height += 6.0;
         let note = if question {
