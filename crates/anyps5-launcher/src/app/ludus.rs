@@ -21,7 +21,7 @@ use anyps5_core::remote::{
     PadTarget, PairingRequest, VirtualPadStatus, vpad,
 };
 
-use crate::app::ludus_web::{self, BrowserBridge, BrowserConfig, BrowserState};
+use crate::app::ludus_web::{self, BrowserBridge, BrowserConfig, BrowserInfo, BrowserState};
 use crate::app::model::Model;
 use crate::app::pad::SharedPad;
 use crate::screens::ludus::LudusAction;
@@ -112,13 +112,12 @@ fn event_of(status: LudusStatus) -> LudusEvent {
             controller,
             ..
         } => LudusEvent::Linked { name, controller },
-        // The core's bridge adds `device` (the User-Agent's coarse name); it goes here then.
         LudusStatus::Linked {
-            via: LudusVia::Browser { peer, .. },
+            via: LudusVia::Browser { peer, device },
             ..
         } => LudusEvent::Browser {
             peer: peer.to_string(),
-            device: None,
+            device,
         },
         LudusStatus::Waiting => LudusEvent::Waiting,
     }
@@ -140,10 +139,17 @@ impl LudusEvents for Forward {
     }
 }
 
-/// The core's browser bridge is not built yet (T55 step 2, `docs/ludusctrl-web-api.md` on the
-/// server's branch): the defaults say so. When it lands, these three forward to
-/// `LudusServer::start_browser`, `new_browser_link` and `stop_browser`.
-impl BrowserBridge for LudusServer {}
+impl BrowserBridge for LudusServer {
+    fn start_browser(&self, config: BrowserConfig) -> Result<BrowserInfo, String> {
+        LudusServer::start_browser(self, config).map_err(|error| error.to_string())
+    }
+    fn new_browser_link(&self) -> Option<BrowserInfo> {
+        LudusServer::new_browser_link(self)
+    }
+    fn stop_browser(&self) {
+        LudusServer::stop_browser(self);
+    }
+}
 
 impl LudusReceiver for LudusServer {
     fn port(&self) -> u16 {
@@ -348,7 +354,7 @@ impl LudusService {
         };
         let browser = &model.ludus.browser;
         if want && browser.info.is_none() && !browser.failed {
-            let config = BrowserConfig::for_launcher(&model.paths, model.language());
+            let config = ludus_web::config_for_launcher(&model.paths);
             match receiver.start_browser(config) {
                 Ok(info) => {
                     model.ludus.browser = BrowserState {
@@ -501,8 +507,8 @@ mod tests {
 
     struct Fake;
 
-    fn browser_info(token: &str) -> crate::app::ludus_web::BrowserInfo {
-        crate::app::ludus_web::BrowserInfo {
+    fn browser_info(token: &str) -> BrowserInfo {
+        BrowserInfo {
             urls: vec![format!("https://192.168.1.23:45991/#t={token}")],
             port: ludus_web::LUDUS_WEB_PORT,
             preferred_port: true,
@@ -512,10 +518,7 @@ mod tests {
     }
 
     impl BrowserBridge for Fake {
-        fn start_browser(
-            &self,
-            config: BrowserConfig,
-        ) -> Result<crate::app::ludus_web::BrowserInfo, String> {
+        fn start_browser(&self, config: BrowserConfig) -> Result<BrowserInfo, String> {
             let mut calls = calls().lock().unwrap();
             calls.browser_starts.push(config);
             if calls.browser_fails {
@@ -524,7 +527,7 @@ mod tests {
                 Ok(browser_info("first"))
             }
         }
-        fn new_browser_link(&self) -> Option<crate::app::ludus_web::BrowserInfo> {
+        fn new_browser_link(&self) -> Option<BrowserInfo> {
             calls().lock().unwrap().new_links += 1;
             Some(browser_info("second"))
         }
@@ -782,6 +785,47 @@ mod tests {
                 device: None,
             }
         );
+        assert_eq!(
+            event_of(LudusStatus::Linked {
+                via: LudusVia::Browser {
+                    peer: "192.168.1.41".parse().unwrap(),
+                    device: Some("iPhone".into()),
+                },
+                layout: anyps5_core::remote::PadLayout::Xbox,
+                controller: true,
+                pad_live: true,
+            }),
+            LudusEvent::Browser {
+                peer: "192.168.1.41".into(),
+                device: Some("iPhone".into()),
+            }
+        );
+    }
+
+    #[test]
+    fn the_core_server_is_the_launchers_browser_bridge() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = LudusConfig::new(dir.path().join("LudusCtrl.json"));
+        config.port = 0;
+        config.bind = Some(std::net::Ipv4Addr::LOCALHOST.into());
+        config.beacon = None;
+        let events: Events = Arc::new(|_| {});
+        let server = LudusServer::start(config, Arc::new(Forward(events))).unwrap();
+        let bridge: &dyn BrowserBridge = &server;
+        let mut browser = BrowserConfig::new(dir.path().join("LudusCtrlWeb.json"));
+        browser.port = 0;
+        browser.bind = Some(std::net::Ipv4Addr::LOCALHOST.into());
+        let token = |info: &BrowserInfo| info.urls[0].split_once("#t=").unwrap().1.to_owned();
+        let first = bridge.start_browser(browser.clone()).unwrap();
+        assert_ne!(first.port, 0);
+        let second = bridge.new_browser_link().expect("running");
+        assert_eq!(second.port, first.port, "the same listener");
+        assert_ne!(token(&second), token(&first));
+        bridge.stop_browser();
+        assert!(bridge.new_browser_link().is_none(), "stopped");
+        server.stop();
+        let error = bridge.start_browser(browser).unwrap_err();
+        assert!(error.contains("stopped"), "{error}");
     }
 
     #[test]
@@ -806,7 +850,7 @@ mod tests {
                     .cert_file
                     .ends_with("LudusCtrlWeb.json")
             );
-            assert_eq!(calls.browser_starts[0].language, "en");
+            assert_eq!(calls.browser_starts[0].bind, None, "every interface");
         }
         model.prefs.phone_ludusctrl_browser = false;
         service.sync(&mut model);
