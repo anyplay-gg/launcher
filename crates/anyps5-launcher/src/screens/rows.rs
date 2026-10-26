@@ -74,6 +74,8 @@ pub struct Row {
     pub destructive: bool,
     /// Caution: an info row that says something may not work. Never danger.
     pub warning: bool,
+    /// A text block the page is about: body size and ink.
+    pub body: bool,
     /// Starts a new group: the list leaves a double gap above it.
     pub group_start: bool,
     /// A note that belongs to the row above: no gap between them.
@@ -97,6 +99,7 @@ impl Row {
             control,
             destructive: false,
             warning: false,
+            body: false,
             group_start: false,
             attached: false,
             wide: false,
@@ -220,6 +223,13 @@ impl Row {
     pub fn destructive(mut self) -> Row {
         self.destructive = true;
         self
+    }
+
+    /// A text block that is what the page is about: a message in full.
+    pub fn body(id: RowId, text: impl Into<String>) -> Row {
+        let mut row = Row::new(id, text, Control::Info(None));
+        row.body = true;
+        row
     }
 
     pub fn warning(mut self) -> Row {
@@ -659,6 +669,7 @@ fn show_row(
         control,
         destructive,
         warning,
+        body,
         group_start: _,
         attached,
         wide,
@@ -720,6 +731,7 @@ fn show_row(
         .focused(focused)
         .destructive(*destructive)
         .warning(*warning)
+        .body(*body)
         .attached(*attached)
         .wide(*wide)
         .avatar(*avatar)

@@ -36,15 +36,16 @@ pub enum SocialText {
     // Messages
     Messages,
     /// `%@` = how many.
-    MessagesUnread,
-    MessagesQuiet,
-    /// `%@` = how many.
     RequestsCount,
     MessageRequests,
     Conversations,
     NoConversations,
     SendMessage,
     NoMessages,
+    /// The line of a conversation in the list that holds no message yet.
+    NoPreview,
+    /// The tag of a message request in the list.
+    RequestTag,
     Loading,
     /// `%@` = how many.
     NewCount,
@@ -150,8 +151,6 @@ impl SocialText {
             SocialText::PickFirst => "Pick a friend first",
             SocialText::PartyFull => "The party is full",
             SocialText::Messages => "Messages",
-            SocialText::MessagesUnread => "%@ unread",
-            SocialText::MessagesQuiet => "Talk to your friends",
             SocialText::RequestsCount => "Requests: %@",
             SocialText::MessageRequests => "Message Requests",
             SocialText::Conversations => "Conversations",
@@ -160,6 +159,8 @@ impl SocialText {
             }
             SocialText::SendMessage => "Send Message",
             SocialText::NoMessages => "No messages yet. Say hello.",
+            SocialText::NoPreview => "No messages yet",
+            SocialText::RequestTag => "Request",
             SocialText::Loading => "Loading…",
             SocialText::NewCount => "%@ new",
             SocialText::WantsToMessage => "Wants to message you",
@@ -255,8 +256,6 @@ impl SocialText {
                 "Arkadaşlarından hiçbiri çevrimiçi değil ya da davet edilebilecek durumda değil."
             }
             SocialText::Messages => "Mesajlar",
-            SocialText::MessagesUnread => "%@ okunmamış",
-            SocialText::MessagesQuiet => "Arkadaşlarınla konuş",
             SocialText::RequestsCount => "İstekler: %@",
             SocialText::MessageRequests => "Mesaj İstekleri",
             SocialText::Conversations => "Sohbetler",
@@ -265,6 +264,8 @@ impl SocialText {
             }
             SocialText::SendMessage => "Mesaj Gönder",
             SocialText::NoMessages => "Henüz mesaj yok. Merhaba de.",
+            SocialText::NoPreview => "Henüz mesaj yok",
+            SocialText::RequestTag => "İstek",
             SocialText::Loading => "Yükleniyor…",
             SocialText::NewCount => "%@ yeni",
             SocialText::WantsToMessage => "Sana mesaj yazmak istiyor",
@@ -354,7 +355,6 @@ mod tests {
         SocialText::MakeLeaderDetail,
         SocialText::RemoveDetail,
         SocialText::RequestsCount,
-        SocialText::MessagesUnread,
         SocialText::NewCount,
         SocialText::GroupPeople,
         SocialText::PartyInvitationArrived,

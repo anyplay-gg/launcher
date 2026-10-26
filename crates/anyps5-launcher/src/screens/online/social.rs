@@ -463,13 +463,8 @@ impl OnlinePanel {
                         Row::command("openFriends", t(S::OpenFriends)).icon(Icon::USER_CIRCLE),
                     );
                 }
-                let unread = social.unread_total();
-                let subtitle = if unread > 0 {
-                    S::MessagesUnread.format(language, &[Arg::Int(unread as i64)])
-                } else {
-                    t(S::MessagesQuiet).to_owned()
-                };
-                (t(S::Messages).to_owned(), Some(subtitle))
+                // The rail says how many are unread; the page needs only its name.
+                (t(S::Messages).to_owned(), None)
             }
             Page::ChatOptions(id) => {
                 let conversation = social.get(id)?;
@@ -589,9 +584,9 @@ impl OnlinePanel {
                     ));
                 }
                 if message.deleted {
-                    rows.push(Row::info("body", t(S::Removed), None));
+                    rows.push(Row::body("body", t(S::Removed)));
                 } else {
-                    rows.push(Row::info("body", plain(&message.text), None));
+                    rows.push(Row::body("body", plain(&message.text)));
                 }
                 if !message.deleted {
                     if !conversation.request {
@@ -1232,11 +1227,9 @@ mod tests {
         );
         let mut panel = OnlinePanel::default();
         panel.go(Page::Messages, &data(&online));
-        assert_eq!(
-            panel.rows(&data(&online)).1.as_deref(),
-            Some("4 unread"),
-            "the same number as the button and the rail: every message not read"
-        );
+        // The rail and the button count every message not read; the page keeps its name only.
+        assert_eq!(online.social.unread_total(), 4);
+        assert_eq!(panel.rows(&data(&online)).1, None);
     }
 
     #[test]
@@ -1508,7 +1501,7 @@ mod tests {
         let mut panel = OnlinePanel::default();
         panel.go(Page::Messages, &data(&online));
         let (_, subtitle, rows) = panel.rows(&data(&online));
-        assert_eq!(subtitle.as_deref(), Some("Talk to your friends"));
+        assert_eq!(subtitle, None);
         assert_eq!(ids(&rows), ["none", "openFriends"]);
     }
 
