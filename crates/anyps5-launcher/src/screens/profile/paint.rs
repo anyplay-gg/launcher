@@ -21,9 +21,10 @@ use crate::screens::online::paint_avatar;
 use crate::screens::profile_strings::ProfileText as P;
 use crate::screens::{BACK_ROW, back_row, clamped};
 use crate::ui::anim::AnimExt;
-use crate::ui::components::{ConsoleButton, corner, paint_spinner_arc};
+use crate::ui::components::{ConsoleButton, corner};
 use crate::ui::i18n::Language;
 use crate::ui::icons::Icon;
+use crate::ui::state_page::{self, StatePage};
 use crate::ui::text;
 use crate::ui::theme::{self, Grade, TextStyle, Weight, color, fade, pad, radius, ty, white};
 
@@ -48,7 +49,6 @@ const STAT_GAP: f32 = 44.0;
 const BOTTOM: f32 = 64.0;
 const BODY_GAP: f32 = 28.0;
 /// The height of the block of words of a state: disc, title, note.
-const STATE_BLOCK: f32 = 56.0 + 18.0 + 30.0 + 8.0 + 44.0;
 
 const NAME: TextStyle = ty::SCREEN_TITLE;
 const ABOUT: TextStyle = TextStyle::new(17.0, Weight::Regular);
@@ -57,7 +57,6 @@ const FIGURE: TextStyle = TextStyle::new(34.0, Weight::Light);
 const GRADE_COUNT: TextStyle = TextStyle::new(14.0, Weight::Medium);
 const FACT: TextStyle = TextStyle::new(15.0, Weight::SemiBold);
 const SENTENCE: TextStyle = TextStyle::new(15.0, Weight::Regular);
-const STATE_TITLE: TextStyle = TextStyle::new(22.0, Weight::Medium);
 
 /// What the painter needs besides the view.
 pub struct Settings {
@@ -180,10 +179,6 @@ fn activity_height(painter: &Painter, row: &ActivityRow, width: f32) -> f32 {
         1.4,
     );
     (ROW_PAD + sentence.size().y + 4.0 + ty::DETAIL.line_height() + ROW_PAD).max(64.0)
-}
-
-fn button_width(painter: &Painter, label: &str) -> f32 {
-    text::width(painter, ty::BUTTON, label) + 2.0 * theme::size::BUTTON_PADDING
 }
 
 /// Measures the header: where the name, the line under it, the text, the figures and the buttons
@@ -447,34 +442,65 @@ fn paint_state_page(
     drawn: &mut Drawn,
     clicked: &mut Option<usize>,
 ) {
-    let ctx = ui.ctx().clone();
     let painter = ui.painter().clone();
     let origin = pos2(area.min.x, list.min.y + SCROLL_MARGIN);
     let header = measure_header(&painter, model, area.width(), settings.language);
     paint_header(ui, origin, model, &header, settings, drawn, clicked);
     let body_top = origin.y + header.height + BODY_GAP;
-    let failed = matches!(model.body, Body::Failed);
-    let block = STATE_BLOCK + if failed { 24.0 + BUTTON_HEIGHT } else { 0.0 };
-    let room = area.max.y - body_top;
-    let top = body_top + ((room - block) * 0.5 - 24.0).max(12.0);
-    let retry = failed.then(|| {
+    let room = Rect::from_min_max(pos2(area.min.x, body_top), area.max);
+    let language = settings.language;
+    let handle = crate::ui::i18n::Arg::Str(&model.handle);
+    let (icon, title, note) = match &model.body {
+        Body::Loading => (
+            Icon::CIRCLE_DASHED,
+            P::LoadingNote.text(language).to_owned(),
+            None,
+        ),
+        Body::Offline => (
+            Icon::CLOUD,
+            P::OfflineTitle.text(language).to_owned(),
+            Some(P::OfflineNote.text(language).to_owned()),
+        ),
+        Body::Failed => (
+            Icon::WARNING,
+            P::FailedTitle.text(language).to_owned(),
+            Some(P::FailedNote.text(language).to_owned()),
+        ),
+        Body::Private => (
+            Icon::LOCK,
+            P::PrivateTitle.text(language).to_owned(),
+            Some(P::PrivateNote.format(language, &[handle])),
+        ),
+        Body::Empty => (
+            Icon::USER_CIRCLE,
+            P::EmptyTitle.text(language).to_owned(),
+            Some(P::EmptyNote.format(language, &[handle])),
+        ),
+        Body::Ready(_) => return,
+    };
+    // The way out, if the state has one, is the first stop of the focus.
+    let action = model.state_action.as_ref().map(|action| {
         drawn.slots.push(Slot {
             column: Column::Header,
             y: 0.0,
         });
-        drawn.presses.push(Press::Retry);
+        drawn.presses.push(action.press.clone());
         drawn.geometry.push((0.0, 0.0));
-        drawn.slots.len() - 1
+        (drawn.slots.len() - 1, action.label.as_str())
     });
-    paint_state(
-        ui,
-        &ctx,
-        pos2(area.center().x, top),
-        model,
-        settings,
-        retry,
-        clicked,
-    );
+    let page = StatePage {
+        icon,
+        title: &title,
+        note: note.as_deref(),
+        loading: matches!(model.body, Body::Loading),
+        action: action.map(|(_, label)| label),
+    };
+    let focused = action.is_some_and(|(slot, _)| settings.focus == Some(slot));
+    if state_page::show(ui, room, &page, focused)
+        && let Some((slot, _)) = action
+    {
+        *clicked = Some(slot);
+    }
 }
 
 /// How far from the edge of the scrolling list a row starts to fade out (dp).
@@ -1120,104 +1146,4 @@ fn paint_activity(
         s.dim(0.66),
     );
     s.response
-}
-
-fn paint_state(
-    ui: &mut Ui,
-    ctx: &egui::Context,
-    top_centre: egui::Pos2,
-    model: &ProfileView,
-    settings: &Settings,
-    retry_slot: Option<usize>,
-    clicked: &mut Option<usize>,
-) {
-    let painter = ui.painter().clone();
-    let language = settings.language;
-    let (icon, title, note): (Icon, String, String) = match &model.body {
-        Body::Loading => (
-            Icon::CIRCLE_DASHED,
-            P::LoadingNote.text(language).to_owned(),
-            String::new(),
-        ),
-        Body::Offline => (
-            Icon::CLOUD,
-            P::OfflineTitle.text(language).to_owned(),
-            P::OfflineNote.text(language).to_owned(),
-        ),
-        Body::Failed => (
-            Icon::WARNING,
-            P::FailedTitle.text(language).to_owned(),
-            P::FailedNote.text(language).to_owned(),
-        ),
-        Body::Private => (
-            Icon::LOCK,
-            P::PrivateTitle.text(language).to_owned(),
-            P::PrivateNote.format(language, &[crate::ui::i18n::Arg::Str(&model.handle)]),
-        ),
-        Body::Empty => (
-            Icon::USER_CIRCLE,
-            P::EmptyTitle.text(language).to_owned(),
-            P::EmptyNote.format(language, &[crate::ui::i18n::Arg::Str(&model.handle)]),
-        ),
-        Body::Ready(_) => return,
-    };
-    let disc = Rect::from_center_size(pos2(top_centre.x, top_centre.y + 28.0), vec2(56.0, 56.0));
-    painter.circle_filled(disc.center(), 28.0, color::surface_row());
-    if matches!(model.body, Body::Loading) && !ctx.reduced_motion() {
-        let time = ctx.input(|i| i.time);
-        paint_spinner_arc(&painter, disc.center(), 12.0, time, 2.5, white(0.8));
-        ctx.request_repaint();
-    } else {
-        painter.text(
-            disc.center(),
-            Align2::CENTER_CENTER,
-            icon.glyph(),
-            icon.font(24.0, false),
-            white(0.75),
-        );
-    }
-    let mut y = disc.max.y + 18.0;
-    let title_g = clamped(
-        &painter,
-        STATE_TITLE,
-        &title,
-        Color32::PLACEHOLDER,
-        520.0,
-        1,
-    );
-    let title_h = title_g.size().y;
-    painter.galley(
-        pos2(top_centre.x - title_g.size().x * 0.5, y),
-        title_g,
-        Color32::WHITE,
-    );
-    y += title_h + 8.0;
-    if !note.is_empty() {
-        let mut job =
-            egui::text::LayoutJob::simple(note, ty::NOTE.font(), Color32::PLACEHOLDER, 420.0);
-        job.halign = Align::Center;
-        job.sections[0].format.line_height = Some(1.45 * ty::NOTE.size);
-        let galley = painter.layout_job(job);
-        painter.galley(pos2(top_centre.x, y), galley, color::text_detail());
-    }
-    if let Some(slot) = retry_slot {
-        let label = crate::screens::online_feed_strings::FeedText::TryAgain.text(language);
-        let w = button_width(&painter, label);
-        let y = top_centre.y + 56.0 + 18.0 + 30.0 + 8.0 + 44.0 + 24.0;
-        let mut row = ui.new_child(
-            UiBuilder::new()
-                .max_rect(Rect::from_min_size(
-                    pos2(top_centre.x - w * 0.5 - 3.0, y),
-                    vec2(w + 12.0, BUTTON_HEIGHT + 8.0),
-                ))
-                .layout(Layout::left_to_right(Align::Min)),
-        );
-        let response = ConsoleButton::new(label)
-            .prominent(true)
-            .focused(settings.focus == Some(slot))
-            .show(&mut row);
-        if response.clicked() {
-            *clicked = Some(slot);
-        }
-    }
 }

@@ -245,6 +245,9 @@ pub struct ProfileView {
     /// What a screen reader says for the whole screen.
     pub name: String,
     pub body: Body,
+    /// The one way out of a page that is not there: Try Again after a failure, Add Friend on a
+    /// private profile.
+    pub state_action: Option<Action>,
 }
 
 /// Everything [`view`] reads.
@@ -335,6 +338,7 @@ pub fn view(inputs: &Inputs<'_>) -> ProfileView {
         tint,
         name: name.clone(),
         body,
+        state_action: None,
     };
 
     let relation = if own {
@@ -350,13 +354,21 @@ pub fn view(inputs: &Inputs<'_>) -> ProfileView {
     };
 
     if !own && page.is_none() {
-        return shell(if entry.is_some_and(|e| e.failed) {
+        let failed = entry.is_some_and(|e| e.failed);
+        let body = if failed {
             Body::Failed
         } else if !online.is_online() {
             Body::Offline
         } else {
             Body::Loading
-        });
+        };
+        return ProfileView {
+            state_action: failed.then(|| Action {
+                press: Press::Retry,
+                label: F::TryAgain.text(language).to_owned(),
+            }),
+            ..shell(body)
+        };
     }
 
     let mut ready = Ready {
@@ -385,11 +397,18 @@ pub fn view(inputs: &Inputs<'_>) -> ProfileView {
 
     // Another player's profile with nothing to see.
     if !own && nothing_to_show(&ready) {
-        return shell(if relation == Relation::Stranger {
-            Body::Private
-        } else {
-            Body::Empty
-        });
+        if relation == Relation::Stranger {
+            // The way to see it is to ask: a private profile offers the request.
+            let ask = online.is_online() && !handle.is_empty();
+            return ProfileView {
+                state_action: ask.then(|| Action {
+                    press: Press::AddFriend(handle.clone()),
+                    label: P::AddFriend.text(language).to_owned(),
+                }),
+                ..shell(Body::Private)
+            };
+        }
+        return shell(Body::Empty);
     }
     shell(Body::Ready(Box::new(ready)))
 }

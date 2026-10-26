@@ -181,6 +181,8 @@ fn a_profile_that_is_not_there_is_loading_offline_or_failed() {
         },
     );
     assert!(matches!(body(&online), Body::Failed));
+    let failed = view(&inputs(&online, &local, None, 2));
+    assert_eq!(failed.state_action.map(|a| a.press), Some(Press::Retry), "a failure offers Try Again");
     // A page that was read once stays on screen when the next read fails.
     let mut known = page(who(2, "Lumen"));
     known.profile.about = Some("Hi".into());
@@ -203,6 +205,11 @@ fn a_stranger_with_nothing_shared_is_private_and_a_friend_is_just_new() {
     let stranger = view(&inputs(&online, &local, None, 12));
     assert!(matches!(stranger.body, Body::Private));
     assert_eq!(stranger.handle, "Tarn");
+    assert_eq!(
+        stranger.state_action.map(|a| a.press),
+        Some(Press::AddFriend("Tarn".into())),
+        "a private profile offers the request"
+    );
     assert!(matches!(
         view(&inputs(&online, &local, None, 2)).body,
         Body::Empty
