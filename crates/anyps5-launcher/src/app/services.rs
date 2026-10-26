@@ -9,11 +9,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use anyps5_core::events::{CancelToken, CoreEvent, Notifier};
+use anyps5_core::fsx::LinkMode;
 use anyps5_core::library::{self, Game, LibraryWatcher};
 use anyps5_core::paths::{self, AppPaths, GameId};
 use anyps5_core::saves::{AFTER_PLAYING_EVERY, Reason, SaveData};
 use anyps5_core::settings::{ConsoleLanguage, Preferences};
 use anyps5_core::trophies::{Trophies, TrophyWatcher};
+use anyps5_core::{location, relocate};
 use egui::Context;
 
 /// The pause between two games of a trophy sync.
@@ -58,7 +60,7 @@ impl Services {
     }
 
     /// Scans `root` on a worker thread and watches it.
-    pub fn rescan(&mut self, root: &Path) {
+    pub fn rescan(&mut self, root: &Path, store_root: &Path) {
         if self.watched.as_deref() != Some(root) {
             self.watcher = match LibraryWatcher::start(
                 root.to_path_buf(),
@@ -78,10 +80,11 @@ impl Services {
             watcher.mark_scanned();
         }
         let (tx, notify, root) = (self.tx.clone(), self.notify.clone(), root.to_path_buf());
+        let store_root = store_root.to_path_buf();
         std::thread::Builder::new()
             .name("scan".into())
             .spawn(move || {
-                let games = library::scan(&root);
+                let games = library::scan_with_store(&root, &store_root);
                 let records: HashMap<GameId, String> = games
                     .iter()
                     .filter_map(|g| Some((g.id.clone(), g.unlocked_with.clone()?)))
@@ -91,6 +94,53 @@ impl Services {
                     games,
                     records,
                 });
+                notify();
+            })
+            .ok();
+    }
+
+    /// Looks at the unlocked games location on a worker (a share that is down can take seconds to
+    /// answer, and the UI thread never waits on the disk).
+    pub fn check_location(&self, games: &Path, unlocked: Option<&Path>) {
+        let (tx, notify) = (self.tx.clone(), self.notify.clone());
+        let (games, unlocked) = (games.to_path_buf(), unlocked.map(Path::to_path_buf));
+        std::thread::Builder::new()
+            .name("location".into())
+            .spawn(move || {
+                if let Some(report) = location::report(Some(&games), unlocked.as_deref()) {
+                    let _ = tx.send(CoreEvent::LocationChecked(report));
+                    notify();
+                }
+            })
+            .ok();
+    }
+
+    /// Moves the unlocked copies of the store `from` into the store `to`, in the background.
+    /// `running` names the copies a game runs from; they stay. `token` cancels.
+    pub fn start_move(&self, from: PathBuf, to: PathBuf, running: Vec<String>, token: CancelToken) {
+        let (tx, notify) = (self.tx.clone(), self.notify.clone());
+        std::thread::Builder::new()
+            .name("move".into())
+            .spawn(move || {
+                let progress_tx = tx.clone();
+                let progress_notify = notify.clone();
+                // The player is watching a bar: do not flood the channel with every file.
+                let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
+                let report = relocate::move_all(
+                    &from,
+                    &to,
+                    LinkMode::Auto,
+                    &|name| running.iter().any(|r| r == name),
+                    &token,
+                    &mut |progress| {
+                        if last.elapsed() >= std::time::Duration::from_millis(100) {
+                            last = std::time::Instant::now();
+                            let _ = progress_tx.send(CoreEvent::MoveProgress(progress));
+                            progress_notify();
+                        }
+                    },
+                );
+                let _ = tx.send(CoreEvent::MoveFinished(report));
                 notify();
             })
             .ok();

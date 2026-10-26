@@ -1,0 +1,79 @@
+name: Game report
+description: Tell us how a game runs, or why it does not.
+labels: ["game report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A game report says what works and what does not for one game on your PC. It helps other players and shows what the launcher and AnyPS5 still need to handle for every game.
+        Use your own legal dump of a game you own. Do not attach or link game files, keys, firmware or saves.
+  - type: input
+    id: title
+    attributes:
+      label: Game title
+    validations:
+      required: true
+  - type: input
+    id: title-id
+    attributes:
+      label: Title ID
+      description: Shown on the game's page in the launcher.
+      placeholder: "PPSA00000"
+    validations:
+      required: true
+  - type: input
+    id: game-version
+    attributes:
+      label: Game version
+      description: Shown on the game's page in the launcher.
+    validations:
+      required: true
+  - type: input
+    id: launcher-version
+    attributes:
+      label: Launcher version
+      description: Shown in Settings, About.
+      placeholder: "0.2.5"
+    validations:
+      required: true
+  - type: input
+    id: engine-version
+    attributes:
+      label: AnyPS5 toolkit version
+      description: The toolkit release the game ran on, shown in Settings, Toolkit.
+      placeholder: "v0.1.3"
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Operating system and GPU
+      placeholder: "Windows 11, NVIDIA RTX 3060, driver 581.xx"
+    validations:
+      required: true
+  - type: textarea
+    id: works
+    attributes:
+      label: What works
+      description: How far you get: unlock, start, menus, play, sound, controls, trophies, saves.
+    validations:
+      required: true
+  - type: textarea
+    id: broken
+    attributes:
+      label: What does not work
+      description: What fails, where in the game, and whether it happens every time. If the game stops with an error, copy the sentence the launcher shows.
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: Settings you changed
+      description: Per-game settings, environment variables or a recommended setting you applied.
+  - type: checkboxes
+    id: no-game-data
+    attributes:
+      label: Game data
+      options:
+        - label: I attached no game files, saves or keys, and no crash or memory dumps of the game.
+          required: true

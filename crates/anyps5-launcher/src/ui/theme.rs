@@ -423,6 +423,11 @@ pub mod color {
     pub fn surface_pressed() -> Color32 {
         white(0.26)
     }
+    /// The focus ring of keyboard and gamepad focus: thin and quiet, 3:1 or more on every panel
+    /// (`ui::contrast` measures it); the fill one step lighter carries the rest of the cue.
+    pub fn focus_ring() -> Color32 {
+        white(0.50)
+    }
     /// The edge of a secondary control at rest and under the pointer or focus.
     pub fn hairline_control() -> Color32 {
         white(0.12)
@@ -587,7 +592,9 @@ pub mod size {
     /// Between neighbouring controls, everywhere.
     pub const CONTROL_GAP: f32 = 12.0;
     /// The focus ring of a control: white, 2 dp wide, outside the shape. Tiles and cards use 3.
-    pub const FOCUS_RING: f32 = 2.0;
+    pub const FOCUS_RING: f32 = 1.5;
+    /// The ring of a tile, card or cell.
+    pub const FOCUS_RING_LARGE: f32 = 2.0;
     pub const BUTTON_MIN_HEIGHT: f32 = CONTROL_L;
     pub const BUTTON_PADDING: f32 = 30.0;
     pub const BUTTON_PADDING_ICON_ONLY: f32 = 16.0;

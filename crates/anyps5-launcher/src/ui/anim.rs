@@ -425,8 +425,13 @@ pub trait AnimExt {
         motion: Motion,
         delay: f32,
     ) -> f32;
-    /// 0..=1 follower of a boolean, with `Motion::Focus`: the standard focus/hover amount.
+    /// 0..=1 follower of a boolean, with `Motion::Hover` (an opacity-only ease): the focus ring and
+    /// lift of a control. It follows only while the ring shows (`input::focus_visible`: keyboard
+    /// and gamepad, not after a click), so every ring of the launcher hides and returns here.
     fn focus_t(&self, id: impl Hash + std::fmt::Debug, on: bool) -> f32;
+    /// 0..=1 follower of a boolean with `Motion::Focus`, for a choice that stays marked whatever
+    /// moved the focus (the selected category, a theme card).
+    fn choice_t(&self, id: impl Hash + std::fmt::Debug, on: bool) -> f32;
     /// 0..=1 follower of a boolean with a given motion.
     fn flag_t(&self, id: impl Hash + std::fmt::Debug, on: bool, motion: Motion) -> f32;
     /// The current value of an animation without retargeting it (`None` if never started).
@@ -470,6 +475,11 @@ impl AnimExt for Context {
     }
 
     fn focus_t(&self, id: impl Hash + std::fmt::Debug, on: bool) -> f32 {
+        let on = on && crate::ui::input::focus_visible(self);
+        self.animate_to(id, if on { 1.0 } else { 0.0 }, Motion::Hover)
+    }
+
+    fn choice_t(&self, id: impl Hash + std::fmt::Debug, on: bool) -> f32 {
         self.animate_to(id, if on { 1.0 } else { 0.0 }, Motion::Focus)
     }
 

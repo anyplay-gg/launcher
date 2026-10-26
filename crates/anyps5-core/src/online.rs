@@ -54,7 +54,10 @@ pub use profile::{
 pub use restrictions::{Blocked, Restrictions, in_force};
 pub use runs::Runs;
 pub use screen::{Screen, ScreenCommand, ScreenNotice};
-pub use social::{Fetch, Ingested, KEPT, Listed, Social, others, plain, read_by_other, snippet};
+pub use social::{
+    Fetch, Ingested, KEPT, Listed, Social, delivered_to_other, others, plain, read_by_other,
+    seen_by, snippet,
+};
 pub use voice::{
     DEFAULT_KEY, DEFAULT_PERCENT, Devices, Hardware, MAX_PERCENT, Mic, PERCENT_STEP, PeerPrefs,
     Problem, Status as VoiceStatus, Voice, VoicePrefs, VoiceProvider,
@@ -148,6 +151,9 @@ pub struct NetProcess {
     lines: Receiver<Line>,
 }
 
+/// The `X-AnyPlay-Client` value the net service sends for this launcher.
+pub const CLIENT_ID: &str = concat!("launcher/", env!("CARGO_PKG_VERSION"));
+
 impl NetProcess {
     /// Where the net service is: `ANYPLAY_NET`, else next to the launcher's own executable.
     pub fn locate() -> Option<PathBuf> {
@@ -178,6 +184,8 @@ impl NetProcess {
             .append(true)
             .open(log)?;
         let mut command = Process::new(binary);
+        // Who is asking, for the cloud's `min_launcher_version` (network spec/cloud-api.md).
+        command.env("ANYPLAY_CLIENT", CLIENT_ID);
         command
             .arg("--data")
             .arg(data)
@@ -423,6 +431,25 @@ pub enum Purpose {
         conversation: String,
         text: String,
     },
+    /// An edit, an unsend, or a reaction (or taking it back) on a message.
+    EditMessage {
+        conversation: String,
+        seq: u64,
+    },
+    UnsendMessage {
+        conversation: String,
+        seq: u64,
+    },
+    ReactMessage {
+        conversation: String,
+        seq: u64,
+    },
+    /// Mute or pin, answered with the conversation.
+    ConversationSettings(String),
+    /// The newest message of a conversation, fetched for its row in the list.
+    Preview(String),
+    /// The typing signal: nothing waits for it, but the net service answers.
+    Typing(String),
     MarkRead {
         conversation: String,
     },
@@ -464,6 +491,9 @@ pub enum Notice {
     Dialog(Dialog),
     /// The net service ended.
     Ended,
+    /// The cloud turned this launcher away because it is older than the version named: the
+    /// launcher's update is required.
+    ClientTooOld(String),
     /// The browser sign-in finished: the account is signed in.
     SignedIn,
     /// The browser sign-in ran out of time.
@@ -517,6 +547,8 @@ pub struct Online {
     pub dialog: Option<Dialog>,
     /// The party, the conversations and their messages.
     pub social: Social,
+    /// The conversation the player was last said to type in, and when (Unix seconds).
+    typing_sent: Option<(String, u64)>,
     /// Party voice: what the player chose and what the service reports.
     pub voice: Voice,
     /// Share screen: what the player shares, what is offered to them and what they watch.
@@ -679,6 +711,12 @@ impl Online {
         }
         match purpose {
             Purpose::Feed { .. } => self.feed.error = Some(failure.clone()),
+            Purpose::Conversations => self.social.fetch_failed(None),
+            Purpose::Messages {
+                conversation,
+                fetch: Fetch::Newest,
+                ..
+            } => self.social.fetch_failed(Some(conversation)),
             Purpose::React { item, before } => self.feed.set_reactions(*item, *before),
             Purpose::Profile(account) => {
                 // A page that is shown stays; only a profile without one is a failure.
@@ -892,6 +930,25 @@ impl Online {
                 }
             }
             Purpose::LeaveConversation(id) => self.social.remove(id),
+            Purpose::Preview(_) => {
+                if let Ok(page) = serde_json::from_value::<api::Messages>(value.clone())
+                    && let Some(message) = page.messages.into_iter().next_back()
+                {
+                    self.social.set_preview(message);
+                }
+            }
+            Purpose::ConversationSettings(_) => {
+                if let Ok(conversation) = serde_json::from_value::<Conversation>(value.clone()) {
+                    self.social.upsert(conversation);
+                }
+            }
+            Purpose::EditMessage { .. }
+            | Purpose::UnsendMessage { .. }
+            | Purpose::ReactMessage { .. } => {
+                if let Ok(message) = serde_json::from_value::<Message>(value.clone()) {
+                    self.social.replace_message(message);
+                }
+            }
             Purpose::Messages {
                 conversation,
                 fetch,
@@ -944,6 +1001,26 @@ impl Online {
         notices.extend(listed.new_requests.into_iter().map(Notice::MessageRequest));
     }
 
+    /// Asks for the newest message of each of these conversations that has no preview yet: the
+    /// list shows them. At most a few at a time; the rest are asked for as they come into view.
+    pub fn request_previews(&mut self, ids: &[String]) {
+        if !self.is_online() {
+            return;
+        }
+        for id in self.social.wants_previews(ids) {
+            self.send(
+                Purpose::Preview(id.clone()),
+                Command::Messages {
+                    conversation: id,
+                    after: None,
+                    before: None,
+                    limit: Some(1),
+                    changed_after: None,
+                },
+            );
+        }
+    }
+
     /// Asks for the list of conversations, unless that question waits already.
     pub fn refresh_conversations(&mut self) {
         if !self.is_waiting(|p| *p == Purpose::Conversations) {
@@ -983,6 +1060,10 @@ impl Online {
 
     /// The newest message the player has not read and did not write, as a notice.
     fn announce(&self, conversation: &str, new: &[Message], notices: &mut Vec<Notice>) {
+        // A muted conversation makes no toast.
+        if self.social.get(conversation).is_some_and(|c| c.muted) {
+            return;
+        }
         let me = self.account.as_ref().map(|a| a.id);
         let read = self.social.get(conversation).map_or(0, |c| c.read);
         if let Some(message) = new
@@ -1029,14 +1110,30 @@ impl Online {
         }
     }
 
-    /// Sends the draft of a conversation. False when there is nothing to send, the text is not
-    /// one the cloud takes, or the draft is on its way already.
+    /// Sends the draft of a conversation: as an edit when it edits a message, else as a new
+    /// message, with the answer it carries. False when there is nothing to send, the text is
+    /// not one the cloud takes, or the draft is on its way already.
     pub fn send_draft(&mut self, conversation: &str) -> bool {
         let text = self.social.draft(conversation).to_owned();
-        let sending = |p: &Purpose| matches!(p, Purpose::SendMessage { conversation: c, .. } if c == conversation);
+        let sending = |p: &Purpose| matches!(p, Purpose::SendMessage { conversation: c, .. } | Purpose::EditMessage { conversation: c, .. } if c == conversation);
         if !api::is_message_text(&text) || self.is_waiting(sending) {
             return false;
         }
+        if let Some(seq) = self.social.editing(conversation).map(|m| m.seq) {
+            // An edit that changes nothing is done at once.
+            if self
+                .social
+                .editing(conversation)
+                .is_some_and(|m| m.text == text)
+            {
+                self.social.cancel_compose(conversation);
+                return true;
+            }
+            self.edit_message(conversation, seq, text);
+            self.social.cancel_compose(conversation);
+            return true;
+        }
+        let reply = self.social.replying_to(conversation).map(|m| m.seq);
         self.send(
             Purpose::SendMessage {
                 conversation: conversation.to_owned(),
@@ -1045,10 +1142,110 @@ impl Online {
             Command::SendMessage {
                 conversation: conversation.to_owned(),
                 text,
-                reply: None,
+                reply,
             },
         );
+        // Typing ends with the message.
+        self.typing_sent = None;
         true
+    }
+
+    /// Edits one of the player's messages.
+    pub fn edit_message(&mut self, conversation: &str, seq: u64, text: String) {
+        self.send(
+            Purpose::EditMessage {
+                conversation: conversation.to_owned(),
+                seq,
+            },
+            Command::EditMessage {
+                conversation: conversation.to_owned(),
+                seq,
+                text,
+            },
+        );
+    }
+
+    /// Takes one of the player's messages back for everyone.
+    pub fn unsend_message(&mut self, conversation: &str, seq: u64) {
+        self.send(
+            Purpose::UnsendMessage {
+                conversation: conversation.to_owned(),
+                seq,
+            },
+            Command::UnsendMessage {
+                conversation: conversation.to_owned(),
+                seq,
+            },
+        );
+    }
+
+    /// Sets the player's reaction to a message, or takes it back with `None`.
+    pub fn react_message(
+        &mut self,
+        conversation: &str,
+        seq: u64,
+        reaction: Option<api::MessageReaction>,
+    ) {
+        self.send(
+            Purpose::ReactMessage {
+                conversation: conversation.to_owned(),
+                seq,
+            },
+            Command::ReactMessage {
+                conversation: conversation.to_owned(),
+                seq,
+                reaction,
+            },
+        );
+    }
+
+    /// Mutes or pins a conversation for the player.
+    pub fn conversation_settings(
+        &mut self,
+        conversation: &str,
+        muted: Option<bool>,
+        pinned: Option<bool>,
+    ) {
+        self.send(
+            Purpose::ConversationSettings(conversation.to_owned()),
+            Command::ConversationSettings {
+                conversation: conversation.to_owned(),
+                muted,
+                pinned,
+            },
+        );
+    }
+
+    /// The player types in a conversation (or the field was emptied): tells the others. The
+    /// net service passes on one signal in three seconds, so this may be called on every key; it
+    /// sends once when the typing starts and once when it stops.
+    pub fn typing(&mut self, conversation: &str, typing: bool) {
+        if !self.is_online() {
+            return;
+        }
+        let current = self
+            .typing_sent
+            .as_ref()
+            .filter(|(c, _)| c == conversation)
+            .map(|(_, at)| *at);
+        if typing {
+            if current.is_some_and(|at| unix_now() < at + api::TYPING_RESEND_SECS) {
+                return;
+            }
+            self.typing_sent = Some((conversation.to_owned(), unix_now()));
+        } else {
+            if current.is_none() {
+                return;
+            }
+            self.typing_sent = None;
+        }
+        self.send(
+            Purpose::Typing(conversation.to_owned()),
+            Command::Typing {
+                conversation: conversation.to_owned(),
+                typing,
+            },
+        );
     }
 
     /// Opens the direct conversation with a friend, unless there is one.
@@ -1505,6 +1702,7 @@ impl Online {
                     notices.push(Notice::Restricted(restriction));
                 }
             }
+            Event::ClientTooOld { minimum } => notices.push(Notice::ClientTooOld(minimum)),
             Event::Banned { restriction } => {
                 self.restrictions.ban(restriction.clone());
                 notices.push(Notice::Banned(restriction));
@@ -1522,6 +1720,25 @@ impl Online {
                 notices.extend(self.call_ended(account, reason));
             }
             Event::Conversations(lists) => self.listed(lists, &mut notices),
+            Event::Typing {
+                conversation,
+                account,
+                typing,
+            } => self
+                .social
+                .apply_typing(&conversation, account, typing, unix_now()),
+            Event::Delivered {
+                conversation,
+                account,
+                seq,
+            } => self.social.apply_delivered(&conversation, account, seq),
+            Event::MessageUpdate {
+                conversation, rev, ..
+            } => {
+                if let Some(fetch) = self.social.message_update(&conversation, rev) {
+                    self.fetch(&conversation, fetch, false);
+                }
+            }
             Event::Message { conversation, seq } => {
                 if self.social.note_last(&conversation, seq) {
                     if let Some(fetch) = self.social.plan(&conversation) {
@@ -1532,8 +1749,6 @@ impl Online {
                 }
             }
             // The request is in the list the cloud gives; reading it announces what is new.
-            // Not used by the launcher yet (network #61): ignored, as before they existed.
-            Event::Delivered { .. } | Event::Typing { .. } | Event::MessageUpdate { .. } => {}
             Event::MessageRequest { .. } | Event::Conversation { .. } => {
                 self.refresh_conversations();
             }
@@ -1803,6 +2018,21 @@ mod tests {
             restrictions: Vec::new(),
         }));
         assert!(online.restrictions.active(10).is_empty());
+    }
+
+    #[test]
+    fn the_cloud_turning_the_launcher_away_is_a_notice_and_the_client_id_is_a_version() {
+        let mut online = Online::default();
+        let notices = online.apply(event(Event::ClientTooOld {
+            minimum: "0.3.0".into(),
+        }));
+        assert_eq!(notices, [Notice::ClientTooOld("0.3.0".into())]);
+        // The header the net service sends: `launcher/<semver>`, which the cloud's gate reads.
+        let version = CLIENT_ID.strip_prefix("launcher/").unwrap();
+        assert!(
+            anyplay_update_manifest::Version::parse(version).is_some(),
+            "{CLIENT_ID}"
+        );
     }
 
     #[test]
@@ -2262,7 +2492,7 @@ mod tests {
             updated: last,
             request,
             party: None,
-            unread: 0,
+            unread: last.saturating_sub(read),
             muted: false,
             pinned: false,
             rev: 0,

@@ -4,15 +4,19 @@
 //! ```text
 //! anyplay-launcher --gallery=settings|settings1..6|game-settings|confirm|controls|controls-capture|
 //!                           controls-end|advanced|trophies|trophies-hidden|trophies-revealed|banner|start|unlocking|log|report|library|
-//!                           about-update|behavior-links|settings-codec|settings-codec-off|behavior-clips-off|behavior-clips|behavior-clips-key|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|toolkit-engine|toolkit-engine-update|
+//!                           about-update|behavior-links|settings-codec|settings-codec-off|settings-location|settings-location-custom|settings-location-network|settings-location-missing|settings-location-moving|settings-location-left|behavior-clips-off|behavior-clips|behavior-clips-key|behavior-steam|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|toolkit-engine|toolkit-engine-update|
 //!                           toolkit-unused|game-toolkit|
 //!                           recommended|recommended-warning|whats-new|whats-new-loading|
+//!                           update-required|update-required-downloading|update-required-failed|
+//!                           update-required-download|update-required-offline|
 //!                           saves|saves-empty|restore|
 //!                           online|online-browser|online-friends|online-friends-busy|
 //!                           online-friends-empty|online-requests|online-friend|
 //!                           online-account|online-account-appearing|online-picker|
 //!                           online-party|online-party-picker|online-messages|online-conversation|
 //!                           online-message|online-request|
+//!                           friends-message-own|friends-quick-replies|friends-keyboard|
+//!                           friends-chat-options|
 //!                           online-party-voice|online-party-member|online-voice|online-voice-key|
 //!                           online-voice-devices|online-voice-denied|
 //!                           online-screen-ready|online-screen-hosting|online-screen-offer|
@@ -110,14 +114,20 @@ pub enum ScreenPage {
     AboutUpdate(UpdateLook),
     /// The notes of a launcher update, in the "What's New" panel.
     WhatsNewLauncher,
+    /// "Update required" in one of its states.
+    Required(RequiredLook),
     /// Behavior with the AnyPlay links registered to this launcher.
     BehaviourLinks,
     /// Advanced on Linux with share screen on: the OpenH264 row turned on (and downloaded), or off.
     SettingsCodec(bool),
+    /// Settings > Library with the unlocked games location in one state.
+    UnlockedLocation(LocationLook),
     /// Behavior with Clips off, on at 30 seconds, and waiting for the clip key.
     BehaviourClipsOff,
     BehaviourClips,
     BehaviourClipsKey,
+    /// Behavior scrolled to the Add to Steam rows.
+    BehaviourSteam,
     Recommended,
     RecommendedWarning,
     WhatsNew,
@@ -258,12 +268,36 @@ pub enum OnlineLook {
     Party,
     /// Picking friends to invite to the party.
     PartyPicker,
+    /// The party of the player and Lumen.
+    PartyPair,
+    /// Four members, voice on, Lumen speaking.
+    PartyFour,
+    /// The player muted and deafened, voice on.
+    PartyMuted,
+    /// A party of one: the room invites.
+    PartyAlone,
     /// The conversations, a message request apart, unread first.
     Messages,
     /// One message in full.
     Message,
     /// A conversation with a friend, with news.
     Conversation,
+    /// No conversation yet.
+    MessagesEmpty,
+    /// A thread with a message in the middle of a run focused.
+    ConversationFocus,
+    /// A group: names and pictures beside the bubbles, runs of messages, answers.
+    ConversationGroup,
+    /// A conversation of two lines.
+    ConversationShort,
+    /// One of the player's own messages: edit, take back.
+    MessageOwn,
+    /// Short answers for a pad.
+    QuickReplies,
+    /// The keyboard on the screen.
+    Keyboard,
+    /// Mute, pin, report, block.
+    ChatOptions,
     /// A stranger's first messages, waiting for an answer.
     Request,
     /// The party with voice on: Lumen speaks, Kit is muted for the player.
@@ -336,6 +370,38 @@ pub enum OnlineLook {
 
 /// What a launcher release's notes look like (the shape of the GitHub release body).
 const LAUNCHER_SAMPLE_NOTES: &str = "## AnyPlay Launcher 0.1.4\n\n### Your Profile\n\n- Your profile button now opens a full-screen profile: your games, hours and trophies.\n- **Edit Profile** opens your account on the web.\n\n### Look and Feel\n\n- Focus is a ring around buttons, rows and cards instead of a white fill.\n- Every control reacts when the mouse is over it.\n\n### Calls\n\n- A call uses Voice Activity while it lasts, so you no longer hold a key to talk.\n";
+
+/// What "Update required" shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RequiredLook {
+    /// The update is downloaded: Update Now has the focus.
+    Ready,
+    /// The download runs: Update Now waits, Play Offline has the focus.
+    Downloading,
+    /// GitHub could not be reached: Try Again.
+    Failed,
+    /// This launcher cannot install itself: Download from GitHub.
+    Download,
+    /// The player asked for the online area and was turned back: the reason says so, and the
+    /// focus is on Play Offline.
+    OnlineClosed,
+}
+
+impl RequiredLook {
+    fn state(self) -> LauncherUpdate {
+        use crate::screens::settings::UpdateFailure;
+        let version = "0.3.0".to_owned();
+        match self {
+            RequiredLook::Ready | RequiredLook::OnlineClosed => LauncherUpdate::Ready(version),
+            RequiredLook::Downloading => LauncherUpdate::Downloading {
+                version,
+                permille: 420,
+            },
+            RequiredLook::Failed => LauncherUpdate::Failed(UpdateFailure::Offline),
+            RequiredLook::Download => LauncherUpdate::Manual(version),
+        }
+    }
+}
 
 /// Where the launcher's own update stands on the About page.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -476,12 +542,24 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "about-update-offline" => ScreenPage::AboutUpdate(UpdateLook::Offline),
         "about-update-refused" => ScreenPage::AboutUpdate(UpdateLook::Refused),
         "whats-new-launcher" => ScreenPage::WhatsNewLauncher,
+        "update-required" => ScreenPage::Required(RequiredLook::Ready),
+        "update-required-downloading" => ScreenPage::Required(RequiredLook::Downloading),
+        "update-required-failed" => ScreenPage::Required(RequiredLook::Failed),
+        "update-required-download" => ScreenPage::Required(RequiredLook::Download),
+        "update-required-offline" => ScreenPage::Required(RequiredLook::OnlineClosed),
         "behavior-links" => ScreenPage::BehaviourLinks,
         "settings-codec" => ScreenPage::SettingsCodec(true),
         "settings-codec-off" => ScreenPage::SettingsCodec(false),
+        "settings-location" => ScreenPage::UnlockedLocation(LocationLook::Default),
+        "settings-location-custom" => ScreenPage::UnlockedLocation(LocationLook::Custom),
+        "settings-location-network" => ScreenPage::UnlockedLocation(LocationLook::Network),
+        "settings-location-missing" => ScreenPage::UnlockedLocation(LocationLook::Missing),
+        "settings-location-moving" => ScreenPage::UnlockedLocation(LocationLook::Moving),
+        "settings-location-left" => ScreenPage::UnlockedLocation(LocationLook::Left),
         "behavior-clips-off" => ScreenPage::BehaviourClipsOff,
         "behavior-clips" => ScreenPage::BehaviourClips,
         "behavior-clips-key" => ScreenPage::BehaviourClipsKey,
+        "behavior-steam" => ScreenPage::BehaviourSteam,
         "phone-off" => ScreenPage::Phone(PhoneLook::Off),
         "phone-waiting" => ScreenPage::Phone(PhoneLook::Waiting),
         "phone-pairing" => ScreenPage::Phone(PhoneLook::Pairing),
@@ -522,9 +600,21 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "friends-picker" => ScreenPage::Online(OnlineLook::Picker),
         "friends-party" => ScreenPage::Online(OnlineLook::Party),
         "friends-party-picker" => ScreenPage::Online(OnlineLook::PartyPicker),
+        "friends-party-pair" => ScreenPage::Online(OnlineLook::PartyPair),
+        "friends-party-four" => ScreenPage::Online(OnlineLook::PartyFour),
+        "friends-party-muted" => ScreenPage::Online(OnlineLook::PartyMuted),
+        "friends-party-alone" => ScreenPage::Online(OnlineLook::PartyAlone),
         "friends-messages" => ScreenPage::Online(OnlineLook::Messages),
         "friends-message" => ScreenPage::Online(OnlineLook::Message),
         "friends-conversation" => ScreenPage::Online(OnlineLook::Conversation),
+        "friends-messages-empty" => ScreenPage::Online(OnlineLook::MessagesEmpty),
+        "friends-conversation-focus" => ScreenPage::Online(OnlineLook::ConversationFocus),
+        "friends-conversation-group" => ScreenPage::Online(OnlineLook::ConversationGroup),
+        "friends-conversation-short" => ScreenPage::Online(OnlineLook::ConversationShort),
+        "friends-message-own" => ScreenPage::Online(OnlineLook::MessageOwn),
+        "friends-quick-replies" => ScreenPage::Online(OnlineLook::QuickReplies),
+        "friends-keyboard" => ScreenPage::Online(OnlineLook::Keyboard),
+        "friends-chat-options" => ScreenPage::Online(OnlineLook::ChatOptions),
         "friends-request" => ScreenPage::Online(OnlineLook::Request),
         "friends-party-voice" => ScreenPage::Online(OnlineLook::PartyVoice),
         "friends-party-member" => ScreenPage::Online(OnlineLook::PartyMember),
@@ -748,7 +838,7 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         })
         .collect();
     }
-    if look == OnlineLook::FriendsEmpty {
+    if matches!(look, OnlineLook::FriendsEmpty | OnlineLook::MessagesEmpty) {
         state.friends = FriendLists::default();
         state.invitations.clear();
     } else {
@@ -759,6 +849,27 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         OnlineLook::FriendsConnecting => state.cloud = None,
         OnlineLook::PartyNone => {
             state.social.apply_party(None);
+        }
+        OnlineLook::PartyPair | OnlineLook::PartyAlone => {
+            if let Some(party) = &mut state.social.party {
+                party
+                    .members
+                    .truncate(if look == OnlineLook::PartyAlone { 1 } else { 2 });
+            }
+            if look == OnlineLook::PartyAlone {
+                state.session = None;
+            }
+        }
+        OnlineLook::PartyFour => {
+            if let Some(party) = &mut state.social.party {
+                party.members.push(anyps5_core::online::api::PartyMember {
+                    account: account(3, "Juno"),
+                    joined: 0,
+                    endpoint: String::new(),
+                    relay: None,
+                    voice: false,
+                });
+            }
         }
         _ => {}
     }
@@ -888,6 +999,9 @@ fn sample_voice(state: &mut anyps5_core::online::Online, look: OnlineLook) {
     if !matches!(
         look,
         OnlineLook::PartyVoice
+            | OnlineLook::PartyFour
+            | OnlineLook::PartyMuted
+            | OnlineLook::PartyPair
             | OnlineLook::InCall
             | OnlineLook::InCallDiscord
             | OnlineLook::PartyMember
@@ -940,6 +1054,10 @@ fn sample_voice(state: &mut anyps5_core::online::Online, look: OnlineLook) {
         }
     }
     state.voice.state = VoiceState::On;
+    if look == OnlineLook::PartyMuted {
+        state.voice.muted = true;
+        state.voice.deafened = true;
+    }
     state.voice.me = VoiceLevel {
         level: 0,
         speaking: false,
@@ -1047,7 +1165,7 @@ fn sample_screen(state: &mut anyps5_core::online::Online, look: OnlineLook) {
 fn sample_social(state: &mut anyps5_core::online::Online) {
     use anyps5_core::online::api::{
         Account, AccountId, Conversation, ConversationKind, Conversations, Message, Messages,
-        Party, PartyInvitation, PartyMember, ReadMark, Visibility,
+        Party, PartyInvitation, PartyMember, Quote, ReadMark, Visibility,
     };
     use anyps5_core::online::control::Member;
     use anyps5_core::online::{Fetch, Session};
@@ -1113,7 +1231,7 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
             updated,
             request: false,
             party: None,
-            unread: 0,
+            unread: last.saturating_sub(read),
             muted: false,
             pinned: false,
             rev: 0,
@@ -1142,6 +1260,7 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
         now - 40_000,
     );
     group.name = Some("Raid night".into());
+    group.pinned = true;
     let mut party_chat = chat(
         "c-party",
         ConversationKind::Party,
@@ -1164,14 +1283,18 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
         conversations: vec![
             lumen,
             party_chat,
-            chat(
-                "c-juno",
-                ConversationKind::Direct,
-                &[(3, "Juno")],
-                12,
-                12,
-                now - 20_000,
-            ),
+            {
+                let mut juno = chat(
+                    "c-juno",
+                    ConversationKind::Direct,
+                    &[(3, "Juno")],
+                    12,
+                    12,
+                    now - 20_000,
+                );
+                juno.muted = true;
+                juno
+            },
             group,
         ],
         requests: vec![stranger],
@@ -1189,48 +1312,112 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
             reactions: Vec::new(),
             rev: 0,
         };
+    let mut lumen_messages = vec![
+        said("c-lumen", 1, 2, "Lumen", "Are you around tonight?", 59_000),
+        said(
+            "c-lumen",
+            2,
+            1,
+            "Mira",
+            "Yes, after dinner. Around 8.",
+            58_900,
+        ),
+        said(
+            "c-lumen",
+            3,
+            2,
+            "Lumen",
+            "Great. I will set up the lobby.",
+            58_800,
+        ),
+        said("c-lumen", 4, 1, "Mira", "Bringing Juno too.", 58_700),
+        said(
+            "c-lumen",
+            5,
+            2,
+            "Lumen",
+            "Found a new route on the second map.",
+            1_140,
+        ),
+        said(
+            "c-lumen",
+            6,
+            2,
+            "Lumen",
+            "It cuts the run in half. Want to try it with the others?",
+            1_080,
+        ),
+        said("c-lumen", 7, 2, "Lumen", "Ready when you are.", 720),
+    ];
+    // The things a thread can show: an edit, an answer, reactions, a message taken back.
+    lumen_messages[2].edited = Some(now - 58_000);
+    lumen_messages[5].reply = Some(Quote {
+        seq: 4,
+        sender: account(1, "Mira"),
+        text: "Bringing Juno too.".into(),
+        deleted: false,
+    });
+    lumen_messages[1].deleted = true;
+    lumen_messages[1].text.clear();
     state.social.ingest(
         "c-lumen",
         Fetch::Newest,
         Messages {
-            messages: vec![
-                said("c-lumen", 1, 2, "Lumen", "Are you around tonight?", 59_000),
-                said(
-                    "c-lumen",
-                    2,
-                    1,
-                    "Mira",
-                    "Yes, after dinner. Around 8.",
-                    58_900,
-                ),
-                said(
-                    "c-lumen",
-                    3,
-                    2,
-                    "Lumen",
-                    "Great. I will set up the lobby.",
-                    58_800,
-                ),
-                said("c-lumen", 4, 1, "Mira", "Bringing Juno too.", 58_700),
-                said(
-                    "c-lumen",
-                    5,
-                    2,
-                    "Lumen",
-                    "Found a new route on the second map.",
-                    1_140,
-                ),
-                said(
-                    "c-lumen",
-                    6,
-                    2,
-                    "Lumen",
-                    "It cuts the run in half. Want to try it with the others?",
-                    1_080,
-                ),
-                said("c-lumen", 7, 2, "Lumen", "Ready when you are.", 720),
-            ],
+            messages: lumen_messages,
             last: 7,
+            rev: 0,
+        },
+    );
+    // Lumen types, Juno's chat is muted and the raid group stays on top.
+    state
+        .social
+        .apply_typing("c-lumen", AccountId(2), true, SAMPLE_NOW as u64);
+    let mut raid = vec![
+        said("c-raid", 1, 3, "Juno", "Raid is at 9. Who is in?", 30_000),
+        said("c-raid", 2, 4, "Kit", "In.", 29_900),
+        said("c-raid", 3, 4, "Kit", "Bringing the new build too.", 29_880),
+        said("c-raid", 4, 2, "Lumen", "Same. I can host.", 29_700),
+        said(
+            "c-raid",
+            5,
+            1,
+            "Mira",
+            "I will be a few minutes late.",
+            29_400,
+        ),
+        said(
+            "c-raid",
+            6,
+            3,
+            "Juno",
+            "No problem, we start with the warm-up.",
+            29_300,
+        ),
+    ];
+    raid[3].reply = Some(Quote {
+        seq: 1,
+        sender: account(3, "Juno"),
+        text: "Raid is at 9. Who is in?".into(),
+        deleted: false,
+    });
+    state.social.ingest(
+        "c-raid",
+        Fetch::Newest,
+        Messages {
+            messages: raid,
+            last: 30,
+            rev: 0,
+        },
+    );
+    state.social.ingest(
+        "c-juno",
+        Fetch::Newest,
+        Messages {
+            messages: vec![
+                said("c-juno", 11, 3, "Juno", "Did you see the new map?", 21_000),
+                said("c-juno", 12, 1, "Mira", "Not yet. Tonight.", 20_000),
+            ],
+            last: 12,
             rev: 0,
         },
     );
@@ -1527,6 +1714,7 @@ pub struct ScreenGallery {
     compare: crate::screens::compare::CompareScreen,
     recommended: RecommendedPanel,
     whats_new: WhatsNewPanel,
+    required: crate::screens::required::RequiredScreen,
     notes: Published,
     /// The notes of a launcher update.
     launcher_notes: Published,
@@ -1604,6 +1792,7 @@ impl ScreenGallery {
         Self {
             recommended: RecommendedPanel::default(),
             whats_new: WhatsNewPanel::default(),
+            required: crate::screens::required::RequiredScreen::default(),
             notes: Published {
                 tag: "0.1.3".into(),
                 date: "2026-10-20".into(),
@@ -1941,6 +2130,19 @@ impl ScreenGallery {
                 count: if self.prefs.clips_seconds > 0 { 3 } else { 0 },
                 capturing: matches!(self.page, ScreenPage::BehaviourClipsKey),
             },
+            location: match self.page {
+                ScreenPage::UnlockedLocation(look) => look.env(),
+                _ => crate::screens::settings::LocationEnv {
+                    report: Some(anyps5_core::location::Report {
+                        root: "D:\\Games\\PS5".into(),
+                        custom: false,
+                        availability: anyps5_core::location::Availability::Ready,
+                        free: Some(312_400_000_000),
+                        network: false,
+                    }),
+                    ..Default::default()
+                },
+            },
         };
         let icon = Some(self.tile(1));
         self.settings
@@ -2033,6 +2235,22 @@ impl ScreenGallery {
                 launcher,
             };
             self.whats_new.show(shell, &ctx, &events, &data);
+        }
+        if let ScreenPage::Required(look) = self.page {
+            use crate::screens::required::{Reason, RequiredData};
+            let notes = crate::screens::required::note_lines(&self.launcher_notes.notes);
+            let update = look.state();
+            let data = RequiredData {
+                language,
+                update: &update,
+                reason: if look == RequiredLook::OnlineClosed {
+                    Reason::OnlineClosed
+                } else {
+                    Reason::Retired
+                },
+                notes: &notes,
+            };
+            self.required.show(shell, &ctx, &events, &data);
         }
         {
             let mut data = ControlsData {
@@ -2165,9 +2383,12 @@ impl ScreenGallery {
                     OnlineLook::Account | OnlineLook::AccountAppearing => {
                         self.friends.show_page(Page::Account, &data);
                     }
-                    OnlineLook::Party | OnlineLook::TogetherParty => {
-                        self.friends.show_page(Page::Party, &data);
-                    }
+                    OnlineLook::Party
+                    | OnlineLook::PartyPair
+                    | OnlineLook::PartyFour
+                    | OnlineLook::PartyMuted
+                    | OnlineLook::PartyAlone
+                    | OnlineLook::TogetherParty => self.friends.show_page(Page::Party, &data),
                     OnlineLook::TogetherFriend => self
                         .friends
                         .show_page(Page::Friend(anyps5_core::online::api::AccountId(2)), &data),
@@ -2200,13 +2421,38 @@ impl ScreenGallery {
                         Page::VoiceDevices(anyps5_core::online::DeviceKind::Input),
                         &data,
                     ),
-                    OnlineLook::Messages => self.friends.show_page(Page::Messages, &data),
+                    OnlineLook::Messages | OnlineLook::MessagesEmpty => {
+                        self.friends.show_page(Page::Messages, &data)
+                    }
+                    OnlineLook::ConversationGroup => self
+                        .friends
+                        .show_page(Page::Conversation("c-raid".into()), &data),
+                    OnlineLook::ConversationFocus => {
+                        self.friends
+                            .show_page(Page::Conversation("c-raid".into()), &data);
+                        self.friends.set_chat_focus("c-raid", 3);
+                    }
+                    OnlineLook::ConversationShort => self
+                        .friends
+                        .show_page(Page::Conversation("c-juno".into()), &data),
                     OnlineLook::Message => self
                         .friends
                         .show_page(Page::Message("c-lumen".into(), 6), &data),
                     OnlineLook::Conversation => self
                         .friends
                         .show_page(Page::Conversation("c-lumen".into()), &data),
+                    OnlineLook::MessageOwn => self
+                        .friends
+                        .show_page(Page::Message("c-lumen".into(), 4), &data),
+                    OnlineLook::QuickReplies => self
+                        .friends
+                        .show_page(Page::QuickReplies("c-lumen".into()), &data),
+                    OnlineLook::Keyboard => self
+                        .friends
+                        .show_page(Page::Keyboard("c-lumen".into()), &data),
+                    OnlineLook::ChatOptions => self
+                        .friends
+                        .show_page(Page::ChatOptions("c-lumen".into()), &data),
                     OnlineLook::Request => self
                         .friends
                         .show_page(Page::MessageRequest("c-nyx".into()), &data),
@@ -2308,6 +2554,16 @@ impl ScreenGallery {
                 self.prefs.online_openh264 = on;
                 self.settings.open_at(6, true);
             }
+            ScreenPage::UnlockedLocation(look) => {
+                if look != LocationLook::Default {
+                    self.prefs.unlocked_folder = Some(look.folder().into());
+                }
+                if look == LocationLook::Left {
+                    self.prefs.unlocked_moving_from = Some("D:\\Games\\PS5".into());
+                }
+                self.settings.open_at(1, true);
+                self.settings.focus_row(2);
+            }
             ScreenPage::BehaviourClipsOff => {
                 self.prefs.clips_seconds = 0;
                 self.settings.open_at(3, true);
@@ -2322,6 +2578,10 @@ impl ScreenGallery {
                     } else {
                         8
                     });
+            }
+            ScreenPage::BehaviourSteam => {
+                self.settings.open_at(3, true);
+                self.settings.focus_row(12);
             }
             ScreenPage::Phone(look) => {
                 self.settings.open_at(4, true);
@@ -2339,6 +2599,12 @@ impl ScreenGallery {
                     .open_expanded(&self.notes.notes, shell.language, 2);
             }
             ScreenPage::WhatsNewLoading => self.whats_new.open(),
+            ScreenPage::Required(look) => {
+                self.required.open();
+                if look == RequiredLook::OnlineClosed {
+                    self.required.focus_offline();
+                }
+            }
             ScreenPage::Log | ScreenPage::Report => self.log.open(),
             ScreenPage::Start => self.start.open_at(ctx.clock()),
             ScreenPage::Banner | ScreenPage::Unlocking | ScreenPage::Together(_) => {}
@@ -2457,5 +2723,65 @@ fn sample_game_input() -> GameInput {
     GameInput::Bindings {
         actions: parse_input_ini(ini),
         source: std::path::PathBuf::from("pakchunk0-ps5.pak"),
+    }
+}
+
+/// The unlocked games location in the gallery.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocationLook {
+    /// Next to the dumps, hard links.
+    Default,
+    /// Another drive, with room.
+    Custom,
+    /// A network share.
+    Network,
+    /// The drive is not connected.
+    Missing,
+    /// The copies are being moved.
+    Moving,
+    /// A move stopped; copies wait in the old place.
+    Left,
+}
+
+impl LocationLook {
+    fn folder(self) -> &'static str {
+        match self {
+            LocationLook::Network => "\\\\nas\\games\\unlocked",
+            LocationLook::Missing => "F:\\Unlocked",
+            _ => "E:\\Unlocked",
+        }
+    }
+
+    fn env(self) -> crate::screens::settings::LocationEnv {
+        use anyps5_core::location::{Availability, Report};
+        let report = Report {
+            root: if self == LocationLook::Default {
+                "D:\\Games\\PS5".into()
+            } else {
+                self.folder().into()
+            },
+            custom: self != LocationLook::Default,
+            availability: if self == LocationLook::Missing {
+                Availability::Missing
+            } else {
+                Availability::Ready
+            },
+            free: match self {
+                LocationLook::Default => Some(312_400_000_000),
+                LocationLook::Missing => None,
+                LocationLook::Network => Some(2_100_000_000_000),
+                _ => Some(412_800_000_000),
+            },
+            network: self == LocationLook::Network,
+        };
+        crate::screens::settings::LocationEnv {
+            report: Some(report),
+            moving: (self == LocationLook::Moving).then_some(crate::screens::settings::MoveEnv {
+                done: 2,
+                total: 7,
+                permille: 420,
+            }),
+            left: (self == LocationLook::Left).then(|| ("D:\\Games\\PS5".into(), 3)),
+        }
     }
 }

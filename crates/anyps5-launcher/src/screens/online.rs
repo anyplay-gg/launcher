@@ -2,10 +2,12 @@
 //! One side panel on the game sheet's frame, with pages that swap in place. The panel only shows
 //! and asks; the net service acts, and the host turns the panel's actions into commands for it.
 
+mod chat;
 mod feed;
 mod local;
 mod profile;
 mod restriction;
+mod room;
 pub mod screen;
 mod social;
 mod voice;
@@ -69,7 +71,8 @@ pub enum OnlineAction {
     RemoveFriend(AccountId),
     Block(AccountId),
     Unblock(AccountId),
-    Report(AccountId, ReportReason),
+    /// A report of an account, with the message it is about when there is one.
+    Report(AccountId, ReportReason, Option<(String, u64)>),
     /// Join the session a friend plays in.
     Join(AccountId),
     /// Invite a friend to the player's session.
@@ -111,6 +114,31 @@ pub enum OnlineAction {
     AcceptRequest(String),
     /// Leave a group, or decline a message request.
     LeaveConversation(String),
+    /// The draft answers a message / edits one of the player's / is dropped.
+    StartReply {
+        conversation: String,
+        seq: u64,
+    },
+    StartEdit {
+        conversation: String,
+        seq: u64,
+    },
+    CancelCompose(String),
+    /// Ask again for the list of conversations (`None`) or for a conversation's messages.
+    RetryMessages(Option<String>),
+    /// The list shows these conversations: fetch the newest message of those that have none.
+    NeedPreviews(Vec<String>),
+    /// Take a message of the player's back for everyone.
+    Unsend {
+        conversation: String,
+        seq: u64,
+    },
+    /// Mute or pin a conversation.
+    ConversationSettings {
+        conversation: String,
+        muted: Option<bool>,
+        pinned: Option<bool>,
+    },
     /// Put a message's text on the clipboard.
     CopyText(String),
     /// Appear offline to every other player, or show again.
@@ -137,6 +165,10 @@ pub enum OnlineAction {
     OpenDiscord(String),
     // Party voice
     Voice(bool),
+    /// Mute or unmute the player's own microphone.
+    MicMute(bool),
+    /// Stop or resume hearing everyone.
+    Deafen(bool),
     VoiceProvider(VoiceProvider),
     VoiceMode(VoiceMode),
     /// The key held to talk, by its egui name.
@@ -179,8 +211,14 @@ pub enum Page {
     Messages,
     Conversation(String),
     MessageRequest(String),
-    /// One message in full: copy it, report it.
+    /// One message in full: answer it, react, edit, unsend, copy, report.
     Message(String, u64),
+    /// Short answers to send without typing.
+    QuickReplies(String),
+    /// Mute, pin, report, block or leave: what the player settles for one conversation.
+    ChatOptions(String),
+    /// A keyboard on the screen for a pad: rows of keys to press.
+    Keyboard(String),
     /// Party voice: the switch, the mode, the talk key and the devices.
     Voice,
     /// The microphones or the speakers to choose from.
@@ -247,6 +285,9 @@ impl Page {
             Page::Messages
             | Page::Conversation(_)
             | Page::MessageRequest(_)
+            | Page::QuickReplies(_)
+            | Page::ChatOptions(_)
+            | Page::Keyboard(_)
             | Page::Message(..) => Some(Section::Messages),
             Page::Feed => Some(Section::Activity),
             Page::Account | Page::Blocked(_) | Page::Restriction(_) => Some(Section::Settings),
@@ -324,12 +365,16 @@ pub struct OnlinePanel {
     previous: Option<Page>,
     /// Where Back from the report page leads, when it did not open from a friend.
     report_from: Option<Page>,
+    /// The message a report is about, when it opened from one.
+    report_message: Option<(String, u64)>,
+    /// The key each row of the on-screen keyboard rests on, and its mode.
+    keys: [usize; 4],
+    shift: bool,
+    symbols: bool,
     /// The friend whose conversation was asked for; the page opens it once it is there.
     opening: Option<AccountId>,
     /// Actions that a page change asks for, handed out with the next frame's.
     queued: Vec<OnlineAction>,
-    /// The row the focus stands on, for a page whose rows change under it.
-    anchor: Option<social::Anchor>,
     /// The Discord link being written for the party.
     link_text: String,
     /// The talk key row waits for a key.
@@ -340,8 +385,14 @@ pub struct OnlinePanel {
     local: Local,
     /// Where the focus stands in the feed's cards.
     feed_focus: feed::FeedFocus,
+    /// The list of conversations and the thread: where the focus stands.
+    chat: chat::ChatState,
     /// The item the feed's focus is on, to keep it there when items come in above it.
     feed_anchor: Option<u64>,
+    /// Where the focus stands in the party room.
+    room_focus: room::RoomFocus,
+    /// How many member tiles the room drew in a row last frame (0 before the first).
+    room_columns: usize,
 }
 
 impl OnlinePanel {
@@ -429,6 +480,12 @@ impl OnlinePanel {
         if self.feed_is_list(data) {
             return self.feed_focus.slot.is_none();
         }
+        if self.room_is_page() {
+            return self.room_left_leaves();
+        }
+        if self.chat_is_list(data) {
+            return true;
+        }
         let rows = self.rows(data).2;
         match rows.get(self.side.nav.row).map(|r| &r.control) {
             Some(
@@ -512,25 +569,27 @@ impl OnlinePanel {
         let in_chat = |page: &Page| matches!(page, Page::Conversation(_) | Page::MessageRequest(_));
         let within_chat = (matches!(self.page, Page::Message(..)) && in_chat(&page))
             || (in_chat(&self.page) && matches!(page, Page::Message(..)));
+        let from_member = match (&self.page, &page) {
+            (Page::PartyMember(id), Page::Party) => Some(*id),
+            _ => None,
+        };
         if self.page != page && !within_chat {
             self.previous = Some(std::mem::take(&mut self.page));
         }
-        self.anchor = None;
         self.capturing = false;
+        if page == Page::Messages {
+            self.chat.opened = None;
+        }
         self.page = page;
+        if self.page == Page::Party {
+            self.room_start(data, from_member);
+        }
         let rows = self.rows(data).2;
-        // A page opens on its first row that takes focus, a conversation on its field. A request
-        // opens on its first message: read before answering.
-        let wanted = match self.page {
-            Page::Conversation(_) => "compose",
-            _ => "",
-        };
-        let first = rows::position(&rows, wanted).unwrap_or_else(|| {
-            rows::kinds(&rows)
-                .iter()
-                .position(|kind| *kind != RowKind::Info)
-                .unwrap_or(0)
-        });
+        // A page opens on its first row that takes focus.
+        let first = rows::kinds(&rows)
+            .iter()
+            .position(|kind| *kind != RowKind::Info)
+            .unwrap_or(0);
         self.side.open_at(first);
     }
 
@@ -599,9 +658,10 @@ impl OnlinePanel {
             return actions;
         }
         self.follow(data);
-        if self.anchor.is_some() {
-            let rows = self.rows(data).2;
-            self.restore_anchor(data, &rows);
+        // A typing line goes away on its own: draw once more when the last one runs out.
+        let now = u64::try_from(data.now).unwrap_or(0);
+        if let Some(end) = data.online.social.typing_ends(now) {
+            ctx.request_repaint_after(std::time::Duration::from_secs(end.saturating_sub(now) + 1));
         }
         if let Page::Conversation(id) = &self.page
             && data.online.social.read_target(id).is_some()
@@ -618,6 +678,27 @@ impl OnlinePanel {
             }
             if self.feed_is_list(data) {
                 if self.feed_command(shell, command, data, &mut actions) {
+                    self.step_back(shell, data, &mut actions);
+                    break;
+                }
+                continue;
+            }
+            if self.room_is_page() {
+                if self.room_command(shell, command, data, &mut actions) {
+                    self.step_back(shell, data, &mut actions);
+                    break;
+                }
+                continue;
+            }
+            if self.chat_is_list(data) {
+                if self.chat_list_command(shell, command, data, &mut actions) {
+                    self.step_back(shell, data, &mut actions);
+                    break;
+                }
+                continue;
+            }
+            if self.chat_is_thread(data) {
+                if self.chat_thread_command(shell, command, data, &mut actions) {
                     self.step_back(shell, data, &mut actions);
                     break;
                 }
@@ -664,6 +745,18 @@ impl OnlinePanel {
         // Each kind of page keeps its own scroll: walking the rail never lands on an old offset.
         let list_id = ("online-rows", std::mem::discriminant(&self.page));
         let events = match self.page.clone() {
+            Page::Party => {
+                self.room_draw(shell, ui, data, open && focused, &mut actions);
+                Vec::new()
+            }
+            Page::Messages if self.chat_is_list(data) => {
+                self.chat_list_draw(ui, data, open && focused, &mut actions);
+                Vec::new()
+            }
+            Page::Conversation(_) | Page::MessageRequest(_) if self.chat_is_thread(data) => {
+                self.chat_thread_draw(ui, data, open && focused, &mut actions);
+                Vec::new()
+            }
             Page::Feed if self.feed_is_list(data) => {
                 self.feed_draw(ui, data, open && focused, &mut actions);
                 Vec::new()
@@ -695,13 +788,7 @@ impl OnlinePanel {
     }
 
     /// After the draw: where the focus stands now, what a page change asked for, the key capture.
-    pub fn end_frame(&mut self, shell: &mut Shell, data: &OnlineData<'_>) -> Vec<OnlineAction> {
-        self.anchor = if self.side.is_open() {
-            let rows = self.rows(data).2;
-            self.anchor_now(data, &rows)
-        } else {
-            None
-        };
+    pub fn end_frame(&mut self, shell: &mut Shell, _data: &OnlineData<'_>) -> Vec<OnlineAction> {
         let actions = std::mem::take(&mut self.queued);
         self.sync_capture(shell);
         actions
@@ -748,21 +835,12 @@ impl OnlinePanel {
         actions.push(OnlineAction::Close);
     }
 
-    fn typed(&mut self, row: RowId, value: String, actions: &mut Vec<OnlineAction>) {
+    fn typed(&mut self, row: RowId, value: String, _actions: &mut Vec<OnlineAction>) {
         let field = match row {
             "cloud" => &mut self.cloud_text,
             "friend" => &mut self.friend_text,
             "appeal" => &mut self.appeal_text,
             "discordLink" => &mut self.link_text,
-            "compose" => {
-                if let Page::Conversation(id) = &self.page {
-                    actions.push(OnlineAction::Draft {
-                        conversation: id.clone(),
-                        text: value,
-                    });
-                }
-                return;
-            }
             _ => return,
         };
         *field = value;
@@ -804,12 +882,6 @@ impl OnlinePanel {
                 on,
             } => {
                 self.social_toggle("pickParty", *on, data);
-            }
-            Change::Submit { row: "compose" } => {
-                self.run("send", data, actions);
-                // The field stays ready for the next message.
-                ctx.data_mut(|d| d.insert_temp(egui::Id::unique("panel-text-focus"), true));
-                ctx.request_repaint();
             }
             Change::Submit { row: "friend" } => self.run("sendRequest", data, actions),
             Change::Toggle { row: "pick", on } => {
@@ -874,6 +946,20 @@ impl OnlinePanel {
                     }
                 }
             }
+            Change::Choice {
+                row: row @ ("keyA" | "keyB" | "keyC" | "keyCtl"),
+                index,
+            } => {
+                let slot = ["keyA", "keyB", "keyC", "keyCtl"]
+                    .iter()
+                    .position(|r| r == row)
+                    .unwrap_or(0);
+                self.keys[slot] = *index;
+            }
+            Change::Press {
+                row: row @ ("keyA" | "keyB" | "keyC" | "keyCtl"),
+                index,
+            } => self.key_press(row, *index, data, actions),
             Change::Run { row } => self.run(row, data, actions),
             _ => {}
         }
@@ -957,10 +1043,15 @@ impl OnlinePanel {
             ("report", Page::Friend(id)) => {
                 let id = *id;
                 self.report_from = None;
+                self.report_message = None;
                 self.go(Page::Report(id), data);
             }
             ("sendReport", Page::Report(id)) => {
-                actions.push(OnlineAction::Report(*id, REASONS[self.reason.min(4)]));
+                actions.push(OnlineAction::Report(
+                    *id,
+                    REASONS[self.reason.min(4)],
+                    self.report_message.take(),
+                ));
             }
             ("joinInvitation", Page::Invitation(id)) => {
                 actions.push(OnlineAction::AnswerInvitation {
@@ -1314,6 +1405,9 @@ impl OnlinePanel {
             | Page::Messages
             | Page::Conversation(_)
             | Page::MessageRequest(_)
+            | Page::QuickReplies(_)
+            | Page::ChatOptions(_)
+            | Page::Keyboard(_)
             | Page::Message(..) => self
                 .social_rows(data, &mut rows)
                 .unwrap_or_else(|| (String::new(), None)),
