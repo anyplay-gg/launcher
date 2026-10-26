@@ -885,10 +885,28 @@ impl LauncherApp {
             f32::from(u8::from(visible)),
             Motion::Overlay,
         );
+        let mut closed = false;
         if let Some(toast) = &self.model.toast {
-            chrome::toast(ctx, "launcher-toast", toast.icon, &toast.text, v);
+            let close = toast
+                .stays()
+                .then(|| self.model.language().text(Key::Close));
+            closed = chrome::toast(
+                ctx,
+                "launcher-toast",
+                toast.icon,
+                &toast.text,
+                close,
+                visible,
+                v,
+            );
         }
-        if visible && let Some(toast) = &self.model.toast {
+        if closed && visible {
+            self.model.dismiss_toast();
+        }
+        if visible
+            && let Some(toast) = &self.model.toast
+            && !toast.stays()
+        {
             let left = (toast.until - ctx.clock()).max(0.0);
             ctx.request_repaint_after(Duration::from_secs_f64(left + 0.02));
         }

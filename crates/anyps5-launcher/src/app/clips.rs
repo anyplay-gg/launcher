@@ -87,7 +87,7 @@ impl ClipsService {
         let Some(worker) = super::online::share_worker_path(model) else {
             self.gave_up = Some(game.clone());
             let text = ClipsText::NoWorker.text(model.language());
-            model.toast(text, Icon::WARNING);
+            model.toast_failure(text);
             return;
         };
         let title = model.game(game).map(|g| g.name.clone()).unwrap_or_default();
@@ -171,7 +171,12 @@ impl ClipsService {
                         } else {
                             ClipsText::SaveFailed
                         };
-                        model.toast(text.text(model.language()), Icon::WARNING);
+                        // "Nothing yet" is a notice and fades; a save that failed stays.
+                        if matches!(text, ClipsText::SaveFailed) {
+                            model.toast_failure(text.text(model.language()));
+                        } else {
+                            model.toast(text.text(model.language()), Icon::WARNING);
+                        }
                     }
                     WorkerEvent::Ended { reason } => ended = Some(reason),
                 }
@@ -196,7 +201,7 @@ impl ClipsService {
             _ => ClipsText::Stopped,
         };
         self.gave_up = game;
-        model.toast(text.text(model.language()), Icon::WARNING);
+        model.toast_failure(text.text(model.language()));
     }
 
     /// The hotkey, the controller's Create button or the phone's: save the last seconds.
@@ -222,7 +227,7 @@ impl ClipsService {
         let path = clips::clip_path(&folder, &title, &stamp());
         if let Err(error) = active.recorder.save(&path) {
             tracing::warn!("clips: the save command failed: {error}");
-            model.toast(ClipsText::SaveFailed.text(language), Icon::WARNING);
+            model.toast_failure(ClipsText::SaveFailed.text(language));
         }
     }
 }

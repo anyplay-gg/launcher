@@ -10,8 +10,8 @@ use egui::{
 
 use crate::ui::anim::{self, AnimExt, Motion, lerp};
 use crate::ui::components::{
-    self, Force, PRESS_SCALE, corner, key_cap, paint_capsule, paint_hairline, paint_progress,
-    paint_shadow, scale_rect,
+    self, ConsoleButton, ControlSize, Force, Hint, HintAction, PRESS_SCALE, corner, key_cap,
+    paint_capsule, paint_hairline, paint_progress, paint_shadow, scale_rect,
 };
 use crate::ui::glass::{GlassStyle, paint_glass};
 use crate::ui::i18n::{Key, Language};
@@ -19,7 +19,7 @@ use crate::ui::icons::Icon;
 use crate::ui::input;
 use crate::ui::text;
 use crate::ui::theme::{
-    self, TextStyle, Weight, black, color, fade, mix, radius, shadows, size, ty, white,
+    self, TextStyle, Weight, black, color, fade, mix, radius, shadows, size, space, ty, white,
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -1579,42 +1579,98 @@ pub fn fullscreen_panel<R>(
     result
 }
 
-/// The toast: a glass pill at the top centre. `v` is the openness from `Motion::Overlay`
-/// (spring in/out, offset -(1 - v) * 80); the caller keeps it up for 3.2 s.
+/// Toast geometry: text rows of a routine toast and of one that stays (it shows the longest message
+/// the launcher writes), the glyph, the widest pill, what the top bar keeps free on each side of the
+/// centre (its buttons are 430 wide, plus 12 of air), the slide of the entrance, the Close button's
+/// inset (concentric with the pill) and the leading from three rows on.
+const TOAST_ROWS: usize = 3;
+const TOAST_STAYING_ROWS: usize = 8;
+const TOAST_GLYPH: f32 = 17.0;
+const TOAST_MAX_WIDTH: f32 = 760.0;
+const TOAST_BAR_RESERVE: f32 = 442.0;
+const TOAST_TRAVEL: f32 = 80.0;
+const TOAST_CLOSE_INSET: f32 = space::M;
+const TOAST_LONG_LEADING: f32 = 1.4;
+
+/// The toast: a glass pill at the top centre. `v` is the openness from `Motion::Overlay`; the
+/// caller keeps a routine toast up for 3.2 s. A toast that stays until dismissed (a failure) gets
+/// `close`, the word of its Close button and of the Back hint beside it; the result says the
+/// button was pressed; `live` is false while the toast leaves, when the button does nothing.
+/// It never grows into the top bar's buttons and shows its whole message.
 pub fn toast(
     ctx: &Context,
     id: impl std::hash::Hash + std::fmt::Debug,
     icon: Icon,
     message: &str,
+    close: Option<&str>,
+    live: bool,
     v: f32,
-) {
+) -> bool {
+    const ROWS: usize = TOAST_ROWS;
+    const STAYING_ROWS: usize = TOAST_STAYING_ROWS;
+    const GLYPH: f32 = TOAST_GLYPH;
+    const PAD_X: f32 = space::XL;
+    const PAD_Y: f32 = space::M;
+    const GAP: f32 = space::M;
+    const CLOSE_INSET: f32 = TOAST_CLOSE_INSET;
     if v <= 0.001 {
-        return;
+        return false;
     }
+    let mut pressed = false;
     let screen = ctx.content_rect();
     Area::new(Id::unique(id))
         .order(Order::Tooltip)
         .fixed_pos(screen.min)
-        .interactable(false)
+        .interactable(close.is_some())
         .show(ctx, |ui| {
             let painter = ui.painter().clone();
-            let max_text = (screen.width() * 0.6).min(760.0);
-            let galley = {
-                let mut job = LayoutJob::simple(
-                    message.to_owned(),
-                    ty::TOAST.font(),
-                    Color32::PLACEHOLDER,
-                    max_text,
-                );
-                job.wrap.max_rows = 2;
-                job.sections[0].format.line_height = Some(ty::TOAST.line_height());
-                painter.layout_job(job)
+            let size_close = ControlSize::Small.height();
+            // What follows the text: a Back hint (for keys and the pad) and the Close button, or
+            // the same padding as at the start.
+            let hint = close
+                .filter(|_| input::focus_visible(ctx))
+                .map(|label| Hint {
+                    action: HintAction::Back,
+                    label,
+                });
+            let hint_w = hint
+                .as_ref()
+                .map_or(0.0, |h| h.width(&painter, input::device(ctx)) + GAP);
+            let tail = if close.is_some() {
+                hint_w + GAP + size_close + CLOSE_INSET
+            } else {
+                PAD_X
             };
-            let glyph = 17.0;
-            let (pad_x, pad_y, gap) = (22.0, 14.0, 10.0);
-            let w = pad_x * 2.0 + glyph + gap + galley.size().x;
-            let h = (pad_y * 2.0 + galley.size().y).max(radius::TOAST * 2.0);
-            let travel = if ctx.reduced_motion() { 0.0 } else { 80.0 };
+            let max_width =
+                (screen.width() - 2.0 * TOAST_BAR_RESERVE).clamp(320.0, TOAST_MAX_WIDTH);
+            let max_text = max_width - PAD_X - GLYPH - GAP - tail;
+            let galley = {
+                let layout = |line_height: f32| {
+                    let mut job = LayoutJob::simple(
+                        message.to_owned(),
+                        ty::TOAST.font(),
+                        Color32::PLACEHOLDER,
+                        max_text,
+                    );
+                    job.wrap.max_rows = if close.is_some() { STAYING_ROWS } else { ROWS };
+                    job.sections[0].format.line_height = Some(line_height);
+                    painter.layout_job(job)
+                };
+                let one_line = layout(ty::TOAST.line_height());
+                // Three rows or more read at the open leading of running text.
+                if one_line.rows.len() >= 3 {
+                    layout(ty::TOAST.size * TOAST_LONG_LEADING)
+                } else {
+                    one_line
+                }
+            };
+            let w = PAD_X + GLYPH + GAP + galley.size().x + tail;
+            let h = (PAD_Y * 2.0 + galley.size().y).max(radius::TOAST * 2.0);
+            let travel = if ctx.reduced_motion() {
+                0.0
+            } else {
+                TOAST_TRAVEL
+            };
             let top = size::TOAST_TOP - (1.0 - v) * travel;
             let rect = Rect::from_min_size(
                 pos2(screen.center().x - w * 0.5, screen.min.y + top),
@@ -1637,21 +1693,54 @@ pub fn toast(
             style.black *= a;
             paint_glass(ctx, &painter, rect, style);
             painter.text(
-                pos2(rect.min.x + pad_x + glyph * 0.5, rect.center().y),
+                pos2(rect.min.x + PAD_X + GLYPH * 0.5, rect.center().y),
                 Align2::CENTER_CENTER,
                 icon.glyph(),
-                icon.font(glyph, true),
-                fade(Color32::WHITE, a),
+                icon.font(GLYPH, true),
+                fade(color::text(), a),
             );
+            let text_x = rect.min.x + PAD_X + GLYPH + GAP;
             painter.galley(
-                pos2(
-                    rect.min.x + pad_x + glyph + gap,
-                    rect.center().y - galley.size().y * 0.5,
-                ),
+                pos2(text_x, rect.center().y - galley.size().y * 0.5),
                 galley,
-                fade(Color32::WHITE, a),
+                fade(color::text(), a),
             );
+            if let Some(word) = close {
+                let button = Rect::from_center_size(
+                    pos2(rect.max.x - CLOSE_INSET - size_close * 0.5, rect.center().y),
+                    vec2(size_close, size_close),
+                );
+                let mut child = ui.new_child(
+                    UiBuilder::new()
+                        .max_rect(button)
+                        .layout(Layout::top_down(Align::Center)),
+                );
+                child.set_opacity(a);
+                // The status node above carries the message; the button is named by its word.
+                pressed = live
+                    && ConsoleButton::icon_only(Icon::X, word)
+                        .size(ControlSize::Small)
+                        .show(&mut child)
+                        .clicked();
+                if let Some(hint) = hint {
+                    let at = Rect::from_min_size(
+                        pos2(
+                            button.min.x - GAP - (hint_w - GAP),
+                            rect.center().y - size::HINT_CAP * 0.5,
+                        ),
+                        vec2(hint_w - GAP, size::HINT_CAP),
+                    );
+                    let mut hint_ui = ui.new_child(
+                        UiBuilder::new()
+                            .max_rect(at)
+                            .layout(Layout::left_to_right(Align::Center)),
+                    );
+                    hint_ui.set_opacity(a);
+                    hint.show(&mut hint_ui);
+                }
+            }
         });
+    pressed
 }
 
 /// A frosted card with a hairline, used by onboarding and diagnosis boxes: glass at `rect`.

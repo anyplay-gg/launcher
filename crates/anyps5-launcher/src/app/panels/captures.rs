@@ -142,7 +142,7 @@ impl PanelHost {
                 }
                 None => cx
                     .model
-                    .toast(CapturesText::CopyFailed.text(language), Icon::WARNING),
+                    .toast_failure(CapturesText::CopyFailed.text(language)),
             }
         }
         for (action, target) in actions.into_iter().zip(targets) {
@@ -175,7 +175,7 @@ impl PanelHost {
                     && let Err(error) = platform::open_file(&c.path)
                 {
                     tracing::warn!("captures: {} did not open: {error}", c.path.display());
-                    model.toast(CapturesText::PlayerFailed.text(language), Icon::WARNING);
+                    model.toast_failure(CapturesText::PlayerFailed.text(language));
                 }
             }
             CapturesAction::ShowInFolder(_) => {
@@ -183,7 +183,7 @@ impl PanelHost {
                     && let Err(error) = platform::reveal(&c.path)
                 {
                     tracing::warn!("captures: {} was not shown: {error}", c.path.display());
-                    model.toast(CapturesText::FolderFailed.text(language), Icon::WARNING);
+                    model.toast_failure(CapturesText::FolderFailed.text(language));
                 }
             }
             CapturesAction::CopyImage(_) => {
@@ -204,7 +204,7 @@ impl PanelHost {
                     Err(error) => {
                         tracing::warn!("captures: {} was not deleted: {error}", c.path.display());
                         let text = CapturesText::DeleteFailed.format(language, &[Arg::Str(&name)]);
-                        model.toast(text, Icon::WARNING);
+                        model.toast_failure(text);
                     }
                 }
             }
