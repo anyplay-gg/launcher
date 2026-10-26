@@ -491,7 +491,7 @@ impl TrophyListPanel {
         // 0 while the lock tile and the placeholder texts show, 1 once the trophy is shown.
         let revealable = trophy.hidden && !earned;
         let shown_t = if revealable {
-            ctx.focus_t(("trophy-reveal", self.visit, index), !secret)
+            ctx.choice_t(("trophy-reveal", self.visit, index), !secret)
         } else {
             1.0
         };

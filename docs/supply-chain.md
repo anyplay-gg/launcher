@@ -16,6 +16,14 @@ How a launcher release can be traced from the source to the binary, and what mak
 
 The shared `rules` workflow comes from `anyplaynet/.github@main`, which is the organisation's own code and is not pinned to a commit.
 
+## C code built from source
+
+LibAtrac9 by Alex Barney (MIT) decodes a game's own music (`sce_sys/snd0.at9`, ATRAC9) for the home screen. Its C sources are
+vendored in `crates/atrac9/libatrac9` at upstream commit `efca2e3` with their licence and a few bounds checks against damaged
+files (marked `AnyPlay:`, listed in that folder's README); `crates/atrac9/build.rs` compiles
+them with the `cc` crate and `crates/atrac9/src/lib.rs` is the only caller. It needs only the C standard library. cargo-about does
+not see vendored C, so `tools/notices.sh` appends its licence to `THIRD-PARTY-LICENSES.txt`.
+
 ## What the share worker brings in
 
 The share worker (also the recorder of Clips) is built from the network repository at the commit in `network.ref`. Its notable dependencies and their licences: `windows` and `windows-capture` (Windows capture, Media Foundation; MIT or Apache-2.0 and MIT), `minifb` (the viewer's window; MIT or Apache-2.0) and `mp4` 0.14 (writes the clips' MP4 files; MIT, pure Rust, 15 million downloads, last release 2023). On Linux: `ashpd` (the desktop portal's window picker; MIT), `pipewire` (the window's pictures; MIT; it links the system's `libpipewire-0.3`) and `openh264` with `openh264-sys2` (BSD-2-Clause), which load Cisco's OpenH264 binary at run time and only a build whose SHA-256 they know. No OpenH264 code is built into the worker or the launcher: Cisco's binary is downloaded from Cisco to the player's PC when the player turns the codec on in Settings, checked by the SHA-256 of the archive and of the library (`anyps5-core/src/openh264.rs`, `bzip2` to unpack it), and removed when they turn it off. Cisco's licence for that binary is added to `THIRD-PARTY-LICENSES.txt`. MIT is compatible with this repository's GPL-2.0-only; Apache-2.0 alone would not be, which is why the MP4 writer is `mp4` and not `shiguredo_mp4`. The network repository's `cargo deny` run holds the policy; this repository's `deny.toml` and the SBOM of the share worker cover what the launcher ships.

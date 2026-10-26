@@ -792,7 +792,7 @@ fn themes_page(ctx: &Context, ui: &mut Ui, shell: &Shell, time: Option<f32>) {
     let time = time.unwrap_or(STILL_TIME_CARD);
     for (i, theme) in Theme::ALL.iter().enumerate() {
         let focused = i == 0;
-        let t = ctx.focus_t(Id::unique(("theme-card", i)), focused);
+        let t = ctx.choice_t(Id::unique(("theme-card", i)), focused);
         let scale = theme::scale_for(1600.0, 900.0);
         let _ = scale;
         let factor = if focused { 1.04 } else { 0.97 };
@@ -800,9 +800,21 @@ fn themes_page(ctx: &Context, ui: &mut Ui, shell: &Shell, time: Option<f32>) {
         let mut layer = Background::new(SLOT_CARDS + theme.index(), *theme, time);
         layer.radius = radius::THEME_CARD * factor;
         layer.alpha = if focused { 1.0 } else { 0.72 };
-        components::paint_focus_glow(&painter, rect, radius::THEME_CARD * factor, 3.0, t);
+        components::paint_focus_glow(
+            &painter,
+            rect,
+            radius::THEME_CARD * factor,
+            size::FOCUS_RING_LARGE,
+            t,
+        );
         layer.paint(&painter, rect);
-        components::paint_focus_stroke(&painter, rect, radius::THEME_CARD * factor, 3.0, t);
+        components::paint_focus_stroke(
+            &painter,
+            rect,
+            radius::THEME_CARD * factor,
+            size::FOCUS_RING_LARGE,
+            t,
+        );
         let name_style = if focused {
             ty::THEME_CARD_NAME_FOCUSED
         } else {

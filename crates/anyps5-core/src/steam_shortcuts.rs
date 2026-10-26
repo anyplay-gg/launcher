@@ -170,7 +170,11 @@ fn process_named_steam() -> bool {
         return false;
     };
     entries.flatten().any(|entry| {
-        entry.file_name().to_string_lossy().bytes().all(|b| b.is_ascii_digit())
+        entry
+            .file_name()
+            .to_string_lossy()
+            .bytes()
+            .all(|b| b.is_ascii_digit())
             && fs::read_to_string(entry.path().join("comm"))
                 .is_ok_and(|name| name.trim_end() == "steam")
     })

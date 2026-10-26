@@ -4,7 +4,7 @@
 //! ```text
 //! anyplay-launcher --gallery=settings|settings1..6|game-settings|confirm|controls|controls-capture|
 //!                           controls-end|advanced|trophies|trophies-hidden|trophies-revealed|banner|start|unlocking|log|report|library|
-//!                           about-update|behavior-links|settings-codec|settings-codec-off|behavior-clips-off|behavior-clips|behavior-clips-key|behavior-steam|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|toolkit-engine|toolkit-engine-update|
+//!                           about-update|behavior-links|settings-codec|settings-codec-off|settings-location|settings-location-custom|settings-location-network|settings-location-missing|settings-location-moving|settings-location-left|behavior-clips-off|behavior-clips|behavior-clips-key|behavior-steam|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|toolkit-engine|toolkit-engine-update|
 //!                           toolkit-unused|game-toolkit|
 //!                           recommended|recommended-warning|whats-new|whats-new-loading|
 //!                           update-required|update-required-downloading|update-required-failed|
@@ -118,6 +118,8 @@ pub enum ScreenPage {
     BehaviourLinks,
     /// Advanced on Linux with share screen on: the OpenH264 row turned on (and downloaded), or off.
     SettingsCodec(bool),
+    /// Settings > Library with the unlocked games location in one state.
+    UnlockedLocation(LocationLook),
     /// Behavior with Clips off, on at 30 seconds, and waiting for the clip key.
     BehaviourClipsOff,
     BehaviourClips,
@@ -522,6 +524,12 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "behavior-links" => ScreenPage::BehaviourLinks,
         "settings-codec" => ScreenPage::SettingsCodec(true),
         "settings-codec-off" => ScreenPage::SettingsCodec(false),
+        "settings-location" => ScreenPage::UnlockedLocation(LocationLook::Default),
+        "settings-location-custom" => ScreenPage::UnlockedLocation(LocationLook::Custom),
+        "settings-location-network" => ScreenPage::UnlockedLocation(LocationLook::Network),
+        "settings-location-missing" => ScreenPage::UnlockedLocation(LocationLook::Missing),
+        "settings-location-moving" => ScreenPage::UnlockedLocation(LocationLook::Moving),
+        "settings-location-left" => ScreenPage::UnlockedLocation(LocationLook::Left),
         "behavior-clips-off" => ScreenPage::BehaviourClipsOff,
         "behavior-clips" => ScreenPage::BehaviourClips,
         "behavior-clips-key" => ScreenPage::BehaviourClipsKey,
@@ -1987,6 +1995,19 @@ impl ScreenGallery {
                 count: if self.prefs.clips_seconds > 0 { 3 } else { 0 },
                 capturing: matches!(self.page, ScreenPage::BehaviourClipsKey),
             },
+            location: match self.page {
+                ScreenPage::UnlockedLocation(look) => look.env(),
+                _ => crate::screens::settings::LocationEnv {
+                    report: Some(anyps5_core::location::Report {
+                        root: "D:\\Games\\PS5".into(),
+                        custom: false,
+                        availability: anyps5_core::location::Availability::Ready,
+                        free: Some(312_400_000_000),
+                        network: false,
+                    }),
+                    ..Default::default()
+                },
+            },
         };
         let icon = Some(self.tile(1));
         self.settings
@@ -2370,6 +2391,16 @@ impl ScreenGallery {
                 self.prefs.online_openh264 = on;
                 self.settings.open_at(6, true);
             }
+            ScreenPage::UnlockedLocation(look) => {
+                if look != LocationLook::Default {
+                    self.prefs.unlocked_folder = Some(look.folder().into());
+                }
+                if look == LocationLook::Left {
+                    self.prefs.unlocked_moving_from = Some("D:\\Games\\PS5".into());
+                }
+                self.settings.open_at(1, true);
+                self.settings.focus_row(2);
+            }
             ScreenPage::BehaviourClipsOff => {
                 self.prefs.clips_seconds = 0;
                 self.settings.open_at(3, true);
@@ -2387,7 +2418,7 @@ impl ScreenGallery {
             }
             ScreenPage::BehaviourSteam => {
                 self.settings.open_at(3, true);
-                self.settings.focus_row(11);
+                self.settings.focus_row(12);
             }
             ScreenPage::Phone(look) => {
                 self.settings.open_at(4, true);
@@ -2529,5 +2560,65 @@ fn sample_game_input() -> GameInput {
     GameInput::Bindings {
         actions: parse_input_ini(ini),
         source: std::path::PathBuf::from("pakchunk0-ps5.pak"),
+    }
+}
+
+/// The unlocked games location in the gallery.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocationLook {
+    /// Next to the dumps, hard links.
+    Default,
+    /// Another drive, with room.
+    Custom,
+    /// A network share.
+    Network,
+    /// The drive is not connected.
+    Missing,
+    /// The copies are being moved.
+    Moving,
+    /// A move stopped; copies wait in the old place.
+    Left,
+}
+
+impl LocationLook {
+    fn folder(self) -> &'static str {
+        match self {
+            LocationLook::Network => "\\\\nas\\games\\unlocked",
+            LocationLook::Missing => "F:\\Unlocked",
+            _ => "E:\\Unlocked",
+        }
+    }
+
+    fn env(self) -> crate::screens::settings::LocationEnv {
+        use anyps5_core::location::{Availability, Report};
+        let report = Report {
+            root: if self == LocationLook::Default {
+                "D:\\Games\\PS5".into()
+            } else {
+                self.folder().into()
+            },
+            custom: self != LocationLook::Default,
+            availability: if self == LocationLook::Missing {
+                Availability::Missing
+            } else {
+                Availability::Ready
+            },
+            free: match self {
+                LocationLook::Default => Some(312_400_000_000),
+                LocationLook::Missing => None,
+                LocationLook::Network => Some(2_100_000_000_000),
+                _ => Some(412_800_000_000),
+            },
+            network: self == LocationLook::Network,
+        };
+        crate::screens::settings::LocationEnv {
+            report: Some(report),
+            moving: (self == LocationLook::Moving).then_some(crate::screens::settings::MoveEnv {
+                done: 2,
+                total: 7,
+                permille: 420,
+            }),
+            left: (self == LocationLook::Left).then(|| ("D:\\Games\\PS5".into(), 3)),
+        }
     }
 }

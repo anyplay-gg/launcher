@@ -848,12 +848,12 @@ a secondary with the destructive ink.
 | Focused | fill 0.20, hairline 0.32, **ring** | fill 1.0, **ring** |
 | Disabled | 40 %, no hover, no cursor | 40 % |
 
-**Focus is a ring.** One treatment everywhere: a white 0.95 ring outside the shape with a 1.2 dp gap, 2 dp wide on controls
-(`size::FOCUS_RING`) and 3 dp on tiles, cards and cells, plus a fill one step lighter. Nothing grows, nothing swaps its ink and no
+**Focus is a ring** (3.11: it shows only for keys and the pad, and is quieter than written here). One treatment everywhere: a ring outside the shape with a 1.2 dp gap, 1.5 dp wide on controls
+(`size::FOCUS_RING`) and 2 dp on tiles, cards and cells, plus a fill one step lighter. Nothing grows, nothing swaps its ink and no
 glow sits behind a translucent fill (a shadow under a translucent fill shows through as a seam). The layout never moves when focus
 moves, so the 12 dp gap holds. The ring is the focus indicator for keyboard and gamepad: it is white on dark artwork and on every
 fill of the family (a primary focused is a white ring around a white capsule, separated by the gap). Containers (rows, cards,
-cells) use `components::paint_surface`: rest fill, +5 % white on hover, +9 % and the ring on focus, +6 % pressed.
+cells) use `components::paint_surface`: rest fill, +5 % white on hover, +11 % and the ring on focus, +6 % pressed.
 
 **Hover** exists on every control the pointer can reach and answers like the tiles do: the tiles draw the focus ring at 45 % under
 the pointer, controls lighten and show a brighter hairline. Only colour and opacity change, in 120 ms (`Motion::Hover`, the same
@@ -967,6 +967,24 @@ Update to Fedora 39, Ubuntu 24.04 or newer." The releases are the two oldest of 
 22.04 2.35, Debian 12 2.36, Fedora 39 2.38, Ubuntu 24.04 2.39, Debian 13 2.41); past the newest it says "Update to a newer release
 of your distribution." Settings adds a row under the note, "Read the Install Guide", that opens `docs/INSTALL.md` on GitHub
 (`about_strings::INSTALL_GUIDE`, the one new address); INSTALL.md lists the releases and their glibc.
+
+### 3.11 Round 5: the ring is for keys and the pad (2026-10-25, changes the ring of 3.9)
+
+The white ring was loud, and it stayed after a click. Now it behaves like `:focus-visible`:
+
+- **It shows only while the keyboard or the pad steer** (`input::focus_visible`). A click or tap anywhere hides it: the control
+  that was pressed answers with its press and its hover, nothing lingers, and a click on empty space leaves nothing lit. The next
+  arrow, stick, d-pad, Tab or Select brings it back. The press that brings it back only shows where the focus is; it does not
+  also move it (a second press moves). It shows at start, where nothing has been clicked yet.
+- **One place.** `AnimExt::focus_t` is the amount every ring, lift and fill reads, and it follows the focus only while the ring
+  shows; `choice_t` is the same spring for a choice that stays marked whatever moved the focus (the selected category, a theme
+  card). `components::paint_focus_stroke` is the one place a ring is drawn. No screen decides on its own.
+- **Quiet.** The ring is `color::focus_ring()` (white 0.50, measured against every panel by `ui::contrast`: 5.3:1 on Aurora, 3:1 is needed), 1.5 dp
+  on controls, rows and cells and 2 dp on tiles and cards (`size::FOCUS_RING`, `FOCUS_RING_LARGE`), 1.2 dp outside the shape. The
+  hairlines of shade beside it are 0.22 and 0.26. The fill carries more of the cue: containers lift 11 % (was 9 %). It fades in
+  and out with the 120 ms ease of the hover (`Motion::Hover`): opacity and colour only, the same under reduced motion.
+- The pointer resting on a tile or a primary button still draws the hover ring at 45 % of this ring (3.9): that is the hover, not a lingering focus.
+- Gallery: `--noring` renders any scene as it looks after a click.
 
 ## 4. Materials and blur on the GPU
 
@@ -1158,6 +1176,8 @@ the log view. (Screenshot S-unlocking shows step "Converting for Mac", 39 %.)
 
 *Faster.* The dump's files are laid out by up to eight threads (hard links, copy only where the volume cannot link). The relinker starts below normal priority; the executable it made is linked, not copied, into the copy. An unlock again whose relink key (release, flags, patches, size and time of every input) matches the copy it replaces keeps that copy's converted files and skips the relinker. The relinker's own output is not changed.
 
+*Where the copies live.* The store is in the games folder unless the player chose another location (Settings, "Unlocked Games Location"); the space check and the link-or-copy rule apply to the drive of the store.
+
 *Preparing.* A game that appears in the games folder after the launcher first looked at it, and a game left outdated by a toolkit update, is unlocked in the background (setting `prepareGames` "Prepare New Games Automatically", on), one at a time, at idle priority, only when the idle gate is open and no game is starting or running. The first scan only notes what is there; it prepares nothing. A preparation that fails is not tried again with the same toolkit and raises the toast "Could not prepare: <game>"; one that finishes raises "<game> · Ready to play".
 
 - Tile: a band at its foot with "Preparing… 40%" (12 medium) and the progress line; paused "Paused · 40%". The selected game's state line says Preparing or Paused; the hero shows the bar, the percentage and the time left, or one sentence while the work has not started.
@@ -1195,9 +1215,9 @@ category's rows (5.8).
 | Category (key) | Glyph | Rows (id, kind, key, notes) |
 |---|---|---|
 | Appearance (`appearance`) | brush | `theme` choice (Cosmic/Aurora/Sunset), `accent` choice (six), `backdrop` choice (`backgroundTheme` / `backgroundImage` / `backgroundVideo`; picking image/video opens a file dialog when no file is set or the kind changed), `file` action `chooseFile` (only when backdrop is not theme; detail = file name), `artwork` toggle `gameArtwork`, `motion` choice (`motionFull` / `motionReduced`) |
-| Library (`storage`) | 2x2 grid | `folder` action `folder` (detail = path or an em dash; opens the folder dialog), `rescan` action `rescan` (detail `gamesFound` with count; sound `select`), info `installedSize` |
+| Library (`storage`) | 2x2 grid | `folder` action `folder` (detail = path or an em dash; opens the folder dialog), `rescan` action `rescan` (detail `gamesFound` with count; sound `select`), then the rows of the unlocked games location ("Unlocked Games Location" below): `unlockedLocation` with its note (`installedSize` by default), `unlockedDefault`, and while copies move `moveCancel`, `moveContinue`, `moveLeave` |
 | Language (`language`) | globe | `language` choice (Türkçe, English; shown in their own language) |
-| Behaviour (`behaviour`) | sliders | `name` text field `profileName` (live edit), `sounds` toggle, `music` toggle (Home Screen Music, 7.3), `hide` toggle `hideWhilePlaying`, `prepare` toggle `prepareGames` (Prepare New Games Automatically), `hiddenTrophies` toggle `showHiddenTrophies` (trophy glyph; detail `showHiddenTrophiesDetail`; the trophy list's only option, 5.11) (+ platform row, see 9) |
+| Behaviour (`behaviour`) | sliders | `name` text field `profileName` (live edit), `sounds` toggle, `music` toggle (Home Screen Music, 7.3), `gameMusic` toggle (Game Music, game controller glyph, 7.3), `hide` toggle `hideWhilePlaying`, `prepare` toggle `prepareGames` (Prepare New Games Automatically), `hiddenTrophies` toggle `showHiddenTrophies` (trophy glyph; detail `showHiddenTrophiesDetail`; the trophy list's only option, 5.11) (+ platform row, see 9) |
 | Phone as Controller (`phone`) | phone | Windows and Linux addition, section 18. Sits between Behaviour and Toolkit. |
 | Advanced (`advanced`) | wrench+screwdriver | `screenshots` action `screenshotsFolder` (detail = path, `~` abbreviated), `showScreenshots` action, `fonts` action `fontsFolder` (detail = the picked path, else the built-in Noto set and whether Japanese, Chinese and Korean are included, not downloaded or downloading), `fontsReset` action (only when a fonts folder is set), `fontsCjk` command (download the Japanese, Chinese and Korean fonts; only without a picked folder and while they are missing), info `fontsHint`, `recordNetwork` toggle, and on Linux while share screen is on `openh264` toggle `Share Screen Video Codec` (detail: off, downloading, downloaded, not downloaded yet, the download failed, or what the share worker made of the file) with the info row `openh264Notice` attached under it, Cisco's text unchanged in every language |
 | About (`about`) | info circle | info `aboutText`, info `version` (app version), info `toolkitVersion`, (platform row), `quit` action `quit` (destructive) |
@@ -1205,8 +1225,39 @@ category's rows (5.8).
 Settings are persisted per user (`Preferences`): `onboarded`, `language` (system default: Turkish if the OS UI language starts with
 `tr`, else English), `theme` (Cosmic), `accent` (nil = theme default), `backdrop` (theme), `backdropFile`, `gameArtwork` (true),
 `reducedMotion` (false), `showHiddenTrophies` (false), `sounds` (true), `music` (true), `discordPresence` (true), `hideWhilePlaying` (false), `prepareGames` (true), `profileName` (first word of the user's full name, fallback
-"Player"), `gamesFolder`, `screenshotsFolder` (nil = `Pictures/AnyPS5`), `fontsFolder`, per-game settings, `lastPlayed`.
+"Player"), `gamesFolder`, `unlockedFolder` (nil = next to the games), `unlockedMovingFrom` (the store copies are moved out of, while any are left there), `screenshotsFolder` (nil = `Pictures/AnyPS5`), `fontsFolder`, per-game settings, `lastPlayed`.
 Every change saves immediately and re-applies language, motion and sound flags.
+
+#### Unlocked Games Location (Settings > Library)
+
+By default the store (`.AnyPS5`) sits in the games folder, on the dumps' drive, and a copy is made of hard links, so it costs almost no extra space (on exFAT and FAT32 there are no links and it is a full copy). The player can keep the copies on another drive: dumps on a big slow drive, unlocked games on a fast SSD. Stored as `unlockedFolder` (nil = default). The store is then `<folder>\.AnyPS5`, the same layout as before (`Games`, `Work`); the chosen folder itself is never cleaned, only its `.AnyPS5`. Files go in as hard links where the folder happens to be on the dumps' drive and as full copies everywhere else. The dumps are never written to; the launcher's checks write only below the chosen folder.
+
+Rows (after `folder` and `rescan`; the old info row `installedSize` is now the note under the location row):
+
+| State | Rows |
+|---|---|
+| Default | action `unlockedLocation` "Unlocked Games Location" (drive glyph; detail "Next to your games · 312 GB free"), attached note `installedSize` |
+| Another folder | the same row with the path in the detail ("E:\Unlocked · 412 GB free"), attached note "Unlocked games are copied in full into a .AnyPS5 folder here. Your dumps are never changed.", command `unlockedDefault` "Use Default Location" |
+| Network drive or share | as above, the note is a warning: "This is a network location. Copying is slower, and games run over the network." Allowed: a share works, it only costs speed. |
+| Not there (drive unplugged, share down) | detail "<path> · Not found", warning note "This folder is not available, so its games show as locked. Connect the drive, or choose another folder." Nothing is lost: the setting stays, the games show as locked, Unlock fails with "The folder for unlocked games is not there" (no files are written to the wrong disk), and everything is back when the drive is. |
+| Moving | the row is a status (info, detail "Moving 3 of 7 · 42%"), note "Unlocking and playing wait until the move is done. Saves move with their game.", command `moveCancel` "Cancel Move" |
+| Move stopped | action row, warning note "3 unlocked games are still in D:\Games\PS5. Unlocking and playing wait until they are moved.", commands `moveContinue` "Continue Moving" and `moveLeave` "Leave Games Where They Are" (detail: they stay in the old location, unused) |
+
+*Free space.* The free space of the location's drive is looked at on a worker thread (never on the UI thread: a share that is down can take seconds to answer), when the page opens and every 5 s while it is open. The unlock's space check (5.4) measures that drive: "needs 41.2 GB, 12.0 GB free on E:\Unlocked", with the note that the files are copied when the drive cannot link to the dump, and the failure sentence "The drive for your unlocked games is full."
+
+*Choosing a folder.* The native folder dialog opens at the current location. The choice is refused, with a toast and nothing stored, when it is not a folder that exists, when it is inside the games folder ("Choose a folder outside your games folder. Your dumps are never written to."), when it is inside any `.AnyPS5` folder, so inside an unlocked copy ("Choose a folder outside the .AnyPS5 folders."), or when a test file cannot be written there ("Cannot write to that folder. Choose another one."). Picking the games folder itself means the default. The location cannot change while a game runs, an unlock runs or a move runs (toast). If a games folder is picked later that is, or contains, the location, the location returns to the default and the copies stay where they were.
+
+*Changing the location moves the copies.* This is the simpler robust of the two options: preparing them again would lose the saves and cost minutes of relinking per game. A background worker moves every unlocked copy from the old store to the new one, one at a time; the row shows "Moving 3 of 7 · 42%". A copy is either whole at the old place or whole at the new one:
+
+- Same drive: one rename of the copy's folder (instant, hard links stay hard links).
+- Another drive: the copy is written into `<name>.partial` at the new place, its file count and size are checked against the old tree, the folder is renamed to `<name>`, and only then is the old copy removed. Saves and trophies live inside the copy and travel with it. A copy needs its size plus 256 MB free at the new place, else the move stops with "The new drive is full: ...".
+- Cancel stops after the file it is on, removes the `.partial` of that copy and leaves it whole in the old place; copies already moved stay in the new one. The row then offers Continue Moving and Leave Games Where They Are. Leaving forgets the old place: the copies stay on that drive, unused, and can be deleted by hand.
+- A killed launcher leaves at worst a `.partial` (swept by the next scan) or an old copy next to an identical new one (removed when the move continues). `unlockedMovingFrom` keeps the old place in the preferences until nothing is left there, and a move cut off by a restart is taken up again once the library has loaded.
+- A running game's copy is never moved (it stays, and the move reports it). While copies wait in the old place, Unlock, Prepare and Play are refused with "Your unlocked games are being moved. Try again when that is done." and background preparation waits, so a game can never be unlocked at the new place while its old copy still holds the saves.
+- A copy that already exists at the new place is never overwritten unless it is identical to the old one.
+
+*Linux.* The same, with ordinary paths. A mount point that is not mounted exists as an empty folder, so a custom location also needs its `.AnyPS5` to count as there. A network file system (nfs, cifs, smb3, sshfs, 9p) is read from `/proc/mounts` for the network note. On Windows a `\\server\share` path or a mapped drive letter is a network location.
+
 
 ### 5.8 Panel rows (shared by settings, game settings, controls, advanced)
 
@@ -1883,6 +1934,28 @@ Latency: the first cue, the boot cue, opens the device and renders every cue, an
 `select`, `back` and `error` 3 dB for 0.25 s, `unlocked` 6 dB for 1.2 s (15 ms down, 400 ms back up). It plays only while the
 `music` preference (Home Screen Music, on by default) is on, no game is starting or running, and the launcher window has focus.
 
+**Game music** (`ui::sound::theme`, `anyps5_core::theme_song`, 2026-10-25). As on a console, the selected game's own music
+plays on the home screen: `sce_sys/snd0.at9` of its dump, read and never written. It starts once the selection has rested on the
+game for 1 s; moving on fades it out at once (0.8 s) and the next game waits its own second. The song fades in over 1.5 s and takes
+the home music's place: the home music fades out while a song plays and back in when it stops, so the two crossfade rather than
+leave a gap. The song plays at -10 dB (theme songs are mastered loud), dips under cues like the home music, starts after the
+file's encoder delay and repeats its `smpl` loop (the whole song without one). It plays only on the home screen (no screen or
+panel in front, onboarding done), with the `gameMusic` preference (Game Music, on by default) on, no game starting or running,
+and the window focused. Home Screen Music and Game Music are independent: with only Game Music on, a selected game's song plays
+over silence.
+
+The ATRAC9 stream is decoded on the `sound` thread while it plays, one superframe (1024 frames) at a time, with
+[LibAtrac9](https://github.com/Thealexbarney/LibAtrac9), the reference decoder (C, MIT), vendored in
+`crates/atrac9/libatrac9` and built from source behind a safe wrapper (`anyplay_atrac9`). Upstream trusts every value in the
+stream, so a damaged file indexed past its tables: sanitizer fuzzing found those places, each now has a bounds check marked
+`AnyPlay:` (listed in `crates/atrac9/libatrac9/README.md`; one million random superframes, no finding). Its bit reader does not
+check where a buffer ends either, so the wrapper copies each superframe into a buffer followed by 4 KiB of zeros. The pure Rust `atrac9dec` 0.9.1 was
+tried first and rejected: it skips band extension only approximately and fails on real theme songs, which use it at low bit
+rates ("invalid scale factor mode" on the first superframe). The music is resampled linearly to the device rate. A three-minute song therefore costs its compressed size (about 1.6 MB), not
+35 MB of PCM. A `theme song` thread reads and checks the file (the first 8 superframes must decode); the last two songs stay in
+memory, so going back and forth between two games reads no file twice. A file that does not read or decode is skipped for the
+rest of the session, and the home music carries on.
+
 ### 7.5 The sound map (2026-10-25)
 
 Sixteen cues, all synthesised, one family: sines with an octave, rounded attacks, a little room, the F-C-G fifths of the
@@ -2308,7 +2381,7 @@ are strings that name the macOS app as the product: they take the launcher's own
 | `startingText` | The game is opening, please wait. The first start can take a few minutes while the game gets ready for Windows. | Oyun açılıyor, lütfen bekle. İlk açılış, oyun Windows için hazırlanırken birkaç dakika sürebilir. |
 | `aboutText` | AnyPlay Launcher runs PS5 games natively on Windows with AnyPS5. | AnyPlay Launcher, PS5 oyunlarını AnyPS5 ile Windows'ta yerel olarak çalıştırır. |
 | `settingsFileFailed` | This is not an AnyPlay settings file | Bu dosya bir AnyPlay ayar dosyası değil |
-| `installedSize` | Unlocked games are kept in the .AnyPS5 folder inside your games folder. | Kilidi açılan oyunlar oyun klasörünün içindeki .AnyPS5 klasöründe saklanır. |
+| `installedSize` | Unlocked games sit next to your dumps and share their files where the drive allows. Choose another folder to keep them on a different drive. | Kilidi açılan oyunlar dökümlerinin yanında durur ve sürücü izin verdiği yerde dosyalarını paylaşır. Onları başka bir sürücüde tutmak için başka bir klasör seç. |
 | `showInFinder` | Show in Explorer | Dosya Gezgini'nde Göster |
 | `behaviour` | Behavior | Davranış |
 | `hideWhilePlaying` | Hide Launcher While Playing | Oyun açılınca launcher'ı gizle |

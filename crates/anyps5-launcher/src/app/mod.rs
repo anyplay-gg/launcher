@@ -35,6 +35,7 @@ pub mod playtime;
 pub mod prepare;
 pub mod preview;
 pub mod profile;
+pub mod relocation;
 pub mod run_question;
 pub mod selfupdate;
 pub mod services;
@@ -362,7 +363,7 @@ impl LauncherApp {
         let running = self.model.running.clone();
         match running.and_then(|id| self.model.game(&id).cloned()) {
             Some(game) => {
-                let root = self.model.prefs.games_folder.clone();
+                let root = self.model.store_root();
                 self.services
                     .watch_trophies(&game, root.as_deref(), &self.model.prefs);
             }
@@ -416,6 +417,17 @@ impl LauncherApp {
         self.shell
             .sounds
             .set_music(self.model.prefs.music && !playing && self.focused);
+        // The selected game's own song, on the home screen only: another screen in front, a game,
+        // onboarding or a hidden window bring the home music back or silence.
+        let home = self.model.overlay.is_none() && self.model.prefs.onboarded;
+        let theme = (self.model.prefs.game_music && home && !playing && self.focused)
+            .then(|| {
+                self.model
+                    .selected_game()
+                    .and_then(|game| game.music.clone())
+            })
+            .flatten();
+        self.shell.sounds.set_theme(theme.as_deref());
         self.shell.backdrop.paused =
             self.model.running.is_some() || !self.focused || self.freeze_backdrop;
     }
@@ -556,6 +568,7 @@ impl LauncherApp {
 
     fn run_effect(&mut self, ctx: &Context, effect: Effect) {
         let root = self.model.prefs.games_folder.clone();
+        let store = self.model.store_root();
         match effect {
             Effect::Sound(cue) => self.shell.play(cue),
             Effect::Pipeline(pipeline::PipelineCommand::Play(id)) => {
@@ -589,13 +602,27 @@ impl LauncherApp {
             | Effect::SyncTrophies
                 if self.offline => {}
             Effect::Rescan => {
-                if let Some(root) = root {
-                    if !self.model.busy() {
-                        self.pipeline.before_scan(&root);
+                if let (Some(root), Some(store)) = (root, store) {
+                    // Half-made copies are swept from the store, wherever it is; while a move
+                    // runs, its own partial copies are not for the sweep.
+                    if !self.model.busy() && self.model.location.job.is_none() {
+                        self.pipeline.before_scan(&store);
                     }
-                    self.services.rescan(&root);
+                    self.services.rescan(&root, &store);
                 }
             }
+            Effect::CheckLocation => {
+                if let Some(root) = root {
+                    self.services
+                        .check_location(&root, self.model.prefs.unlocked_folder.as_deref());
+                }
+            }
+            Effect::StartMove {
+                from,
+                to,
+                running,
+                cancel,
+            } => self.services.start_move(from, to, running, cancel),
             Effect::PickGamesFolder => {
                 let title = self.model.language().text(Key::PickFolder);
                 self.services.pick_folder(title, root.as_deref(), ctx);
@@ -608,18 +635,18 @@ impl LauncherApp {
             Effect::LoadTrophies { game, .. } => {
                 if let Some(game) = self.model.game(&game) {
                     self.services
-                        .load_trophies(game, root.as_deref(), &self.model.prefs);
+                        .load_trophies(game, store.as_deref(), &self.model.prefs);
                 }
             }
             Effect::SyncTrophies => {
-                if let Some(root) = root {
-                    self.services.sync_trophies(&self.model.games, &root);
+                if let Some(store) = store {
+                    self.services.sync_trophies(&self.model.games, &store);
                 }
             }
             Effect::ReloadToolkit => self.pipeline.reload_toolkit(&self.model.prefs),
             Effect::BackUpSaves(id) => {
-                if let (Some(game), Some(root)) = (self.model.game(&id), root) {
-                    self.services.back_up_saves(game, &root, &self.model.paths);
+                if let (Some(game), Some(store)) = (self.model.game(&id), store) {
+                    self.services.back_up_saves(game, &store, &self.model.paths);
                 }
             }
             Effect::Presence(Some(game)) if self.discord => {
@@ -643,7 +670,8 @@ impl LauncherApp {
         command: pipeline::PipelineCommand,
         extra_env: Option<&std::collections::BTreeMap<String, String>>,
     ) {
-        let root = self.model.prefs.games_folder.clone();
+        // The pipeline unlocks into and plays from the store, wherever the player keeps it.
+        let root = self.model.store_root();
         let game = self.model.game(command.game()).cloned();
         self.pipeline.submit(
             command,
