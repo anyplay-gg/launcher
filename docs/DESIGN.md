@@ -1724,10 +1724,10 @@ Behaviour, "Home Button Opens the Launcher").
 | no game runs | nothing (the phone's button keeps its old job: close the panel, restore the window) | as usual |
 
 **Where it is read.** `ui::home_button::HomeButton` holds the state the input threads need (running, game window,
-preference, focus) as atomics; the UI fills it every frame (`LauncherApp::sync_home_button`). Three sources press it, each on its
+preference, focus) as atomics; the UI fills it every frame (`LauncherApp::sync_home_button`). Four sources press it, each on its
 own thread, because a minimised launcher draws no frames: the gilrs thread (`Button::Mode`), a thread polling `XInputGetStateEx`
 for the Guide bit (Windows; Windows.Gaming.Input, which gilrs uses, hands a pad to the focused window only and never shows
-Guide), and the phone server. Presses within 350 ms count once (gilrs and XInput can both see one press). The pure `route`
+Guide), the PS button reader (below), and the phone server. Presses within 350 ms count once (gilrs and XInput can both see one press). The pure `route`
 function is the state machine and carries the tests. The UI takes two flags once per frame, `take_summoned` and `take_returned`,
 and opens or closes the panel.
 
@@ -1739,6 +1739,29 @@ trophies and settings are that game's. Back on the panel, a click beside it and 
 home screen does the same while the launcher is there because of the Home button (`Model::summoned`); it is cleared when the
 launcher loses the focus, and when the game ends the panel closes.
 While the panel is up, the phone's navigation reaches the launcher and its virtual pad is detached from the game.
+
+**The PS button reader** (`ui::ps_button`, 2026-10-26). Windows.Gaming.Input and evdev deliver a PlayStation pad to the focused window, so
+with a game in front gilrs never hears its PS button. While a game runs and the preference is on, a thread opens every DualSense
+(054C:0CE6, Edge 0DF2) and DualShock 4 (05C4, 09CC, adapter 0BA0) through `hidapi` 2 (Windows: its HID backend; Linux: hidraw),
+shared and read only, and watches bit 0 of the third button byte of the input report. The reader never writes a report: rumble and
+light bar stay the game's. The layouts are generic device facts from the Linux kernel (`hid-playstation.c`) and SDL
+(`SDL_hidapi_ps5.c`, `SDL_hidapi_ps4.c`) and are written in the module's comment: DualSense USB (report 0x01, 64 bytes, byte 10) and
+Bluetooth (0x31, 78 bytes, byte 11), DualShock 4 USB (0x01, byte 7) and Bluetooth (0x11, byte 9), and the 10-byte short Bluetooth
+report both send before they are switched to the full one (byte 7). Bluetooth reports are accepted only with a valid CRC-32. A
+button already held when the pad is opened is not a press; an edge (up, then down) is one press and goes into the same `HomeButton::press` as the Guide button, so gilrs seeing the same press,
+or a second pad, counts once (350 ms). Pads are looked for again every 3 s while a game runs and none is open, every 10 s otherwise (a pad plugged in later is found), and
+every device is closed again when the game ends or the preference is off.
+
+*If a pad cannot be opened* the reader says so once per pad in `launcher.log` and leaves the button to the other sources (gilrs
+where the launcher has the focus, XInput for what shows itself as an Xbox pad); it keeps looking every 3 s without logging again.
+Linux needs read access to `/dev/hidraw*`: many desktops give it only to root, and `docs/INSTALL.md` has the udev rule (`TAG+="uaccess"`
+for the Sony ids). *Steam Input* (with the pad held in its own configuration) and *HidHide* hide the physical pad from every HID reader,
+this one too; what they show instead is a virtual Xbox pad, whose Guide button the XInput thread already reads. Nothing is
+done for a pad they hide, on purpose. macOS has no reader here (IOKit HID delivers the button to a background process).
+
+*Other buttons while a game is in front.* The gilrs thread asks `gamepad::press_effect` for every press: with a game in front only
+Home and Create (which saves a clip, 9.8) do anything; every other button and the D-pad and stick are dropped before they reach
+the UI, so the game's play never moves the focus of the launcher behind it (tested for all buttons).
 
 *Windows.* A background process may not simply take the foreground, and a gamepad press counts as no input event.
 `win::activate_window` restores the window if minimised, calls `SetForegroundWindow`, and when that does not take, attaches the input
@@ -1752,7 +1775,8 @@ game what is behind it.
 *The game's own use of the button.* The mapping of AnyPS5 v0.1.3 names no PS or Guide button, so nothing the game gets is taken
 away. If a later AnyPS5 maps it to the PS5 home button, both would react; the preference turns the launcher's side off.
 
-*Not verified with hardware:* that Windows delivers a physical pad's Guide button to the launcher behind a game, and the
+*Not verified with hardware:* that Windows delivers a physical pad's Guide button to the launcher behind a game, the PS button reader
+on a real DualSense and DualShock 4 (USB and Bluetooth, Windows and Linux; its parser is tested on synthetic reports), and the
 foreground switch against a real game window. The test hook is `--demo` with `ANYPS5_INSTANCE=<name>` and
 `ANYPS5_PS_TEST_WINDOW=<hwnd>`: that window becomes the running game, each line `ps` on stdin is a press, and the log prints
 the foreground window before and after (`ps-test: ...`).
@@ -1826,8 +1850,9 @@ while a window of the process has focus, which suits the launcher's own screens;
 - **Settings > Behaviour** has a note under Controller Vibration: what to try when the controller is not found (Steam Input,
   DS4Windows).
 
-Not done, on purpose: a direct HID reader for the DualSense and DualShock. WGI and evdev both see them; the cases that make a pad invisible
-(Steam Input holding it, HidHide hiding it) hide it from HID readers as well. The one gap a HID reader would close is the Home button of a PlayStation pad while a game is in front.
+A direct HID reader for the DualSense and DualShock reads the pad itself for nothing but the PS button, because that is the one gap WGI and evdev leave
+while a game is in front (6.6, "The PS button reader"). The cases that make a pad invisible (Steam Input holding it, HidHide hiding it) hide it from
+HID readers as well, so the pad is still not found for everything else by it.
 Not verified on hardware: a DualSense or DualShock over USB and Bluetooth through WGI, the battery reading of a Bluetooth DualSense through WGI, the A/B hints on a real Xbox pad.
 
 ## 7. Sounds and media
@@ -2828,7 +2853,7 @@ Gallery scenes of the Friends screen itself (1600 x 900): `friends` (the default
 
 The launcher's side of [Play Together](https://github.com/anyplaynet/network/blob/main/spec/play-together.md): the owner's picture is "I start Minecraft from the launcher, my friend presses Join, his launcher starts Minecraft in the same session, and my world shows up as a LAN world". Nobody sets up a VPN, a port or an address. The pure rules are `anyps5_core::play_together` (the table, the join check, the presence wording); the flow is `app::together` and `app::online`; the card is `screens::together`; the words are `screens::together_strings`.
 
-**The table.** `data/lan-titles.v1.json` lists the games that can be played together (first entry: PPSA17221, Minecraft, up to 8 players). A copy is built in; an entry with a mode the launcher does not know is left out. Play Together exists only for a game in the table.
+**The table.** `data/lan-titles.v1.json` lists the games that can be played together (first entry: PPSA17221, Minecraft, up to 8 players). A copy is built in; an entry with a mode the launcher does not know is left out. Play Together exists only for a game in the table. Each entry may say how far the host's and the joiner's versions may differ, `"version"`: `exact` (the default when the field is missing, and Minecraft's, because Bedrock clients refuse another protocol version), `major` (the first dot-separated part must match: `01.044.000` joins `01.050.000`, not `02.000.000`) or `any`. The rule is data read by generic code: the join check applies it, and the launcher sends it with `check_join`, `game_start` and the cloud's join, so the net service and the cloud compare two version texts and know no game ([spec](https://github.com/anyplaynet/network/blob/main/spec/play-together.md#the-lan-title-table)).
 
 **Hosting.** On the game's page the action row reads Play, Play Together, trophies, "...". Play stays the one primary action; Play Together is a secondary control of the same size, shown only for an unlocked game in the table (a game that is locked, starting or running shows no second button). The party page has a row of the same name with the game's name as its detail. Pressing it starts the game through the ordinary start with `game_start` carrying `host` (`max_members` from the table, `visibility` friends, `party` when the player is in a party); a plain Play carries none. When the net service cannot open the session, the game runs anyway and a toast says why nobody can join ("Nobody can join: Play Together could not start. Your game runs anyway."). A start that the net service does not answer within three seconds runs alone and says so.
 
@@ -2843,11 +2868,13 @@ The launcher's side of [Play Together](https://github.com/anyplaynet/network/blo
 | Offline | You are offline | Play Together needs a connection. Try again in a moment. | **Close** |
 | Online play off | Online play is switched off | Switch it on to play together. | Close, **Switch on** |
 | Not owned | You need Minecraft to join | It is not in your library. Add it, then join again. | **Close** |
-| Wrong version | You need Minecraft 01.044.000; you have 01.008.000 | Both of you need the same version to play together. | **Close** |
+| Wrong version | You need Minecraft 01.044.000; you have 01.008.000 | Update the game, then join again. Trying anyway may not connect or may fall out of sync. (You are ahead of the session: Ask your friend to update, or install Minecraft 01.008.000. and the same second sentence.) | Try anyway, **Close** |
 | Wrong toolkit | You need toolkit v0.1.5; you have v0.1.4 | Choose it under Toolkit for This Game, then join again. | **Close** |
 | Full | This game is full | Try again when someone leaves. | **Close** |
 | Busy | Another game is running | Close it, then join. | **Close** |
 | Ended | That session has ended | Ask your friend to start a new one. | **Close** |
+
+**Try anyway.** The version blocker is the one blocker with a second way forward. It keeps its message and its one primary action (**Close**, ink fill); "Try anyway" is the quiet answer on the left, the same place and size as the other blockers' quiet answer, 12 dp from Close. The note about the risk is the second sentence of the line, in the same 14 / 70 % white, so it is read before the button is pressed and there is no second dialog for a thing the player can undo by closing the game. Pressing it runs the same join again with the version check off: `check_join` and `game_start` carry `override_version`, the net service and the cloud skip only the version part of their guard (a different toolkit build still blocks, and says so), and the launcher's log records the session, both versions and the rule. A rule of `major` or `any` that already lets the versions through never shows the blocker. The button is the sentence-case "Try anyway" like its neighbours ("Not now", "Sign in"). Like the rest of the card it is for the pointer and Tab; the pad closes the card, and the player joins from the Online panel again.
 
 A friend who plays the game with no session (their online play is off, or they pressed Play) has no Join row; their page says "Online play is off on Mira's PC" above the actions. "Not now" remembers the offer by its session and declines the invitation; the card does not come back for that session. When the host's session ends while the player's game runs, a toast says "Mira's session ended. Your game keeps running." and the game is left alone.
 
@@ -2855,7 +2882,7 @@ A friend who plays the game with no session (their online play is off, or they p
 
 **Strings.** `together_strings.rs`, English and Turkish (the Turkish is unreviewed). Headlines say what is the case; the line under says what to do. The wrong-version headline is the owner's sentence.
 
-**Gallery.** `home-together` (the button, focused), `together-offer`, `together-offer-invitation`, one scene for each blocker (`together-signed-out`, `-offline`, `-online-off`, `-not-owned`, `-wrong-version`, `-wrong-build`, `-full`, `-busy`, `-ended`, `-no-session`), and the panel pages `together-friends`, `together-friend`, `together-friend-nosession`, `together-party`.
+**Gallery.** `home-together` (the button, focused), `together-offer`, `together-offer-invitation`, one scene for each blocker (`together-signed-out`, `-offline`, `-online-off`, `-not-owned`, `-wrong-version`, `-wrong-version-ahead` (both with Try anyway), `-wrong-build`, `-full`, `-busy`, `-ended`, `-no-session`), and the panel pages `together-friends`, `together-friend`, `together-friend-nosession`, `together-party`.
 
 ## 18. Phone as controller
 

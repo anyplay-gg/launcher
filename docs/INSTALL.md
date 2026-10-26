@@ -36,6 +36,7 @@ What games need from your system is up to AnyPS5:
 - a Vulkan 1.1 GPU. With Mesa drivers (AMD, Intel) games import memory through `/dev/udmabuf`: join the `kvm` group (`sudo usermod -aG kvm $USER`) and log in again. The launcher tells you when a game fails for this reason;
 - on Wayland a game's window cannot be found or placed from outside, so the launcher counts a game as shown after a few seconds, and fullscreen and size follow the game's own settings (F11 in the game).
 
+<<<<<<< HEAD
 ## macOS
 
 Apple silicon with macOS 11 or newer. Download `AnyPlay-Launcher-<version>-macos-arm64.zip`, unzip it, and move **AnyPlay Launcher.app** to Applications before opening it. Games may need Rosetta; macOS offers to install it when needed.
@@ -43,6 +44,15 @@ Apple silicon with macOS 11 or newer. Download `AnyPlay-Launcher-<version>-macos
 The app is ad hoc signed, without an Apple Developer ID or notarization. If macOS says the developer cannot be verified, open **System Settings → Privacy & Security** and choose **Open Anyway**. On macOS 11 and 12 this is in **System Preferences → Security & Privacy**. Repeat after an update if macOS asks. Do not remove quarantine with a terminal command.
 
 The Mac toolkit currently comes from AnyPS5-ARM. Playing a game through AnyPlay's network bridge needs a macOS toolkit from AnyPlay's engine fork; the current toolkit does not provide it.
+=======
+The PS button of a DualSense or DualShock 4 opens the launcher in front of a running game (Settings, Behaviour, Home Button Opens the Launcher). The launcher reads that one button from the pad's `/dev/hidraw` node, which many desktops only let root read. Without access the launcher says so once in `launcher.log` and the button works only where the launcher has the focus. To allow it, save this as `/etc/udev/rules.d/70-anyplay-pad.rules`, run `sudo udevadm control --reload && sudo udevadm trigger` and plug the pad in again (the rule covers USB and Bluetooth, and gives your session read and write access, which the reader asks for although it only reads):
+
+```
+KERNEL=="hidraw*", KERNELS=="*054C:0CE6*|*054C:0DF2*|*054C:05C4*|*054C:09CC*|*054C:0BA0*", TAG+="uaccess"
+```
+
+Distributions that ship a game-devices udev package, and Steam's own rules, already do this.
+>>>>>>> origin/main
 
 ## First start
 
