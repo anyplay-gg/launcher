@@ -357,11 +357,7 @@ pub(crate) fn paint(
             let top = inner.min.y + (body - text_height) * 0.5;
             let line_top = top + headline.size().y + space::XS;
             painter.galley(pos2(text_x, top), headline, fade(color::text(), a));
-            painter.galley(
-                pos2(text_x, line_top),
-                line,
-                fade(color::text_detail(), a),
-            );
+            painter.galley(pos2(text_x, line_top), line, fade(color::text_detail(), a));
             let status = ui.interact(rect, Id::unique("together-card-status"), Sense::hover());
             let label = format!("{}. {}", view.headline, view.line);
             status.widget_info(|| {
