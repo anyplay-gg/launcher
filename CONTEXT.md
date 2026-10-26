@@ -362,7 +362,7 @@ A phone or tablet running the LudusCtrl app, which passes on a controller paired
 _Avoid_: Bridge, relay (the code's words for other things)
 
 **Browser client**:
-A phone without the LudusCtrl app (an iPhone above all) that opens a page from this PC by scanning the QR code on the settings page; its browser passes on the controller connected to the phone. It runs whenever the LudusCtrl option is on, needs no pairing (the link's token is the consent) and shares the one virtual controller with the app: only one of them holds it.
+A phone without the LudusCtrl app (one whose browser supports the Gamepad API; on iPhone, iOS 15.2 or newer) that opens a page from this PC by scanning the QR code on the settings page; its browser passes on the controller connected to the phone. It runs whenever the LudusCtrl option is on, needs no pairing (the link's token is the consent) and shares the one virtual controller with the app: only one of them holds it.
 _Avoid_: Web app, web client
 
 **ViGEmBus**:

@@ -1,11 +1,15 @@
 # LudusCtrl browser client in the launcher: the core API
 
-What `anyps5-core` offers the launcher for LudusCtrl's browser client: a phone that cannot run the LudusCtrl app (an iPhone)
+What `anyps5-core` offers the launcher for LudusCtrl's browser client: a phone that cannot run the LudusCtrl app
 opens an HTTPS page that this PC serves on the LAN, and the controller connected to that phone plays through the page's
 WebSocket. The wire protocol is LudusCtrl's `docs/PROTOCOL.md`, section "Browser client (HTTPS and WebSocket)"; this file is
 the interface the launcher binds to, and the short list of what the launcher does on top of that section. It extends
 [ludusctrl-api.md](ludusctrl-api.md) (the app over UDP). Everything lives in `anyps5_core::remote::ludusctrl` and the names
 below are re-exported from `anyps5_core::remote`.
+
+**Which phones.** Phones whose browser supports the Gamepad API; on iPhone, iOS 15.2 or newer. Safari before about 15.2
+refuses a `wss://` connection to a self-signed certificate even after the player accepted it for the page (WebKit bug
+145819). The page has run on a phone against this launcher on Windows 10, but not yet on an iPhone.
 
 ## Preference
 
@@ -176,7 +180,7 @@ As PROTOCOL.md:
 Nothing the page can see. On the PC side:
 
 1. **ECDSA P-256 certificate**, not RSA 2048 (see Certificate). Browsers accept both the same way; the iPhone warning flow with
-   it still has to be tried on a real device.
+   it still has to be tried on a real device (iOS 15.2 or newer, above).
 2. **New Link and stop** are the launcher's: New Link closes every open page with `denied` and 1008 "bad token", which the page
    reads as an old link; stop closes them with 1001 "stopping", and the page's reconnect then finds no server.
 3. **Stricter peers**: a connection must come from a private address on a network this PC is plugged into (the launcher's rule

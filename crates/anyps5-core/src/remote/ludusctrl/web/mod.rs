@@ -1,4 +1,4 @@
-//! LudusCtrl's browser client: for a phone that cannot run the app (an iPhone), this PC serves a
+//! LudusCtrl's browser client: for a phone that cannot run the app, this PC serves a
 //! page over HTTPS on the LAN and the page sends the phone's controller over a WebSocket. Written
 //! from the "Browser client" section of LudusCtrl's `docs/PROTOCOL.md`; docs/ludusctrl-web-api.md
 //! is the interface and the list of where the launcher differs.
