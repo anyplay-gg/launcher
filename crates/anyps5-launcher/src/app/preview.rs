@@ -721,6 +721,7 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
         Scene::HomeBrowser => {
             m.phone.connected = Some("Pixel 8".into());
             m.ludus.browser.peer = Some("192.168.178.41".into());
+            m.ludus.browser.device = Some("iPhone".into());
         }
         Scene::HomeFriendsQuiet => {
             sign_in(m);

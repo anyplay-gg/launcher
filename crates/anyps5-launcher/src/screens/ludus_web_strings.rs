@@ -11,9 +11,11 @@ pub enum BrowserText {
     SwitchDetail,
     /// The bridge could not start; the reason is in the log.
     StartFailed,
-    /// Status values: no browser yet, and a browser that holds the pad (`%@` = its address).
+    /// Status values: no browser yet, and a browser that holds the pad (`%@` = its address; with
+    /// `ConnectedDevice` first what it runs on, then the address).
     Waiting,
     ConnectedTo,
+    ConnectedDevice,
     /// The QR code: its accessible name and the line beside it.
     QrLabel,
     QrHint,
@@ -35,6 +37,8 @@ pub enum BrowserText {
     NewLinkDetail,
     /// Windows: the firewall may hold the page back.
     Firewall,
+    /// This PC has no address a phone could open.
+    NoAddress,
     /// Toasts.
     ToastConnected,
     ToastCopied,
@@ -44,12 +48,13 @@ pub enum BrowserText {
 }
 
 impl BrowserText {
-    pub const ALL: [BrowserText; 22] = [
+    pub const ALL: [BrowserText; 24] = [
         BrowserText::Title,
         BrowserText::SwitchDetail,
         BrowserText::StartFailed,
         BrowserText::Waiting,
         BrowserText::ConnectedTo,
+        BrowserText::ConnectedDevice,
         BrowserText::QrLabel,
         BrowserText::QrHint,
         BrowserText::Link,
@@ -63,6 +68,7 @@ impl BrowserText {
         BrowserText::NewLink,
         BrowserText::NewLinkDetail,
         BrowserText::Firewall,
+        BrowserText::NoAddress,
         BrowserText::ToastConnected,
         BrowserText::ToastCopied,
         BrowserText::BarName,
@@ -80,6 +86,7 @@ impl BrowserText {
             }
             BrowserText::Waiting => "Waiting for a browser",
             BrowserText::ConnectedTo => "Connected to a browser on %@",
+            BrowserText::ConnectedDevice => "Connected to a browser on %@ (%@)",
             BrowserText::QrLabel => "QR code of the browser link",
             BrowserText::QrHint => {
                 "Scan the code with the phone's camera to open the page, then press a button on the controller."
@@ -105,6 +112,9 @@ impl BrowserText {
             BrowserText::Firewall => {
                 "If the phone cannot open the page, allow AnyPlay Launcher on private networks in the firewall."
             }
+            BrowserText::NoAddress => {
+                "This PC is not on a network a phone can reach. Connect it to your home network, then choose New Link."
+            }
             BrowserText::ToastConnected => "A browser is connected as the controller",
             BrowserText::ToastCopied => "Link copied",
             BrowserText::BarName => "Browser",
@@ -121,6 +131,7 @@ impl BrowserText {
             BrowserText::StartFailed => "Tarayıcı istemcisi başlatılamadı. Nedeni günlükte yazılı.",
             BrowserText::Waiting => "Bir tarayıcı bekleniyor",
             BrowserText::ConnectedTo => "%@ adresindeki tarayıcı bağlı",
+            BrowserText::ConnectedDevice => "%@ üzerindeki tarayıcı bağlı (%@)",
             BrowserText::QrLabel => "Tarayıcı bağlantısının QR kodu",
             BrowserText::QrHint => {
                 "Sayfayı açmak için kodu telefonun kamerasıyla tara, sonra kumandada bir tuşa bas."
@@ -147,6 +158,9 @@ impl BrowserText {
             }
             BrowserText::Firewall => {
                 "Telefon sayfayı açamıyorsa güvenlik duvarında AnyPlay Launcher'a özel ağlarda izin ver."
+            }
+            BrowserText::NoAddress => {
+                "Bu bilgisayar bir telefonun ulaşabileceği bir ağda değil. Ev ağına bağla, sonra Yeni Bağlantı'yı seç."
             }
             BrowserText::ToastConnected => "Bir tarayıcı kumanda olarak bağlandı",
             BrowserText::ToastCopied => "Bağlantı kopyalandı",

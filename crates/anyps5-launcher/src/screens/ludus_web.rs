@@ -5,7 +5,7 @@
 
 use anyps5_core::settings::Preferences;
 
-use crate::app::ludus_web::{BrowserState, LUDUS_WEB_PORT};
+use crate::app::ludus_web::{BrowserState, Certificate, LUDUS_WEB_PORT};
 use crate::screens::ludus::LudusAction;
 use crate::screens::ludus_web_strings::BrowserText;
 use crate::screens::phone_strings::PhoneText;
@@ -67,9 +67,12 @@ pub fn rows(
     };
 
     // Who holds the pad.
-    let status = match &browser.peer {
-        Some(peer) => BrowserText::ConnectedTo.format(language, &[Arg::Str(peer)]),
-        None => t(BrowserText::Waiting),
+    let status = match (&browser.peer, &browser.device) {
+        (Some(peer), Some(device)) => {
+            BrowserText::ConnectedDevice.format(language, &[Arg::Str(device), Arg::Str(peer)])
+        }
+        (Some(peer), None) => BrowserText::ConnectedTo.format(language, &[Arg::Str(peer)]),
+        (None, _) => t(BrowserText::Waiting),
     };
     rows.push(
         Row::info(
@@ -95,7 +98,7 @@ pub fn rows(
                 .icon(Icon::LINK),
         );
         rows.push(Row::info("browserCertNote", t(BrowserText::CertNote), None));
-        if info.reissued {
+        if info.certificate == Certificate::Reissued {
             rows.push(
                 Row::info("browserReissued", t(BrowserText::Reissued), None)
                     .attached()
@@ -112,6 +115,11 @@ pub fn rows(
             );
             rows.push(Row::info("browserPortBusy", text, None).attached());
         }
+    }
+
+    // No address to put in a link: say what to do.
+    if info.urls.is_empty() {
+        rows.push(Row::info("browserNoAddress", t(BrowserText::NoAddress), None).warning());
     }
 
     // The other addresses of this PC, each a link to copy.
@@ -180,7 +188,8 @@ mod tests {
                 urls: urls.iter().map(|u| (*u).to_owned()).collect(),
                 port: LUDUS_WEB_PORT,
                 preferred_port: true,
-                reissued: false,
+                certificate: Certificate::Kept,
+                fingerprint: String::new(),
             }),
             ..BrowserState::default()
         }
@@ -282,10 +291,54 @@ mod tests {
     }
 
     #[test]
+    fn what_the_browser_runs_on_comes_first_when_it_said() {
+        let mut state = running(&[LINK]);
+        state.peer = Some("192.168.178.41".into());
+        state.device = Some("iPhone".into());
+        for (language, text) in [
+            (
+                Language::English,
+                "Connected to a browser on iPhone (192.168.178.41)",
+            ),
+            (
+                Language::Turkish,
+                "iPhone üzerindeki tarayıcı bağlı (192.168.178.41)",
+            ),
+        ] {
+            let rows = rows(&on(), &state, true, language);
+            let status = rows.iter().find(|r| r.id == "browserStatus").unwrap();
+            assert_eq!(status.control, Control::Info(Some(text.into())));
+        }
+    }
+
+    #[test]
+    fn a_pc_without_an_address_says_what_to_do() {
+        let rows = rows(&on(), &running(&[]), true, Language::English);
+        let list = ids(&rows);
+        assert!(list.contains(&"browserNoAddress"));
+        assert!(!list.contains(&"browserQr") && !list.contains(&"browserCopy"));
+        assert!(
+            list.contains(&"browserNewLink"),
+            "it looks at the addresses again"
+        );
+    }
+
+    #[test]
+    fn a_first_certificate_needs_no_extra_note() {
+        let mut state = running(&[LINK]);
+        if let Some(info) = &mut state.info {
+            info.certificate = Certificate::New;
+        }
+        let rows = rows(&on(), &state, true, Language::English);
+        assert!(!ids(&rows).contains(&"browserReissued"));
+        assert!(ids(&rows).contains(&"browserCertNote"));
+    }
+
+    #[test]
     fn a_new_certificate_and_a_busy_port_are_said() {
         let mut state = running(&[LINK]);
         if let Some(info) = &mut state.info {
-            info.reissued = true;
+            info.certificate = Certificate::Reissued;
             info.preferred_port = false;
             info.port = 51234;
         }

@@ -8,7 +8,11 @@
 //! the core plugs in at one place: `impl BrowserBridge for LudusServer` in `app::ludus`. Until
 //! the core's bridge lands, that impl keeps the defaults below, and turning the option on says
 //! that the browser client could not start.
+//!
+//! The types mirror the core's (`docs/ludusctrl-web-api.md`, `anyps5_core::remote`) field for
+//! field, so the swap is a change of imports.
 
+use std::net::IpAddr;
 use std::path::PathBuf;
 
 use anyps5_core::paths::AppPaths;
@@ -25,22 +29,46 @@ pub struct BrowserConfig {
     /// [`LUDUS_WEB_PORT`].
     pub port: u16,
     /// The page's language, `"en"` or `"tr"` (the launcher's).
-    pub language: &'static str,
+    pub language: String,
+    /// `None`: every interface (the launcher).
+    pub bind: Option<IpAddr>,
 }
 
 impl BrowserConfig {
-    pub fn new(paths: &AppPaths, language: &'static str) -> BrowserConfig {
+    /// Port 45991, English, every interface.
+    pub fn new(cert_file: PathBuf) -> BrowserConfig {
         BrowserConfig {
-            cert_file: cert_file_in(paths),
+            cert_file,
             port: LUDUS_WEB_PORT,
-            language,
+            language: "en".into(),
+            bind: None,
+        }
+    }
+
+    /// `<config>/LudusCtrlWeb.json`, next to `LudusCtrl.json`.
+    pub fn file_in(paths: &AppPaths) -> PathBuf {
+        paths.config.join("LudusCtrlWeb.json")
+    }
+
+    /// The launcher's: its config folder and its language.
+    pub fn for_launcher(paths: &AppPaths, language: crate::ui::i18n::Language) -> BrowserConfig {
+        BrowserConfig {
+            language: page_language(language).into(),
+            ..BrowserConfig::new(BrowserConfig::file_in(paths))
         }
     }
 }
 
-/// `<config>/LudusCtrlWeb.json`, next to `LudusCtrl.json`.
-pub fn cert_file_in(paths: &AppPaths) -> PathBuf {
-    paths.config.join("LudusCtrlWeb.json")
+/// What happened to the certificate at this start.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Certificate {
+    /// The stored one covers every address: a phone that accepted it does not warn again.
+    #[default]
+    Kept,
+    /// The first certificate of this PC: every phone warns once.
+    New,
+    /// An address was not covered or it was near its end: phones warn once more.
+    Reissued,
 }
 
 /// What the settings show of a running bridge.
@@ -53,15 +81,16 @@ pub struct BrowserInfo {
     pub port: u16,
     /// Whether that is [`LUDUS_WEB_PORT`].
     pub preferred_port: bool,
-    /// The certificate was made again at this start (new addresses, expiry): every phone warns
-    /// once more.
-    pub reissued: bool,
+    pub certificate: Certificate,
+    /// SHA-256 of the certificate, `AB:CD:...`.
+    pub fingerprint: String,
 }
 
 /// The browser bridge as the launcher uses it. Every call returns at once. Who holds the pad
 /// comes through the LudusCtrl server's status (`LudusVia::Browser`).
 pub trait BrowserBridge {
-    /// Starts serving the page with a new token. `Err` carries the reason for the log.
+    /// Starts serving the page with a new token (restarts it when it runs). `Err` carries the
+    /// reason for the log.
     fn start_browser(&self, config: BrowserConfig) -> Result<BrowserInfo, String> {
         let _ = config;
         Err("the browser client is not part of this build yet".into())
@@ -84,6 +113,8 @@ pub struct BrowserState {
     pub failed: bool,
     /// A browser holds the pad: its address.
     pub peer: Option<String>,
+    /// And what it runs on, from its User-Agent ("iPhone", "Android"), when it said.
+    pub device: Option<String>,
 }
 
 /// The browser client runs while Phone as Controller, LudusCtrl and its browser option are on.
@@ -110,9 +141,11 @@ mod tests {
     fn the_stub_refuses_to_start_and_has_no_link() {
         let dir = tempfile::tempdir().unwrap();
         let paths = AppPaths::under(dir.path());
-        let config = BrowserConfig::new(&paths, "en");
+        let config = BrowserConfig::for_launcher(&paths, crate::ui::i18n::Language::Turkish);
         assert_eq!(config.port, LUDUS_WEB_PORT);
         assert!(config.cert_file.ends_with("LudusCtrlWeb.json"));
+        assert_eq!(config.language, "tr");
+        assert_eq!(config.bind, None, "every interface");
         assert!(Plain.start_browser(config).is_err());
         assert!(Plain.new_browser_link().is_none());
     }

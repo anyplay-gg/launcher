@@ -62,8 +62,11 @@ pub enum LudusEvent {
     /// controller is connected to the phone; without one the pad is held at neutral.
     Linked { name: String, controller: bool },
     /// A browser client holds the pad (`LudusStatus::Linked` with `LudusVia::Browser`): the
-    /// phone's address.
-    Browser { peer: String },
+    /// phone's address, and what it runs on when its browser said.
+    Browser {
+        peer: String,
+        device: Option<String>,
+    },
     /// Nobody feeds the pad (`LudusStatus::Waiting`).
     Waiting,
 }
@@ -109,11 +112,13 @@ fn event_of(status: LudusStatus) -> LudusEvent {
             controller,
             ..
         } => LudusEvent::Linked { name, controller },
+        // The core's bridge adds `device` (the User-Agent's coarse name); it goes here then.
         LudusStatus::Linked {
-            via: LudusVia::Browser { peer },
+            via: LudusVia::Browser { peer, .. },
             ..
         } => LudusEvent::Browser {
             peer: peer.to_string(),
+            device: None,
         },
         LudusStatus::Waiting => LudusEvent::Waiting,
     }
@@ -343,8 +348,8 @@ impl LudusService {
         };
         let browser = &model.ludus.browser;
         if want && browser.info.is_none() && !browser.failed {
-            let language = ludus_web::page_language(model.language());
-            match receiver.start_browser(BrowserConfig::new(&model.paths, language)) {
+            let config = BrowserConfig::for_launcher(&model.paths, model.language());
+            match receiver.start_browser(config) {
                 Ok(info) => {
                     model.ludus.browser = BrowserState {
                         info: Some(info),
@@ -396,6 +401,7 @@ impl LudusService {
                 if let Some(info) = receiver.new_browser_link() {
                     model.ludus.browser.info = Some(info);
                     model.ludus.browser.peer = None;
+                    model.ludus.browser.device = None;
                 }
             }
             // The host opens the page or copies the link; nothing for the server.
@@ -432,8 +438,9 @@ impl LudusService {
                 model.ludus.connected = Some(name);
                 model.ludus.controller = controller;
                 model.ludus.browser.peer = None;
+                model.ludus.browser.device = None;
             }
-            LudusEvent::Browser { peer } => {
+            LudusEvent::Browser { peer, device } => {
                 if model.ludus.browser.peer.as_deref() != Some(peer.as_str()) {
                     let text = BrowserText::ToastConnected.text(language);
                     model.toast(text, Icon::GAME_CONTROLLER);
@@ -441,11 +448,13 @@ impl LudusService {
                 model.ludus.connected = None;
                 model.ludus.controller = false;
                 model.ludus.browser.peer = Some(peer);
+                model.ludus.browser.device = device;
             }
             LudusEvent::Waiting => {
                 model.ludus.connected = None;
                 model.ludus.controller = false;
                 model.ludus.browser.peer = None;
+                model.ludus.browser.device = None;
             }
         }
     }
@@ -497,7 +506,8 @@ mod tests {
             urls: vec![format!("https://192.168.1.23:45991/#t={token}")],
             port: ludus_web::LUDUS_WEB_PORT,
             preferred_port: true,
-            reissued: false,
+            certificate: ludus_web::Certificate::Kept,
+            fingerprint: String::new(),
         }
     }
 
@@ -767,7 +777,8 @@ mod tests {
                 pad_live: true,
             }),
             LudusEvent::Browser {
-                peer: "192.168.1.40".into()
+                peer: "192.168.1.40".into(),
+                device: None,
             }
         );
     }
@@ -836,9 +847,11 @@ mod tests {
         service.sync(&mut model);
         emit(LudusEvent::Browser {
             peer: "192.168.1.40".into(),
+            device: Some("iPhone".into()),
         });
         service.sync(&mut model);
         assert_eq!(model.ludus.browser.peer.as_deref(), Some("192.168.1.40"));
+        assert_eq!(model.ludus.browser.device.as_deref(), Some("iPhone"));
         assert!(model.ludus.connected.is_none(), "one holder at a time");
         assert!(model.toast_visible());
         model.ludus.commands.push(LudusAction::NewLink);
@@ -849,6 +862,7 @@ mod tests {
         assert!(info.urls[0].ends_with("#t=second"));
         emit(LudusEvent::Browser {
             peer: "192.168.1.40".into(),
+            device: Some("iPhone".into()),
         });
         emit(LudusEvent::Linked {
             name: "Pixel 8".into(),
@@ -856,6 +870,7 @@ mod tests {
         });
         service.sync(&mut model);
         assert!(model.ludus.browser.peer.is_none(), "the app took the pad");
+        assert!(model.ludus.browser.device.is_none());
         assert_eq!(model.ludus.connected.as_deref(), Some("Pixel 8"));
     }
 

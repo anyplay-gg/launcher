@@ -548,7 +548,7 @@ fn sample_ludus(look: PhoneLook) -> crate::app::ludus::LudusState {
 /// An invented browser client for the same page. The token is made up and as long as a real one
 /// (22 characters), so the link row shows its true width.
 fn sample_browser(look: PhoneLook) -> crate::app::ludus_web::BrowserState {
-    use crate::app::ludus_web::{BrowserInfo, BrowserState, LUDUS_WEB_PORT};
+    use crate::app::ludus_web::{BrowserInfo, BrowserState, Certificate, LUDUS_WEB_PORT};
     if look == PhoneLook::BrowserFailed {
         return BrowserState {
             failed: true,
@@ -576,10 +576,16 @@ fn sample_browser(look: PhoneLook) -> crate::app::ludus_web::BrowserState {
             urls,
             port,
             preferred_port: port == LUDUS_WEB_PORT,
-            reissued: look == PhoneLook::BrowserReissued,
+            certificate: if look == PhoneLook::BrowserReissued {
+                Certificate::Reissued
+            } else {
+                Certificate::Kept
+            },
+            fingerprint: String::new(),
         }),
         failed: false,
         peer: (look == PhoneLook::BrowserLinked).then(|| "192.168.178.41".into()),
+        device: (look == PhoneLook::BrowserLinked).then(|| "iPhone".into()),
     }
 }
 

@@ -273,10 +273,16 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
             name.clone(),
             LudusText::BarLabel.format(language, &[Arg::Str(name)]),
         )),
-        (None, Some(peer)) => Some((
-            BrowserText::BarName.text(language).to_owned(),
-            BrowserText::BarLabel.format(language, &[Arg::Str(peer)]),
-        )),
+        (None, Some(peer)) => {
+            // What the browser runs on names the pill when it said; else "Browser".
+            let device = ludus.browser.device.as_deref();
+            Some((
+                device
+                    .unwrap_or(BrowserText::BarName.text(language))
+                    .to_owned(),
+                BrowserText::BarLabel.format(language, &[Arg::Str(device.unwrap_or(peer))]),
+            ))
+        }
         (None, None) => None,
     };
     if let Some((name, label)) = holder
