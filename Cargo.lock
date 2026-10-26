@@ -1668,6 +1668,7 @@ version = "0.2.5"
 dependencies = [
  "anyps5-core",
  "mdns-sd",
+ "rustls",
  "tempfile",
  "tungstenite",
 ]
