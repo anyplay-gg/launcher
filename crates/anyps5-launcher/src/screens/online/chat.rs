@@ -322,12 +322,11 @@ pub fn thread(data: &OnlineData<'_>, local: &Local, id: &str, shown: usize) -> O
             items.push(Item::Day(format::day_label(created, now, offset, language)));
         }
         let mine = message.sender.id == me;
-        // One sender's messages within five minutes form a group; an answer to another message
-        // starts one, so its quote never sticks to the bubble above it.
+        // One sender's messages within five minutes form a group, an answer among them: its quote
+        // is inside its own bubble, so the bubbles can stand close.
         let same_group = |earlier: &Message, later: &Message| {
             earlier.sender.id == later.sender.id
                 && earlier.deleted == later.deleted
-                && later.reply.is_none()
                 && !day_changed(earlier, later, offset)
                 && later.created.abs_diff(earlier.created) <= RUN_SECONDS
         };
@@ -1626,7 +1625,7 @@ fn thread_view(
         let spare = (body.height() - last_height).max(0.0);
         ui.add_space(spare);
         let origin = ui.cursor().min.y;
-        ui.add_space(space::S);
+        ui.add_space(space::L);
         for item in &thread.items {
             match item {
                 Item::Earlier => {
@@ -2072,7 +2071,7 @@ fn composer_view(
                 vec2(SEND_BUTTON, SEND_BUTTON),
             );
             let field = Rect::from_min_max(
-                pos2(pill.min.x + space::S, pill.min.y),
+                pos2(pill.min.x + BUBBLE_PAD_X, pill.min.y),
                 pos2(send.min.x - space::S, pill.max.y),
             );
             icon_button(
@@ -2120,7 +2119,7 @@ fn composer_view(
                 .frame(egui::Frame::NONE)
                 .font(BODY.font())
                 .text_color(color::text())
-                .margin(Margin::symmetric(space::S as i8, 0));
+                .margin(Margin::ZERO);
             let response = field_ui.add(edit);
             response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, hint));
             if type_now {
@@ -2633,7 +2632,7 @@ mod tests {
     }
 
     #[test]
-    fn an_answer_starts_a_group_and_every_bubble_reads_with_its_time() {
+    fn an_answer_stays_in_its_group_and_every_bubble_reads_with_its_time() {
         let mut online = online();
         put(
             &mut online,
@@ -2662,13 +2661,13 @@ mod tests {
         );
         let t = thread(&data(&online), &Local::default(), "d", 40).unwrap();
         let b = bubbles(&t);
-        // Two plain lines stay a group; the answer stands apart from them.
-        assert!(b[0].first && !b[0].last && !b[1].first && b[1].last);
-        assert!(b[2].first && b[2].last && b[2].quote.is_some());
+        // The answer joins the plain lines before it: one group, the time once at its end.
+        assert!(b[0].first && !b[0].last && !b[1].first && !b[1].last);
+        assert!(!b[2].first && b[2].last && b[2].quote.is_some());
         // The screen reader gets who, the words and the time for each, not only the last.
         assert!(b[0].reader.starts_with("Lumen, one, "));
         assert!(b[0].reader.contains(':'), "{}", b[0].reader);
-        assert!(b[0].meta.is_none() && b[1].meta.is_some());
+        assert!(b[0].meta.is_none() && b[1].meta.is_none() && b[2].meta.is_some());
     }
 
     #[test]
