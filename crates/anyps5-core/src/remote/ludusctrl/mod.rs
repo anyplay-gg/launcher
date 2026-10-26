@@ -166,7 +166,8 @@ struct Core {
 }
 
 struct Shared {
-    socket: UdpSocket,
+    /// The app's UDP socket; `None` when the server was started without the app.
+    socket: Option<UdpSocket>,
     core: Mutex<Core>,
     slot: Arc<PadSlot>,
     /// The device names of the browser connections, for the status.
@@ -194,6 +195,26 @@ impl LudusServer {
         if port != config.port {
             tracing::warn!("ludusctrl: port {} is busy, using {port}", config.port);
         }
+        LudusServer::run(config, events, Some(socket), port)
+    }
+
+    /// The server without the app: the pad slot, the paired phones and the status, for the browser
+    /// client when the app's UDP port cannot be bound. Nothing listens for the app and no beacon
+    /// goes out; [`LudusServer::port`] is 0.
+    pub fn start_without_app(
+        config: LudusConfig,
+        events: Arc<dyn LudusEvents>,
+    ) -> Result<LudusServer, RemoteError> {
+        LudusServer::run(config, events, None, 0)
+    }
+
+    fn run(
+        config: LudusConfig,
+        events: Arc<dyn LudusEvents>,
+        socket: Option<UdpSocket>,
+        port: u16,
+    ) -> Result<LudusServer, RemoteError> {
+        let app = socket.is_some();
         let store = LudusStore::load(&config.store_file);
         let pc_id = store.pc_id();
         let shared = Arc::new(Shared {
@@ -217,7 +238,7 @@ impl LudusServer {
         thread::Builder::new()
             .name("ludusctrl".into())
             .spawn(move || receiver.receive())?;
-        if let Some(target) = config.beacon {
+        if let Some(target) = config.beacon.filter(|_| app) {
             let beacon = shared.clone();
             thread::Builder::new()
                 .name("ludusctrl-beacon".into())
@@ -230,7 +251,7 @@ impl LudusServer {
         })
     }
 
-    /// The UDP port really bound.
+    /// The UDP port really bound; 0 without the app ([`LudusServer::start_without_app`]).
     pub fn port(&self) -> u16 {
         self.port
     }
@@ -399,7 +420,14 @@ impl Shared {
     fn receive(&self) {
         let mut buffer = [0u8; 512];
         while !self.stop.load(Ordering::Relaxed) {
-            let received = self.socket.recv_from(&mut buffer);
+            // Without the app the loop only keeps time: the slot's watchdog and the status.
+            let received = match &self.socket {
+                Some(socket) => socket.recv_from(&mut buffer),
+                None => {
+                    thread::sleep(TICK);
+                    Err(std::io::ErrorKind::TimedOut.into())
+                }
+            };
             let now = Instant::now();
             let mut ask = None;
             {
@@ -426,8 +454,8 @@ impl Shared {
                             }
                             _ => None,
                         };
-                        if let Some(reply) = reply {
-                            let _ = self.socket.send_to(&reply, source);
+                        if let (Some(reply), Some(socket)) = (reply, &self.socket) {
+                            let _ = socket.send_to(&reply, source);
                         }
                     }
                     Ok(_) => {}

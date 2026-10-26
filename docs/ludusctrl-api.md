@@ -33,6 +33,9 @@ pub struct BeaconTarget {
 pub struct LudusServer;
 impl LudusServer {
     pub fn start(config: LudusConfig, events: Arc<dyn LudusEvents>) -> Result<LudusServer, RemoteError>;
+    /// The same server with no UDP socket and no beacon, for the browser client (ludusctrl-web-api.md) when
+    /// the app's port cannot be bound: the pad slot, the paired phones and the status run; `port()` is 0.
+    pub fn start_without_app(config: LudusConfig, events: Arc<dyn LudusEvents>) -> Result<LudusServer, RemoteError>;
     pub fn port(&self) -> u16;                 // the UDP port really bound (the beacon advertises it)
     pub fn status(&self) -> LudusStatus;
     pub fn respond(&self, request: u64, allow: bool); // the answer to a pairing question

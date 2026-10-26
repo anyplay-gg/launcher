@@ -89,13 +89,20 @@ fn browser_config(dir: &tempfile::TempDir, timers: Timers) -> BrowserConfig {
 }
 
 fn rig_with(timers: Timers) -> Rig {
+    rig_started(timers, LudusServer::start)
+}
+
+type Start =
+    fn(LudusConfig, Arc<dyn LudusEvents>) -> Result<LudusServer, crate::remote::RemoteError>;
+
+fn rig_started(timers: Timers, start: Start) -> Rig {
     let dir = tempfile::tempdir().unwrap();
     let mut config = LudusConfig::new(dir.path().join("LudusCtrl.json"));
     config.port = 0;
     config.bind = Some(Ipv4Addr::LOCALHOST.into());
     config.beacon = None::<BeaconTarget>;
     let (tx, statuses) = mpsc::channel();
-    let server = LudusServer::start(config, Arc::new(Statuses(Mutex::new(tx)))).unwrap();
+    let server = start(config, Arc::new(Statuses(Mutex::new(tx)))).unwrap();
     let pad = Arc::new(Pad::default());
     server.set_pad(Some(pad.clone()));
     let info = server.start_browser(browser_config(&dir, timers)).unwrap();
@@ -1104,4 +1111,25 @@ fn a_stopped_server_has_no_browser_client() {
             .start_browser(browser_config(&rig.dir, timers()))
             .is_err()
     );
+}
+
+#[test]
+fn a_server_without_the_app_still_serves_the_browser() {
+    // The app's UDP port could not be bound: the browser client runs on its own.
+    let rig = rig_started(timers(), LudusServer::start_without_app);
+    assert_eq!(rig.server.port(), 0, "nothing listens for the app");
+    let mut client = rig.browser();
+    client.send_binary(&body(1, 0x1000, 1, 1));
+    assert_eq!(client.text(), "ack:1:1:1");
+    assert_eq!(rig.pad.last().unwrap().buttons, 0x1000);
+    let status = rig.wait_status(|s| matches!(s, LudusStatus::Linked { .. }));
+    assert!(matches!(
+        status,
+        LudusStatus::Linked {
+            via: LudusVia::Browser { .. },
+            ..
+        }
+    ));
+    rig.server.stop();
+    assert!(rig.server.browser().is_none());
 }
