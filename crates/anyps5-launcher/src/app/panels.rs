@@ -378,6 +378,7 @@ impl PanelHost {
             links: self.links.clone(),
             cjk_fonts: anyps5_core::fonts::cjk_state(&cx.model.paths, &crate::fonts::BUNDLE),
             phone: &cx.model.phone,
+            ludus: &cx.model.ludus,
             openh264: (cfg!(target_os = "linux") && super::online::share_screen_enabled(cx.model))
                 .then(|| crate::screens::settings::Openh264Env {
                     state: anyps5_core::openh264::state(
@@ -548,6 +549,10 @@ impl PanelHost {
                 open_known_url(crate::screens::phone::driver_page());
             }
             SettingsAction::Phone(action) => model.phone.commands.push(action),
+            SettingsAction::Ludus(crate::screens::ludus::LudusAction::OpenProjectPage) => {
+                open_known_url(crate::screens::ludus_strings::PROJECT_PAGE);
+            }
+            SettingsAction::Ludus(action) => model.ludus.commands.push(action),
             SettingsAction::Quit => cx.ctx.send_viewport_cmd(ViewportCommand::Close),
         }
     }
@@ -2228,6 +2233,7 @@ fn open_known_url(url: &str) {
     let known = [
         crate::screens::phone::VIGEM_DOWNLOAD,
         crate::screens::phone::UINPUT_GUIDE,
+        crate::screens::ludus_strings::PROJECT_PAGE,
         crate::screens::about_strings::WEBSITE,
         crate::screens::about_strings::DISCORD,
         crate::screens::about_strings::PRIVACY,

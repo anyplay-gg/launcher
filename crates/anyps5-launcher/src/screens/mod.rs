@@ -52,10 +52,13 @@ pub mod legal;
 pub mod library;
 pub mod location_strings;
 pub mod log;
+pub mod ludus;
+pub mod ludus_strings;
 pub mod onboarding;
 pub mod onboarding_strings;
 pub mod online;
 pub mod online_call_strings;
+pub mod online_confirm_strings;
 pub mod online_feed_strings;
 pub mod online_restriction_strings;
 pub mod online_screen_strings;
@@ -138,6 +141,34 @@ pub fn right_aligned_hints(
             .layout(Layout::left_to_right(Align::Center)),
     );
     crate::ui::components::hint_bar(&mut bar, language, false);
+}
+
+/// The hint bar of a full-screen area: bottom right of `screen`, where Home has it (DESIGN.md
+/// 3.12). Leave out "Back" with `set.without_back()` where a Back button is on screen.
+pub fn footer_hints(
+    ui: &mut egui::Ui,
+    screen: egui::Rect,
+    language: crate::ui::i18n::Language,
+    set: crate::ui::components::HintSet,
+) {
+    use crate::ui::components::{hint_bar_set, hint_bar_set_size};
+    use crate::ui::theme::pad;
+    use egui::{Align, Layout, Rect, UiBuilder, pos2, vec2};
+    let painter = ui.painter().clone();
+    let (width, height) = hint_bar_set_size(&painter, language, set);
+    let rect = Rect::from_min_size(
+        pos2(
+            screen.max.x - pad::HOME_X - width,
+            screen.max.y - pad::HINT_Y - height,
+        ),
+        vec2(width, height),
+    );
+    let mut bar = ui.new_child(
+        UiBuilder::new()
+            .max_rect(rect)
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    hint_bar_set(&mut bar, language, set);
 }
 
 /// The room the top row of a full-screen area takes: the Back button and, level with it, the hint

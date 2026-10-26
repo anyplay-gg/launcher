@@ -1,10 +1,12 @@
 //! The "Phone as Controller" page of the settings (docs/DESIGN.md 18): the switch, what the phone
-//! server is doing, the pairing question, the paired phones and the state of the virtual
-//! controller. Only rows: the page has no drawing of its own.
+//! server is doing, the pairing question, the paired phones, the LudusCtrl rows
+//! ([`crate::screens::ludus`]) and the state of the virtual controller. Only rows: the page has no
+//! drawing of its own.
 
 use anyps5_core::remote::VirtualPadStatus;
 use anyps5_core::settings::Preferences;
 
+use crate::app::ludus::LudusState;
 use crate::app::phone::PhoneState;
 use crate::screens::phone_strings::PhoneText;
 use crate::screens::rows::{Change, Row};
@@ -76,18 +78,12 @@ pub fn rows(prefs: &Preferences, phone: &PhoneState, language: Language) -> Vec<
 
     // The pairing question: the code, a note, the two answers.
     if let Some(request) = &phone.pairing {
-        rows.push(
-            Row::info(
-                "pairAsk",
-                PhoneText::PairAsk.format(language, &[Arg::Str(&request.device_name)]),
-                Some(request.code.clone()),
-            )
-            .icon(Icon::DEVICE_MOBILE)
-            .group_start(),
-        );
-        rows.push(Row::info("pairNote", t(PhoneText::CodeNote), None).attached());
-        rows.push(Row::command("pairAllow", t(PhoneText::PairAllow)).icon(Icon::CHECK_CIRCLE));
-        rows.push(Row::command("pairDeny", t(PhoneText::PairDeny)).icon(Icon::X_CIRCLE));
+        rows.extend(pairing_rows(
+            PAIR_ROWS,
+            &request.device_name,
+            &request.code,
+            language,
+        ));
     }
 
     // The address for typing it in.
@@ -128,16 +124,90 @@ pub fn rows(prefs: &Preferences, phone: &PhoneState, language: Language) -> Vec<
         );
     }
 
-    // The virtual controller.
-    rows.extend(controller_rows(phone, language));
     rows
 }
 
-fn controller_rows(phone: &PhoneState, language: Language) -> Vec<Row> {
+/// The ids of one pairing question's rows: the question, its note, the two answers.
+#[derive(Clone, Copy, Debug)]
+pub struct PairRows {
+    pub ask: &'static str,
+    pub note: &'static str,
+    pub allow: &'static str,
+    pub deny: &'static str,
+}
+
+/// The phone server's question.
+pub const PAIR_ROWS: PairRows = PairRows {
+    ask: "pairAsk",
+    note: "pairNote",
+    allow: "pairAllow",
+    deny: "pairDeny",
+};
+
+/// A code as the player compares it: six digits in two groups of three (`260 329`), the way the
+/// LudusCtrl app shows them; any other code as it is.
+pub fn code_text(code: &str) -> String {
+    let digits: String = code.chars().filter(|c| !c.is_whitespace()).collect();
+    if digits.len() == 6 && digits.bytes().all(|b| b.is_ascii_digit()) {
+        format!("{} {}", &digits[..3], &digits[3..])
+    } else {
+        code.to_owned()
+    }
+}
+
+/// A phone asks to be paired: "Pair Pixel 8?" with the code as its value, the note to compare the
+/// codes, then Pair Phone and Deny. The phone server and LudusCtrl ask the same way.
+pub fn pairing_rows(ids: PairRows, name: &str, code: &str, language: Language) -> Vec<Row> {
     let t = |text: PhoneText| text.text(language).to_owned();
-    let Some(status) = &phone.pad else {
-        return Vec::new();
-    };
+    vec![
+        Row::info(
+            ids.ask,
+            PhoneText::PairAsk.format(language, &[Arg::Str(name)]),
+            Some(code_text(code)),
+        )
+        .icon(Icon::DEVICE_MOBILE)
+        .group_start(),
+        Row::info(ids.note, t(PhoneText::CodeNote), None).attached(),
+        Row::command(ids.allow, t(PhoneText::PairAllow)).icon(Icon::CHECK_CIRCLE),
+        Row::command(ids.deny, t(PhoneText::PairDeny)).icon(Icon::X_CIRCLE),
+    ]
+}
+
+/// The whole page: the phone server, its LudusCtrl option (only while the switch is on), then the
+/// virtual controller both of them use, shown once.
+pub fn page(
+    prefs: &Preferences,
+    phone: &PhoneState,
+    ludus: &LudusState,
+    language: Language,
+) -> Vec<Row> {
+    let mut rows = rows(prefs, phone, language);
+    if !prefs.phone_remote {
+        return rows;
+    }
+    // The PC's address with LudusCtrl's own port, for typing into its app.
+    let address = phone
+        .info
+        .as_ref()
+        .and_then(|info| info.addresses.first())
+        .zip(ludus.port)
+        .map(|(address, port)| format!("{address}:{port}"));
+    rows.extend(crate::screens::ludus::rows(prefs, ludus, address, language));
+    let phone_on = !phone.failed;
+    let ludus_on = prefs.phone_ludusctrl && !ludus.failed;
+    let pad = phone
+        .pad
+        .as_ref()
+        .filter(|_| phone_on)
+        .or(ludus.pad.as_ref().filter(|_| ludus_on));
+    if let Some(status) = pad {
+        rows.extend(controller_rows(status, phone.windows, language));
+    }
+    rows
+}
+
+fn controller_rows(status: &VirtualPadStatus, windows: bool, language: Language) -> Vec<Row> {
+    let t = |text: PhoneText| text.text(language).to_owned();
     let value = match status {
         VirtualPadStatus::Ready => PhoneText::ControllerReady,
         VirtualPadStatus::DriverMissing => PhoneText::ControllerMissing,
@@ -149,7 +219,6 @@ fn controller_rows(phone: &PhoneState, language: Language) -> Vec<Row> {
             .icon(Icon::PLUG)
             .group_start(),
     ];
-    let windows = phone.windows;
     match status {
         VirtualPadStatus::DriverMissing | VirtualPadStatus::NoAccess(_) if windows => {
             rows.push(Row::info("padNote", t(PhoneText::ViGemNote), None).attached());
@@ -340,6 +409,10 @@ mod tests {
             pad: Some(VirtualPadStatus::DriverMissing),
             ..PhoneState::default()
         };
+        let quiet = LudusState::default();
+        let rows = |prefs: &Preferences, state: &PhoneState, language| {
+            page(prefs, state, &quiet, language)
+        };
         let win = rows(&on(), &missing(true), Language::English);
         let note = win.iter().find(|r| r.id == "padNote").unwrap();
         assert!(note.title.contains("ViGEmBus") && note.title.contains("never installs"));
@@ -366,6 +439,83 @@ mod tests {
             Language::English,
         );
         assert!(!ids(&ready).contains(&"padOpen"));
+    }
+
+    #[test]
+    fn six_digit_codes_read_in_two_groups() {
+        assert_eq!(code_text("260329"), "260 329");
+        assert_eq!(code_text("000 042"), "000 042");
+        assert_eq!(
+            code_text("4821"),
+            "4821",
+            "the phone server's four digits stay"
+        );
+        assert_eq!(code_text("12a456"), "12a456");
+    }
+
+    #[test]
+    fn ludusctrl_is_an_option_of_the_phone_switch() {
+        let ludus = LudusState {
+            pad: Some(VirtualPadStatus::DriverMissing),
+            port: Some(45989),
+            ..LudusState::default()
+        };
+        let quiet = PhoneState {
+            windows: true,
+            ..PhoneState::default()
+        };
+        let off = Preferences {
+            phone_ludusctrl: true,
+            ..Preferences::first_run()
+        };
+        assert_eq!(
+            ids(&page(&off, &quiet, &ludus, Language::English)),
+            ["phone"],
+            "the option waits for the phone switch"
+        );
+
+        // The phone server could not start; LudusCtrl's own server still runs and has the pad.
+        let both = Preferences {
+            phone_remote: true,
+            ..off.clone()
+        };
+        let failed = PhoneState {
+            failed: true,
+            ..quiet.clone()
+        };
+        let list = page(&both, &failed, &ludus, Language::English);
+        assert_eq!(list.iter().filter(|r| r.id == "padStatus").count(), 1);
+        assert!(list.iter().any(|r| r.id == "padOpen"));
+
+        // Both run: one controller section, after both groups; LudusCtrl's address is the PC's.
+        let phone = PhoneState {
+            pad: Some(VirtualPadStatus::Ready),
+            info: Some(RemoteInfo {
+                addresses: vec!["192.168.178.20".parse().unwrap()],
+                control_port: 47700,
+                udp_port: 47702,
+                preferred_port: true,
+                discovery_error: None,
+            }),
+            ..quiet.clone()
+        };
+        let list = page(&both, &phone, &ludus, Language::English);
+        assert_eq!(list.iter().filter(|r| r.id == "padStatus").count(), 1);
+        let at = |id: &str| list.iter().position(|r| r.id == id).unwrap();
+        assert!(at("phone") < at("ludusctrl") && at("ludusctrl") < at("padStatus"));
+        assert_eq!(
+            list[at("ludusAddress")].control,
+            Control::Info(Some("192.168.178.20:45989".into()))
+        );
+
+        // The option off: its switch, and the phone server's controller rows.
+        let phone_only = Preferences {
+            phone_ludusctrl: false,
+            ..both.clone()
+        };
+        let list = page(&phone_only, &phone, &ludus, Language::English);
+        let at = |id: &str| list.iter().position(|r| r.id == id).unwrap();
+        assert_eq!(list[at("ludusctrl") + 1].id, "padStatus");
     }
 
     #[test]

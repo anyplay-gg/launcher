@@ -5,11 +5,14 @@
 //! [`RemoteServer`] is the whole interface: start it, hand it the library with [`RemoteServer::publish`],
 //! and listen through [`RemoteEvents`]. Ported from utkuhalis/AnyPS5-ARM (macOS), with the security
 //! rules in `docs/DESIGN.md`. Nothing here starts unless the player switched the feature on.
+//!
+//! [`LudusServer`] is a second, independent server for the LudusCtrl app, which only sends a pad.
 
 mod control;
 mod devices;
 mod discovery;
 mod layouts;
+mod ludusctrl;
 mod protocol;
 mod relay;
 mod security;
@@ -18,7 +21,7 @@ pub mod vpad;
 use std::{
     collections::BTreeMap,
     io,
-    net::Ipv4Addr,
+    net::{IpAddr, Ipv4Addr},
     path::PathBuf,
     sync::{
         Arc,
@@ -31,6 +34,10 @@ use std::{
 pub use devices::{PairedDevice, PairedDevices};
 pub use discovery::{choose_addresses, lan_addresses};
 pub use layouts::Layouts;
+pub use ludusctrl::{
+    BeaconTarget, Holding, LUDUS_BEACON_PORT, LUDUS_PORT, LudusConfig, LudusEvents, LudusPhone,
+    LudusServer, LudusStatus, LudusStore, LudusVia, Owner, PadLayout, PadSlot, PadTarget, Refusal,
+};
 pub use protocol::{
     HELLO_SIZE, INPUT_SIZE, InputPacket, Message, OUTPUT_SIZE, OutputPacket, PROTOCOL_VERSION,
     RemoteGame, TouchPoint, button, game_hello, is_game_hello,
@@ -84,6 +91,9 @@ pub struct RemoteConfig {
     pub control_port: u16,
     /// Pair every phone without asking (tests only).
     pub allow_all: bool,
+    /// Listen on this address only; `None` is every interface. Tests bind loopback, so a test
+    /// run never asks the firewall for a port.
+    pub bind: Option<IpAddr>,
 }
 
 impl RemoteConfig {
@@ -94,6 +104,7 @@ impl RemoteConfig {
             advertise: true,
             control_port: CONTROL_PORT,
             allow_all: false,
+            bind: None,
         }
     }
 }
@@ -133,11 +144,12 @@ impl RemoteServer {
         let stop = Arc::new(AtomicBool::new(false));
         let ready_events = events.clone();
         let relay = Arc::new(Relay::start(
+            config.bind,
             PHONE_UDP_PORT,
             BRIDGE_PORT,
             Arc::new(move |ready| ready_events.pad_ready(ready)),
         )?);
-        let listener = control::bind_listener(config.control_port)?;
+        let listener = control::bind_listener(config.bind, config.control_port)?;
         let control_port = listener.local_addr()?.port();
         let (hub_tx, hub_rx) = channel();
         control::spawn_listener(listener, hub_tx.clone(), stop.clone())?;
@@ -170,6 +182,9 @@ impl RemoteServer {
                     (None, lan_addresses(), Some(error))
                 }
             }
+        } else if config.bind.is_some() {
+            // Bound to one address: no LAN address to show (and no socket opened to find one).
+            (None, Vec::new(), None)
         } else {
             (None, lan_addresses(), None)
         };
@@ -267,3 +282,7 @@ pub fn pc_name() -> String {
 
 #[cfg(test)]
 mod tests;
+
+/// The LudusCtrl test phone and its conformance checks (test support only).
+#[cfg(test)]
+pub(crate) mod ludusctrl_testphone;

@@ -12,6 +12,7 @@ use egui::{
 
 use crate::app::model::{GameState, Model, SizeState};
 use crate::screens::glibc_strings::shortfall_text;
+use crate::screens::ludus_strings::LudusText;
 use crate::screens::online_social_strings::SocialText;
 use crate::screens::online_strings::OnlineText;
 use crate::screens::phone_strings::PhoneText;
@@ -27,8 +28,8 @@ use crate::screens::{
 use crate::ui::anim::{AnimExt, Motion, lerp};
 use crate::ui::chrome::{self, TileImage, TileOverlay, TileStyle};
 use crate::ui::components::{
-    self as components, ConsoleButton, ControlSize, IconButton, IndeterminateLine, ProgressLine,
-    Variant, hint_bar, hint_bar_size,
+    self as components, ConsoleButton, ControlSize, HintSet, IconButton, IndeterminateLine,
+    ProgressLine, Variant, hint_bar_set, hint_bar_set_size, hint_bar_size,
 };
 use crate::ui::focus::HomeFocus;
 use crate::ui::i18n::{Arg, Key, Language, byte_text, substitute};
@@ -97,8 +98,12 @@ pub fn show(ui: &mut Ui, cx: &mut ScreenCx<'_>) {
             hero(ui, cx, screen, &mut presses);
         });
         let language = cx.language();
+        let set = HintSet {
+            back: back_does_something(cx.model),
+            options: true,
+        };
         staged(ui, &ctx, intro::HINTS, screen, |ui, screen| {
-            hints(ui, language, screen);
+            hints(ui, language, set, screen);
         });
     }
     for press in presses {
@@ -169,12 +174,15 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
     // A connected phone sits after the title, out of the focus order: it only reports.
     let mut after_title = title.max.x;
     if let Some(name) = &cx.model.phone.connected {
+        let label = PhoneText::BarLabel.format(language, &[Arg::Str(name)]);
         after_title = phone_status(
             ui,
             pos2(title.max.x + PHONE_STATUS_GAP, mid),
             name,
-            language,
-        );
+            &label,
+            None,
+        )
+        .unwrap_or(after_title);
     }
 
     // From the right: clock, then profile, settings, friends and library, all 12 apart.
@@ -262,14 +270,32 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
     if response.clicked() {
         presses.push(Press::Focus(HomeFocus::LIBRARY));
     }
-    // A connected controller sits after the phone (or the title), the same way: it only reports,
-    // and it is left out when the strip has no room for it.
-    if pad_info::connected() {
-        let left = if cx.model.phone.connected.is_some() {
+    // The first status after the title keeps its distance; the next ones sit a control gap apart.
+    let next_left = |after_title: f32| {
+        if after_title > title.max.x {
             after_title + size::CONTROL_GAP
         } else {
             title.max.x + PHONE_STATUS_GAP
-        };
+        }
+    };
+    // A LudusCtrl phone that holds the pad sits after the phone the same way; left out when
+    // the strip has no room for it.
+    if let Some(name) = &cx.model.ludus.connected {
+        let label = LudusText::BarLabel.format(language, &[Arg::Str(name)]);
+        if let Some(right) = phone_status(
+            ui,
+            pos2(next_left(after_title), mid),
+            name,
+            &label,
+            Some(row.min_rect().min.x - group_gap),
+        ) {
+            after_title = right;
+        }
+    }
+    // A connected controller sits after the phones (or the title), the same way: it only reports,
+    // and it is left out when the strip has no room for it.
+    if pad_info::connected() {
+        let left = next_left(after_title);
         if let Some(right) = pad_status(
             ui,
             pos2(left, mid),
@@ -457,22 +483,32 @@ const PHONE_STATUS_GAP: f32 = 48.0;
 const PHONE_STATUS_HEIGHT: f32 = 32.0;
 const PHONE_STATUS_NAME_MAX: f32 = 150.0;
 
-/// The status of a connected phone: its icon and name on the pills' surface, 32 high so it
-/// reads as a note beside the 44 high buttons. Not a button: nothing happens on a press.
-fn phone_status(ui: &mut Ui, left_middle: egui::Pos2, name: &str, language: Language) -> f32 {
+/// The status of a connected phone (the phone server's, or a LudusCtrl phone): its icon and name
+/// on the pills' surface, 32 high so it reads as a note beside the 44 high buttons. Not a button:
+/// nothing happens on a press. `label` is what a screen reader says. With `limit_x` it is left
+/// out (`None`) when it would reach past it.
+fn phone_status(
+    ui: &mut Ui,
+    left_middle: egui::Pos2,
+    name: &str,
+    label: &str,
+    limit_x: Option<f32>,
+) -> Option<f32> {
     let painter = ui.painter().clone();
     let shown = text::middle_truncate(&painter, ty::CHIP, name, PHONE_STATUS_NAME_MAX);
     let glyph = 18.0;
     let width = 12.0 + glyph + 8.0 + text::width(&painter, ty::CHIP, &shown) + 14.0;
+    if limit_x.is_some_and(|limit| left_middle.x + width > limit) {
+        return None;
+    }
     let rect = Rect::from_min_size(
         pos2(left_middle.x, left_middle.y - PHONE_STATUS_HEIGHT * 0.5),
         vec2(width, PHONE_STATUS_HEIGHT),
     );
-    let label = PhoneText::BarLabel.format(language, &[Arg::Str(name)]);
     let response = ui.allocate_rect(rect, Sense::hover());
-    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &label));
+    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, label));
     if !ui.is_rect_visible(rect) {
-        return rect.max.x;
+        return Some(rect.max.x);
     }
     components::paint_capsule(&painter, rect, color::surface());
     let ink = white(0.92);
@@ -491,7 +527,7 @@ fn phone_status(ui: &mut Ui, left_middle: egui::Pos2, name: &str, language: Lang
         &shown,
         ink,
     );
-    rect.max.x
+    Some(rect.max.x)
 }
 
 /// The status of the connected controller: its icon and, where the pad reports one, its battery.
@@ -1006,9 +1042,19 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
 // Hero
 // ---------------------------------------------------------------------------------------------
 
-fn hints(ui: &mut Ui, language: Language, screen: Rect) {
+/// Back does something on the home screen in three cases: the launcher is in front because of the
+/// Home button (it goes back to the game), a Play Together card is up (it closes it), or the focus
+/// is off the tile row (it returns there). On the tile row itself there is nothing to go back to,
+/// so the hint bar does not offer it.
+fn back_does_something(model: &Model) -> bool {
+    (model.summoned && model.running.is_some())
+        || crate::app::together::card(model).is_some()
+        || model.focus != HomeFocus::Tiles
+}
+
+fn hints(ui: &mut Ui, language: Language, set: HintSet, screen: Rect) {
     let painter = ui.painter().clone();
-    let (width, height) = hint_bar_size(&painter, language, true);
+    let (width, height) = hint_bar_set_size(&painter, language, set);
     let rect = Rect::from_min_size(
         pos2(
             screen.max.x - pad::HOME_X - width,
@@ -1016,7 +1062,7 @@ fn hints(ui: &mut Ui, language: Language, screen: Rect) {
         ),
         vec2(width, height),
     );
-    place(ui, rect, |ui| hint_bar(ui, language, true));
+    place(ui, rect, |ui| hint_bar_set(ui, language, set));
 }
 
 fn hero(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<Press>) {

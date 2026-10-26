@@ -39,7 +39,7 @@ Screenshots of the launcher, taken from a release build with a real library.
 - **Trophies, saves, playtime:** trophies pop up while you play, saves are backed up before anything risky.
 - **Per-game settings:** window, sync, overlay, language and shader cache, plus recommended settings you apply with one click.
 - **Online:** friends, parties with voice, calls, profiles, a feed and join codes, with an AnyPlay account. See [docs/ONLINE.md](docs/ONLINE.md).
-- **Updates:** signed self-update on Windows.
+- **Updates:** signed self-update on Windows, Linux AppImage and the Apple silicon Mac app.
 
 ## Status
 
@@ -63,7 +63,7 @@ Questions, bug reports and other players: the [AnyPlay Discord](https://discord.
 
 ## Credits, license and ground rules
 
-GPL-2.0, see [LICENSE](LICENSE). The launcher began as a port of the macOS launcher by [utkuhalis](https://github.com/utkuhalis) in [AnyPS5-ARM](https://github.com/utkuhalis/AnyPS5-ARM) (GPL-2.0). Since then it has its own implementation, Windows and Linux integration and the online area. AnyPS5 is by [boykopovar](https://github.com/boykopovar). Bundled fonts and icons are listed in [docs/supply-chain.md](docs/supply-chain.md#fonts-and-icons).
+GPL-2.0, see [LICENSE](LICENSE). The launcher began as a port of the macOS launcher by [utkuhalis](https://github.com/utkuhalis) in [AnyPS5-ARM](https://github.com/utkuhalis/AnyPS5-ARM) (GPL-2.0). Since then it has its own implementation, Windows and Linux integration and the online area. AnyPS5 is by [boykopovar](https://github.com/boykopovar). LudusCtrl protocol and app by Josip Parlov (@parl0v), see [parl0v/ludusctrl](https://github.com/parl0v/ludusctrl). Bundled fonts and icons are listed in [docs/supply-chain.md](docs/supply-chain.md#fonts-and-icons).
 
 Ported files: the Rust files that began as ports of Swift files in AnyPS5-ARM name their source in their first line. They are `unwrap`, `library`, `unlock`, `toolkit`, `settings`, `controls`, `trophies`, `diagnosis` and `discord` in `anyps5-core`, and `app/model`, `ui/i18n`, `ui/i18n_table` and `ui/background` in `anyps5-launcher`. The mapping is in [docs/PORT.md](docs/PORT.md).
 

@@ -61,7 +61,7 @@ The Mac toolkit currently comes from AnyPS5-ARM. Playing a game through AnyPlay'
 
 ## Updates
 
-On Windows the launcher looks for a new release when it starts, downloads and checks it in the background, and installs it when you close the launcher (or at once with *Restart Now* in Settings, About). Turn *Check for Updates* off in Settings to stop that. How updates are signed and checked is in [How it works](HOW-IT-WORKS.md#self-update).
+On Windows, in a Linux AppImage and in the Apple silicon Mac app, the launcher looks for a new release when it starts, downloads and checks it in the background, and installs it when you close the launcher (or at once with *Restart Now* in Settings, About). Turn *Check for Updates* off in Settings to stop that. How updates are signed and checked is in [How it works](HOW-IT-WORKS.md#self-update).
 
 ## Where your data lives
 
