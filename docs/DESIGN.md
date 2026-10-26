@@ -1269,9 +1269,9 @@ invalid, "game: diagnosis".
 
 ### 5.7 Settings (global)
 
-Two columns on a black 0.74 blurred panel (S-settings). Left (330 wide + 36): title `settings` (40 light) with 26 below, then
-eight category rows (height 52, gap 6, radius 12, glyph 18 medium in 26 box + 14 gap + title 19). Selected category: white 0.12 fill,
-text semibold; **focused** (keyboard focus in the category list): the focus ring. Unselected text white 0.7. Right: the
+Two columns on a black 0.74 blurred panel (S-settings). Left (`size::SETTINGS_CATEGORY_WIDTH` 330, then `space::XXL` before the rows): title `settings` (40 light) with `space::XXL` below, then
+eight category rows (height 52, gap `space::S`, radius 12, glyph `size::ROW_ICON` in a `size::ROW_ICON_BOX` box, `space::M` gap, title 19). Selected category: `color::surface` fill, text
+semibold; **focused** (keyboard focus in the category list): the focus ring. Unselected text `color::text_detail`, selected `color::text`. Right: the
 category's rows (5.8).
 
 **One designed place (0.2.8).** A page is a few *groups* of rows. The first group has no heading: it is the page. Every later group
@@ -1283,7 +1283,7 @@ talks to. Rules for rows:
   a gray note under it. Notes (`attached`) stay for a sentence that belongs to the row above (a warning about a folder, Cisco's licence).
 - A toggle is named for what happens when it is **on** ("Home Button Opens the Launcher", "Video for Share Screen"). The detail says
   what happens, in one sentence.
-- Red (danger ink) is for something that loses data. Quit, removing a toolkit release and removing a paired phone are ink; the game's
+- Red (danger ink) is for something that loses data. Quit and removing a toolkit release are ink; the game's
   "Remove Installation" confirmation is the red one.
 - The Windows-only rows (clips, links from websites) are built from `SettingsEnv::windows_rows`; the gallery shows them on every system.
 
@@ -1292,7 +1292,7 @@ talks to. Rules for rows:
 | Appearance (`appearance`) | brush | `theme` choice (Cosmic/Aurora/Sunset), `accent` choice (six), `backdrop` choice (`backgroundTheme` / `backgroundImage` / `backgroundVideo`; picking image/video opens a file dialog when no file is set or the kind changed), `file` action `chooseFile` (only when backdrop is not theme; detail = file name), `artwork` toggle `gameArtwork`, on the Mac `glass` toggle (19), `motion` choice (`motionFull` / `motionReduced`) |
 | Library (`storage`) | 2x2 grid | `folder` action (detail = path or an em dash; opens the folder dialog), `rescan` action (detail `gamesFound`; sound `select`), then the rows of the unlocked games location ("Unlocked Games Location" below): `unlockedLocation` with its note, `unlockedDefault`, and while copies move `moveCancel`, `moveContinue`, `moveLeave` |
 | Language (`language`) | globe | `language` choice (Türkçe, English; shown in their own language). Caption **Fonts**: `fonts` action `fontsFolder` (detail = the picked path, else the built-in Noto set and whether Japanese, Chinese and Korean are included, not downloaded or downloading), `fontsReset` (only when a fonts folder is set), `fontsCjk` command (download the Japanese, Chinese and Korean fonts; only without a picked folder and while they are missing), info `fontsHint` |
-| Behavior (`behaviour`) | sliders | *(no heading)* `name` text field `profileName` (live edit), `prepare` toggle (Prepare New Games Automatically), `hide` toggle `hideWhilePlaying`, `hiddenTrophies` toggle (the trophy list's only option, 5.11). **Sound**: `sounds`, `music` (Home Screen Music, 7.3), `gameMusic` (Game Music, 7.3). **Controller**: `vibration` choice (6.8), `homeButton` toggle (6.6), info `controllerHelp` (what to do when the pad does not react). Windows, after the pad: the Clips rows (9.8) as their own group. **Connected Apps**: `discord` toggle (7.4) and its `discordJoin` toggle while the status is on, Windows `links` toggle (9.6), `addToSteam` and `addGamesToSteam` (9.9) |
+| Behavior (`behaviour`) | sliders | *(no heading)* `name` text field `profileName` (live edit), `prepare` toggle (Prepare New Games Automatically), `hide` toggle `hideWhilePlaying`, `hiddenTrophies` toggle (the trophy list's only option, 5.11). **Sound**: `sounds`, `music` (Home Screen Music, 7.3), `gameMusic` (Game Music, 7.3). **Controller**: `vibration` choice (6.8), `homeButton` toggle (6.6), info `controllerHelp` (what to do when the pad does not react). Windows, after the pad: caption **Captures** with the Clips rows (9.8). **Connected Apps**: `discord` toggle (7.4) and its `discordJoin` toggle while the status is on, Windows `links` toggle (9.6), `addToSteam` and `addGamesToSteam` (9.9) |
 | Phone as Controller (`phone`) | phone | Windows and Linux addition, section 18. Sits between Behavior and Toolkit. |
 | Toolkit (`toolkit`) | drive | info *Installed Toolkit* (version), notes for a toolkit newer or older than this launcher was tested with and for a glibc that is too old (Linux), `channel` choice (Stable, AnyPlay Engine, Pinned, Local Build) with its detail, `pinned` choice or `toolkitFolder` action for the last two, `whatsNew` action, `install` command while the toolkit is missing or an update waits. Caption **Updates** (Stable and AnyPlay Engine only): `updateCheck` toggle, `checkNow` command whose detail is what the last look found ("Up to date · Last checked 2026-10-22 09:30"). `cpu` choice (CPU Conversion). Caption **Not Used by Any Game** and one `Remove v0.1.2` command (detail: size) for each installed release nothing uses |
 | Advanced (`advanced`) | wrench+screwdriver | *(no heading)* `screenshots` action `screenshotsFolder` (detail = path, `~` abbreviated), `showScreenshots` command, info `screenshotHint` (F12). **Diagnostics**: `recordNetwork` toggle. **Share Screen** (Linux, share screen on): `openh264` toggle *Video for Share Screen* (detail: off and what turning it on does, downloading, downloaded, not downloaded yet, the download failed, or what the share worker made of the file) with the info row `openh264Notice` attached under it, Cisco's text unchanged in every language |

@@ -647,6 +647,8 @@ pub fn build_categories(
     ];
     // The recorder is the share worker, which captures windows on Windows only.
     if env.windows_rows {
+        behaviour
+            .push(Row::caption("capturesCaption", words::Captures.text(language)).group_start());
         push_clips_rows(&mut behaviour, prefs, env, language);
     }
     behaviour.push(Row::caption("appsCaption", words::ConnectedApps.text(language)).group_start());
@@ -1058,8 +1060,7 @@ fn push_clips_rows(
             selected,
         )
         .detail(ClipsText::Detail.text(language))
-        .icon(Icon::CAMERA)
-        .group_start(),
+        .icon(Icon::CAMERA),
     );
     if seconds > 0 {
         let hotkey = anyps5_core::clips::hotkey_or_default(prefs.clips_hotkey.as_deref());
@@ -1389,6 +1390,16 @@ impl SettingsPanel {
         self.focus_id = Some(id);
     }
 
+    /// Puts the focus on the row asked for by id, once the rows of the open category are built.
+    fn apply_focus_id(&mut self, cats: &[CategoryRows]) {
+        if let Some(id) = self.focus_id.take()
+            && let Some(index) =
+                rows::position(&cats[self.nav.category.min(cats.len() - 1)].rows, id)
+        {
+            self.nav.row = index;
+        }
+    }
+
     pub fn close(&mut self) {
         if self.open {
             self.open = false;
@@ -1492,12 +1503,7 @@ impl SettingsPanel {
         }
         let language = convert::language(prefs.language);
         let mut cats = build_categories(prefs, env, language);
-        if let Some(id) = self.focus_id.take()
-            && let Some(index) =
-                rows::position(&cats[self.nav.category.min(cats.len() - 1)].rows, id)
-        {
-            self.nav.row = index;
-        }
+        self.apply_focus_id(&cats);
         let open = self.open;
         let mut mouse = None;
         let mut picked_category = None;
@@ -2683,7 +2689,12 @@ mod tests {
         let cats = build_categories(&prefs, &env(None, UpdateState::Unknown), Language::English);
         assert_eq!(
             captions(&cats, Category::Behaviour),
-            ["soundCaption", "controllerCaption", "appsCaption"]
+            [
+                "soundCaption",
+                "controllerCaption",
+                "capturesCaption",
+                "appsCaption"
+            ]
         );
         // The first row of a page is a row, not a heading: the page starts where the list starts.
         for cat in &cats {
@@ -2738,6 +2749,14 @@ mod tests {
         );
         assert_eq!(detail(&prefs, UpdateState::Checking), "Checking…");
         assert_eq!(
+            detail(&prefs, UpdateState::Downloading),
+            "Downloading the toolkit…"
+        );
+        assert_eq!(
+            detail(&prefs, UpdateState::Failed),
+            "Could not check · Last checked 2026-10-22 09:30"
+        );
+        assert_eq!(
             detail(&prefs, UpdateState::Unknown),
             "Last checked 2026-10-22 09:30"
         );
@@ -2761,5 +2780,18 @@ mod tests {
             captions(&some, Category::Toolkit),
             ["updatesCaption", "unusedCaption"]
         );
+    }
+
+    #[test]
+    fn a_scene_focuses_a_row_by_its_id() {
+        let prefs = Preferences::first_run();
+        let e = env(None, UpdateState::Unknown);
+        let cats = build_categories(&prefs, &e, Language::English);
+        let want = rows::position(&cats[3].rows, "homeButton").unwrap();
+        let mut panel = SettingsPanel::default();
+        panel.open_at(3, true);
+        panel.focus_row_id("homeButton");
+        panel.apply_focus_id(&cats);
+        assert_eq!(panel.nav.row, want);
     }
 }

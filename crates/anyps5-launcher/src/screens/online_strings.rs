@@ -288,7 +288,7 @@ impl OnlineText {
             }
             OnlineText::RecordNetwork => "Record Network Calls",
             OnlineText::RecordNetworkDetail => {
-                "Games write what they ask the network for to the Logs folder, to help build online support. Nothing is uploaded."
+                "Games write their network requests to the Logs folder, to help build online support. Nothing is uploaded."
             }
             OnlineText::AppearOffline => "Appear Offline",
             OnlineText::AppearOfflineDetail => "Friends see you as offline",
@@ -446,7 +446,7 @@ impl OnlineText {
             }
             OnlineText::Openh264 => "Ekran Paylaşımında Video",
             OnlineText::Openh264Off => {
-                "Cisco'nun video kodeğini indirmek için aç. O olmadan ekran paylaşımı video gönderemez ve gösteremez"
+                "Cisco'nun video kodeğini indirmek için aç. Kodek olmadan ekran paylaşımı video gönderemez ve gösteremez"
             }
             OnlineText::Openh264Downloading => "Cisco'dan indiriliyor",
             OnlineText::Openh264Ready => "Cisco'dan indirildi",

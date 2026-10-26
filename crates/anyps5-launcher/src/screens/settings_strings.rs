@@ -8,6 +8,8 @@ use crate::ui::i18n::Language;
 pub enum SettingsText {
     /// Behavior: sounds and music.
     Sound,
+    /// Behavior (Windows): the clips.
+    Captures,
     /// Behavior: the pad.
     Controller,
     /// Behavior: Discord, Steam and links from websites.
@@ -31,8 +33,9 @@ pub enum SettingsText {
 }
 
 impl SettingsText {
-    pub const ALL: [SettingsText; 11] = [
+    pub const ALL: [SettingsText; 12] = [
         SettingsText::Sound,
+        SettingsText::Captures,
         SettingsText::Controller,
         SettingsText::ConnectedApps,
         SettingsText::Fonts,
@@ -48,6 +51,7 @@ impl SettingsText {
     pub const fn english(self) -> &'static str {
         match self {
             SettingsText::Sound => "Sound",
+            SettingsText::Captures => "Captures",
             SettingsText::Controller => "Controller",
             SettingsText::ConnectedApps => "Connected Apps",
             SettingsText::Fonts => "Fonts",
@@ -64,13 +68,14 @@ impl SettingsText {
     pub const fn turkish(self) -> &'static str {
         match self {
             SettingsText::Sound => "Ses",
-            SettingsText::Controller => "Kumanda",
+            SettingsText::Captures => "Yakalamalar",
+            SettingsText::Controller => "Kol",
             SettingsText::ConnectedApps => "Bağlı Uygulamalar",
             SettingsText::Fonts => "Yazı Tipleri",
             SettingsText::Diagnostics => "Tanılama",
             SettingsText::ShareScreen => "Ekran Paylaşımı",
             SettingsText::Updates => "Güncellemeler",
-            SettingsText::Unused => "Hiçbir Oyunun Kullanmadığı",
+            SettingsText::Unused => "Hiçbir Oyunun Kullanmadığı Sürümler",
             SettingsText::Installed => "Kurulu Araç Seti",
             SettingsText::NotCheckedYet => "Henüz denetlenmedi",
             SettingsText::ScreenshotHint => "Oyunda F12 bir ekran görüntüsü kaydeder.",
