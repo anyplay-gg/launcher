@@ -953,14 +953,21 @@ pub(crate) fn paint_artwork_layer(
             });
         }
         if alpha > 0.003 || is_current {
-            artwork::paint_artwork(
+            // A see-through window shows through the picture a little, under the same scrims
+            // (docs/DESIGN.md 19.2).
+            let picture = if crate::ui::glass::window_glass() {
+                crate::ui::glass::WINDOW_GLASS_ARTWORK
+            } else {
+                1.0
+            };
+            artwork::paint_artwork_with(
                 &painter,
                 screen,
                 tex.id,
                 tex.aspect,
                 ctx.clock(),
                 reduced,
-                alpha,
+                (alpha, picture),
             );
             keep.push(id);
         }

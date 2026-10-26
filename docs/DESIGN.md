@@ -2909,8 +2909,8 @@ Layers, from the back:
 1. **The system blur**, a view behind the content view in the window's frame view: `NSGlassEffectView` (Liquid Glass, style Regular) on macOS 26 and newer, found at run time by class lookup; `NSVisualEffectView` (material sidebar, behind window, always active) on earlier systems. `ANYPLAY_GLASS_MATERIAL=blur` forces the older one. Hidden, and the window made opaque, when the window is not see-through.
 2. **A plate**: black 0.35 over the whole window (`GLASS_PLATE`).
 3. **The theme**, a still of the theme background (the shader frame at 260 s, the same as the gallery stills) at opacity 0.40 (`GLASS_VEIL`). Nothing moves: the backdrop clock stops and asks for no frames, and the offscreen image is not redrawn, so an idle launcher costs nothing. The theme's colour still shows through as a tint, which is what makes the glass this launcher's and not any window's.
-4. The game artwork, scrims and the UI, unchanged.
-5. **Glass panels** (section 4) keep their recipe; each is drawn at 0.96 of its opacity (`WINDOW_GLASS_PANEL`), so the window is faintly present through them. Text sits on the panels and on the plate, never on the bare blur.
+4. The game artwork at 0.55 of its opacity (`WINDOW_GLASS_ARTWORK`), under its scrims at full strength, so the window shows through the picture and the text keeps at least the contrast it has on a solid window; then the UI, unchanged.
+5. **Glass panels** (section 4) keep their recipe; cards and the side panel are drawn at 0.96 of their opacity (`WINDOW_GLASS_PANEL`) and the full-screen panels (settings, library, trophies, log) at 0.85 (`WINDOW_GLASS_FULLSCREEN`), so the window is faintly present through them. Text sits on the panels and on the plate, never on the bare blur.
 
 Reduce Transparency, full screen and a running game each switch to the solid look; a game in front also hides the effect view, so the window server has no blur to compute for a window nobody sees.
 

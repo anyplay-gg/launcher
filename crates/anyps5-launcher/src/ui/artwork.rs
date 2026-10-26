@@ -59,6 +59,28 @@ pub fn paint_artwork(
     reduced: bool,
     alpha: f32,
 ) {
+    paint_artwork_with(
+        painter,
+        rect,
+        texture,
+        image_aspect,
+        time,
+        reduced,
+        (alpha, 1.0),
+    );
+}
+
+/// [`paint_artwork`] with the picture itself drawn at a share of its opacity (`picture`, 0..1)
+/// under scrims of the full one: a see-through window lets the window show through the picture.
+pub fn paint_artwork_with(
+    painter: &Painter,
+    rect: Rect,
+    texture: TextureId,
+    image_aspect: f32,
+    time: f64,
+    reduced: bool,
+    (alpha, picture): (f32, f32),
+) {
     let alpha = alpha.clamp(0.0, 1.0);
     if alpha <= 0.0 {
         return;
@@ -69,7 +91,11 @@ pub fn paint_artwork(
         drift_zoom(time, reduced),
     );
     let mut mesh = Mesh::with_texture(texture);
-    mesh.add_rect_with_uv(rect, uv, Color32::WHITE.gamma_multiply(alpha));
+    mesh.add_rect_with_uv(
+        rect,
+        uv,
+        Color32::WHITE.gamma_multiply(alpha * picture.clamp(0.0, 1.0)),
+    );
     painter.add(Shape::mesh(mesh));
     paint_scrims(painter, rect, alpha);
 }
