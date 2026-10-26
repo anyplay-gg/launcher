@@ -594,6 +594,9 @@ impl LauncherApp {
         if outcome.open_settings {
             self.handle_event(ctx, InputEvent::OpenSettings);
         }
+        if outcome.quit {
+            ctx.send_viewport_cmd(ViewportCommand::Close);
+        }
     }
 
     /// What the window is cleared with: nothing while it is see-through, black otherwise.

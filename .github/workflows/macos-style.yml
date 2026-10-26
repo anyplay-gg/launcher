@@ -10,6 +10,10 @@ on:
       - "crates/anyps5-launcher/src/macstyle.rs"
       - "crates/anyps5-launcher/src/ui/background.rs"
       - "crates/anyps5-launcher/src/ui/glass.rs"
+      - "crates/anyps5-launcher/src/ui/artwork.rs"
+      - "crates/anyps5-launcher/src/ui/contrast.rs"
+      - "crates/anyps5-launcher/src/app/mod.rs"
+      - "crates/anyps5-launcher/src/screens/settings.rs"
       - "crates/anyps5-launcher/Cargo.toml"
       - ".github/workflows/macos-style.yml"
 
@@ -31,6 +35,7 @@ jobs:
   shots:
     name: shots (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:

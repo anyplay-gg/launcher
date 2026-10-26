@@ -401,7 +401,7 @@ impl Input {
             && (self.blocked
                 || self.capture_keys
                 || crate::ui::a11y::foreign_focus(ctx)
-                || ctx.input(|i| !i.key_down(key) || i.modifiers.ctrl || i.modifiers.alt))
+                || ctx.input(|i| !i.key_down(key) || i.modifiers.command || i.modifiers.alt))
         {
             self.held_key = None;
             self.key_repeater.set_direction(None, now);

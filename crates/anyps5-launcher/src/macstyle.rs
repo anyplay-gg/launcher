@@ -44,6 +44,8 @@ pub struct Outcome {
     pub glass: bool,
     /// The app menu's Settings item (Cmd+,) was chosen.
     pub open_settings: bool,
+    /// The app menu's Quit item (Cmd+Q) was chosen: close the window like its red button does.
+    pub quit: bool,
 }
 
 /// The rule: the window is see-through when the player wants it, there is a desktop behind it,
@@ -107,6 +109,7 @@ impl MacStyle {
             Outcome {
                 glass: glass_active(want, false),
                 open_settings: false,
+                quit: false,
             }
         }
     }
@@ -170,8 +173,9 @@ mod imp {
 
     use super::{APP_NAME, Outcome, Want, glass_active};
 
-    /// Set by the menu item, read once per frame.
+    /// Set by the menu items, read once per frame.
     static OPEN_SETTINGS: AtomicBool = AtomicBool::new(false);
+    static QUIT: AtomicBool = AtomicBool::new(false);
     /// Wakes the UI when a menu item is chosen (the window may be idle).
     static CONTEXT: OnceLock<egui::Context> = OnceLock::new();
 
@@ -186,16 +190,27 @@ mod imp {
             #[unsafe(method(openSettings:))]
             fn open_settings(&self, _sender: Option<&AnyObject>) {
                 OPEN_SETTINGS.store(true, Ordering::Release);
-                if let Some(ctx) = CONTEXT.get() {
-                    ctx.request_repaint();
-                }
+                wake();
+            }
+
+            #[unsafe(method(quit:))]
+            fn quit(&self, _sender: Option<&AnyObject>) {
+                QUIT.store(true, Ordering::Release);
+                wake();
             }
         }
 
         unsafe impl NSObjectProtocol for MenuTarget {}
     );
 
-    /// How often the system's Reduce Transparency setting is read.
+    fn wake() {
+        if let Some(ctx) = CONTEXT.get() {
+            ctx.request_repaint();
+        }
+    }
+
+    /// How often the system's accessibility display settings are read (at most; they are read
+    /// when a frame is drawn, and a window nobody touches draws none).
     const POLL: Duration = Duration::from_secs(1);
     /// Frames to try for the window before giving up (it exists from the first frame on).
     const ATTEMPTS: u32 = 30;
@@ -241,8 +256,10 @@ mod imp {
             }
             if self.polled.is_none_or(|at| at.elapsed() >= POLL) {
                 self.polled = Some(Instant::now());
-                self.reduce_transparency =
-                    NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceTransparency();
+                // Reduce Transparency, and Increase Contrast, which asks for the same: no blur.
+                let workspace = NSWorkspace::sharedWorkspace();
+                self.reduce_transparency = workspace.accessibilityDisplayShouldReduceTransparency()
+                    || workspace.accessibilityDisplayShouldIncreaseContrast();
             }
             let glass = self.dress.is_some() && glass_active(want, self.reduce_transparency);
             if let Some(dress) = self.dress.as_mut() {
@@ -259,13 +276,10 @@ mod imp {
                     want
                 );
             }
-            // The setting is read again soon, so a change in System Settings shows without input.
-            if want.glass_setting && !want.game_running && !want.fullscreen {
-                ctx.request_repaint_after(POLL);
-            }
             Outcome {
                 glass,
                 open_settings: OPEN_SETTINGS.swap(false, Ordering::AcqRel),
+                quit: QUIT.swap(false, Ordering::AcqRel),
             }
         }
     }
@@ -415,14 +429,15 @@ mod imp {
             "",
         ));
         app_menu.addItem(&NSMenuItem::separatorItem(mtm));
-        app_menu.addItem(&item(
-            mtm,
-            &format!("Quit {APP_NAME}"),
-            Some(sel!(terminate:)),
-            "q",
-        ));
+        // Quit closes the window the way its red button does, so the launcher saves and ends
+        // through its own path, not through the system's terminate.
+        let quit = item(mtm, &format!("Quit {APP_NAME}"), Some(sel!(quit:)), "q");
+        // SAFETY: the target outlives the menu: Imp keeps it.
+        unsafe { quit.setTarget(Some(target_object)) };
+        app_menu.addItem(&quit);
 
         let window_menu = menu(mtm, "Window");
+        window_menu.addItem(&item(mtm, "Close", Some(sel!(performClose:)), "w"));
         window_menu.addItem(&item(mtm, "Minimize", Some(sel!(performMiniaturize:)), "m"));
         window_menu.addItem(&item(mtm, "Zoom", Some(sel!(performZoom:)), ""));
         window_menu.addItem(&NSMenuItem::separatorItem(mtm));

@@ -346,7 +346,7 @@ pub(crate) fn panels_painted() -> bool {
 /// Mac style: the window is see-through this frame (docs/DESIGN.md 19.2).
 static WINDOW_GLASS: AtomicBool = AtomicBool::new(false);
 /// How much of the game artwork is drawn while the window is see-through: the rest is the window.
-pub const WINDOW_GLASS_ARTWORK: f32 = 0.45;
+pub const WINDOW_GLASS_ARTWORK: f32 = 0.40;
 
 /// Whether the window is see-through this frame.
 pub(crate) fn window_glass() -> bool {

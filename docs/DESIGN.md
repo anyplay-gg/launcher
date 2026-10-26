@@ -3054,19 +3054,19 @@ The Mac version is this launcher: the same screens, layout, features and version
 
 ### 19.2 Glass
 
-The window is **see-through** when all of these hold: the player's setting "Glass Window" is on (default on, Settings > Appearance, `glassWindow`; EN "Glass Window", TR "Cam Pencere", after "Show the Selected Game's Artwork"), the window is not in full screen, no game runs, and the system setting Reduce Transparency is off (`NSWorkspace.accessibilityDisplayShouldReduceTransparency`, read once a second while the window could be see-through). Otherwise everything is solid, as before: the animated theme background on an opaque black window. The rule is one function, `macstyle::glass_active`.
+The window is **see-through** when all of these hold: the player's setting "Glass Window" is on (default on, Settings > Appearance, `glassWindow`; EN "Glass Window", TR "Cam Pencere", after "Show the Selected Game's Artwork"), the window is not in full screen, no game runs, and the system setting Reduce Transparency is off (`NSWorkspace.accessibilityDisplayShouldReduceTransparency`, read at most once a second, when a frame is drawn, so a window nobody touches wakes for nothing; Increase Contrast counts the same). Otherwise everything is solid, as before: the animated theme background on an opaque black window. The rule is one function, `macstyle::glass_active`.
 
 Layers, from the back:
 
 1. **The system blur**, a view behind the content view in the window's frame view: `NSGlassEffectView` (Liquid Glass, style Regular) on macOS 26 and newer, found at run time by class lookup; `NSVisualEffectView` (material sidebar, behind window, always active) on earlier systems. `ANYPLAY_GLASS_MATERIAL=blur` forces the older one. Hidden, and the window made opaque, when the window is not see-through.
-2. **A plate**: black 0.15 over the whole window (`GLASS_PLATE`).
-3. **The theme**, a still of the theme background (the shader frame at 260 s, the same as the gallery stills) at opacity 0.30 (`GLASS_VEIL`). Nothing moves: the backdrop clock stops and asks for no frames, and the offscreen image is not redrawn, so an idle launcher costs nothing. The theme's colour still shows through as a tint, which is what makes the glass this launcher's and not any window's.
-4. The game artwork at 0.45 of its opacity (`WINDOW_GLASS_ARTWORK`), under its scrims at full strength, so the window shows through the picture and the text keeps at least the contrast it has on a solid window; then the UI, unchanged.
+2. **A plate**: black 0.05 over the whole window (`GLASS_PLATE`).
+3. **The theme**, a still of the theme background (the shader frame at 260 s, the same as the gallery stills) at opacity 0.20 (`GLASS_VEIL`). Nothing moves: the backdrop clock stops and asks for no frames, and the offscreen image is not redrawn, so an idle launcher costs nothing. The theme's colour still shows through as a tint, which is what makes the glass this launcher's and not any window's.
+4. The game artwork at 0.40 of its opacity (`WINDOW_GLASS_ARTWORK`), under its scrims at full strength, so the window shows through the picture and the text keeps at least the contrast it has on a solid window; then the UI, unchanged.
 5. **Glass panels** (section 4), the side panel and the full-screen panels keep their recipe and stay opaque: they sit on top of the screen's own UI, so making them see-through would show that UI, not the window. Text sits on the panels and on the plate, never on the bare blur.
 
 Reduce Transparency, full screen and a running game each switch to the solid look; a game in front also hides the effect view, so the window server has no blur to compute for a window nobody sees.
 
-**Contrast.** The system blur's brightness is not under our control, so the worst case is a bound. With the dark look asked for (19.1), the macOS 15 and macOS 26 runners show the blur over a white wallpaper at sRGB 92 to 96 (gray; the probe images of the `macos-style` job), and over saturated bars at the same luminance. The bound is 105 (`WORST_BLUR` in `ui::contrast`). Over that, plate, theme (deep and lit tones) and the side panel are composited like every ground in 3.10; `ui::contrast` measures them (grounds "glass window", panels "glass") and every ink reaches its ratio there too (the weakest pair, a hint key on Aurora, is 5.8:1). The artwork under the glass is drawn at 0.45 under scrims of full strength, which is never brighter than the full picture under the same scrims that 3.10 measures. If a system brings a brighter blur, raise `GLASS_PLATE`.
+**Contrast.** The system blur's brightness is not under our control, so the worst case is a bound. With the dark look asked for (19.1), the macOS 15 and macOS 26 runners show the blur over a white wallpaper at sRGB 92 to 96 (gray; the probe images of the `macos-style` job), and over saturated bars at the same luminance. The bound is 105 (`WORST_BLUR` in `ui::contrast`). Over that, plate, theme (deep and lit tones) and the side panel are composited like every ground in 3.10; `ui::contrast` measures them (grounds "glass window", panels "glass") and every ink reaches its ratio there too (the weakest pair, a hint key on Aurora, is 5.5:1). The artwork under the glass is drawn at 0.45 under scrims of full strength, which is never brighter than the full picture under the same scrims that 3.10 measures. If a system brings a brighter blur, raise `GLASS_PLATE`.
 
 ### 19.3 Chrome and the top of the screen
 
@@ -3078,8 +3078,8 @@ The menu bar (replacing the default, whose items would carry the executable's na
 
 | Menu | Items |
 |---|---|
-| AnyPlay Launcher | About AnyPlay Launcher (the system's about panel, from the bundle: name, version, icon), Settings… ⌘, (opens Settings when onboarded, like the shortcut), Hide AnyPlay Launcher ⌘H, Hide Others ⌥⌘H, Show All, Quit AnyPlay Launcher ⌘Q |
-| Window | Minimize ⌘M, Zoom, Enter Full Screen ⌃⌘F |
+| AnyPlay Launcher | About AnyPlay Launcher (the system's about panel, from the bundle: name, version, icon), Settings… ⌘, (opens Settings when onboarded, like the shortcut), Hide AnyPlay Launcher ⌘H, Hide Others ⌥⌘H, Show All, Quit AnyPlay Launcher ⌘Q (closes the window like its red button, so the launcher saves and ends through its own path) |
+| Window | Close ⌘W, Minimize ⌘M, Zoom, Enter Full Screen ⌃⌘F |
 
 The menu's items use the system's own actions; only Settings is ours. The menu is in English: the launcher's language setting does not reach AppKit's menu.
 
