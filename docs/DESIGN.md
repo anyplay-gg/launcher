@@ -1743,9 +1743,9 @@ shared and read only, and watches bit 0 of the third button byte of the input re
 light bar stay the game's. The layouts are generic device facts from the Linux kernel (`hid-playstation.c`) and SDL
 (`SDL_hidapi_ps5.c`, `SDL_hidapi_ps4.c`) and are written in the module's comment: DualSense USB (report 0x01, 64 bytes, byte 10) and
 Bluetooth (0x31, 78 bytes, byte 11), DualShock 4 USB (0x01, byte 7) and Bluetooth (0x11, byte 9), and the 10-byte short Bluetooth
-report both send before they are switched to the full one (byte 7). Bluetooth reports are accepted only with a valid CRC-32. An
-edge (up, then down) is one press and goes into the same `HomeButton::press` as the Guide button, so gilrs seeing the same press,
-or a second pad, counts once (350 ms). Pads are looked for again every 3 s while a game runs (a pad plugged in later is found), and
+report both send before they are switched to the full one (byte 7). Bluetooth reports are accepted only with a valid CRC-32. A
+button already held when the pad is opened is not a press; an edge (up, then down) is one press and goes into the same `HomeButton::press` as the Guide button, so gilrs seeing the same press,
+or a second pad, counts once (350 ms). Pads are looked for again every 3 s while a game runs and none is open, every 10 s otherwise (a pad plugged in later is found), and
 every device is closed again when the game ends or the preference is off.
 
 *If a pad cannot be opened* the reader says so once per pad in `launcher.log` and leaves the button to the other sources (gilrs

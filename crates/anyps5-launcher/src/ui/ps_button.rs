@@ -2,7 +2,8 @@
 //!
 //! Windows.Gaming.Input hands a pad to the focused window only, so with a game in front gilrs
 //! never sees a DualSense or DualShock 4 press its PS button. This module opens those pads
-//! through `hidapi`, shared and read only, and watches one bit of their input reports. Its whole
+//! through `hidapi`, without exclusive access and only reading (hidapi opens a read/write handle;
+//! nothing is ever written), and watches one bit of their input reports. Its whole
 //! interface is [`spawn`]: it presses the same [`HomeButton`] the Guide button of an Xbox pad
 //! presses (which debounces presses that several sources see at once).
 //!
@@ -126,19 +127,23 @@ trait Backend {
 
 /// How often the list of pads is looked at again while a game runs.
 const RESCAN: Duration = Duration::from_secs(3);
+/// The same while a pad is open: it going away shows in its reads, so only a second pad is waited for.
+const RESCAN_OPEN: Duration = Duration::from_secs(10);
 
 struct Open {
     key: String,
     model: Model,
     reader: Box<dyn Reader>,
-    down: bool,
+    /// The PS bit of the last report; `None` until the first one, which only sets it, so a button
+    /// already held when the pad is opened is not a press.
+    down: Option<bool>,
 }
 
 struct Watcher<B> {
     backend: B,
     pads: Vec<Open>,
-    next_scan: Option<Instant>,
-    /// Keys whose failure was logged, so a pad that cannot be opened is reported once.
+    last_scan: Option<Instant>,
+    /// Keys whose failure was logged, so a pad that cannot be opened (or keeps failing) is reported once.
     reported: Vec<String>,
     /// The backend's own failure was logged.
     backend_reported: bool,
@@ -149,7 +154,7 @@ impl<B: Backend> Watcher<B> {
         Self {
             backend,
             pads: Vec::new(),
-            next_scan: None,
+            last_scan: None,
             reported: Vec::new(),
             backend_reported: false,
         }
@@ -160,27 +165,37 @@ impl<B: Backend> Watcher<B> {
     fn tick(&mut self, active: bool, now: Instant) -> usize {
         if !active {
             self.pads.clear();
-            self.next_scan = None;
+            self.last_scan = None;
             return 0;
         }
-        if self.next_scan.is_none_or(|at| now >= at) {
-            self.next_scan = Some(now + RESCAN);
+        // Often while no pad is open (a plug-in is looked for), seldom once one is.
+        let every = if self.pads.is_empty() {
+            RESCAN
+        } else {
+            RESCAN_OPEN
+        };
+        if self.last_scan.is_none_or(|at| now >= at + every) {
+            self.last_scan = Some(now);
             self.rescan();
         }
         let mut presses = 0;
         let mut buf = [0u8; 256];
+        let reported = &mut self.reported;
         self.pads.retain_mut(|pad| {
             loop {
                 match pad.reader.read(&mut buf) {
                     Ok(0) => break true,
                     Ok(len) => {
                         if let Some(down) = ps_down(pad.model, &buf[..len]) {
-                            presses += usize::from(down && !pad.down);
-                            pad.down = down;
+                            presses += usize::from(down && pad.down == Some(false));
+                            pad.down = Some(down);
                         }
                     }
                     Err(error) => {
-                        tracing::info!("PS button reader: {} closed: {error}", pad.key);
+                        if !reported.contains(&pad.key) {
+                            tracing::info!("PS button reader: {} closed: {error}", pad.key);
+                            reported.push(pad.key.clone());
+                        }
                         break false;
                     }
                 }
@@ -225,7 +240,7 @@ impl<B: Backend> Watcher<B> {
                 key: found.key,
                 model: found.model,
                 reader: found.reader,
-                down: false,
+                down: None,
             });
         }
     }
@@ -545,6 +560,7 @@ mod tests {
         let mut w = watcher(vec![Ok(vec![("a", Some(q.clone()))])]);
         let t = Instant::now();
         assert_eq!(w.tick(true, t), 0, "opened, nothing read");
+        q.borrow_mut().push_back(Ok(dualsense_usb(false)));
         // Down for ten reports (a held button repeats), up, down again.
         for _ in 0..10 {
             q.borrow_mut().push_back(Ok(dualsense_usb(true)));
@@ -559,14 +575,18 @@ mod tests {
 
     #[test]
     fn a_press_and_release_inside_one_round_still_counts() {
-        let q = queue(vec![dualsense_usb(true), dualsense_usb(false)]);
+        let q = queue(vec![
+            dualsense_usb(false),
+            dualsense_usb(true),
+            dualsense_usb(false),
+        ]);
         let mut w = watcher(vec![Ok(vec![("a", Some(q))])]);
         assert_eq!(w.tick(true, Instant::now()), 1);
     }
 
     #[test]
     fn reports_of_other_kinds_do_not_end_a_press() {
-        let q = queue(vec![dualsense_usb(true)]);
+        let q = queue(vec![dualsense_usb(false), dualsense_usb(true)]);
         let mut w = watcher(vec![Ok(vec![("a", Some(q.clone()))])]);
         let t = Instant::now();
         assert_eq!(w.tick(true, t), 1);
@@ -581,11 +601,11 @@ mod tests {
 
     #[test]
     fn nothing_is_open_or_read_without_a_game() {
-        let q = queue(vec![dualsense_usb(true)]);
+        let q = queue(vec![dualsense_usb(false), dualsense_usb(true)]);
         let mut w = watcher(vec![Ok(vec![("a", Some(q.clone()))])]);
         assert_eq!(w.tick(false, Instant::now()), 0);
         assert_eq!(w.backend.count, 0, "no scan");
-        assert_eq!(q.borrow().len(), 1, "no read");
+        assert_eq!(q.borrow().len(), 2, "no read");
         // The game starts: the press that was waiting is read now, from a fresh state.
         assert_eq!(w.tick(true, Instant::now()), 1);
         // The game ends: every pad is closed, and the next game opens them again.
@@ -641,7 +661,7 @@ mod tests {
     fn a_pad_that_goes_away_is_dropped_and_found_again() {
         let first = queue(vec![]);
         first.borrow_mut().push_back(Err("unplugged".into()));
-        let second = queue(vec![dualsense_usb(true)]);
+        let second = queue(vec![dualsense_usb(false), dualsense_usb(true)]);
         let mut w = watcher(vec![
             Ok(vec![("a", Some(first))]),
             Ok(vec![("a", Some(second))]),
@@ -661,9 +681,84 @@ mod tests {
         ])]);
         let t = Instant::now();
         w.tick(true, t);
+        a.borrow_mut().push_back(Ok(dualsense_usb(false)));
+        b.borrow_mut().push_back(Ok(dualsense_usb(false)));
+        w.tick(true, t);
         a.borrow_mut().push_back(Ok(dualsense_usb(true)));
         b.borrow_mut().push_back(Ok(dualsense_usb(true)));
         assert_eq!(w.tick(true, t), 2, "each pad's own edge");
+    }
+
+    #[test]
+    fn a_button_already_held_when_the_pad_opens_is_not_a_press() {
+        let q = queue(vec![dualsense_usb(true), dualsense_usb(true)]);
+        let mut w = watcher(vec![Ok(vec![("a", Some(q.clone()))])]);
+        let t = Instant::now();
+        assert_eq!(w.tick(true, t), 0);
+        q.borrow_mut().push_back(Ok(dualsense_usb(false)));
+        q.borrow_mut().push_back(Ok(dualsense_usb(true)));
+        assert_eq!(w.tick(true, t), 1, "the next press is one");
+    }
+
+    #[test]
+    fn a_pad_that_keeps_failing_is_logged_once() {
+        let bad = || {
+            let q = queue(vec![]);
+            q.borrow_mut().push_back(Err("broken".into()));
+            q
+        };
+        let mut w = watcher(vec![
+            Ok(vec![("a", Some(bad()))]),
+            Ok(vec![("a", Some(bad()))]),
+        ]);
+        let t = Instant::now();
+        w.tick(true, t);
+        assert_eq!(w.reported, ["a"]);
+        w.tick(true, t + RESCAN);
+        assert_eq!(w.reported, ["a"], "not again");
+        assert!(w.pads.is_empty());
+    }
+
+    #[test]
+    fn a_second_pad_is_waited_for_longer_than_a_first() {
+        let q = queue(vec![]);
+        let mut w = watcher(vec![Ok(vec![("a", Some(q))]), Ok(vec![])]);
+        let t = Instant::now();
+        w.tick(true, t);
+        w.tick(true, t + RESCAN);
+        assert_eq!(w.backend.count, 1, "a pad is open");
+        w.tick(true, t + RESCAN_OPEN);
+        assert_eq!(w.backend.count, 2);
+    }
+
+    #[test]
+    fn the_lengths_and_ids_of_the_layouts_are_exact() {
+        for len in [63, 65, 77, 79] {
+            let mut r = vec![0u8; len];
+            r[0] = 0x01;
+            r[10] = 1;
+            assert_eq!(
+                ps_down(Model::DualSense, &r),
+                None,
+                "DualSense 0x01 of {len}"
+            );
+        }
+        // Any of 0x11 to 0x19 is a DualShock 4 Bluetooth report; the larger ones are longer.
+        for id in 0x11..=0x19u8 {
+            let mut r = vec![0u8; if id > 0x11 { 100 } else { 78 }];
+            r[0] = id;
+            r[1] = 0x80;
+            r[9] = 1;
+            let sealed78 = sealed(r[..78].to_vec());
+            r[..78].copy_from_slice(&sealed78);
+            assert_eq!(ps_down(Model::DualShock4, &r), Some(true), "id {id:#x}");
+        }
+        assert_eq!(ps_down(Model::DualShock4, &[0x10; 78]), None);
+        // A DualShock 4 on a stack that sends more than 64 bytes on report 0x01.
+        let mut r = vec![0u8; 128];
+        r[0] = 0x01;
+        r[7] = 1;
+        assert_eq!(ps_down(Model::DualShock4, &r), Some(true));
     }
 
     #[test]
