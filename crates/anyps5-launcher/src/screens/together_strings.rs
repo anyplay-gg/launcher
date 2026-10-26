@@ -24,6 +24,8 @@ pub enum TogetherText {
     Join,
     NotNow,
     Close,
+    /// The quiet answer on a version blocker: join although the versions do not fit.
+    TryAnyway,
     SignIn,
     SwitchOn,
     // What stops a join
@@ -41,6 +43,8 @@ pub enum TogetherText {
     WrongVersionLine,
     /// `%@` = the game, `%@` = the version. You are ahead of the session.
     WrongVersionLineAhead,
+    /// Said under the version blocker's line, where "Try anyway" is offered.
+    TryAnywayNote,
     /// `%@` = the toolkit needed, the toolkit the player has.
     WrongBuildHeadline,
     WrongBuildLine,
@@ -89,6 +93,7 @@ impl TogetherText {
             TogetherText::Join => "Join",
             TogetherText::NotNow => "Not now",
             TogetherText::Close => "Close",
+            TogetherText::TryAnyway => "Try anyway",
             TogetherText::SignIn => "Sign in",
             TogetherText::SwitchOn => "Switch on online play",
             TogetherText::SignedOutHeadline => "Sign in to use Play Together",
@@ -102,6 +107,7 @@ impl TogetherText {
             TogetherText::WrongVersionHeadline => "You need %@ %@; you have %@",
             TogetherText::WrongVersionLine => "Update the game, then join again.",
             TogetherText::WrongVersionLineAhead => "Ask your friend to update, or install %@ %@.",
+            TogetherText::TryAnywayNote => "Trying anyway may not connect or may fall out of sync.",
             TogetherText::WrongBuildHeadline => "You need toolkit %@; you have %@",
             TogetherText::WrongBuildLine => {
                 "Choose it under Toolkit for This Game, then join again."
@@ -146,6 +152,7 @@ impl TogetherText {
             TogetherText::Join => "Katıl",
             TogetherText::NotNow => "Şimdi değil",
             TogetherText::Close => "Kapat",
+            TogetherText::TryAnyway => "Yine de dene",
             TogetherText::SignIn => "Giriş yap",
             TogetherText::SwitchOn => "Aç",
             TogetherText::SignedOutHeadline => "Birlikte oynamak için giriş yap",
@@ -162,6 +169,9 @@ impl TogetherText {
             TogetherText::WrongVersionLine => "Oyunu güncelle, sonra tekrar katıl.",
             TogetherText::WrongVersionLineAhead => {
                 "Arkadaşından güncellemesini iste ya da %@ %@ sürümünü kur."
+            }
+            TogetherText::TryAnywayNote => {
+                "Yine de denersen bağlanamayabilir ya da senkron dışı kalabilir."
             }
             TogetherText::WrongBuildHeadline => "%@ araç takımı gerekir; sende %@ var",
             TogetherText::WrongBuildLine => {
@@ -232,7 +242,12 @@ pub fn blocker_text(blocker: &Blocker, language: Language) -> (String, String) {
             (
                 T::WrongVersionHeadline
                     .format(language, &[Arg::Str(title), Arg::Str(need), Arg::Str(have)]),
-                line.format(language, &[Arg::Str(title), Arg::Str(need)]),
+                // The note belongs to the "Try anyway" button that sits under this line.
+                format!(
+                    "{} {}",
+                    line.format(language, &[Arg::Str(title), Arg::Str(need)]),
+                    T::TryAnywayNote.text(language)
+                ),
             )
         }
         Blocker::WrongBuild { need, have } => one(
@@ -337,6 +352,7 @@ mod tests {
         let (head, line) = blocker_text(&blocker, Language::English);
         assert_eq!(head, "You need Minecraft 01.044.000; you have 01.008.000");
         assert!(line.contains("Update the game"));
+        assert!(line.ends_with("may not connect or may fall out of sync."));
         let ahead = Blocker::WrongVersion {
             title: "Minecraft".into(),
             need: "01.008.000".into(),
@@ -345,7 +361,7 @@ mod tests {
         let (_, line) = blocker_text(&ahead, Language::English);
         assert_eq!(
             line,
-            "Ask your friend to update, or install Minecraft 01.008.000."
+            "Ask your friend to update, or install Minecraft 01.008.000. Trying anyway may not connect or may fall out of sync."
         );
     }
 

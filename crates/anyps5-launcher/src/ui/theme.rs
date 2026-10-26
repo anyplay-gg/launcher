@@ -575,6 +575,11 @@ pub mod size {
     pub const TILE_SMALL: f32 = 118.0;
     pub const TILE_LARGE: f32 = 176.0;
     pub const TILE_GAP: f32 = 16.0;
+    /// How far the row moves right once a previous game exists, so that game stays visible
+    /// (dimmed, partly past the window edge) on the left of the selected one.
+    pub const TILE_PEEK_SHIFT: f32 = 28.0;
+    /// Opacity of the game just before the selected one.
+    pub const TILE_PEEK_OPACITY: f32 = 0.4;
     pub const TILE_LABEL_COLUMN: f32 = 10.0;
     pub const LIBRARY_TILE: f32 = 196.0;
     pub const SPLASH_TILE: f32 = 200.0;

@@ -20,7 +20,7 @@ use std::sync::OnceLock;
 
 use anyplay_control::Host;
 
-use crate::online::api::{Activity, Friend, Invitation, SessionKind, Visibility};
+use crate::online::api::{Activity, Friend, Invitation, SessionKind, VersionRule, Visibility};
 use crate::online::{Failure, api::ErrorCode};
 
 /// The table as shipped in the exe.
@@ -39,6 +39,9 @@ pub struct LanTitle {
     pub name: String,
     /// The most players in one world, the host included.
     pub max_players: u16,
+    /// How far the host's and the joiner's versions may differ. `exact` unless the entry says
+    /// otherwise.
+    pub version: VersionRule,
 }
 
 #[derive(serde::Deserialize)]
@@ -52,6 +55,9 @@ struct Entry {
     name: String,
     mode: String,
     max_players: u16,
+    /// Absent is `exact`; a value this launcher does not know refuses the file.
+    #[serde(default)]
+    version: VersionRule,
 }
 
 /// Reads a table. An entry with a mode this launcher does not know is left out; a file that
@@ -80,6 +86,7 @@ pub fn parse(json: &str) -> Result<BTreeMap<String, LanTitle>, String> {
             LanTitle {
                 name: entry.name,
                 max_players: entry.max_players,
+                version: entry.version,
             },
         );
     }
@@ -94,6 +101,11 @@ fn table() -> &'static BTreeMap<String, LanTitle> {
 /// The table entry of a game, by its title ID.
 pub fn lan_title(title_id: &str) -> Option<&'static LanTitle> {
     table().get(title_id)
+}
+
+/// How far versions of a game may differ: its table entry's rule, `exact` for any other game.
+pub fn version_rule(title_id: &str) -> VersionRule {
+    lan_title(title_id).map(|t| t.version).unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -236,21 +248,27 @@ pub enum Blocker {
 impl Blocker {
     /// What the net service's answer to `check_join` or `game_start` says, in the same terms.
     /// `None` for a failure that is not about the session (the caller keeps its generic text).
-    /// `have` is the player's own version and build, to tell which of the two differs.
+    /// `have` is the player's own version and build, to tell which of the two differs: the version
+    /// differs when it does not fit the session's under `rule` (`Any` after "Try Anyway").
     pub fn from_failure(
         failure: &Failure,
         title: &str,
         have_version: &str,
         have_build: &str,
+        rule: VersionRule,
     ) -> Option<Blocker> {
         if failure.is(ErrorCode::VersionMismatch) {
             let expected = failure.expected.as_ref()?;
-            return Some(if expected.version != have_version {
+            return Some(if !rule.allows(&expected.version, have_version) {
                 Blocker::WrongVersion {
                     title: title.to_owned(),
                     need: expected.version.clone(),
                     have: have_version.to_owned(),
                 }
+            } else if expected.build == have_build {
+                // Both fit, yet the service refused: a service that does not know the rule or the
+                // override. There is nothing to tell about the toolkit; the caller words it.
+                return None;
             } else {
                 Blocker::WrongBuild {
                     need: expected.build.clone(),
@@ -291,13 +309,19 @@ fn connected(world: &World) -> Result<(), Blocker> {
 /// online play, owned, version, toolkit, place and not busy that does not hold. "Still there" is
 /// the net service's, and comes back through [`Blocker::from_failure`].
 pub fn check(offer: &Offer, world: &World) -> Result<Go, Blocker> {
+    check_as(offer, world, version_rule(&offer.title_id))
+}
+
+/// [`check`] under a given version rule. "Try Anyway" passes [`VersionRule::Any`]: the player
+/// chose to join although the title's rule says the versions do not fit.
+pub fn check_as(offer: &Offer, world: &World, rule: VersionRule) -> Result<Go, Blocker> {
     connected(world)?;
     let Some(owned) = &world.owned else {
         return Err(Blocker::NotOwned {
             title: offer.title.clone(),
         });
     };
-    if owned.version != offer.version {
+    if !rule.allows(&offer.version, &owned.version) {
         return Err(Blocker::WrongVersion {
             title: offer.title.clone(),
             need: offer.version.clone(),
@@ -421,11 +445,57 @@ mod tests {
         let minecraft = lan_title(MC).expect("Minecraft is in the table");
         assert_eq!(minecraft.name, "Minecraft");
         assert_eq!(minecraft.max_players, 8);
+        // Bedrock clients refuse another protocol version: Minecraft stays exact.
+        assert_eq!(minecraft.version, VersionRule::Exact);
         assert!(lan_title("GAME00001").is_none());
         for (id, title) in &titles {
             assert!(id.len() >= 8 && id.chars().all(|c| c.is_ascii_alphanumeric()));
             assert!((MIN_PLAYERS..=MAX_PLAYERS).contains(&title.max_players));
         }
+    }
+
+    #[test]
+    fn a_version_rule_is_read_from_the_table_and_defaults_to_exact() {
+        let json = r#"{"schema":1,"titles":{
+            "AAAA00001":{"name":"A","mode":"lan","max_players":4},
+            "BBBB00002":{"name":"B","mode":"lan","max_players":4,"version":"major"},
+            "CCCC00003":{"name":"C","mode":"lan","max_players":4,"version":"any"},
+            "DDDD00004":{"name":"D","mode":"lan","max_players":4,"version":"exact"}}}"#;
+        let titles = parse(json).expect("parses");
+        assert_eq!(titles["AAAA00001"].version, VersionRule::Exact);
+        assert_eq!(titles["BBBB00002"].version, VersionRule::Major);
+        assert_eq!(titles["CCCC00003"].version, VersionRule::Any);
+        assert_eq!(titles["DDDD00004"].version, VersionRule::Exact);
+        // A rule nobody knows is nonsense, like any other.
+        let bad = r#"{"schema":1,"titles":{"AAAA00001":{"name":"A","mode":"lan","max_players":4,"version":"minor"}}}"#;
+        assert!(parse(bad).is_err());
+        // A game outside the table is exact.
+        assert_eq!(version_rule("GAME00001"), VersionRule::Exact);
+    }
+
+    #[test]
+    fn the_join_check_applies_a_rule_and_try_anyway_skips_only_the_version() {
+        let mut w = world();
+        w.owned.as_mut().unwrap().version = "01.050.000".into();
+        // The shipped rule for Minecraft is exact; a major rule would let the patch through.
+        assert!(matches!(
+            check(&offer(), &w),
+            Err(Blocker::WrongVersion { .. })
+        ));
+        assert!(check_as(&offer(), &w, VersionRule::Major).is_ok());
+        w.owned.as_mut().unwrap().version = "02.000.000".into();
+        assert!(matches!(
+            check_as(&offer(), &w, VersionRule::Major),
+            Err(Blocker::WrongVersion { .. })
+        ));
+        assert!(check_as(&offer(), &w, VersionRule::Any).is_ok());
+        // The build is still checked after "Try Anyway".
+        let mut o = offer();
+        o.build = Some("v0.1.5".into());
+        assert!(matches!(
+            check_as(&o, &w, VersionRule::Any),
+            Err(Blocker::WrongBuild { .. })
+        ));
     }
 
     #[test]
@@ -576,7 +646,9 @@ mod tests {
 
     #[test]
     fn the_net_services_failures_become_the_same_blockers() {
-        let from = |f: Failure| Blocker::from_failure(&f, "Minecraft", "01.008.000", "v0.1.4");
+        let from = |f: Failure| {
+            Blocker::from_failure(&f, "Minecraft", "01.008.000", "v0.1.4", VersionRule::Exact)
+        };
         assert_eq!(
             from(failure("version_mismatch", Some(("01.044.000", "v0.1.4")))),
             Some(Blocker::WrongVersion {
@@ -591,6 +663,31 @@ mod tests {
                 need: "v0.1.9".into(),
                 have: "v0.1.4".into()
             })
+        );
+        // Where the rule lets the versions pass, a mismatch is about the build.
+        assert_eq!(
+            Blocker::from_failure(
+                &failure("version_mismatch", Some(("01.044.000", "v0.1.9"))),
+                "Minecraft",
+                "01.008.000",
+                "v0.1.4",
+                VersionRule::Any
+            ),
+            Some(Blocker::WrongBuild {
+                need: "v0.1.9".into(),
+                have: "v0.1.4".into()
+            })
+        );
+        // Versions fit and builds are equal: nothing to say about either.
+        assert_eq!(
+            Blocker::from_failure(
+                &failure("version_mismatch", Some(("01.044.000", "v0.1.4"))),
+                "Minecraft",
+                "01.008.000",
+                "v0.1.4",
+                VersionRule::Any
+            ),
+            None
         );
         assert_eq!(from(failure("version_mismatch", None)), None);
         assert_eq!(from(failure("full", None)), Some(Blocker::Full));
