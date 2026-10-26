@@ -1781,7 +1781,7 @@ impl PanelHost {
                         }
                         Err(error) => {
                             let text = saves_failure(&error, false, language);
-                            model.toast(text, Icon::WARNING);
+                            model.toast_failure(text);
                         }
                     }
                 }
@@ -1798,7 +1798,7 @@ impl PanelHost {
                         }
                         Err(error) => {
                             let text = saves_failure(&error, true, language);
-                            model.toast(text, Icon::WARNING);
+                            model.toast_failure(text);
                         }
                     }
                 }
@@ -1813,7 +1813,7 @@ impl PanelHost {
                     }
                     Err(error) => {
                         tracing::warn!("cannot uninstall: {error}");
-                        model.toast(error, Icon::WARNING);
+                        model.toast_failure(error);
                     }
                 },
             }

@@ -204,7 +204,7 @@ impl PanelHost {
                     Err(error) => {
                         tracing::warn!("captures: {} was not deleted: {error}", c.path.display());
                         let text = CapturesText::DeleteFailed.format(language, &[Arg::Str(&name)]);
-                        model.toast(text, Icon::WARNING);
+                        model.toast_failure(text);
                     }
                 }
             }

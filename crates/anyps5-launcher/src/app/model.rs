@@ -530,6 +530,9 @@ impl Model {
 
     /// Shows a toast; a warning plays the error cue, every other one the soft chime.
     pub fn toast(&mut self, text: impl Into<String>, icon: Icon) {
+        if self.failure_toast_up() {
+            return;
+        }
         // Only a failure sounds by itself: the other toasts answer an action that has its own cue,
         // or choose one with `toast_with` (an unasked-for event: a request, a missed call).
         if matches!(
@@ -544,8 +547,17 @@ impl Model {
 
     /// A toast with its own cue: a message, an invitation.
     pub fn toast_with(&mut self, text: impl Into<String>, icon: Icon, cue: Cue) {
+        if self.failure_toast_up() {
+            return;
+        }
         self.sound(cue);
         self.toast_silent(text, icon);
+    }
+
+    /// A failure toast is on screen: a routine toast does not replace it (it would take away the
+    /// message the player has to read); only another failure does.
+    fn failure_toast_up(&self) -> bool {
+        self.toast_visible() && self.toast.as_ref().is_some_and(Toast::stays)
     }
 
     /// A failure the player has to read: the error cue, and the toast stays until it is dismissed.
@@ -2315,6 +2327,29 @@ mod tests {
         assert!(m.starting.is_some());
         m.handle(Command::Back);
         assert!(m.starting.is_none(), "the first Back cancels the start");
+    }
+
+    #[test]
+    fn a_routine_toast_does_not_replace_a_failure() {
+        let mut m = model_with(vec![]);
+        m.toast_failure("Could not start");
+        m.toast("Saved", Icon::CHECK);
+        assert_eq!(m.toast.as_ref().unwrap().text, "Could not start");
+        m.toast_failure("Could not save");
+        assert_eq!(m.toast.as_ref().unwrap().text, "Could not save");
+        m.dismiss_toast();
+        m.toast("Saved", Icon::CHECK);
+        assert_eq!(m.toast.as_ref().unwrap().text, "Saved");
+    }
+
+    #[test]
+    fn an_unlock_clears_a_stale_failure() {
+        let g = game("a", None, ExecutableKind::Elf);
+        let id = g.id.clone();
+        let mut m = model_with(vec![g]);
+        m.toast_failure("Could not unlock");
+        m.unlock(&id);
+        assert!(!m.toast_visible());
     }
 
     #[test]
