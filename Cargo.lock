@@ -275,7 +275,7 @@ dependencies = [
 
 [[package]]
 name = "anyplay-atrac9"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "cc",
 ]
@@ -291,7 +291,7 @@ dependencies = [
 
 [[package]]
 name = "anyplay-update-manifest"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "ed25519-dalek",
  "rand",
@@ -306,7 +306,7 @@ dependencies = [
 
 [[package]]
 name = "anyps5-core"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "anyplay-atrac9",
  "anyplay-control",
@@ -352,7 +352,7 @@ dependencies = [
 
 [[package]]
 name = "anyps5-launcher"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "ab_glyph",
  "anyps5-core",
@@ -1679,7 +1679,7 @@ checksum = "af9673d8203fcb076b19dfd17e38b3d4ae9f44959416ea532ce72415a6020365"
 
 [[package]]
 name = "fake-phone"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "anyps5-core",
  "mdns-sd",
@@ -1690,7 +1690,7 @@ dependencies = [
 
 [[package]]
 name = "fake-relinker"
-version = "0.2.7"
+version = "0.2.8"
 
 [[package]]
 name = "fastrand"
