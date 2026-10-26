@@ -364,3 +364,84 @@ fn stop_ends_an_open_question() {
     rig.server.respond(question.id, true);
     assert!(rig.server.paired().is_empty());
 }
+
+/// The server behind the conformance checks of the test phone, which is written from the
+/// protocol document on its own.
+struct UnderTest {
+    rig: Rig,
+    beacon: Option<UdpSocket>,
+    prompts: Vec<(u64, u32)>,
+}
+
+impl UnderTest {
+    fn start() -> UnderTest {
+        let rig = rig();
+        let beacon = rig.beacons.try_clone().unwrap();
+        UnderTest {
+            rig,
+            beacon: Some(beacon),
+            prompts: Vec::new(),
+        }
+    }
+
+    fn drain(&mut self) {
+        while let Ok(event) = self.rig.events.try_recv() {
+            if let Event::Pairing(request) = event {
+                let code = request.code.replace(' ', "").parse().unwrap();
+                self.prompts.push((request.id, code));
+            }
+        }
+    }
+}
+
+impl crate::remote::ludusctrl_testphone::conformance::PcUnderTest for UnderTest {
+    fn input_addr(&self) -> SocketAddr {
+        SocketAddr::from((Ipv4Addr::LOCALHOST, self.rig.server.port()))
+    }
+
+    fn beacon_socket(&mut self) -> Option<UdpSocket> {
+        self.beacon.take()
+    }
+
+    fn prompt_codes(&mut self) -> Vec<u32> {
+        self.drain();
+        self.prompts.iter().map(|(_, code)| *code).collect()
+    }
+
+    fn allow(&mut self) {
+        self.drain();
+        if let Some((id, _)) = self.prompts.last() {
+            self.rig.server.respond(*id, true);
+        }
+    }
+
+    fn pad(&mut self) -> Option<crate::remote::ludusctrl_testphone::PadState> {
+        let last = self
+            .rig
+            .pad
+            .0
+            .lock()
+            .unwrap()
+            .last()
+            .copied()
+            .unwrap_or_default();
+        Some(crate::remote::ludusctrl_testphone::PadState {
+            buttons: last.buttons,
+            left_x: last.lx,
+            left_y: last.ly,
+            right_x: last.rx,
+            right_y: last.ry,
+            left_trigger: last.left_trigger,
+            right_trigger: last.right_trigger,
+        })
+    }
+}
+
+#[test]
+fn the_test_phone_finds_the_server_conformant() {
+    let mut pc = UnderTest::start();
+    let report = crate::remote::ludusctrl_testphone::conformance::run_conformance(&mut pc)
+        .unwrap_or_else(|failure| panic!("{failure}"));
+    assert!(report.skipped.is_empty(), "skipped: {:?}", report.skipped);
+    assert_eq!(report.passed.len(), 32, "{:?}", report.passed);
+}
