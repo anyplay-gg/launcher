@@ -24,6 +24,7 @@ pub mod core_pipeline;
 mod discord;
 pub mod links;
 pub mod ludus;
+pub mod ludus_web;
 pub mod model;
 pub mod online;
 pub mod online_local;

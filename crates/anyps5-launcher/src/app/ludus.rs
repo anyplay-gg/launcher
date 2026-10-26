@@ -7,7 +7,8 @@
 //! [`LudusReceiver`] and a [`Start`] function, so the core plugs in at one place,
 //! [`start_receiver`]. The shown state is the model's [`LudusState`], the same shape as the phone
 //! server's [`PhoneState`](crate::app::phone::PhoneState). The virtual controller is the one the
-//! phone server also drives ([`SharedPad`]), handed to the server as soon as it runs.
+//! phone server also drives ([`SharedPad`]), handed to the server as soon as it runs. The browser
+//! client, an option of LudusCtrl, is a part of the same server ([`crate::app::ludus_web`]).
 
 use std::sync::{
     Arc, Mutex,
@@ -20,9 +21,11 @@ use anyps5_core::remote::{
     PadTarget, PairingRequest, VirtualPadStatus, vpad,
 };
 
+use crate::app::ludus_web::{self, BrowserBridge, BrowserConfig, BrowserState};
 use crate::app::model::Model;
 use crate::app::pad::SharedPad;
 use crate::screens::ludus::LudusAction;
+use crate::screens::ludus_web_strings::BrowserText;
 use crate::screens::phone_strings::PhoneText;
 use crate::ui::i18n::Arg;
 use crate::ui::icons::Icon;
@@ -58,13 +61,19 @@ pub enum LudusEvent {
     /// A phone holds the pad (`LudusStatus::Linked` with `LudusVia::App`). `controller`: a
     /// controller is connected to the phone; without one the pad is held at neutral.
     Linked { name: String, controller: bool },
+    /// A browser client holds the pad (`LudusStatus::Linked` with `LudusVia::Browser`): the
+    /// phone's address, and what it runs on when its browser said.
+    Browser {
+        peer: String,
+        device: Option<String>,
+    },
     /// Nobody feeds the pad (`LudusStatus::Waiting`).
     Waiting,
 }
 
 /// The server as the launcher uses it. Every call returns at once; the server does its work on
-/// its own thread and reports through the events.
-pub trait LudusReceiver: Send + Sync {
+/// its own thread and reports through the events. Its browser client is the [`BrowserBridge`] part.
+pub trait LudusReceiver: Send + Sync + BrowserBridge {
     /// The UDP port really bound, for typing into the app next to the PC's address.
     fn port(&self) -> u16;
     /// The paired phones, oldest first.
@@ -85,7 +94,7 @@ pub type Events = Arc<dyn Fn(LudusEvent) + Send + Sync>;
 pub type Start = fn(&AppPaths, Events) -> std::io::Result<Arc<dyn LudusReceiver>>;
 
 /// The core's server on every interface with the beacon on, as the app expects it. Its events
-/// become [`LudusEvent`]s; a browser holding the pad (a later step) reads as no phone.
+/// become [`LudusEvent`]s.
 pub fn start_receiver(paths: &AppPaths, events: Events) -> std::io::Result<Arc<dyn LudusReceiver>> {
     let config = LudusConfig::new(LudusStore::file_in(paths));
     let server = LudusServer::start(config, Arc::new(Forward(events)))
@@ -103,11 +112,15 @@ fn event_of(status: LudusStatus) -> LudusEvent {
             controller,
             ..
         } => LudusEvent::Linked { name, controller },
+        // The core's bridge adds `device` (the User-Agent's coarse name); it goes here then.
         LudusStatus::Linked {
-            via: LudusVia::Browser { .. },
+            via: LudusVia::Browser { peer, .. },
             ..
-        }
-        | LudusStatus::Waiting => LudusEvent::Waiting,
+        } => LudusEvent::Browser {
+            peer: peer.to_string(),
+            device: None,
+        },
+        LudusStatus::Waiting => LudusEvent::Waiting,
     }
 }
 
@@ -126,6 +139,11 @@ impl LudusEvents for Forward {
         (self.0)(event_of(status));
     }
 }
+
+/// The core's browser bridge is not built yet (T55 step 2, `docs/ludusctrl-web-api.md` on the
+/// server's branch): the defaults say so. When it lands, these three forward to
+/// `LudusServer::start_browser`, `new_browser_link` and `stop_browser`.
+impl BrowserBridge for LudusServer {}
 
 impl LudusReceiver for LudusServer {
     fn port(&self) -> u16 {
@@ -171,6 +189,8 @@ pub struct LudusState {
     pub paired: Vec<LudusPhone>,
     /// Whether the system can host the virtual controller; `None` until looked at.
     pub pad: Option<VirtualPadStatus>,
+    /// The browser client.
+    pub browser: BrowserState,
     /// Asked by the settings page, done by the next frame.
     pub commands: Vec<LudusAction>,
 }
@@ -275,6 +295,10 @@ impl LudusService {
 
     fn stop(&mut self, model: &mut Model) {
         if let Some(receiver) = self.receiver.take() {
+            // The browser client is a part of the server and goes with it.
+            if model.ludus.browser.info.is_some() {
+                receiver.stop_browser();
+            }
             receiver.stop();
         }
         self.pad_given = false;
@@ -295,6 +319,7 @@ impl LudusService {
         } else if !want && (self.is_running() || model.ludus.failed) {
             self.stop(model);
         }
+        self.sync_browser(model, want && ludus_web::wanted(&model.prefs));
         // The driver can be installed while the page is open: look again now and then.
         if want
             && model.overlay == Some(crate::app::overlay::Overlay::Settings)
@@ -312,6 +337,35 @@ impl LudusService {
         }
         while let Ok(event) = self.rx.try_recv() {
             self.event(model, event);
+        }
+    }
+
+    /// The browser client follows its option, on the running server only. Stopping the server
+    /// closes it too.
+    fn sync_browser(&mut self, model: &mut Model, want: bool) {
+        let Some(receiver) = self.receiver.clone() else {
+            return;
+        };
+        let browser = &model.ludus.browser;
+        if want && browser.info.is_none() && !browser.failed {
+            let config = BrowserConfig::for_launcher(&model.paths, model.language());
+            match receiver.start_browser(config) {
+                Ok(info) => {
+                    model.ludus.browser = BrowserState {
+                        info: Some(info),
+                        ..BrowserState::default()
+                    };
+                }
+                Err(error) => {
+                    tracing::warn!("the LudusCtrl browser client could not start: {error}");
+                    model.ludus.browser.failed = true;
+                }
+            }
+        } else if !want && (browser.info.is_some() || browser.failed) {
+            if browser.info.is_some() {
+                receiver.stop_browser();
+            }
+            model.ludus.browser = BrowserState::default();
         }
     }
 
@@ -343,8 +397,15 @@ impl LudusService {
                 let text = PhoneText::ToastRemoved.format(model.language(), &[Arg::Str(&name)]);
                 model.toast(text, Icon::CHECK_CIRCLE);
             }
-            // The host opens the page; nothing for the server.
-            LudusAction::OpenProjectPage => {}
+            LudusAction::NewLink => {
+                if let Some(info) = receiver.new_browser_link() {
+                    model.ludus.browser.info = Some(info);
+                    model.ludus.browser.peer = None;
+                    model.ludus.browser.device = None;
+                }
+            }
+            // The host opens the page or copies the link; nothing for the server.
+            LudusAction::OpenProjectPage | LudusAction::CopyLink(_) => {}
         }
     }
 
@@ -376,10 +437,24 @@ impl LudusService {
                 }
                 model.ludus.connected = Some(name);
                 model.ludus.controller = controller;
+                model.ludus.browser.peer = None;
+                model.ludus.browser.device = None;
+            }
+            LudusEvent::Browser { peer, device } => {
+                if model.ludus.browser.peer.as_deref() != Some(peer.as_str()) {
+                    let text = BrowserText::ToastConnected.text(language);
+                    model.toast(text, Icon::GAME_CONTROLLER);
+                }
+                model.ludus.connected = None;
+                model.ludus.controller = false;
+                model.ludus.browser.peer = Some(peer);
+                model.ludus.browser.device = device;
             }
             LudusEvent::Waiting => {
                 model.ludus.connected = None;
                 model.ludus.controller = false;
+                model.ludus.browser.peer = None;
+                model.ludus.browser.device = None;
             }
         }
     }
@@ -405,6 +480,10 @@ mod tests {
         stopped: usize,
         pads: Vec<Option<Arc<dyn PadTarget>>>,
         events: Option<Events>,
+        browser_starts: Vec<BrowserConfig>,
+        browser_stops: usize,
+        browser_fails: bool,
+        new_links: usize,
     }
 
     fn calls() -> &'static Mutex<Calls> {
@@ -421,6 +500,38 @@ mod tests {
     }
 
     struct Fake;
+
+    fn browser_info(token: &str) -> crate::app::ludus_web::BrowserInfo {
+        crate::app::ludus_web::BrowserInfo {
+            urls: vec![format!("https://192.168.1.23:45991/#t={token}")],
+            port: ludus_web::LUDUS_WEB_PORT,
+            preferred_port: true,
+            certificate: ludus_web::Certificate::Kept,
+            fingerprint: String::new(),
+        }
+    }
+
+    impl BrowserBridge for Fake {
+        fn start_browser(
+            &self,
+            config: BrowserConfig,
+        ) -> Result<crate::app::ludus_web::BrowserInfo, String> {
+            let mut calls = calls().lock().unwrap();
+            calls.browser_starts.push(config);
+            if calls.browser_fails {
+                Err("port in use".into())
+            } else {
+                Ok(browser_info("first"))
+            }
+        }
+        fn new_browser_link(&self) -> Option<crate::app::ludus_web::BrowserInfo> {
+            calls().lock().unwrap().new_links += 1;
+            Some(browser_info("second"))
+        }
+        fn stop_browser(&self) {
+            calls().lock().unwrap().browser_stops += 1;
+        }
+    }
 
     impl LudusReceiver for Fake {
         fn port(&self) -> u16 {
@@ -666,8 +777,119 @@ mod tests {
                 controller: false,
                 pad_live: true,
             }),
-            LudusEvent::Waiting
+            LudusEvent::Browser {
+                peer: "192.168.1.40".into(),
+                device: None,
+            }
         );
+    }
+
+    #[test]
+    fn the_browser_client_runs_only_with_its_option_on_the_running_server() {
+        let _serial = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let mut model = model(&dir);
+        let mut service = service();
+        model.prefs.phone_ludusctrl_browser = true;
+        service.sync(&mut model);
+        assert!(model.ludus.browser.info.is_none(), "LudusCtrl is off");
+        on(&mut model);
+        service.sync(&mut model);
+        let info = model.ludus.browser.info.clone().expect("running");
+        assert!(info.urls[0].ends_with("#t=first"));
+        service.sync(&mut model);
+        {
+            let calls = calls().lock().unwrap();
+            assert_eq!(calls.browser_starts.len(), 1, "started once");
+            assert!(
+                calls.browser_starts[0]
+                    .cert_file
+                    .ends_with("LudusCtrlWeb.json")
+            );
+            assert_eq!(calls.browser_starts[0].language, "en");
+        }
+        model.prefs.phone_ludusctrl_browser = false;
+        service.sync(&mut model);
+        assert!(model.ludus.browser.info.is_none());
+        assert_eq!(calls().lock().unwrap().browser_stops, 1);
+        assert!(service.is_running(), "LudusCtrl itself stays");
+    }
+
+    #[test]
+    fn a_browser_client_that_cannot_start_says_so_once() {
+        let _serial = serial();
+        calls().lock().unwrap().browser_fails = true;
+        let dir = tempfile::tempdir().unwrap();
+        let mut model = model(&dir);
+        on(&mut model);
+        model.prefs.phone_ludusctrl_browser = true;
+        let mut service = service();
+        service.sync(&mut model);
+        service.sync(&mut model);
+        assert!(model.ludus.browser.failed && model.ludus.browser.info.is_none());
+        assert_eq!(calls().lock().unwrap().browser_starts.len(), 1, "no retry");
+        model.prefs.phone_ludusctrl_browser = false;
+        service.sync(&mut model);
+        assert!(
+            !model.ludus.browser.failed,
+            "turning it off clears the note"
+        );
+        assert_eq!(calls().lock().unwrap().browser_stops, 0, "nothing ran");
+    }
+
+    #[test]
+    fn a_browser_that_holds_the_pad_is_named_and_a_new_link_drops_it() {
+        let _serial = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let mut model = model(&dir);
+        on(&mut model);
+        model.prefs.phone_ludusctrl_browser = true;
+        let mut service = service();
+        service.sync(&mut model);
+        emit(LudusEvent::Browser {
+            peer: "192.168.1.40".into(),
+            device: Some("iPhone".into()),
+        });
+        service.sync(&mut model);
+        assert_eq!(model.ludus.browser.peer.as_deref(), Some("192.168.1.40"));
+        assert_eq!(model.ludus.browser.device.as_deref(), Some("iPhone"));
+        assert!(model.ludus.connected.is_none(), "one holder at a time");
+        assert!(model.toast_visible());
+        model.ludus.commands.push(LudusAction::NewLink);
+        service.sync(&mut model);
+        assert_eq!(calls().lock().unwrap().new_links, 1);
+        assert!(model.ludus.browser.peer.is_none());
+        let info = model.ludus.browser.info.as_ref().unwrap();
+        assert!(info.urls[0].ends_with("#t=second"));
+        emit(LudusEvent::Browser {
+            peer: "192.168.1.40".into(),
+            device: Some("iPhone".into()),
+        });
+        emit(LudusEvent::Linked {
+            name: "Pixel 8".into(),
+            controller: true,
+        });
+        service.sync(&mut model);
+        assert!(model.ludus.browser.peer.is_none(), "the app took the pad");
+        assert!(model.ludus.browser.device.is_none());
+        assert_eq!(model.ludus.connected.as_deref(), Some("Pixel 8"));
+    }
+
+    #[test]
+    fn stopping_ludusctrl_closes_the_browser_client_too() {
+        let _serial = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let mut model = model(&dir);
+        on(&mut model);
+        model.prefs.phone_ludusctrl_browser = true;
+        let mut service = service();
+        service.sync(&mut model);
+        assert!(model.ludus.browser.info.is_some());
+        model.prefs.phone_ludusctrl = false;
+        service.sync(&mut model);
+        assert!(!service.is_running());
+        assert_eq!(calls().lock().unwrap().browser_stops, 1);
+        assert_eq!(model.ludus.browser, BrowserState::default());
     }
 
     #[test]

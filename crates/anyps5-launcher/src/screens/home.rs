@@ -13,6 +13,7 @@ use egui::{
 use crate::app::model::{GameState, Model, SizeState};
 use crate::screens::glibc_strings::shortfall_text;
 use crate::screens::ludus_strings::LudusText;
+use crate::screens::ludus_web_strings::BrowserText;
 use crate::screens::online_social_strings::SocialText;
 use crate::screens::online_strings::OnlineText;
 use crate::screens::phone_strings::PhoneText;
@@ -265,18 +266,35 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
         }
     };
     // A LudusCtrl phone that holds the pad sits after the phone the same way; left out when
-    // the strip has no room for it.
-    if let Some(name) = &cx.model.ludus.connected {
-        let label = LudusText::BarLabel.format(language, &[Arg::Str(name)]);
-        if let Some(right) = phone_status(
+    // the strip has no room for it. A browser client holds the same pad and wears the same pill.
+    let ludus = &cx.model.ludus;
+    let holder = match (&ludus.connected, &ludus.browser.peer) {
+        (Some(name), _) => Some((
+            name.clone(),
+            LudusText::BarLabel.format(language, &[Arg::Str(name)]),
+        )),
+        (None, Some(peer)) => {
+            // What the browser runs on names the pill when it said; else "Browser".
+            let device = ludus.browser.device.as_deref();
+            Some((
+                device
+                    .unwrap_or(BrowserText::BarName.text(language))
+                    .to_owned(),
+                BrowserText::BarLabel.format(language, &[Arg::Str(device.unwrap_or(peer))]),
+            ))
+        }
+        (None, None) => None,
+    };
+    if let Some((name, label)) = holder
+        && let Some(right) = phone_status(
             ui,
             pos2(next_left(after_title), mid),
-            name,
+            &name,
             &label,
             Some(row.min_rect().min.x - group_gap),
-        ) {
-            after_title = right;
-        }
+        )
+    {
+        after_title = right;
     }
     // A connected controller sits after the phones (or the title), the same way: it only reports,
     // and it is left out when the strip has no room for it.

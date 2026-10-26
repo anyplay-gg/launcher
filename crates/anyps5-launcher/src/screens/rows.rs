@@ -59,6 +59,12 @@ pub enum Control {
         labels: Vec<String>,
         selected: usize,
     },
+    /// A QR code of this text on a white card, the detail beside it; the title is its name for
+    /// screen readers. A picture: not focusable.
+    Qr(String),
+    /// An address to read off or type in, in the mono face: it takes the room the title leaves
+    /// and is cut in the middle. Not focusable.
+    Link(String),
 }
 
 /// One row of a panel.
@@ -190,6 +196,16 @@ impl Row {
         Row::new(id, title, Control::Info(value))
     }
 
+    /// A QR code of `data`; `name` is what a screen reader says for it.
+    pub fn qr(id: RowId, name: impl Into<String>, data: impl Into<String>) -> Row {
+        Row::new(id, name, Control::Qr(data.into()))
+    }
+
+    /// An address shown in full where it fits, cut in the middle where it does not.
+    pub fn link(id: RowId, title: impl Into<String>, address: impl Into<String>) -> Row {
+        Row::new(id, title, Control::Link(address.into()))
+    }
+
     pub fn caption(id: RowId, title: impl Into<String>) -> Row {
         Row::new(id, title, Control::Caption)
     }
@@ -233,7 +249,9 @@ impl Row {
             Control::Toggle(_) => RowKind::Toggle,
             Control::Stepper { .. } => RowKind::Stepper,
             Control::Action | Control::Command => RowKind::Action,
-            Control::Info(_) | Control::Caption => RowKind::Info,
+            Control::Info(_) | Control::Caption | Control::Qr(_) | Control::Link(_) => {
+                RowKind::Info
+            }
             Control::Text(_) => RowKind::Text,
             Control::Keys { .. } => RowKind::Keys,
         }
@@ -703,6 +721,8 @@ fn show_row(
             value: value.as_deref(),
         },
         Control::Text(value) => RowControl::Text { value },
+        Control::Qr(data) => RowControl::Qr { data },
+        Control::Link(value) => RowControl::Link { value },
         Control::Keys { sources, capturing } => {
             caps = key_caps(sources, language);
             RowControl::Keys {
@@ -714,7 +734,13 @@ fn show_row(
         }
     };
     let is_text = matches!(rc, RowControl::Text { .. });
-    let focusable = !matches!(rc, RowControl::Info { .. } | RowControl::Caption);
+    let focusable = !matches!(
+        rc,
+        RowControl::Info { .. }
+            | RowControl::Caption
+            | RowControl::Qr { .. }
+            | RowControl::Link { .. }
+    );
     let mut panel_row = PanelRow::new(title, rc)
         .language(language)
         .focused(focused)
@@ -964,6 +990,22 @@ mod tests {
             Some(Change::Capture { row: "keys" })
         );
         assert_eq!(resolve(&rows, activate(0)), None, "info rows do nothing");
+    }
+
+    #[test]
+    fn a_qr_code_and_a_link_are_read_not_used() {
+        let rows = vec![
+            Row::qr("qr", "QR code", "https://192.168.1.23:45991/#t=x"),
+            Row::link("link", "Link", "https://192.168.1.23:45991/#t=x"),
+        ];
+        assert_eq!(kinds(&rows), [RowKind::Info, RowKind::Info]);
+        for row in 0..2 {
+            assert_eq!(resolve(&rows, PanelEffect::Activate { row }), None);
+            assert_eq!(
+                resolve(&rows, PanelEffect::Adjust { row, direction: 1 }),
+                None
+            );
+        }
     }
 
     #[test]

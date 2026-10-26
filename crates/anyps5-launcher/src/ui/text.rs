@@ -154,7 +154,26 @@ pub fn width(painter: &Painter, style: TextStyle, text: &str) -> f32 {
 
 /// Shortens `text` in the middle with an ellipsis until it fits `max_width` (paths).
 pub fn middle_truncate(painter: &Painter, style: TextStyle, text: &str, max_width: f32) -> String {
-    if width(painter, style, text) <= max_width {
+    middle_truncate_with(text, max_width, |t| width(painter, style, t))
+}
+
+/// [`middle_truncate`] in an explicit font (the mono face of a link row).
+pub fn middle_truncate_font(
+    painter: &Painter,
+    font: &FontId,
+    text: &str,
+    max_width: f32,
+) -> String {
+    middle_truncate_with(text, max_width, |t| {
+        painter
+            .layout_no_wrap(t.to_owned(), font.clone(), Color32::WHITE)
+            .size()
+            .x
+    })
+}
+
+fn middle_truncate_with(text: &str, max_width: f32, width: impl Fn(&str) -> f32) -> String {
+    if width(text) <= max_width {
         return text.to_owned();
     }
     let chars: Vec<char> = text.chars().collect();
@@ -162,7 +181,7 @@ pub fn middle_truncate(painter: &Painter, style: TextStyle, text: &str, max_widt
     // Largest number of kept characters (split evenly around the ellipsis) that still fits.
     while lo < hi {
         let mid = (lo + hi).div_ceil(2);
-        if width(painter, style, &ellipsize_middle(&chars, mid)) <= max_width {
+        if width(&ellipsize_middle(&chars, mid)) <= max_width {
             lo = mid;
         } else {
             hi = mid - 1;
