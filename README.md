@@ -39,7 +39,7 @@ Screenshots of the launcher, taken from a release build with a real library.
 - **Trophies, saves, playtime:** trophies pop up while you play, saves are backed up before anything risky.
 - **Per-game settings:** window, sync, overlay, language and shader cache, plus recommended settings you apply with one click.
 - **Online:** friends, parties with voice, calls, profiles, a feed and join codes, with an AnyPlay account. See [docs/ONLINE.md](docs/ONLINE.md).
-- **Updates:** signed self-update on Windows.
+- **Updates:** signed self-update on Windows, Linux AppImage and the Apple silicon Mac app.
 
 ## Status
 

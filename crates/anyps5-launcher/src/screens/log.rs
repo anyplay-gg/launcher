@@ -492,6 +492,64 @@ mod tests {
     }
 
     #[test]
+    fn the_way_out_comes_before_the_long_part() {
+        // The hero line clips at two lines: whatever varies in length (a function name, an
+        // engine message, an exception) stands last, so the step is never what is cut.
+        let long = "x".repeat(60);
+        for language in Language::ALL {
+            for d in [
+                Diagnosis::Unsupported(long.clone()),
+                Diagnosis::EngineError(long.clone()),
+                Diagnosis::Crashed(long.clone()),
+            ] {
+                let s = diagnosis_summary(&d, language);
+                let at = s.find(&long).expect("the argument is in the sentence");
+                assert!(
+                    s[..at].contains("Options > Log") || s[..at].contains("Seçenekler > Günlük"),
+                    "{d:?} {language:?}: the step must come first: {s}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_sentence_names_a_way_out() {
+        let all = [
+            Diagnosis::MissingModule("a.dll".into()),
+            Diagnosis::Unsupported("sceFoo".into()),
+            Diagnosis::GpuLost,
+            Diagnosis::OutOfMemory,
+            Diagnosis::EngineError("boom".into()),
+            Diagnosis::Crashed("0xC0000005".into()),
+            Diagnosis::HostCpu("AVX2".into()),
+            Diagnosis::NoUdmabuf,
+        ];
+        // Each says what to do: start again, update, close something, add to a group or send a
+        // report. A CPU that lacks an instruction set is a fact about the PC and has no step.
+        let steps = [
+            "again",
+            "Update",
+            "Close",
+            "Add your user",
+            "report",
+            "yeniden",
+            "güncelle",
+            "kapat",
+            "kullanıcını",
+            "rapor",
+        ];
+        for language in Language::ALL {
+            for d in &all {
+                let s = diagnosis_summary(d, language);
+                assert!(
+                    matches!(d, Diagnosis::HostCpu(_)) || steps.iter().any(|w| s.contains(w)),
+                    "{d:?} {language:?} names no way out: {s}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn arguments_land_in_the_sentence() {
         assert_eq!(
             diagnosis_summary(
@@ -505,7 +563,7 @@ mod tests {
                 &Diagnosis::Crashed("0xC0000005 (ACCESS_VIOLATION)".into()),
                 Language::English
             ),
-            "The game crashed (0xC0000005 (ACCESS_VIOLATION))."
+            "The game crashed. Start the game again. If it keeps happening, send a report from Options > Log. (0xC0000005 (ACCESS_VIOLATION))"
         );
         assert_eq!(
             diagnosis_summary(&Diagnosis::HostCpu("AVX2".into()), Language::English),
@@ -517,7 +575,13 @@ mod tests {
     fn long_engine_messages_are_cut_at_200_characters() {
         let long = "x".repeat(300);
         let sentence = diagnosis_summary(&Diagnosis::EngineError(long), Language::English);
-        assert_eq!(sentence, format!("Engine error: {}…", "x".repeat(200)));
+        assert_eq!(
+            sentence,
+            format!(
+                "Engine error. Start the game again. If it keeps happening, send a report from Options > Log. Details: {}…",
+                "x".repeat(200)
+            )
+        );
         assert_eq!(cut_message("short", 200), "short");
     }
 

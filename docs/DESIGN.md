@@ -1047,6 +1047,13 @@ secondary with the danger ink; icons are 14, 17, 18, 20, 24 or 36 dp; the only m
 page draws no focus ring of its own; the case rule of 3.10 stands, and the verbs are Cancel, Back, Close, Done, Continue, Try
 Again, Remove, Delete, Sign In, Later.
 
+**The hint bar has one place (PR 2 of the round).** Every full-screen area shows it at the bottom right, where Home has it: the right edge
+`pad::HOME_X` in, the baseline `pad::HINT_Y` up (`screens::footer_hints`), never in a header. A screen with a Back button on screen
+leaves the "Back" hint out (`HintSet::without_back`): the bar never repeats a control the player can see.
+
+**Messages** (tokens for the social area): `color::bubble_other` white 0.10, `bubble_own` 0.16, `composer` 0.10 with the control hairline;
+gaps `space::BUBBLE_IN_GROUP` 4, `BUBBLE_BETWEEN` 16, `BUBBLE_DAY` 24. A system row is centred 14 regular in `text_note` with no bubble.
+
 ## 4. Materials and blur on the GPU
 
 SwiftUI `.ultraThinMaterial` is a backdrop blur with a light tint and some saturation; it is used under every panel. egui has no
@@ -1199,7 +1206,7 @@ Row sketch (S-home):
 
 **Hint bar** (right aligned, padding h 64 v 28, item gap 22): `← → ↑ ↓` "Move", `↩ / ✕` "Select", `esc / ○` "Back", `O / △` "Options"
 (keys in a keycap: 12 bold, padding 7 x 3, white 0.16 fill, radius 5; label 13 medium; all white 0.72; gap 8). Library, trophies and
-onboarding show it without "Options". The glyphs are the fixed text above (PlayStation face names), not adapted to the pad in use.
+onboarding show it without "Options". A hint names only a key that does something: on the home screen "Back" is shown only while the launcher is in front because of the Home button (Back returns to the game) or a Play Together card is up (Back closes it), or the focus is off the tile row (Back returns to it); otherwise the bar is "Select" and "Options". The glyphs are the fixed text above (PlayStation face names), not adapted to the pad in use.
 
 **Empty library** (no games): centred column, gap 18: icon 54 thin (magnifier while scanning, otherwise a stack-slash icon, white
 0.8), title (`scanning` or `emptyLibraryTitle`, 34 light), text `emptyLibraryText` (17, white 0.65), the games folder path if set
@@ -1257,7 +1264,7 @@ splash is up **all other input is swallowed** except back.
 Layout: full-window overlay (blurred backdrop + black 0.55); centred column, gap 26: tile 200 (radius 24, same placeholder rules),
 breathing glow (animation 26); game name (34 light, centred, 2 lines); a 380-wide block (gap 14): row `starting` (16 medium, white
 0.88) and the elapsed `m:ss` (16 semibold tabular, counting from 0:00, tick 1 s), the indeterminate sweep (accent), and
-`startingText` (14, white 0.6, centred, wraps). At the bottom, 40 above the edge, a hint `esc / ○` "Cancel". After the window shows,
+`startingText` (14, white 0.6, centred, wraps). At the bottom, 40 above the edge, a secondary 44 dp button "Cancel" (X glyph, 240 wide): the pointer's way to the same stop as Esc or the pad's back, which stay. After the window shows,
 the splash leaves (overlay spring), the launcher optionally hides ("Hide Launcher While Playing"). (S-starting.)
 
 ### 5.6 Toast
@@ -1482,6 +1489,12 @@ If the game never opened a window and no diagnosis was found: toast `startFailed
 | out of memory | `diagnosisOutOfMemory` | `VK_ERROR_OUT_OF_DEVICE_MEMORY`, `std::bad_alloc`, "out of memory" |
 | engine error | `diagnosisEngineError` (message, cut at 200 chars + ellipsis) | any other uncaught engine exception |
 | crashed | `diagnosisCrashed` (exception) | the OS crash report, e.g. `EXC_BAD_ACCESS (SIGSEGV)` |
+
+**Every sentence names a way out (0.2.8, `ui/i18n.rs` `ours`).** GPU lost: update the graphics driver, start again. Out of
+memory: close other programs, start again. Engine error and crash: start again, and if it repeats send a report from Options > Log
+(the part that varies in length, the function, the engine message or the exception, goes last so the step stays visible when the hero line clips at two lines). Unsupported function: send a
+report so it can be added. A CPU that lacks an instruction set is a fact about the PC and has no step. `reportFailed` says
+"Check that the disk has space, then try again." (a test in `screens/log.rs` checks that each sentence has a step).
 
 **Report**: "Make a Report" writes a text file (`<titleID>-yyyyMMdd-HHmmss.txt` in the Reports folder) with: title line + ISO date,
 Game (name, title ID, version), machine (model, CPU, RAM GB), OS version, launcher version, toolkit version, Reason (sentence or
@@ -2502,7 +2515,7 @@ list still updates.
 
 ### 9.5 The launcher updates itself
 
-No counterpart in the macOS launcher (Sparkle there). Core module `anyps5_core::selfupdate`, host `app::selfupdate`. The Windows exe and the Linux AppImage update themselves; a Linux `.tar.gz` is replaced from the releases page.
+The old macOS launcher used Sparkle; this one has its own flow. Core module `anyps5_core::selfupdate`, host `app::selfupdate`. The Windows exe, the Linux AppImage and the Apple silicon Mac app update themselves; a Linux `.tar.gz` is replaced from the releases page.
 
 - **Check.** At the start and then every 6 hours while the launcher stays open (after a check that could not reach GitHub, every 30 minutes), in the background, when the *Check for Updates* preference is on. *Check Now* on the About page checks once whatever the preference says. The request is conditional: the release data of `anyplaynet/launcher` is asked for with the ETag of the last answer, so a check that finds nothing new costs one small reply that GitHub does not count against its rate limit. The last copy is never taken for an answer when the network fails: an offline launcher does not call itself up to date. A newer semver (pre-release tags sort below their release) is downloaded and verified at once; garbage tags are never newer. Previews, the demo, the gallery and the tests never check.
 - **Verify.** From the first trusted key on (`data/update-keys.txt` holds "anyplay 2026" since 0.2.0) the launcher takes updates only through the release's signed `latest.json` and `latest.json.sig`: an Ed25519 signature by a trusted key, an unexpired manifest, a version newer than the running one, a running version not below the manifest's `minimum_version`, and a download with exactly the manifest's SHA-256 and size. The portable `AnyPlay-Launcher-<v>-x64.exe` (or `AnyPS5-Launcher-<v>-x64.exe`, which every release also carries, 9.7) goes to `%LOCALAPPDATA%\AnyPS5\Updates` under its final name only after that. There is no fallback to the unsigned `SHA256SUMS.txt` flow. The format, the rules, the migration and the key ceremony are in [UPDATES.md](UPDATES.md).

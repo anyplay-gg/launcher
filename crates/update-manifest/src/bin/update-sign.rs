@@ -3,7 +3,7 @@
 //! ```text
 //! update-sign keygen --secret-out <file> [--public-out <file>] [--label <text>]
 //! update-sign manifest --version <v> --exe <file> --out <latest.json>
-//!                      [--appimage <file>] [--minimum <v>] [--supported-file <MIN_SUPPORTED_VERSION>] [--days 30] [--base-url <url>]
+//!                      [--appimage <file>] [--macos-arm64 <zip>] [--minimum <v>] [--supported-file <MIN_SUPPORTED_VERSION>] [--days 30] [--base-url <url>]
 //! update-sign sign --manifest <latest.json> --out <latest.json.sig>
 //!                  (--key-env <NAME> | --key-file <file>)
 //! update-sign verify --manifest <latest.json> --sig <latest.json.sig> --keys <file>
@@ -24,8 +24,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyplay_update_manifest::{
-    Artifact, LINUX_X64, MAX_VALIDITY_DAYS, Manifest, SCHEMA, TrustedKeys, Version, WINDOWS_X64,
-    format_time, generate_signing_key, key_line, parse_supported_file, seed_hex, sign,
+    Artifact, LINUX_X64, MACOS_ARM64, MAX_VALIDITY_DAYS, Manifest, SCHEMA, TrustedKeys, Version,
+    WINDOWS_X64, format_time, generate_signing_key, key_line, parse_supported_file, seed_hex, sign,
     signing_key_from_hex, to_hex, verify,
 };
 use sha2::{Digest, Sha256};
@@ -173,6 +173,22 @@ fn manifest(flags: &Flags) -> Result<()> {
         }
         let data = fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
         platforms.insert(LINUX_X64.to_owned(), artifact(&base, name, &data));
+    }
+    if let Some(path) = flags.get("macos-arm64") {
+        let path = Path::new(path);
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or("--macos-arm64 has no file name")?
+            .to_owned();
+        let expected = format!("AnyPlay-Launcher-{version}-macos-arm64.zip");
+        if name != expected {
+            return Err(format!(
+                "the macOS archive must be named {expected}, not {name}"
+            ));
+        }
+        let data = fs::read(path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        platforms.insert(MACOS_ARM64.to_owned(), artifact(&base, name, &data));
     }
     let now = OffsetDateTime::now_utc();
     let manifest = Manifest {

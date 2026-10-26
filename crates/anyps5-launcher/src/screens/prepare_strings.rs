@@ -53,7 +53,7 @@ pub fn hero_note(paused: bool, language: Language) -> &'static str {
 pub fn paused_note(language: Language) -> &'static str {
     match language {
         Language::English => "Paused. Goes on when the PC is free.",
-        Language::Turkish => "Duraklat{131}ld{131}. PC bo{15f} olunca devam eder.",
+        Language::Turkish => "Duraklatıldı. PC boş olunca devam eder.",
     }
 }
 
@@ -217,6 +217,20 @@ mod tests {
             time_left(100.0, Language::Turkish),
             "Yakla\u{15f}\u{131}k 2 dk kald\u{131}"
         );
+    }
+
+    #[test]
+    fn no_text_shows_an_escape_it_forgot_to_resolve() {
+        for language in Language::ALL {
+            for text in [
+                paused_note(language),
+                hero_note(false, language),
+                hero_note(true, language),
+                state_label(true, language),
+            ] {
+                assert!(!text.contains('{') && !text.contains('}'), "{text}");
+            }
+        }
     }
 
     #[test]

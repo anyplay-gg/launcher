@@ -46,6 +46,7 @@ anyplay-update-manifest = { path = "../update-manifest" }
 libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+tempfile.workspace = true
 core-foundation = "0.9"
 core-graphics = "0.23"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSRunningApplication", "libc"] }

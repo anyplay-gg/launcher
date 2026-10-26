@@ -300,3 +300,62 @@ fn the_supported_version_file_writes_the_field_and_an_empty_one_leaves_it_out() 
         assert!(json.is_empty(), "nothing is written for {bad:?}");
     }
 }
+
+#[test]
+fn a_macos_archive_joins_the_same_signed_manifest_as_windows_and_linux() {
+    let dir = tempfile::tempdir().unwrap();
+    let exe = dir.path().join("AnyPlay-Launcher-0.3.0-x64.exe");
+    let image = dir.path().join("AnyPlay-Launcher-0.3.0-x86_64.AppImage");
+    let archive = dir.path().join("AnyPlay-Launcher-0.3.0-macos-arm64.zip");
+    let manifest = dir.path().join("latest.json");
+    fs::write(&exe, b"windows").unwrap();
+    fs::write(&image, b"linux").unwrap();
+    fs::write(&archive, b"macos").unwrap();
+    let out = tool(
+        &[
+            "manifest",
+            "--version",
+            "0.3.0",
+            "--exe",
+            path(&exe),
+            "--appimage",
+            path(&image),
+            "--macos-arm64",
+            path(&archive),
+            "--out",
+            path(&manifest),
+        ],
+        &[],
+    );
+    assert!(out.status.success(), "{}", text(&out.stderr));
+    let parsed: anyplay_update_manifest::Manifest =
+        serde_json::from_slice(&fs::read(&manifest).unwrap()).unwrap();
+    assert_eq!(parsed.platforms.len(), 3);
+    let mac = parsed
+        .artifact(anyplay_update_manifest::MACOS_ARM64)
+        .unwrap();
+    assert_eq!(mac.name, archive.file_name().unwrap().to_str().unwrap());
+    assert_eq!(mac.size, 5);
+    use sha2::{Digest, Sha256};
+    assert_eq!(
+        mac.sha256,
+        anyplay_update_manifest::to_hex(&Sha256::digest(b"macos"))
+    );
+    let wrong = dir.path().join("wrong.zip");
+    fs::write(&wrong, b"macos").unwrap();
+    let out = tool(
+        &[
+            "manifest",
+            "--version",
+            "0.3.0",
+            "--exe",
+            path(&exe),
+            "--macos-arm64",
+            path(&wrong),
+            "--out",
+            path(&manifest),
+        ],
+        &[],
+    );
+    assert!(!out.status.success());
+}

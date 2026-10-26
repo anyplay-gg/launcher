@@ -1223,17 +1223,46 @@ impl Hint<'_> {
     }
 }
 
-fn hint_list(language: Language, options: bool) -> Vec<Hint<'static>> {
-    let mut hints = vec![
-        Hint {
-            action: HintAction::Select,
-            label: language.text(Key::HintSelect),
-        },
-        Hint {
+/// Which hints a bar shows. Select is always there; "Back" is left out where a Back button is
+/// on screen (DESIGN.md 3.12): the bar never repeats a control the player can see.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HintSet {
+    pub options: bool,
+    pub back: bool,
+}
+
+impl HintSet {
+    /// Select and Back.
+    pub const BASIC: HintSet = HintSet {
+        options: false,
+        back: true,
+    };
+    /// Select, Back and Options.
+    pub const WITH_OPTIONS: HintSet = HintSet {
+        options: true,
+        back: true,
+    };
+    /// The same without the Back hint, for a screen that shows a Back button.
+    pub const fn without_back(self) -> HintSet {
+        HintSet {
+            options: self.options,
+            back: false,
+        }
+    }
+}
+
+fn hint_list(language: Language, set: HintSet) -> Vec<Hint<'static>> {
+    let options = set.options;
+    let mut hints = vec![Hint {
+        action: HintAction::Select,
+        label: language.text(Key::HintSelect),
+    }];
+    if set.back {
+        hints.push(Hint {
             action: HintAction::Back,
             label: language.text(Key::HintBack),
-        },
-    ];
+        });
+    }
     if options {
         hints.push(Hint {
             action: HintAction::Options,
@@ -1246,9 +1275,21 @@ fn hint_list(language: Language, options: bool) -> Vec<Hint<'static>> {
 /// The hint bar: Select, Back and, optionally, Options, in the keys of the device in use.
 /// Moving needs no hint.
 pub fn hint_bar(ui: &mut Ui, language: Language, options: bool) {
+    hint_bar_set(
+        ui,
+        language,
+        HintSet {
+            options,
+            back: true,
+        },
+    );
+}
+
+/// [`hint_bar`] for a [`HintSet`].
+pub fn hint_bar_set(ui: &mut Ui, language: Language, set: HintSet) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = size::HINT_BAR_GAP;
-        for hint in hint_list(language, options) {
+        for hint in hint_list(language, set) {
             hint.show(ui);
         }
     });
@@ -1256,8 +1297,20 @@ pub fn hint_bar(ui: &mut Ui, language: Language, options: bool) {
 
 /// Width and height of [`hint_bar`], for screens that align it to the right.
 pub fn hint_bar_size(painter: &Painter, language: Language, options: bool) -> (f32, f32) {
+    hint_bar_set_size(
+        painter,
+        language,
+        HintSet {
+            options,
+            back: true,
+        },
+    )
+}
+
+/// Width and height of [`hint_bar_set`].
+pub fn hint_bar_set_size(painter: &Painter, language: Language, set: HintSet) -> (f32, f32) {
     let device = input::device(painter.ctx());
-    let hints = hint_list(language, options);
+    let hints = hint_list(language, set);
     let width = hints.iter().map(|h| h.width(painter, device)).sum::<f32>()
         + size::HINT_BAR_GAP * hints.len().saturating_sub(1) as f32;
     (width, size::HINT_CAP.max(ty::HINT_LABEL.line_height()))
