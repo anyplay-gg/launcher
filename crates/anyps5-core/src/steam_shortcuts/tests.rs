@@ -310,20 +310,48 @@ fn a_user_that_never_had_a_config_folder_gets_one() {
 }
 
 #[test]
-fn a_jpeg_the_player_chose_earlier_does_not_hide_our_png() {
+fn a_jpeg_left_by_a_removed_entry_does_not_hide_our_png() {
+    let steam = Fake::new(&["1234"]);
+    let id = app_id(
+        "\"C:/Games/AnyPlay/anyplay-launcher.exe\"",
+        "AnyPlay Launcher",
+    );
+    let grid = steam.config("1234").join("grid");
+    fs::create_dir_all(&grid).unwrap();
+    let jpg = grid.join(format!("{id}_hero.jpg"));
+    fs::write(&jpg, b"x").unwrap();
+    install_into(&[steam.place()], &[launcher()], never_running).unwrap();
+    assert!(!jpg.exists());
+    assert_eq!(fs::read(grid.join(format!("{id}_hero.png"))).unwrap(), b"h");
+}
+
+#[test]
+fn pictures_the_player_chose_stay_when_the_entry_is_updated() {
     let steam = Fake::new(&["1234"]);
     install_into(&[steam.place()], &[launcher()], never_running).unwrap();
     let id = app_id(
         "\"C:/Games/AnyPlay/anyplay-launcher.exe\"",
         "AnyPlay Launcher",
     );
-    let jpg = steam
-        .config("1234")
-        .join("grid")
-        .join(format!("{id}_hero.jpg"));
-    fs::write(&jpg, b"x").unwrap();
+    let grid = steam.config("1234").join("grid");
+    fs::write(grid.join(format!("{id}_hero.png")), b"mine").unwrap();
+    fs::write(grid.join(format!("{id}p.jpg")), b"mine too").unwrap();
+    fs::remove_file(grid.join(format!("{id}_logo.png"))).unwrap();
     install_into(&[steam.place()], &[launcher()], never_running).unwrap();
-    assert!(!jpg.exists());
+    assert_eq!(
+        fs::read(grid.join(format!("{id}_hero.png"))).unwrap(),
+        b"mine"
+    );
+    assert!(grid.join(format!("{id}p.jpg")).exists());
+    assert_eq!(fs::read(grid.join(format!("{id}_logo.png"))).unwrap(), b"l");
+}
+
+#[test]
+fn an_empty_file_counts_as_none() {
+    let steam = Fake::new(&["1234"]);
+    fs::write(steam.config("1234").join("shortcuts.vdf"), b"").unwrap();
+    install_into(&[steam.place()], &[launcher()], never_running).unwrap();
+    assert_eq!(shortcuts_of(&steam.tree("1234")).len(), 1);
 }
 
 #[test]

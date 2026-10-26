@@ -2134,7 +2134,11 @@ fn steam_message(
     let said = |text: SteamText| text.text(language).to_owned();
     match result {
         Ok(outcome) => {
-            let text = match games {
+            // The entries that were written, not the games that were asked for: a game whose
+            // title ID the link parser refuses has none.
+            let written = (outcome.added + outcome.updated) / outcome.users.max(1);
+            let text = match games.map(|_| written) {
+                Some(0) => said(SteamText::NoGames),
                 Some(1) => said(SteamText::GameAdded),
                 Some(n) => SteamText::GamesAdded.format(language, &[Arg::Int(n as i64)]),
                 None if outcome.added == 0 => said(SteamText::Updated),

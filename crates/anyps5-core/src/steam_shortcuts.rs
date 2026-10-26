@@ -1,5 +1,5 @@
 //! Add to Steam: put the launcher, and optionally each game, into the player's Steam library as
-//! non-Steam shortcuts (docs/DESIGN.md 9.8).
+//! non-Steam shortcuts (docs/DESIGN.md 9.9).
 //!
 //! The one thing a caller does is [`install`]: it finds the player's Steam, refuses while Steam
 //! runs, and for every local Steam user writes the shortcuts into
@@ -267,6 +267,8 @@ fn users(place: &Place) -> Vec<PathBuf> {
 fn write_user(config: &Path, shortcuts: &[Shortcut]) -> Result<(usize, usize), Error> {
     let file = config.join("shortcuts.vdf");
     let existing = match fs::read(&file) {
+        // Steam can leave an empty file; it is as good as none.
+        Ok(bytes) if bytes.is_empty() => None,
         Ok(bytes) => Some(bytes),
         Err(e) if e.kind() == io::ErrorKind::NotFound => None,
         Err(e) => return Err(e.into()),
@@ -278,10 +280,10 @@ fn write_user(config: &Path, shortcuts: &[Shortcut]) -> Result<(usize, usize), E
     let list = vdf::child_map(&mut root, "shortcuts");
 
     let (mut added, mut updated) = (0, 0);
-    let mut ids = Vec::with_capacity(shortcuts.len());
+    let mut written = Vec::with_capacity(shortcuts.len());
     for shortcut in shortcuts {
         let (id, was_there) = upsert(list, shortcut, config);
-        ids.push(id);
+        written.push((id, was_there));
         if was_there {
             updated += 1;
         } else {
@@ -299,8 +301,8 @@ fn write_user(config: &Path, shortcuts: &[Shortcut]) -> Result<(usize, usize), E
         }
     }
     let grid = config.join("grid");
-    for (shortcut, id) in shortcuts.iter().zip(&ids) {
-        write_art(&grid, *id, &shortcut.art)?;
+    for (shortcut, (id, was_there)) in shortcuts.iter().zip(&written) {
+        write_art(&grid, *id, &shortcut.art, *was_there)?;
     }
     write_atomic(&file, &bytes)?;
     Ok((added, updated))
@@ -379,7 +381,9 @@ fn same_path(a: &str, b: &str) -> bool {
     !a.is_empty() && normal(a) == normal(b)
 }
 
-fn write_art(grid: &Path, id: u32, art: &Art) -> io::Result<()> {
+/// Writes the pictures of one entry. For an entry that was already there only the pictures that
+/// are missing are written: a picture the player put there stays.
+fn write_art(grid: &Path, id: u32, art: &Art, keep_existing: bool) -> io::Result<()> {
     let files = [
         (&art.portrait, format!("{id}p.png")),
         (&art.wide, format!("{id}.png")),
@@ -393,9 +397,15 @@ fn write_art(grid: &Path, id: u32, art: &Art) -> io::Result<()> {
     fs::create_dir_all(grid)?;
     for (bytes, name) in files {
         if let Some(bytes) = bytes {
-            // Steam shows a custom image over its own for the same app ID and kind. A JPEG the
-            // player chose earlier would win over our PNG, so it goes.
             let stem = name.trim_end_matches(".png");
+            let present = ["png", "jpg", "jpeg"]
+                .iter()
+                .any(|ext| grid.join(format!("{stem}.{ext}")).exists());
+            if keep_existing && present {
+                continue;
+            }
+            // Steam shows a custom image over its own for the same app ID and kind. A JPEG left
+            // from an entry that was removed would win over our PNG, so it goes.
             for other in ["jpg", "jpeg"] {
                 let _ = fs::remove_file(grid.join(format!("{stem}.{other}")));
             }

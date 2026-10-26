@@ -34,38 +34,42 @@ impl SteamText {
         match self {
             SteamText::Add => "Add to Steam",
             SteamText::AddDetail => {
-                "Adds the launcher to your Steam library, for Big Picture and Steam Deck. Close Steam first"
+                "Adds the launcher to your Steam library for Big Picture and the Steam Deck. Close Steam first."
             }
             SteamText::AddGames => "Add My Games to Steam",
             SteamText::AddGamesDetail => {
-                "One Steam entry for each game, with its own artwork. Close Steam first"
+                "Adds each game in your library to Steam, with its own artwork. Close Steam first."
             }
             SteamText::Added => "Added to Steam. Start Steam again to see it.",
             SteamText::Updated => "Updated in Steam. Start Steam again to see the change.",
             SteamText::GameAdded => "1 game is in Steam. Start Steam again to see it.",
             SteamText::GamesAdded => "%@ games are in Steam. Start Steam again to see them.",
             SteamText::Running => "Steam is running. Close Steam, then try again.",
-            SteamText::NoSteam => "Steam was not found on this PC.",
+            SteamText::NoSteam => {
+                "Steam was not found on this PC. Install Steam and sign in once, then try again."
+            }
             SteamText::NoUsers => {
                 "Steam has no account on this PC yet. Sign in to Steam once, then try again."
             }
             SteamText::Unreadable => {
-                "Steam's shortcut list has a form this launcher does not know. It was left as it is."
+                "Could not read Steam's shortcut list, so nothing was changed."
             }
-            SteamText::Failed => "Could not write to the Steam folder.",
+            SteamText::Failed => {
+                "Could not save to your Steam folder. Check that it is not read-only, then try again."
+            }
             SteamText::NoGames => "No games in the library yet.",
         }
     }
 
     pub const fn turkish(self) -> &'static str {
         match self {
-            SteamText::Add => "Steam'e ekle",
+            SteamText::Add => "Steam'e Ekle",
             SteamText::AddDetail => {
-                "Başlatıcıyı Steam kitaplığına ekler (Big Picture ve Steam Deck için). Önce Steam'i kapat"
+                "Başlatıcıyı Big Picture ve Steam Deck için Steam kitaplığına ekler. Önce Steam'i kapat."
             }
-            SteamText::AddGames => "Oyunlarımı Steam'e ekle",
+            SteamText::AddGames => "Oyunlarımı Steam'e Ekle",
             SteamText::AddGamesDetail => {
-                "Her oyun için kendi görseliyle bir Steam girişi. Önce Steam'i kapat"
+                "Kitaplıktaki her oyunu kendi görseliyle Steam'e ekler. Önce Steam'i kapat."
             }
             SteamText::Added => "Steam'e eklendi. Görmek için Steam'i yeniden başlat.",
             SteamText::Updated => {
@@ -74,14 +78,18 @@ impl SteamText {
             SteamText::GameAdded => "1 oyun Steam'de. Görmek için Steam'i yeniden başlat.",
             SteamText::GamesAdded => "%@ oyun Steam'de. Görmek için Steam'i yeniden başlat.",
             SteamText::Running => "Steam çalışıyor. Steam'i kapat, sonra tekrar dene.",
-            SteamText::NoSteam => "Bu bilgisayarda Steam bulunamadı.",
+            SteamText::NoSteam => {
+                "Bu bilgisayarda Steam bulunamadı. Steam'i kur ve bir kez giriş yap, sonra tekrar dene."
+            }
             SteamText::NoUsers => {
                 "Steam'de bu bilgisayarda henüz hesap yok. Steam'e bir kez giriş yap, sonra tekrar dene."
             }
             SteamText::Unreadable => {
-                "Steam'in kısayol listesi bu başlatıcının tanımadığı bir biçimde. Olduğu gibi bırakıldı."
+                "Steam'in kısayol listesi okunamadı, bu yüzden hiçbir şey değiştirilmedi."
             }
-            SteamText::Failed => "Steam klasörüne yazılamadı.",
+            SteamText::Failed => {
+                "Steam klasörüne kaydedilemedi. Salt okunur olmadığını kontrol et, sonra tekrar dene."
+            }
             SteamText::NoGames => "Kitaplıkta henüz oyun yok.",
         }
     }

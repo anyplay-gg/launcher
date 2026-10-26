@@ -669,7 +669,7 @@ pub fn build_categories(
             .icon(Icon::LINK),
         );
     }
-    // Steam keeps its shortcuts in files of the user folder; the rows write them (DESIGN.md 9.8).
+    // Steam keeps its shortcuts in files of the user folder; the rows write them (DESIGN.md 9.9).
     if cfg!(any(windows, target_os = "linux")) {
         behaviour.push(
             Row::command("addToSteam", SteamText::Add.text(language))

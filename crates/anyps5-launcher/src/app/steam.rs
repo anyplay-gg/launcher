@@ -1,4 +1,4 @@
-//! Add to Steam, the launcher's side (docs/DESIGN.md 9.8): which entries the two settings rows
+//! Add to Steam, the launcher's side (docs/DESIGN.md 9.9): which entries the two settings rows
 //! stand for. The writing is `anyps5_core::steam_shortcuts`; the pictures are `steam_art`.
 
 use std::path::PathBuf;
@@ -45,20 +45,32 @@ pub fn launcher_shortcut(exe: PathBuf) -> Shortcut {
 /// One entry per game: the launcher, opened on that game by its link. The game's name is the one
 /// its own files give. The title ID only goes into the link when the strict parser takes it.
 pub fn game_shortcuts(exe: &std::path::Path, games: &[Game]) -> Vec<Shortcut> {
-    games
+    let taken: Vec<&Game> = games
         .iter()
-        .filter_map(|game| {
+        .filter(|game| {
             let link = format!("{}://game/{}", anyps5_core::links::SCHEME, game.title_id);
             matches!(
                 anyps5_core::links::parse(&link),
                 Ok(anyps5_core::links::Link::Game { .. })
             )
-            .then(|| Shortcut {
-                name: game.name.clone(),
+        })
+        .collect();
+    taken
+        .iter()
+        .map(|game| {
+            // Steam derives an entry's ID from the exe and the name, and every game shares the exe:
+            // two games with one title (two regions, a demo) tell themselves apart by the title ID.
+            let twin = taken.iter().filter(|other| other.name == game.name).count() > 1;
+            Shortcut {
+                name: if twin {
+                    format!("{} ({})", game.name, game.title_id)
+                } else {
+                    game.name.clone()
+                },
                 exe: exe.to_path_buf(),
-                arguments: link,
+                arguments: format!("{}://game/{}", anyps5_core::links::SCHEME, game.title_id),
                 art: steam_art::game_art(game),
-            })
+            }
         })
         .collect()
 }
@@ -111,6 +123,21 @@ mod tests {
                 title_id: "PPSA00002".into()
             })
         );
+    }
+
+    #[test]
+    fn games_with_one_title_get_the_title_id_in_their_names() {
+        let exe = PathBuf::from("/opt/anyplay/anyplay-launcher");
+        let games = [
+            game("PPSA00001", "Same"),
+            game("PPSA00002", "Same"),
+            game("PPSA00003", "Other"),
+        ];
+        let names: Vec<String> = game_shortcuts(&exe, &games)
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+        assert_eq!(names, ["Same (PPSA00001)", "Same (PPSA00002)", "Other"]);
     }
 
     #[test]

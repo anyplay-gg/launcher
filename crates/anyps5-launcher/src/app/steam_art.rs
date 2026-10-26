@@ -1,4 +1,4 @@
-//! The pictures of the Steam entries (docs/DESIGN.md 9.8): the launcher's own, drawn here from its
+//! The pictures of the Steam entries (docs/DESIGN.md 9.9): the launcher's own, drawn here from its
 //! disc and name, and one set per game, made from the game's own `sce_sys` art on this PC.
 //!
 //! Game art is only read and only written as new files into the player's Steam folder; it never
