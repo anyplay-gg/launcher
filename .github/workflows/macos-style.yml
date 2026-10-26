@@ -79,6 +79,26 @@ jobs:
                 --screenshot="shots/$scene-$mode-frame.png"
             done
           done
+      # A bright wallpaper to see the glass against: white and saturated bars, the worst case for
+      # white text on a dark material. Setting it may be refused; the captures are then taken over
+      # whatever the desktop shows.
+      - name: Wallpaper
+        run: |
+          python3 - <<'PY'
+          w, h = 1600, 1000
+          bars = [(255, 80, 60), (255, 220, 60), (60, 200, 90), (60, 140, 255), (200, 90, 255)]
+          rows = []
+          for y in range(h):
+              left = bytes((255, 255, 255)) * (w // 2)
+              right = bytes(bars[(y * 5) // h]) * (w // 2)
+              rows.append(left + right)
+          open("/tmp/wall.ppm", "wb").write(b"P6 %d %d 255\n" % (w, h) + b"".join(rows))
+          PY
+          sips -s format png /tmp/wall.ppm --out /tmp/wall.png
+          osascript -e 'tell application "System Events" to tell every desktop to set picture to "/tmp/wall.png"' \
+            || osascript -e 'tell application "Finder" to set desktop picture to POSIX file "/tmp/wall.png"' \
+            || echo "wallpaper not set"
+          sleep 3
       # The screen with the window on it. The launcher stays up (a long --frames) and is stopped
       # after the capture; it is the only window this job starts.
       - name: Screen
@@ -86,7 +106,7 @@ jobs:
           for mode in glass solid; do
             flag=""; [ "$mode" = solid ] && flag="--solid"
             for scene in home settings; do
-              target/release/anyplay-launcher --gallery="$scene" $flag --frames=100000 \
+              target/release/anyplay-launcher --gallery="$scene" $flag --frames=100000 --size=760x520 \
                 --screenshot="shots/unused.png" &
               pid=$!
               sleep 14

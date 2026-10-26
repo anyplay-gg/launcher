@@ -905,12 +905,15 @@ pub fn run(options: Options, inbox: Option<crate::instance::Inbox>) -> eframe::R
         viewport = viewport.with_position([x, y]);
     }
     let mut native = eframe::NativeOptions {
-        viewport: crate::macstyle::MacStyle::viewport(viewport)
-            .with_title("AnyPlay Launcher preview")
-            // Frameless like the launcher, so the demo shows its caption as users see it.
-            .with_decorations(false)
-            .with_inner_size([options.size.0, options.size.1])
-            .with_resizable(options.scene.is_none()),
+        // Frameless like the launcher, so the demo shows its caption as users see it; the Mac
+        // keeps its own frame.
+        viewport: crate::macstyle::MacStyle::viewport(
+            viewport
+                .with_title("AnyPlay Launcher preview")
+                .with_decorations(false)
+                .with_inner_size([options.size.0, options.size.1])
+                .with_resizable(options.scene.is_none()),
+        ),
         ..Default::default()
     };
     crate::ui::restrict_backends(&mut native);
