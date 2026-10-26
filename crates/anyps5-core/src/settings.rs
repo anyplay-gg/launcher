@@ -488,6 +488,9 @@ pub struct Preferences {
     /// Home screen music.
     #[serde(default = "yes")]
     pub music: bool,
+    /// The selected game's own music (`sce_sys/snd0.at9`) in place of the home screen music.
+    #[serde(default = "yes")]
+    pub game_music: bool,
     /// The running game on the player's Discord profile.
     #[serde(default = "yes")]
     pub discord_presence: bool,
@@ -629,6 +632,7 @@ impl Default for Preferences {
             reduced_motion: false,
             sounds: true,
             music: true,
+            game_music: true,
             discord_presence: true,
             discord_join_button: true,
             hide_while_playing: false,

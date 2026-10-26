@@ -414,7 +414,7 @@ fn panel(report: &mut Report) {
         report.add(
             "focus ring",
             &format!("{name} panel"),
-            white(0.95),
+            color::focus_ring(),
             panel,
             Need::Glyph,
         );
