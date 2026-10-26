@@ -548,29 +548,32 @@ impl Model {
         self.toast_silent(text, icon);
     }
 
+    /// A failure the player has to read: the error cue, and the toast stays until it is dismissed.
+    /// A plain notice ("nothing to back up") is `toast` and fades.
+    pub fn toast_failure(&mut self, text: impl Into<String>) {
+        self.sound(Cue::Error);
+        self.toast_silent(text, Icon::WARNING);
+        if let Some(toast) = self.toast.as_mut() {
+            toast.until = f64::INFINITY;
+        }
+    }
+
     fn toast_silent(&mut self, text: impl Into<String>, icon: Icon) {
         self.toast_counter += 1;
-        let failure = matches!(
-            icon,
-            Icon::WARNING | Icon::X_CIRCLE | Icon::MICROPHONE_SLASH | Icon::PROHIBIT
-        );
         self.toast = Some(Toast {
             id: self.toast_counter,
             text: text.into(),
             icon,
-            until: if failure {
-                f64::INFINITY
-            } else {
-                self.now + TOAST_SECONDS
-            },
+            until: self.now + TOAST_SECONDS,
         });
     }
 
-    /// The player put the toast away (its Close button, or Back while a failure is up).
+    /// The player put the toast away (its Close button, or Back while a failure is up): the Back cue.
     pub fn dismiss_toast(&mut self) {
         let now = self.now;
         if let Some(toast) = self.toast.as_mut() {
             toast.until = toast.until.min(now);
+            self.sound(Cue::Back);
         }
     }
 
@@ -876,7 +879,7 @@ impl Model {
                             self.text(Key::UnlockFailed)
                         };
                         let text = format!("{headline}: {name}");
-                        self.toast(text, Icon::WARNING);
+                        self.toast_failure(text);
                     }
                 }
                 self.rescan_after_unlock();
@@ -917,7 +920,7 @@ impl Model {
                     self.starting = None;
                 }
                 let text = format!("{}: {message}", self.text(Key::StartFailed));
-                self.toast(text, Icon::WARNING);
+                self.toast_failure(text);
             }
             PipelineEvent::Exited { game, diagnosis } => {
                 if self.running.as_ref() != Some(&game) && self.starting.as_ref() != Some(&game) {
@@ -941,12 +944,12 @@ impl Model {
                 match diagnosis {
                     Some(summary) => {
                         let name = self.game(&game).map(|g| g.name.clone()).unwrap_or_default();
-                        self.toast(format!("{name}: {summary}"), Icon::WARNING);
+                        self.toast_failure(format!("{name}: {summary}"));
                         self.diagnoses.insert(game, summary);
                     }
                     None if without_window => {
                         let text = self.text(Key::StartFailed);
-                        self.toast(text, Icon::WARNING);
+                        self.toast_failure(text);
                     }
                     None => {}
                 }
@@ -2290,13 +2293,16 @@ mod tests {
     #[test]
     fn a_failure_toast_stays_until_dismissed_and_back_dismisses_it_first() {
         let mut m = model_with(vec![]);
-        m.toast("Could not start", Icon::WARNING);
+        m.toast_failure("Could not start");
         m.tick(m.now + 60.0);
         assert!(m.toast_visible(), "a failure does not fade by itself");
         m.handle(Command::Back);
         assert!(!m.toast_visible());
         // A routine toast is not Back's: it fades on its own.
         m.toast("Saved", Icon::CHECK);
+        assert!(!m.toast.as_ref().unwrap().stays());
+        // A plain notice that only borrows the warning glyph fades too.
+        m.toast("Nothing to back up", Icon::WARNING);
         assert!(!m.toast.as_ref().unwrap().stays());
     }
 

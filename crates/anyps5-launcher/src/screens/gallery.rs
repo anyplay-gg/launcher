@@ -2343,7 +2343,14 @@ impl ScreenGallery {
                 } else {
                     TileOverlay::None
                 },
-                state: if i == 5 {
+                state: if i == 1 && matches!(self.page, ScreenPage::LibraryLongName) {
+                    StateText {
+                        icon: Icon::ARROW_CIRCLE_DOWN,
+                        text: "Update available".into(),
+                        tint: crate::ui::theme::color::update_available(),
+                        quiet: false,
+                    }
+                } else if i == 5 {
                     StateText {
                         icon: Icon::PLAY_CIRCLE,
                         text: language.text(Key::Running).into(),

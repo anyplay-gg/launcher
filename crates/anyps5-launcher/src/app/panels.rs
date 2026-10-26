@@ -1748,7 +1748,7 @@ impl PanelHost {
                 }
                 Work::Report(Err(error)) => {
                     tracing::warn!("cannot write the report: {error}");
-                    model.toast(language.text(Key::ReportFailed), Icon::WARNING);
+                    model.toast_failure(language.text(Key::ReportFailed));
                 }
                 Work::GameInput { game, input } => {
                     self.game_inputs.insert(game, Some(input));

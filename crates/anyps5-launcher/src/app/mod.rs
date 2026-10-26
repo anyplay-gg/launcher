@@ -66,7 +66,6 @@ use crate::ui::artwork;
 use crate::ui::chrome;
 use crate::ui::i18n::Key;
 use crate::ui::input::InputEvent;
-use crate::ui::sound::Cue;
 
 use self::core_pipeline::CorePipeline;
 use self::model::{Effect, Model, Routed, ui_accent};
@@ -848,7 +847,6 @@ impl LauncherApp {
             closed = chrome::toast(ctx, "launcher-toast", toast.icon, &toast.text, close, v);
         }
         if closed {
-            self.shell.play(Cue::Back);
             self.model.dismiss_toast();
         }
         if visible

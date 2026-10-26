@@ -10,8 +10,8 @@ use egui::{
 
 use crate::ui::anim::{self, AnimExt, Motion, lerp};
 use crate::ui::components::{
-    self, Force, PRESS_SCALE, corner, key_cap, paint_capsule, paint_focus_stroke, paint_hairline,
-    paint_progress, paint_shadow, scale_rect,
+    self, ConsoleButton, ControlSize, Force, Hint, HintAction, PRESS_SCALE, corner, key_cap,
+    paint_capsule, paint_hairline, paint_progress, paint_shadow, scale_rect,
 };
 use crate::ui::glass::{GlassStyle, paint_glass};
 use crate::ui::i18n::{Key, Language};
@@ -1562,7 +1562,8 @@ pub fn fullscreen_panel<R>(
 
 /// The toast: a glass pill at the top centre. `v` is the openness from `Motion::Overlay`; the
 /// caller keeps a routine toast up for 3.2 s. A toast that stays until dismissed (a failure) gets
-/// `close`, the accessible name of a Close button at its end; the result says it was pressed.
+/// `close`, the word of its Close button and of the Back hint beside it; the result says the
+/// button was pressed. It never grows into the top bar's buttons and shows its whole message.
 pub fn toast(
     ctx: &Context,
     id: impl std::hash::Hash + std::fmt::Debug,
@@ -1571,12 +1572,19 @@ pub fn toast(
     close: Option<&str>,
     v: f32,
 ) -> bool {
-    /// Text rows before the toast cuts with an ellipsis.
+    /// Text rows of a routine toast before it is cut; a toast that stays shows up to
+    /// `STAYING_ROWS`, which fits the longest message the launcher writes.
     const ROWS: usize = 3;
-    /// The Close button: a circle of the hit-area floor, its glyph, the gap before it.
-    const CLOSE: f32 = 32.0;
-    const CLOSE_GLYPH: f32 = 14.0;
-    const CLOSE_GAP: f32 = space::M;
+    const STAYING_ROWS: usize = 8;
+    const GLYPH: f32 = 17.0;
+    const PAD_X: f32 = space::XL;
+    const PAD_Y: f32 = space::M;
+    const GAP: f32 = space::M;
+    const MAX_WIDTH: f32 = 760.0;
+    /// Each side of the centre the top bar keeps for its title and its buttons.
+    const BAR_RESERVE: f32 = 440.0;
+    const TRAVEL: f32 = 80.0;
+    /// The Close button sits CLOSE_INSET from the end.
     const CLOSE_INSET: f32 = space::S;
     if v <= 0.001 {
         return false;
@@ -1589,14 +1597,25 @@ pub fn toast(
         .interactable(close.is_some())
         .show(ctx, |ui| {
             let painter = ui.painter().clone();
-            let (glyph, pad_x, pad_y, gap) = (17.0, 22.0, 14.0, 10.0);
-            // What follows the text: the Close button, or the same padding as at the start.
+            let size_close = ControlSize::Small.height();
+            // What follows the text: a Back hint (for keys and the pad) and the Close button, or
+            // the same padding as at the start.
+            let hint = close
+                .filter(|_| input::focus_visible(ctx))
+                .map(|label| Hint {
+                    action: HintAction::Back,
+                    label,
+                });
+            let hint_w = hint
+                .as_ref()
+                .map_or(0.0, |h| h.width(&painter, input::device(ctx)) + GAP);
             let tail = if close.is_some() {
-                CLOSE_GAP + CLOSE + CLOSE_INSET
+                hint_w + GAP + size_close + CLOSE_INSET
             } else {
-                pad_x
+                PAD_X
             };
-            let max_text = (screen.width() * 0.6).min(760.0) - tail + pad_x;
+            let max_width = (screen.width() - 2.0 * BAR_RESERVE).clamp(320.0, MAX_WIDTH);
+            let max_text = max_width - PAD_X - GLYPH - GAP - tail;
             let galley = {
                 let mut job = LayoutJob::simple(
                     message.to_owned(),
@@ -1604,13 +1623,13 @@ pub fn toast(
                     Color32::PLACEHOLDER,
                     max_text,
                 );
-                job.wrap.max_rows = ROWS;
+                job.wrap.max_rows = if close.is_some() { STAYING_ROWS } else { ROWS };
                 job.sections[0].format.line_height = Some(ty::TOAST.line_height());
                 painter.layout_job(job)
             };
-            let w = pad_x + glyph + gap + galley.size().x + tail;
-            let h = (pad_y * 2.0 + galley.size().y).max(radius::TOAST * 2.0);
-            let travel = if ctx.reduced_motion() { 0.0 } else { 80.0 };
+            let w = PAD_X + GLYPH + GAP + galley.size().x + tail;
+            let h = (PAD_Y * 2.0 + galley.size().y).max(radius::TOAST * 2.0);
+            let travel = if ctx.reduced_motion() { 0.0 } else { TRAVEL };
             let top = size::TOAST_TOP - (1.0 - v) * travel;
             let rect = Rect::from_min_size(
                 pos2(screen.center().x - w * 0.5, screen.min.y + top),
@@ -1633,53 +1652,50 @@ pub fn toast(
             style.black *= a;
             paint_glass(ctx, &painter, rect, style);
             painter.text(
-                pos2(rect.min.x + pad_x + glyph * 0.5, rect.center().y),
+                pos2(rect.min.x + PAD_X + GLYPH * 0.5, rect.center().y),
                 Align2::CENTER_CENTER,
                 icon.glyph(),
-                icon.font(glyph, true),
+                icon.font(GLYPH, true),
                 fade(color::text(), a),
             );
+            let text_x = rect.min.x + PAD_X + GLYPH + GAP;
             painter.galley(
-                pos2(
-                    rect.min.x + pad_x + glyph + gap,
-                    rect.center().y - galley.size().y * 0.5,
-                ),
+                pos2(text_x, rect.center().y - galley.size().y * 0.5),
                 galley,
                 fade(color::text(), a),
             );
-            if let Some(name) = close {
+            if let Some(word) = close {
                 let button = Rect::from_center_size(
-                    pos2(rect.max.x - CLOSE_INSET - CLOSE * 0.5, rect.center().y),
-                    vec2(CLOSE, CLOSE),
+                    pos2(rect.max.x - CLOSE_INSET - size_close * 0.5, rect.center().y),
+                    vec2(size_close, size_close),
                 );
-                let response =
-                    ui.interact(button, Id::unique(("toast-close", message)), Sense::click());
-                response.widget_info(|| WidgetInfo::labeled(Role::Button, true, name));
-                let hot = input::hovered(ctx, &response);
-                if hot {
-                    ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                let mut child = ui.new_child(
+                    UiBuilder::new()
+                        .max_rect(button)
+                        .layout(Layout::top_down(Align::Center)),
+                );
+                child.set_opacity(a);
+                let name = format!("{word}: {message}");
+                pressed = ConsoleButton::icon_only(Icon::X, name)
+                    .size(ControlSize::Small)
+                    .show(&mut child)
+                    .clicked();
+                if let Some(hint) = hint {
+                    let at = Rect::from_min_size(
+                        pos2(
+                            button.min.x - GAP - (hint_w - GAP),
+                            rect.center().y - size::HINT_CAP * 0.5,
+                        ),
+                        vec2(hint_w - GAP, size::HINT_CAP),
+                    );
+                    let mut hint_ui = ui.new_child(
+                        UiBuilder::new()
+                            .max_rect(at)
+                            .layout(Layout::left_to_right(Align::Center)),
+                    );
+                    hint_ui.set_opacity(a);
+                    hint.show(&mut hint_ui);
                 }
-                let t = ctx.animate_to(
-                    ("toast-close-hover", message),
-                    f32::from(hot),
-                    Motion::Hover,
-                );
-                painter.circle_filled(
-                    button.center(),
-                    CLOSE * 0.5,
-                    fade(color::surface_hover(), a * t),
-                );
-                painter.text(
-                    button.center(),
-                    Align2::CENTER_CENTER,
-                    Icon::X.glyph(),
-                    Icon::X.font(CLOSE_GLYPH, false),
-                    fade(color::text_label(), a),
-                );
-                if response.has_focus() && input::focus_visible(ctx) {
-                    paint_focus_stroke(&painter, button, CLOSE * 0.5, 1.5, a);
-                }
-                pressed = response.clicked();
             }
         });
     pressed

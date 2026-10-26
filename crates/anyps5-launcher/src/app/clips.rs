@@ -222,7 +222,7 @@ impl ClipsService {
         let path = clips::clip_path(&folder, &title, &stamp());
         if let Err(error) = active.recorder.save(&path) {
             tracing::warn!("clips: the save command failed: {error}");
-            model.toast(ClipsText::SaveFailed.text(language), Icon::WARNING);
+            model.toast_failure(ClipsText::SaveFailed.text(language));
         }
     }
 }
