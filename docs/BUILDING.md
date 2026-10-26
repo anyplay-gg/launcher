@@ -49,13 +49,13 @@ tools/notices.sh /tmp/THIRD-PARTY-LICENSES.txt
 tools/macos/package.sh 0.1.3 target/release/anyplay-launcher /tmp/THIRD-PARTY-LICENSES.txt dist
 ```
 
-The app is signed ad hoc for local use. Publishing a notarized release needs a Developer ID signing workflow. macOS CI checks formatting, Clippy and tests, builds and packages the launcher, and renders Metal screenshots alongside the Windows and Linux jobs.
+The app stays ad hoc signed for distribution; no Developer ID or notarization is configured. See the first-start instructions in [INSTALL.md](INSTALL.md#macos). macOS CI checks formatting, Clippy and tests, builds and packages the launcher, and renders Metal screenshots alongside the Windows and Linux jobs.
 
-The Mac package does not yet embed `anyplay-net`, so online integration needs a follow-up. Mac release assets and the Mac entry in the signed self-update manifest are also still to do.
+The Mac package does not yet embed `anyplay-net`, so online integration needs a follow-up. The release workflow builds the Apple silicon app on macOS, verifies the signature and architecture after unzipping, and publishes the zip, dependency SBOM, checksums and provenance. The Mac zip is included in the signed update manifest and in its weekly renewal.
 
 ## Releases
 
-A release is made by pushing a tag `v<version>` that matches the version in `Cargo.toml`. The [release workflow](../.github/workflows/release.yml) builds the net service from [anyplaynet/network](https://github.com/anyplaynet/network) at the commit in `network.ref` and embeds it, then builds the portable exe and the installer (`tools/installer/anyplay-launcher.iss`, Inno Setup), the Linux AppImage and tarball, and a licence file for every third-party crate. It publishes all of them with their checksums in `SHA256SUMS.txt`. Started by hand it only builds them and keeps them as workflow artifacts. Release notes live in [docs/releases](releases). Before the tag, refresh the README screenshots in `docs/media` from the release build, taken with a separate profile and no personal data.
+A release is made by pushing a tag `v<version>` that matches the version in `Cargo.toml`. The [release workflow](../.github/workflows/release.yml) builds the net service from [anyplaynet/network](https://github.com/anyplaynet/network) at the commit in `network.ref` and embeds it, then builds the portable exe and the installer (`tools/installer/anyplay-launcher.iss`, Inno Setup), the Linux AppImage and tarball, the Apple silicon macOS app zip, and a licence file for every third-party crate. It publishes all of them with their checksums in `SHA256SUMS.txt`. Started by hand it only builds them and keeps them as workflow artifacts. Release notes live in [docs/releases](releases). Before the tag, refresh the README screenshots in `docs/media` from the release build, taken with a separate profile and no personal data.
 
 ## More
 

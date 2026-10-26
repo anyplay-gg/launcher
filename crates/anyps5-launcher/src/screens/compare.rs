@@ -27,7 +27,7 @@ use crate::screens::scroll::Follow;
 use crate::screens::side::commands;
 use crate::screens::strings::Extra;
 use crate::screens::trophies::{IconCache, paint_trophy_icon};
-use crate::screens::{clamped, right_aligned_hints};
+use crate::screens::{BACK_ROW, back_row, clamped};
 use crate::ui::Shell;
 use crate::ui::anim::{AnimExt, Motion};
 use crate::ui::chrome::fullscreen_panel;
@@ -97,6 +97,8 @@ pub struct CompareScreen {
     rows: Vec<Press>,
     /// Counts the visits, so a row's reveal animation never carries over to the next one.
     visit: u32,
+    /// The Back button was clicked while drawing: the frame answers it like the Back command.
+    back_clicked: bool,
 }
 
 impl CompareScreen {
@@ -186,6 +188,10 @@ impl CompareScreen {
         if drawn.is_none() {
             self.closing = false;
         }
+        if std::mem::take(&mut self.back_clicked) && open {
+            shell.play(Cue::Back);
+            actions.push(CompareAction::Close);
+        }
         if drawn.is_some() {
             self.rows = rows;
         }
@@ -262,7 +268,13 @@ impl CompareScreen {
         let area = ui
             .max_rect()
             .shrink2(vec2(pad::TROPHIES.0, pad::TROPHIES.1));
-        let header = Rect::from_min_size(area.min, vec2(area.width(), HEAD_ART));
+        if back_row(ui, area, language) {
+            self.back_clicked = true;
+        }
+        let header = Rect::from_min_size(
+            pos2(area.min.x, area.min.y + BACK_ROW),
+            vec2(area.width(), HEAD_ART),
+        );
         let painter = ui.painter().clone();
         self.draw_header(ui, header, model, language);
         // A whole-screen name for a screen reader, whatever the state.
@@ -313,13 +325,12 @@ impl CompareScreen {
             &text::to_upper(C::Overline.text(language), language),
             color::text_overline(),
         );
-        let hint_w = 520.0;
         let galley = clamped(
             &painter,
             title,
             &model.game,
             Color32::PLACEHOLDER,
-            (header.max.x - x - hint_w).max(200.0),
+            (header.max.x - x).max(200.0),
             1,
         );
         let title_y = top + overline.line_height() + 10.0;
@@ -336,7 +347,6 @@ impl CompareScreen {
                 color::text_subtitle(),
             );
         }
-        right_aligned_hints(ui, header, language);
     }
 
     /// The two heads over the columns; returns the rectangle they take.

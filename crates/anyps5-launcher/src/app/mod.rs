@@ -17,6 +17,7 @@
 #![allow(dead_code)]
 
 pub mod avatars;
+pub mod captures;
 pub mod clips;
 pub mod clock;
 pub mod compare;
@@ -516,8 +517,8 @@ impl LauncherApp {
                     // grid of tiles: reading order is along the row, then the next one.
                     use crate::ui::input::Command;
                     let command = match (self.model.overlay, backwards) {
-                        (Some(Overlay::Library), false) => Command::Right,
-                        (Some(Overlay::Library), true) => Command::Left,
+                        (Some(Overlay::Library | Overlay::Captures), false) => Command::Right,
+                        (Some(Overlay::Library | Overlay::Captures), true) => Command::Left,
                         (_, false) => Command::Down,
                         (_, true) => Command::Up,
                     };
@@ -792,8 +793,13 @@ impl LauncherApp {
             accent: self.shell.accent_color(),
             reduced_motion: ctx.reduced_motion(),
         };
-        // Back is the model's: it cancels the start and closes the splash.
-        self.start_screen.show(&mut self.shell, ctx, &[], &data);
+        // Esc and the pad's back are the model's (it cancels the start and closes the splash); the
+        // Cancel button of the splash is the pointer's way to the same stop.
+        for action in self.start_screen.show(&mut self.shell, ctx, &[], &data) {
+            match action {
+                screens::start::StartAction::Cancel => self.model.cancel_start(),
+            }
+        }
     }
 
     fn paint_overlays(&mut self, ui: &mut Ui, ctx: &Context) {

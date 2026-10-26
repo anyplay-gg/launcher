@@ -141,6 +141,7 @@ impl ProfileScreen {
                 )
             },
         );
+        let frame_back = frame.back_clicked;
         match drawn {
             None => self.closing = false,
             Some(()) => {
@@ -154,6 +155,10 @@ impl ProfileScreen {
                 self.slots = frame.slots;
                 self.presses = frame.presses;
             }
+        }
+        if open && frame_back {
+            shell.play(Cue::Back);
+            actions.push(ProfileAction::Close);
         }
         if open && let Some(slot) = clicked {
             if slot != self.focus {

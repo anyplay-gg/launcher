@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/anyps5-core", "crates/anyps5-launcher", "crates/atrac9", "crates/fake-relinker", "crates/fake-phone", "crates/update-manifest"]
 
 [workspace.package]
-version = "0.2.6"
+version = "0.2.7"
 edition = "2024"
 license = "GPL-2.0-only"
 repository = "https://github.com/anyplaynet/launcher"
@@ -29,6 +29,7 @@ ureq = "3"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 windows = "0.62"
 tempfile = "3"
+hidapi = { version = "2.6", default-features = false, features = ["linux-static-hidraw"] }
 
 [profile.release]
 lto = "thin"

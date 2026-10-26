@@ -346,7 +346,7 @@ pub mod color {
         white(0.9)
     }
     pub fn text_value() -> Color32 {
-        white(0.85)
+        white(0.90)
     }
     /// The key name or face button inside a hint keycap.
     pub fn text_hint_key() -> Color32 {
@@ -356,24 +356,24 @@ pub mod color {
         white(0.78)
     }
     pub fn text_subtitle() -> Color32 {
-        white(0.72)
+        white(0.78)
     }
     pub fn text_empty() -> Color32 {
-        white(0.72)
+        white(0.78)
     }
     pub fn text_detail() -> Color32 {
-        white(0.70)
+        white(0.78)
     }
     pub fn text_overline() -> Color32 {
-        white(0.70)
+        white(0.78)
     }
     /// The line under a row's title.
     pub fn text_row_detail() -> Color32 {
-        white(0.70)
+        white(0.78)
     }
     /// A note under rows, bare on the panel.
     pub fn text_note() -> Color32 {
-        white(0.5)
+        white(0.55)
     }
     /// A section caption over a group of rows.
     pub fn text_caption() -> Color32 {
@@ -381,17 +381,17 @@ pub mod color {
     }
     /// The title of a row that cannot be focused (a fact, not a control).
     pub fn text_inert() -> Color32 {
-        white(0.70)
+        white(0.78)
     }
     /// The clock in the top bar: a status, quieter than the controls beside it.
     pub fn text_clock() -> Color32 {
-        white(0.88)
+        white(0.90)
     }
     pub fn text_count() -> Color32 {
-        white(0.5)
+        white(0.55)
     }
     pub fn text_path() -> Color32 {
-        white(0.5)
+        white(0.55)
     }
     pub fn text_inactive() -> Color32 {
         white(0.4)
@@ -412,13 +412,10 @@ pub mod color {
         white(0.07)
     }
     pub fn surface_trophy_row() -> Color32 {
-        white(0.05)
+        white(0.07)
     }
     pub fn surface_tile_placeholder() -> Color32 {
-        white(0.08)
-    }
-    pub fn surface_prominent() -> Color32 {
-        white(0.26)
+        white(0.07)
     }
     pub fn surface_hover() -> Color32 {
         white(0.16)
@@ -457,18 +454,12 @@ pub mod color {
     pub fn on_primary() -> Color32 {
         rgb(0.04, 0.05, 0.09)
     }
-    pub fn selected_category() -> Color32 {
+    // Hairlines
+    pub fn hairline_card() -> Color32 {
         white(0.12)
     }
-    // Hairlines
-    pub fn hairline() -> Color32 {
-        white(0.07)
-    }
-    pub fn hairline_card() -> Color32 {
-        white(0.14)
-    }
     pub fn hairline_glass() -> Color32 {
-        white(0.09)
+        white(0.08)
     }
     pub fn hairline_panel_edge() -> Color32 {
         white(0.08)
@@ -483,15 +474,6 @@ pub mod color {
     pub fn scrim_side_panel() -> Color32 {
         black(0.35)
     }
-    pub fn panel_fullscreen() -> Color32 {
-        black(0.74)
-    }
-    pub fn panel_log() -> Color32 {
-        black(0.65)
-    }
-    pub fn splash_overlay() -> Color32 {
-        black(0.55)
-    }
     /// `Color(white: 0.06)` (a near-black gray, not white with alpha) at 0.92: the side panel fill.
     pub fn side_panel() -> Color32 {
         rgba(0.06, 0.06, 0.06, 0.92)
@@ -500,8 +482,19 @@ pub mod color {
     pub fn card_fill() -> Color32 {
         rgba(0.07, 0.07, 0.07, 0.94)
     }
+    /// A message bubble from someone else, and the composer's fill.
+    pub fn bubble_other() -> Color32 {
+        white(0.10)
+    }
+    /// The player's own bubble: one step lighter, never a white fill and never the accent.
+    pub fn bubble_own() -> Color32 {
+        white(0.16)
+    }
+    pub fn composer() -> Color32 {
+        white(0.10)
+    }
     pub fn switch_track_off() -> Color32 {
-        white(0.18)
+        white(0.16)
     }
     /// The off track of a switch whose row has the focus: one step above the lifted row.
     pub fn switch_track_off_on_focus() -> Color32 {
@@ -528,12 +521,12 @@ pub mod color {
     }
     /// Secondary state label colour ("ready", "locked", "queued").
     pub fn state_neutral() -> Color32 {
-        white(0.75)
+        white(0.78)
     }
     /// A state in progress ("Starting", "Installing", "Playing"): ink, not the accent. The accent
     /// is the player's pick and can sit on its own colour; the glyph and the word are the cue.
     pub fn text_active() -> Color32 {
-        white(0.92)
+        white(0.90)
     }
     /// Window caption glyphs (minimise, maximise, close) at rest; white on hover.
     pub fn caption_glyph() -> Color32 {
@@ -553,22 +546,25 @@ pub mod color {
 // Radii, sizes, shadows (1.3 - 1.5)
 // ---------------------------------------------------------------------------------------------
 
-/// Corner radii in dp.
+/// Corner radii in dp: five values (docs/DESIGN.md 3.12), keycap, row, card, large card and the
+/// capsule of a control (half its height). The names below are roles that share them; tiles take
+/// [`tile`].
 pub mod radius {
-    pub const CONSOLE_BUTTON: f32 = 14.0;
-    pub const ICON_BUTTON: f32 = 22.0;
-    pub const CARD: f32 = 16.0;
-    pub const ROW: f32 = 12.0;
-    pub const TROPHY_ROW: f32 = 16.0;
-    pub const LANGUAGE_CARD: f32 = 20.0;
-    pub const THEME_CARD: f32 = 18.0;
-    pub const KEYCAP_HINT: f32 = 6.0;
     pub const KEYCAP: f32 = 7.0;
+    /// Rows, cells and small cards.
+    pub const ROW: f32 = 12.0;
+    /// Cards, trophy rows and blur boxes.
+    pub const CARD: f32 = 16.0;
+    /// The large cards: language and theme cards, the trophy banner.
+    pub const LARGE: f32 = 20.0;
+    pub const TROPHY_ROW: f32 = CARD;
+    pub const LANGUAGE_CARD: f32 = LARGE;
+    pub const THEME_CARD: f32 = LARGE;
+    pub const BANNER: f32 = LARGE;
+    pub const BOX: f32 = CARD;
     pub const TOAST: f32 = 28.0;
-    pub const BANNER: f32 = 20.0;
-    pub const BOX: f32 = 14.0;
     /// The white card of a QR code (5.8).
-    pub const QR_CARD: f32 = 12.0;
+    pub const QR_CARD: f32 = ROW;
 
     /// Game tile radius for a tile of `size` dp.
     pub fn tile(size: f32) -> f32 {
@@ -585,6 +581,11 @@ pub mod size {
     pub const TILE_SMALL: f32 = 118.0;
     pub const TILE_LARGE: f32 = 176.0;
     pub const TILE_GAP: f32 = 16.0;
+    /// How far the row moves right once a previous game exists, so that game stays visible
+    /// (dimmed, partly past the window edge) on the left of the selected one.
+    pub const TILE_PEEK_SHIFT: f32 = 28.0;
+    /// Opacity of the game just before the selected one.
+    pub const TILE_PEEK_OPACITY: f32 = 0.4;
     pub const TILE_LABEL_COLUMN: f32 = 10.0;
     pub const LIBRARY_TILE: f32 = 196.0;
     pub const SPLASH_TILE: f32 = 200.0;
@@ -601,12 +602,17 @@ pub mod size {
     /// The ring of a tile, card or cell.
     pub const FOCUS_RING_LARGE: f32 = 2.0;
     pub const BUTTON_MIN_HEIGHT: f32 = CONTROL_L;
+    /// Between the edge and the content of a button with text: Large, Medium, Small.
     pub const BUTTON_PADDING: f32 = 30.0;
+    pub const BUTTON_PADDING_MEDIUM: f32 = 20.0;
     pub const BUTTON_PADDING_ICON_ONLY: f32 = 16.0;
     pub const BUTTON_ICON: f32 = 17.0;
     /// The glyph of a button without text, such as the "more" dots.
     pub const BUTTON_ICON_ONLY: f32 = 22.0;
     pub const BUTTON_GAP: f32 = 10.0;
+    /// The glyph and the gap of a Medium button with text.
+    pub const BUTTON_ICON_MEDIUM: f32 = 18.0;
+    pub const BUTTON_GAP_MEDIUM: f32 = 8.0;
     /// A chip: 32 high, 14 beside its text, 12 beside a glyph, a 14 dp glyph.
     pub const CHIP_HEIGHT: f32 = 32.0;
     pub const CHIP_PADDING: f32 = 14.0;
@@ -654,7 +660,6 @@ pub mod size {
     pub const TROPHY_ICON: f32 = 68.0;
     pub const TROPHY_HEADER_ICON: f32 = 112.0;
     pub const LANGUAGE_CARD: (f32, f32) = (280.0, 150.0);
-    pub const THEME_CARD_WIDTH: f32 = 330.0;
     pub const THEME_CARD_PREVIEW: (f32, f32) = (330.0, 186.0);
     pub const PROGRESS_HEIGHT: f32 = 4.0;
     pub const HERO_PROGRESS_WIDTH: f32 = 260.0;
@@ -670,6 +675,23 @@ pub mod size {
     pub fn tile_progress_height(tile: f32) -> f32 {
         (tile * 0.03).max(3.0)
     }
+}
+
+/// The spacing grid: a 4 dp step, seven values (docs/DESIGN.md 3.12). Inside a group use S or M;
+/// between groups at least twice as much. Page margins are in [`pad`].
+pub mod space {
+    pub const XS: f32 = 4.0;
+    pub const S: f32 = 8.0;
+    /// Between neighbouring controls ([`super::size::CONTROL_GAP`]).
+    pub const M: f32 = 12.0;
+    pub const L: f32 = 16.0;
+    pub const XL: f32 = 24.0;
+    pub const XXL: f32 = 32.0;
+    pub const XXXL: f32 = 48.0;
+    /// Messages: between bubbles of one sender, between senders, and above a day divider.
+    pub const BUBBLE_IN_GROUP: f32 = XS;
+    pub const BUBBLE_BETWEEN: f32 = L;
+    pub const BUBBLE_DAY: f32 = XL;
 }
 
 /// Spacing between sections of screens, in dp.
@@ -854,63 +876,82 @@ impl TextStyle {
     }
 }
 
-/// The type scale of section 1.6. Overlines are uppercase: call `.to_uppercase()` on the text.
+/// The type scale (docs/DESIGN.md 3.12): twelve sizes, 12 13 14 15 16 17 19 22 28 34 40 56, Light only from
+/// 28. A page takes its style from here by role and never builds one. Overlines are uppercase: call
+/// `.to_uppercase()` on the text. Names below the first block are older roles that share a style.
 pub mod ty {
     use super::{TextStyle, Weight};
 
-    pub const HERO_TITLE: TextStyle = TextStyle::new(58.0, Weight::Light);
-    pub const ONBOARDING_TITLE: TextStyle = TextStyle::new(54.0, Weight::Light);
-    pub const SCREEN_TITLE: TextStyle = TextStyle::new(40.0, Weight::Light);
-    pub const LOG_TITLE: TextStyle = TextStyle::new(30.0, Weight::Light);
-    pub const EMPTY_TITLE: TextStyle = TextStyle::new(34.0, Weight::Light);
-    pub const SPLASH_TITLE: TextStyle = TextStyle::new(34.0, Weight::Light);
-    pub const TROPHY_LIST_TITLE: TextStyle = TextStyle::new(36.0, Weight::Light);
-    pub const SIDE_PANEL_TITLE: TextStyle = TextStyle::new(30.0, Weight::Light);
-    pub const TOP_BAR_TITLE: TextStyle = TextStyle::new(24.0, Weight::SemiBold);
-    pub const LIBRARY_COUNT: TextStyle = TextStyle::new(22.0, Weight::Medium);
-    pub const TILE_NAME: TextStyle = TextStyle::new(22.0, Weight::SemiBold);
-    pub const THEME_CARD_NAME: TextStyle = TextStyle::new(22.0, Weight::Regular);
-    pub const THEME_CARD_NAME_FOCUSED: TextStyle = TextStyle::new(22.0, Weight::SemiBold);
-    pub const PERCENT: TextStyle = TextStyle::new(22.0, Weight::SemiBold);
+    // The scale, by role.
+    pub const DISPLAY: TextStyle = TextStyle::new(56.0, Weight::Light);
+    pub const TITLE: TextStyle = TextStyle::new(40.0, Weight::Light);
+    pub const HEADING: TextStyle = TextStyle::new(34.0, Weight::Light);
+    pub const PANEL_TITLE: TextStyle = TextStyle::new(28.0, Weight::Light);
     pub const LANGUAGE_NAME: TextStyle = TextStyle::new(28.0, Weight::Medium);
-    pub const CLOCK: TextStyle = TextStyle::new(17.0, Weight::Medium);
+    pub const ITEM_TITLE: TextStyle = TextStyle::new(22.0, Weight::SemiBold);
+    pub const STATE_TITLE: TextStyle = TextStyle::new(22.0, Weight::Medium);
     pub const BUTTON: TextStyle = TextStyle::new(19.0, Weight::SemiBold);
-    /// A button of the top bar's size.
-    pub const BUTTON_MEDIUM: TextStyle = TextStyle::new(16.0, Weight::SemiBold);
     pub const CATEGORY: TextStyle = TextStyle::new(19.0, Weight::Regular);
     pub const CATEGORY_SELECTED: TextStyle = TextStyle::new(19.0, Weight::SemiBold);
-    pub const ONBOARDING_SUBTITLE: TextStyle = TextStyle::new(19.0, Weight::Regular);
-    pub const ROW_TITLE: TextStyle = TextStyle::new(17.0, Weight::Medium);
-    /// The question of a confirmation, under the panel title: body text.
-    pub const QUESTION: TextStyle = TextStyle::new(17.0, Weight::Regular);
-    pub const TROPHY_NAME: TextStyle = TextStyle::new(18.0, Weight::SemiBold);
-    pub const ONBOARDING_STATUS: TextStyle = TextStyle::new(18.0, Weight::Medium);
-    pub const INFO_VALUE: TextStyle = TextStyle::new(17.0, Weight::SemiBold);
-    pub const PROFILE: TextStyle = TextStyle::new(16.0, Weight::Medium);
+    /// A button of the top bar's size.
+    pub const BUTTON_MEDIUM: TextStyle = TextStyle::new(16.0, Weight::SemiBold);
     pub const TOAST: TextStyle = TextStyle::new(16.0, Weight::Medium);
     pub const CHOICE_VALUE: TextStyle = TextStyle::new(16.0, Weight::Regular);
-    pub const DIAGNOSIS_LOG: TextStyle = TextStyle::new(16.0, Weight::Medium);
-    pub const ROW_INFO: TextStyle = TextStyle::new(15.0, Weight::Medium);
-    pub const PROGRESS_LABEL: TextStyle = TextStyle::new(15.0, Weight::Medium);
-    pub const PROGRESS_PERCENT: TextStyle = TextStyle::new(15.0, Weight::SemiBold);
-    pub const HINT_LABEL: TextStyle = TextStyle::new(15.0, Weight::Medium);
-    pub const HINT_KEY: TextStyle = TextStyle::new(13.0, Weight::SemiBold);
-    pub const DETAIL: TextStyle = TextStyle::new(13.0, Weight::Regular);
-    /// A section caption over a group of rows, and a note under them.
-    pub const SECTION_CAPTION: TextStyle = TextStyle::new(14.0, Weight::SemiBold);
+    /// Body text, and the question of a confirmation.
+    pub const BODY: TextStyle = TextStyle::new(17.0, Weight::Regular);
+    pub const ROW_TITLE: TextStyle = TextStyle::new(17.0, Weight::Medium);
+    pub const INFO_VALUE: TextStyle = TextStyle::new(17.0, Weight::SemiBold);
+    pub const LABEL: TextStyle = TextStyle::new(15.0, Weight::Medium);
+    /// A fact or a name in a list.
+    pub const FACT: TextStyle = TextStyle::new(15.0, Weight::SemiBold);
+    /// A sentence in a feed or on a profile.
+    pub const SENTENCE: TextStyle = TextStyle::new(15.0, Weight::Regular);
     pub const NOTE: TextStyle = TextStyle::new(14.0, Weight::Regular);
-    pub const DETAIL_LARGE: TextStyle = TextStyle::new(14.0, Weight::Regular);
-    pub const STATE_LABEL: TextStyle = TextStyle::new(14.0, Weight::Medium);
-    pub const STATE_LABEL_SMALL: TextStyle = TextStyle::new(12.0, Weight::Medium);
-    /// The small chips of the game page (trophy count, the answers to "How did it run?").
     pub const CHIP: TextStyle = TextStyle::new(14.0, Weight::Medium);
-    pub const INFO_OVERLINE: TextStyle = TextStyle::tracked(13.0, Weight::SemiBold, 0.6);
-    pub const ONBOARDING_OVERLINE: TextStyle = TextStyle::tracked(14.0, Weight::SemiBold, 0.8);
-    pub const TROPHIES_OVERLINE: TextStyle = TextStyle::tracked(13.0, Weight::SemiBold, 0.8);
-    pub const KEY_CAP: TextStyle = TextStyle::new(13.5, Weight::SemiBold);
-    pub const BANNER_LABEL: TextStyle = TextStyle::new(13.0, Weight::SemiBold);
-    pub const BANNER_NAME: TextStyle = TextStyle::new(19.0, Weight::SemiBold);
-    pub const BANNER_DETAIL: TextStyle = TextStyle::new(13.0, Weight::Regular);
+    pub const SECTION_CAPTION: TextStyle = TextStyle::new(14.0, Weight::SemiBold);
+    pub const DETAIL: TextStyle = TextStyle::new(13.0, Weight::Regular);
+    pub const BADGE: TextStyle = TextStyle::new(13.0, Weight::SemiBold);
+    /// Uppercase, tracked.
+    pub const OVERLINE: TextStyle = TextStyle::tracked(13.0, Weight::SemiBold, 0.8);
+    pub const MICRO: TextStyle = TextStyle::new(12.0, Weight::Medium);
+
+    // Older roles; each is a style of the scale.
+    pub const HERO_TITLE: TextStyle = DISPLAY;
+    pub const ONBOARDING_TITLE: TextStyle = DISPLAY;
+    pub const SCREEN_TITLE: TextStyle = TITLE;
+    pub const EMPTY_TITLE: TextStyle = HEADING;
+    pub const SPLASH_TITLE: TextStyle = HEADING;
+    pub const TROPHY_LIST_TITLE: TextStyle = HEADING;
+    pub const LOG_TITLE: TextStyle = PANEL_TITLE;
+    pub const SIDE_PANEL_TITLE: TextStyle = PANEL_TITLE;
+    pub const TOP_BAR_TITLE: TextStyle = ITEM_TITLE;
+    pub const TILE_NAME: TextStyle = ITEM_TITLE;
+    pub const PERCENT: TextStyle = ITEM_TITLE;
+    pub const THEME_CARD_NAME: TextStyle = TextStyle::new(22.0, Weight::Regular);
+    pub const THEME_CARD_NAME_FOCUSED: TextStyle = ITEM_TITLE;
+    pub const LIBRARY_COUNT: TextStyle = STATE_TITLE;
+    pub const CLOCK: TextStyle = ROW_TITLE;
+    pub const ONBOARDING_SUBTITLE: TextStyle = CATEGORY;
+    pub const BANNER_NAME: TextStyle = BUTTON;
+    pub const QUESTION: TextStyle = BODY;
+    pub const TROPHY_NAME: TextStyle = INFO_VALUE;
+    pub const ONBOARDING_STATUS: TextStyle = ROW_TITLE;
+    pub const PROFILE: TextStyle = TOAST;
+    pub const DIAGNOSIS_LOG: TextStyle = TOAST;
+    pub const ROW_INFO: TextStyle = LABEL;
+    pub const PROGRESS_LABEL: TextStyle = LABEL;
+    pub const HINT_LABEL: TextStyle = LABEL;
+    pub const PROGRESS_PERCENT: TextStyle = FACT;
+    pub const HINT_KEY: TextStyle = BADGE;
+    pub const KEY_CAP: TextStyle = BADGE;
+    pub const BANNER_LABEL: TextStyle = BADGE;
+    pub const DETAIL_LARGE: TextStyle = NOTE;
+    pub const STATE_LABEL: TextStyle = CHIP;
+    pub const STATE_LABEL_SMALL: TextStyle = MICRO;
+    pub const BANNER_DETAIL: TextStyle = DETAIL;
+    pub const INFO_OVERLINE: TextStyle = OVERLINE;
+    pub const ONBOARDING_OVERLINE: TextStyle = OVERLINE;
+    pub const TROPHIES_OVERLINE: TextStyle = OVERLINE;
 }
 
 // ---------------------------------------------------------------------------------------------

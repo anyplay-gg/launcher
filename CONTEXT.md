@@ -200,7 +200,11 @@ _Avoid_: Load, roll back, import
 
 **Clip**:
 The last seconds of the running game, kept in memory while Clips is on and saved as an MP4 file beside the screenshots when the player asks (hotkey, the controller's Create button or the phone's). Video only for now; it never leaves the PC.
-_Avoid_: Recording, replay, capture
+_Avoid_: Recording, replay
+
+**Capture**:
+A screenshot or a clip: a file the player's own play produced, in the screenshots folder. The Captures area lists them, grouped by the game they came from, and shows one full screen. The launcher reads the folder and never changes a capture except to delete it when the player confirms; nothing is uploaded or shared.
+_Avoid_: Media, recording, gallery (that is the hidden preview mode)
 
 ### Trophies
 

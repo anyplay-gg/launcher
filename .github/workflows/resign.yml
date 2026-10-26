@@ -100,6 +100,13 @@ jobs:
             (cd dist && grep " \*$image$" SHA256SUMS.txt | sha256sum -c -)
             appimage=(--appimage "dist/$image")
           fi
+          macos=()
+          archive="AnyPlay-Launcher-$version-macos-arm64.zip"
+          if grep -qx "$archive" <<< "$assets"; then
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$archive" --dir dist
+            (cd dist && grep -F " *$archive" SHA256SUMS.txt | sha256sum -c -)
+            macos=(--macos-arm64 "dist/$archive")
+          fi
           # The renewal applies today's policy to the latest release, so the file comes from the
           # default branch, not from the release's tag. Only "no such file" means "off": any other
           # failure stops the run, because a renewal that quietly dropped the field would let a
@@ -115,7 +122,7 @@ jobs:
           rm -f out/supported.err
           launcher/target/release/update-sign manifest --version "$version" --minimum "$MINIMUM_VERSION" --days 30 \
             --supported-file out/MIN_SUPPORTED_VERSION \
-            --exe "dist/AnyPlay-Launcher-$version-x64.exe" "${appimage[@]}" --out out/latest.json
+            --exe "dist/AnyPlay-Launcher-$version-x64.exe" "${appimage[@]}" "${macos[@]}" --out out/latest.json
           cp launcher/target/release/update-sign out/update-sign
           cp launcher/data/update-keys.txt out/update-keys.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -4,13 +4,14 @@
   <img src="docs/media/home-screen.jpg" width="800" alt="The launcher's home screen: a row of game tiles, the selected game's artwork, its name, a Play button and its details">
 </p>
 
-The home of your games on PC. The launcher finds the games you dumped from your own console, unlocks them for [AnyPS5](https://github.com/boykopovar/AnyPS5) and starts them from a console-style home screen. It also connects you with friends for parties, calls and joining each other's games. For Windows and Linux.
+The home of your games on PC. The launcher finds the games you dumped from your own console, unlocks them for [AnyPS5](https://github.com/boykopovar/AnyPS5) and starts them from a console-style home screen. It also connects you with friends for parties, calls and joining each other's games. For Windows, Linux and macOS.
 
 ## Get it
 
 Download the [latest release](https://github.com/anyplaynet/launcher/releases/latest).
 
 - **Windows 10 or 11:** `AnyPlay-Launcher-<version>-Setup.exe` (installer, no administrator rights) or `-x64.exe` (one file).
+- **macOS, Apple silicon:** `AnyPlay-Launcher-<version>-macos-arm64.zip`. Unzip and move the app to Applications. If macOS says the developer cannot be verified, open **System Settings → Privacy & Security → Open Anyway**. It may ask again after an update.
 - **Linux, 64-bit:** `AnyPlay-Launcher-<version>-x86_64.AppImage` or the `.tar.gz`.
 
 You need your own decrypted game dumps. On first start the launcher asks for your games folder and downloads the AnyPS5 toolkit. Requirements, SmartScreen, checksums and data folders: [docs/INSTALL.md](docs/INSTALL.md).
@@ -38,7 +39,7 @@ Screenshots of the launcher, taken from a release build with a real library.
 - **Trophies, saves, playtime:** trophies pop up while you play, saves are backed up before anything risky.
 - **Per-game settings:** window, sync, overlay, language and shader cache, plus recommended settings you apply with one click.
 - **Online:** friends, parties with voice, calls, profiles, a feed and join codes, with an AnyPlay account. See [docs/ONLINE.md](docs/ONLINE.md).
-- **Updates:** signed self-update on Windows.
+- **Updates:** signed self-update on Windows, Linux AppImage and the Apple silicon Mac app.
 
 ## Status
 

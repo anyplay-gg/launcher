@@ -29,8 +29,8 @@ use crate::screens::{
 use crate::ui::anim::{AnimExt, Motion, lerp};
 use crate::ui::chrome::{self, TileImage, TileOverlay, TileStyle};
 use crate::ui::components::{
-    self as components, ConsoleButton, ControlSize, IconButton, IndeterminateLine, ProgressLine,
-    Variant, hint_bar, hint_bar_size,
+    self as components, ConsoleButton, ControlSize, HintSet, IconButton, IndeterminateLine,
+    ProgressLine, Variant, hint_bar_set, hint_bar_set_size, hint_bar_size,
 };
 use crate::ui::focus::HomeFocus;
 use crate::ui::i18n::{Arg, Key, Language, byte_text, substitute};
@@ -99,8 +99,12 @@ pub fn show(ui: &mut Ui, cx: &mut ScreenCx<'_>) {
             hero(ui, cx, screen, &mut presses);
         });
         let language = cx.language();
+        let set = HintSet {
+            back: back_does_something(cx.model),
+            options: true,
+        };
         staged(ui, &ctx, intro::HINTS, screen, |ui, screen| {
-            hints(ui, language, screen);
+            hints(ui, language, set, screen);
         });
     }
     for press in presses {
@@ -250,6 +254,16 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
     );
     if friends.clicked() {
         presses.push(Press::Focus(HomeFocus::FRIENDS));
+    }
+    // Captures sit beside the library: the pictures and videos of the games.
+    let response = IconButton::new(
+        Icon::IMAGES,
+        crate::screens::captures_strings::CapturesText::Title.text(language),
+    )
+    .focused(focused(HomeFocus::CAPTURES))
+    .show(&mut row);
+    if response.clicked() {
+        presses.push(Press::Focus(HomeFocus::CAPTURES));
     }
     let response = IconButton::new(Icon::SQUARES_FOUR, language.text(Key::Library))
         .focused(focused(HomeFocus::LIBRARY))
@@ -938,7 +952,13 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
         size::TILE_GAP,
         size::TILE_LABEL_COLUMN,
     );
-    let leading = screen.min.x + pad::HOME_X;
+    // Past the first game the row moves right a little, so the previous game stays on screen.
+    let peek_shift = if cx.model.selected > 0 {
+        size::TILE_PEEK_SHIFT
+    } else {
+        0.0
+    };
+    let leading = screen.min.x + pad::HOME_X + peek_shift;
     let row_top = screen.min.y + pad::HOME_TOP + size::ICON_BUTTON + 34.0;
     let selected = cx.model.selected;
     let ring_on = focus_visible(cx.model) && cx.model.focus == HomeFocus::Tiles;
@@ -968,7 +988,12 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
         let x = ctx.animate_to(key("tile-x"), target_x, Motion::Layout);
         let opacity = ctx.animate_to(
             key("tile-opacity"),
-            if offset < 0 { 0.0 } else { 1.0 },
+            match offset {
+                // The previous game stays, dimmed; the ones before it are gone.
+                -1 => size::TILE_PEEK_OPACITY,
+                ..=-2 => 0.0,
+                _ => 1.0,
+            },
             Motion::Layout,
         );
         let side = lerp(small, large, t);
@@ -989,7 +1014,7 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
         style.ring = ring_t > 0.002;
         style.opacity = opacity.clamp(0.0, 1.0);
         let under_pointer = interactive
-            && opacity > 0.5
+            && opacity > 0.25
             && input::pointer_in_use(&ctx)
             && ctx.pointer_hover_pos().is_some_and(|p| rect.contains(p));
         style.hover = ctx.animate_to(key("tile-hover"), f32::from(under_pointer), Motion::Hover);
@@ -1006,7 +1031,7 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
             chrome::paint_preparing_caption(&painter, rect, &caption, style.opacity);
         }
 
-        if interactive && opacity > 0.5 {
+        if interactive && opacity > 0.25 {
             let state = cx.model.state_of(&game);
             let label = format!("{}, {}", game.name, state_label(&state, language).text);
             let response =
@@ -1035,9 +1060,19 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
 // Hero
 // ---------------------------------------------------------------------------------------------
 
-fn hints(ui: &mut Ui, language: Language, screen: Rect) {
+/// Back does something on the home screen in three cases: the launcher is in front because of the
+/// Home button (it goes back to the game), a Play Together card is up (it closes it), or the focus
+/// is off the tile row (it returns there). On the tile row itself there is nothing to go back to,
+/// so the hint bar does not offer it.
+fn back_does_something(model: &Model) -> bool {
+    (model.summoned && model.running.is_some())
+        || crate::app::together::card(model).is_some()
+        || model.focus != HomeFocus::Tiles
+}
+
+fn hints(ui: &mut Ui, language: Language, set: HintSet, screen: Rect) {
     let painter = ui.painter().clone();
-    let (width, height) = hint_bar_size(&painter, language, true);
+    let (width, height) = hint_bar_set_size(&painter, language, set);
     let rect = Rect::from_min_size(
         pos2(
             screen.max.x - pad::HOME_X - width,
@@ -1045,7 +1080,7 @@ fn hints(ui: &mut Ui, language: Language, screen: Rect) {
         ),
         vec2(width, height),
     );
-    place(ui, rect, |ui| hint_bar(ui, language, true));
+    place(ui, rect, |ui| hint_bar_set(ui, language, set));
 }
 
 fn hero(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<Press>) {

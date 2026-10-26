@@ -1,16 +1,10 @@
 //! The unlocking progress (docs/DESIGN.md 5.4): the five steps and their shares of one overall bar,
-//! the coalescing of progress events, and the hero block of the home screen (step title, percent
-//! and the bar, or the endless sweep while the relinker's length is unknown).
+//! and the coalescing of progress events. The hero paints the bar itself (`screens::home`).
 //!
 //! The step enum mirrors the pipeline's (`Unwrap, Relink, Copy, Assemble, Finish`); the pipeline
 //! step maps onto it with [`UnlockStep::from_core`] once the pipeline types are on the host's side.
 
-use egui::{Align, Align2, Layout, Response, Sense, Ui, UiBuilder, vec2};
-
-use crate::ui::components::{IndeterminateLine, ProgressLine};
 use crate::ui::i18n::{Key, Language};
-use crate::ui::text;
-use crate::ui::theme::{size, ty, white};
 
 /// One step of the unlock: the pipeline's own enum (`Unwrap, Relink, Copy, Assemble, Finish`;
 /// the original calls Assemble "bundle").
@@ -101,70 +95,6 @@ impl UnlockProgress {
             || (next.fraction - self.fraction).abs() >= 0.005
             || next.fraction >= 1.0
     }
-}
-
-/// The hero's progress block: 340 wide, step title and percent over the bar.
-pub fn hero_progress(
-    ui: &mut Ui,
-    progress: &UnlockProgress,
-    language: Language,
-    accent: egui::Color32,
-) -> Response {
-    let width = size::HERO_PROGRESS_WIDTH;
-    let title = step_title(progress.step, language);
-    let percent = format!("{}%", progress.percent());
-    let label_h = ty::PROGRESS_LABEL.line_height();
-    let (rect, response) = ui.allocate_exact_size(
-        vec2(width, label_h + 8.0 + size::PROGRESS_HEIGHT),
-        Sense::hover(),
-    );
-    response.widget_info(|| {
-        let mut info = egui::WidgetInfo::labeled(
-            egui::Role::ProgressIndicator,
-            true,
-            format!("{title} {percent}"),
-        );
-        info.value = Some(f64::from(progress.overall()));
-        info
-    });
-    if !ui.is_rect_visible(rect) {
-        return response;
-    }
-    let painter = ui.painter().clone();
-    let ink = white(0.85);
-    text::paint(
-        &painter,
-        rect.left_top(),
-        Align2::LEFT_TOP,
-        ty::PROGRESS_LABEL,
-        title,
-        ink,
-    );
-    let w = text::tabular_width(&painter, ty::PROGRESS_PERCENT, &percent);
-    text::paint_tabular(
-        &painter,
-        egui::pos2(rect.max.x - w, rect.min.y),
-        ty::PROGRESS_PERCENT,
-        &percent,
-        ink,
-    );
-    let mut bar = ui.new_child(
-        UiBuilder::new()
-            .max_rect(egui::Rect::from_min_size(
-                egui::pos2(rect.min.x, rect.min.y + label_h + 8.0),
-                vec2(width, size::PROGRESS_HEIGHT),
-            ))
-            .layout(Layout::left_to_right(Align::Min)),
-    );
-    if progress.indeterminate() {
-        IndeterminateLine::new(accent).width(width).show(&mut bar);
-    } else {
-        ProgressLine::new(progress.overall(), accent)
-            .width(width)
-            .label(title)
-            .show(&mut bar);
-    }
-    response
 }
 
 #[cfg(test)]

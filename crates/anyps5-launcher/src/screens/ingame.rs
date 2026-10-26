@@ -5,6 +5,7 @@
 use egui::Color32;
 use egui::Context;
 
+use crate::screens::captures_strings::CapturesText;
 use crate::screens::rows::{self, Change, Row};
 use crate::screens::side::{self, SideState, SideView};
 use crate::ui::Shell;
@@ -88,6 +89,7 @@ pub enum InGameAction {
     /// Back to the game's window.
     Resume,
     Trophies,
+    Captures,
     GameSettings,
     Friends,
     /// Ask whether to close the game.
@@ -114,6 +116,7 @@ fn rows_of(data: &InGameData<'_>) -> Vec<Row> {
     let mut rows = vec![
         Row::command("resume", InGameText::BackToGame.text(language)).icon(Icon::PLAY_CIRCLE),
         Row::command("trophies", language.text(Key::Trophies)).icon(Icon::TROPHY),
+        Row::command("captures", CapturesText::Title.text(language)).icon(Icon::IMAGES),
         Row::command("settings", language.text(Key::GameSettings)).icon(Icon::SLIDERS_HORIZONTAL),
     ];
     if data.online {
@@ -163,6 +166,7 @@ impl InGamePanel {
         let action = match *row {
             "resume" => InGameAction::Resume,
             "trophies" => InGameAction::Trophies,
+            "captures" => InGameAction::Captures,
             "settings" => InGameAction::GameSettings,
             "friends" => InGameAction::Friends,
             _ => InGameAction::AskClose,
@@ -366,8 +370,8 @@ mod tests {
             accent: Color32::WHITE,
             online: false,
         };
-        assert_eq!(rows_of(&data).len(), 4);
-        data.online = true;
         assert_eq!(rows_of(&data).len(), 5);
+        data.online = true;
+        assert_eq!(rows_of(&data).len(), 6);
     }
 }

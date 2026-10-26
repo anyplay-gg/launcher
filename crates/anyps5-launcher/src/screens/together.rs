@@ -5,7 +5,8 @@
 //! layer like those. It comes in with the overlay spring (fade and a short slide down) and leaves the
 //! same way. It holds at most one question: the offer has "Join" as its one primary action and a
 //! quiet "Not now"; a blocker says what is the case in a headline and what to do under it, and has
-//! "Close" (and, for the two it can mend, the remedy as the primary action). Nothing on it moves
+//! "Close" (and, for the two it can mend, the remedy as the primary action). The version blocker
+//! also has a quiet "Try anyway" beside Close. Nothing on it moves
 //! while it stays. The pad reaches the same actions through the Online panel (an invitation's Join,
 //! a friend's Join); the card is for the pointer and Tab, and each button shows a focus ring when it
 //! has the keyboard.
@@ -19,7 +20,7 @@ use egui::{
 };
 
 use crate::app::model::Model;
-use crate::app::together::{self, Action, Card, Fix};
+use crate::app::together::{self, Action, Card, Fix, can_try_anyway};
 use crate::screens::calls;
 use crate::screens::shared::paint_gradient_circle;
 use crate::screens::together_strings::{TogetherText as T, blocker_text};
@@ -45,7 +46,7 @@ const HEADLINE: TextStyle = TextStyle::new(16.0, Weight::SemiBold);
 const HEADLINE_LEADING: f32 = 1.3;
 const LINE_LEADING: f32 = 1.45;
 const HEADLINE_ROWS: usize = 3;
-const LINE_ROWS: usize = 3;
+const LINE_ROWS: usize = 4;
 
 /// State kept between frames: what the card showed last, so it can fade out with its content.
 #[derive(Debug, Default)]
@@ -158,6 +159,15 @@ fn view(card: &Card, language: Language) -> View {
                         .to_owned(),
                         Action::Fix(fix),
                     ),
+                },
+                // A version blocker keeps Close as its one primary action; trying anyway is the
+                // quiet answer beside it, and the line above already says what it risks.
+                None if can_try_anyway(blocker) => View {
+                    lead: Lead::Warning,
+                    headline,
+                    line,
+                    quiet: Some((T::TryAnyway.text(language).to_owned(), Action::TryAnyway)),
+                    primary: (T::Close.text(language).to_owned(), Action::Close),
                 },
                 None => View {
                     lead: Lead::Warning,
@@ -294,9 +304,12 @@ pub(crate) fn paint(
                         &painter,
                         centre,
                         Align2::CENTER_CENTER,
-                        TextStyle::new(24.0, Weight::Bold),
+                        ty::ITEM_TITLE,
                         &initial,
-                        fade(Color32::WHITE, a),
+                        fade(
+                            theme::readable_ink(crate::screens::home::avatar_middle(accent)),
+                            a,
+                        ),
                     );
                 }
                 Lead::Warning => {

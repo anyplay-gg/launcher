@@ -38,6 +38,8 @@ pub const WINDOWS_X64: &str = "windows-x86_64";
 /// The platform key of the Linux AppImage. A manifest from before it existed has no such entry,
 /// which means "nothing for Linux", not an error.
 pub const LINUX_X64: &str = "linux-x86_64";
+/// The Apple silicon macOS app bundle zip. Older manifests may omit it.
+pub const MACOS_ARM64: &str = "macos-arm64";
 /// Prefixed to the manifest bytes before signing.
 pub const DOMAIN: &[u8] = b"anyplay-launcher-update-manifest-v1\n";
 /// A manifest is a few hundred bytes; the client reads at most this much.

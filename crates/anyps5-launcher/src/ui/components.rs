@@ -312,9 +312,9 @@ impl ControlSize {
     /// Space between the edge and the content of a button with text.
     pub const fn text_pad(self) -> f32 {
         match self {
-            ControlSize::Large => 30.0,
-            ControlSize::Medium => 20.0,
-            ControlSize::Small => 14.0,
+            ControlSize::Large => size::BUTTON_PADDING,
+            ControlSize::Medium => size::BUTTON_PADDING_MEDIUM,
+            ControlSize::Small => size::CHIP_PADDING,
         }
     }
     /// The glyph: next to text, and on its own.
@@ -322,7 +322,7 @@ impl ControlSize {
         match (self, with_text) {
             (ControlSize::Large, true) => size::BUTTON_ICON,
             (ControlSize::Large, false) => size::BUTTON_ICON_ONLY,
-            (ControlSize::Medium, true) => 18.0,
+            (ControlSize::Medium, true) => size::BUTTON_ICON_MEDIUM,
             (ControlSize::Medium, false) => size::ICON_BUTTON_GLYPH,
             (ControlSize::Small, _) => size::CHIP_ICON,
         }
@@ -331,7 +331,7 @@ impl ControlSize {
     pub const fn gap(self) -> f32 {
         match self {
             ControlSize::Large => size::BUTTON_GAP,
-            ControlSize::Medium => 8.0,
+            ControlSize::Medium => size::BUTTON_GAP_MEDIUM,
             ControlSize::Small => size::CHIP_GAP,
         }
     }
@@ -423,7 +423,7 @@ pub const LIFT_FOCUS: f32 = 0.11;
 pub const LIFT_PRESS: f32 = 0.06;
 
 /// Fill and focus ring of a container that can be focused (a row, a card, a cell): `rest` is its
-/// white-based fill at rest. Hover lifts it by 5 %, focus by 9 % and draws the ring (`ring` dp wide,
+/// white-based fill at rest. Hover lifts it by 5 %, focus by 11 % and draws the ring (`ring` dp wide,
 /// 0 for none); the press adds 6 %. The ring is outside the shape, so nothing grows or reflows.
 #[allow(clippy::too_many_arguments)]
 pub fn paint_surface(
@@ -1199,7 +1199,7 @@ impl Hint<'_> {
                     }
                 }
                 Device::Keyboard => {
-                    painter.rect_filled(cap, corner(radius::KEYCAP_HINT), color::keycap());
+                    painter.rect_filled(cap, corner(radius::KEYCAP), color::keycap());
                     text::paint(
                         &painter,
                         cap.center(),
@@ -1223,17 +1223,46 @@ impl Hint<'_> {
     }
 }
 
-fn hint_list(language: Language, options: bool) -> Vec<Hint<'static>> {
-    let mut hints = vec![
-        Hint {
-            action: HintAction::Select,
-            label: language.text(Key::HintSelect),
-        },
-        Hint {
+/// Which hints a bar shows. Select is always there; "Back" is left out where a Back button is
+/// on screen (DESIGN.md 3.12): the bar never repeats a control the player can see.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HintSet {
+    pub options: bool,
+    pub back: bool,
+}
+
+impl HintSet {
+    /// Select and Back.
+    pub const BASIC: HintSet = HintSet {
+        options: false,
+        back: true,
+    };
+    /// Select, Back and Options.
+    pub const WITH_OPTIONS: HintSet = HintSet {
+        options: true,
+        back: true,
+    };
+    /// The same without the Back hint, for a screen that shows a Back button.
+    pub const fn without_back(self) -> HintSet {
+        HintSet {
+            options: self.options,
+            back: false,
+        }
+    }
+}
+
+fn hint_list(language: Language, set: HintSet) -> Vec<Hint<'static>> {
+    let options = set.options;
+    let mut hints = vec![Hint {
+        action: HintAction::Select,
+        label: language.text(Key::HintSelect),
+    }];
+    if set.back {
+        hints.push(Hint {
             action: HintAction::Back,
             label: language.text(Key::HintBack),
-        },
-    ];
+        });
+    }
     if options {
         hints.push(Hint {
             action: HintAction::Options,
@@ -1246,9 +1275,21 @@ fn hint_list(language: Language, options: bool) -> Vec<Hint<'static>> {
 /// The hint bar: Select, Back and, optionally, Options, in the keys of the device in use.
 /// Moving needs no hint.
 pub fn hint_bar(ui: &mut Ui, language: Language, options: bool) {
+    hint_bar_set(
+        ui,
+        language,
+        HintSet {
+            options,
+            back: true,
+        },
+    );
+}
+
+/// [`hint_bar`] for a [`HintSet`].
+pub fn hint_bar_set(ui: &mut Ui, language: Language, set: HintSet) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = size::HINT_BAR_GAP;
-        for hint in hint_list(language, options) {
+        for hint in hint_list(language, set) {
             hint.show(ui);
         }
     });
@@ -1256,8 +1297,20 @@ pub fn hint_bar(ui: &mut Ui, language: Language, options: bool) {
 
 /// Width and height of [`hint_bar`], for screens that align it to the right.
 pub fn hint_bar_size(painter: &Painter, language: Language, options: bool) -> (f32, f32) {
+    hint_bar_set_size(
+        painter,
+        language,
+        HintSet {
+            options,
+            back: true,
+        },
+    )
+}
+
+/// Width and height of [`hint_bar_set`].
+pub fn hint_bar_set_size(painter: &Painter, language: Language, set: HintSet) -> (f32, f32) {
     let device = input::device(painter.ctx());
-    let hints = hint_list(language, options);
+    let hints = hint_list(language, set);
     let width = hints.iter().map(|h| h.width(painter, device)).sum::<f32>()
         + size::HINT_BAR_GAP * hints.len().saturating_sub(1) as f32;
     (width, size::HINT_CAP.max(ty::HINT_LABEL.line_height()))

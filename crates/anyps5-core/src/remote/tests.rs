@@ -103,7 +103,20 @@ struct Phone {
 
 impl Phone {
     fn connect(port: u16) -> Phone {
-        let (ws, _) = tungstenite::connect(format!("ws://127.0.0.1:{port}/")).unwrap();
+        // A busy CI machine can reset a fresh connection during the handshake (seen on the macOS
+        // runner); a phone simply tries again, so the tests do too.
+        let url = format!("ws://127.0.0.1:{port}/");
+        let mut tries = 0;
+        let ws = loop {
+            match tungstenite::connect(url.as_str()) {
+                Ok((ws, _)) => break ws,
+                Err(_) if tries < 5 => {
+                    tries += 1;
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                Err(error) => panic!("the phone could not connect: {error}"),
+            }
+        };
         Phone::timed(ws)
     }
 

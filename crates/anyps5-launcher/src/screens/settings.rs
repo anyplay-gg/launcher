@@ -2369,9 +2369,15 @@ mod tests {
     fn the_join_button_row_sits_under_the_status_and_follows_it() {
         let mut prefs = Preferences::first_run();
         assert!(
-            prefs.discord_presence && prefs.discord_join_button,
-            "on by default"
+            !prefs.discord_presence && prefs.discord_join_button,
+            "the status is off by default; the button follows it once it is on"
         );
+        let first = build_categories(&prefs, &env(None, UpdateState::Unknown), Language::English);
+        assert!(
+            !ids(&first, Category::Behaviour).contains(&"discordJoin"),
+            "a new profile shows no game on Discord and no button"
+        );
+        prefs.discord_presence = true;
         let shown = build_categories(&prefs, &env(None, UpdateState::Unknown), Language::English);
         let rows = ids(&shown, Category::Behaviour);
         let status = rows.iter().position(|id| *id == "discord").unwrap();
@@ -2423,6 +2429,7 @@ mod tests {
             }
         ));
         assert!(!prefs.music);
+        prefs.discord_presence = true;
         assert!(apply_value(
             &mut prefs,
             &Change::Toggle {
