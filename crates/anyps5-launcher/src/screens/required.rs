@@ -22,7 +22,7 @@ use crate::ui::icons::Icon;
 use crate::ui::input::{Command, InputEvent};
 use crate::ui::sound::Cue;
 use crate::ui::text;
-use crate::ui::theme::{self, color, ty, white};
+use crate::ui::theme::{self, color, space, ty};
 
 /// Width of the column. Text wraps inside it; the buttons are as wide as the longest label needs.
 const COLUMN: f32 = 440.0;
@@ -30,11 +30,11 @@ const COLUMN: f32 = 440.0;
 /// "What's New" panel's.
 const NOTE_LINES: usize = 3;
 /// Between two bordered controls (docs/DESIGN.md 3.9).
-const BUTTON_GAP: f32 = 12.0;
+const BUTTON_GAP: f32 = space::M;
 /// The progress line: its width (the buttons'), its height, and the gap above it.
 const BUTTON_WIDTH: f32 = 320.0;
 const BAR_HEIGHT: f32 = 4.0;
-const BAR_GAP: f32 = 14.0;
+const BAR_GAP: f32 = space::M;
 
 /// Why the screen is up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -388,8 +388,8 @@ fn draw(
     let buttons_h = button_h * 2.0 + BUTTON_GAP;
     // The bar's room is kept in every state, so the buttons do not move when the state changes.
     let status_h = status.size().y + BAR_GAP + BAR_HEIGHT;
-    let head_h = ICON + 24.0 + title.size().y + 12.0 + reason.size().y;
-    let core_h = head_h + 28.0 + status_h + 32.0 + buttons_h;
+    let head_h = ICON + space::XL + title.size().y + space::M + reason.size().y;
+    let core_h = head_h + space::XXL + status_h + space::XXL + buttons_h;
 
     // The notes are a nice thing to have, not a reason to push the buttons off a short window:
     // they are left out when they do not fit.
@@ -408,7 +408,12 @@ fn draw(
     let notes_h = if note_galleys.is_empty() || caption.is_empty() {
         0.0
     } else {
-        24.0 + 20.0 + 8.0 + note_galleys.iter().map(|g| g.size().y + 10.0).sum::<f32>()
+        space::XL
+            + space::XXL
+            + note_galleys
+                .iter()
+                .map(|g| g.size().y + space::M)
+                .sum::<f32>()
     };
     let hints_room = 40.0 + 24.0 + 16.0;
     // Room for the notes is kept in every state of a tall window, with or without notes, for the
@@ -417,7 +422,7 @@ fn draw(
     let fits = core_h + NOTES_RESERVE + hints_room * 2.0 <= screen.height();
     let show_notes = notes_h > 0.0 && fits;
     let total = core_h + if fits { NOTES_RESERVE } else { 0.0 };
-    let mut y = (screen.center().y - total * 0.5).max(screen.min.y + 24.0);
+    let mut y = (screen.center().y - total * 0.5).max(screen.min.y + space::XL);
 
     // The glyph: ink, not accent.
     painter.text(
@@ -425,9 +430,9 @@ fn draw(
         Align2::CENTER_CENTER,
         Icon::DOWNLOAD_SIMPLE.glyph(),
         Icon::DOWNLOAD_SIMPLE.font(ICON, false),
-        white(0.9),
+        color::text_label(),
     );
-    y += ICON + 24.0;
+    y += ICON + space::XL;
 
     announce(
         ui,
@@ -437,7 +442,7 @@ fn draw(
         U::RequiredTitle.text(language),
     );
     painter.galley(pos2(cx, y), title.clone(), Color32::WHITE);
-    y += title.size().y + 12.0;
+    y += title.size().y + space::M;
 
     announce(
         ui,
@@ -447,7 +452,7 @@ fn draw(
         &reason_text,
     );
     painter.galley(pos2(cx, y), reason.clone(), color::text_subtitle());
-    y += reason.size().y + 28.0;
+    y += reason.size().y + space::XXL;
 
     // Where the update stands.
     let status_rect = Rect::from_min_size(pos2(cx - width * 0.5, y), vec2(width, status.size().y));
@@ -466,13 +471,13 @@ fn draw(
         let bar =
             Rect::from_center_size(pos2(cx, y + 2.0), vec2(width.min(BUTTON_WIDTH), BAR_HEIGHT));
         let mut child = ui.new_child(UiBuilder::new().max_rect(bar));
-        ProgressLine::new(fraction, white(0.9))
+        ProgressLine::new(fraction, color::text_label())
             .width(bar.width())
             .label(status_text.clone())
             .show(&mut child);
     }
     y += BAR_HEIGHT;
-    y += 32.0;
+    y += space::XXL;
 
     // The two buttons, one under the other, the primary above.
     let primary_label = match primary {
@@ -520,7 +525,7 @@ fn draw(
     y += buttons_h;
 
     if show_notes {
-        y += 24.0;
+        y += space::XL;
         let left = cx - notes_w * 0.5;
         text::paint(
             &painter,
@@ -530,7 +535,7 @@ fn draw(
             &caption,
             color::text_overline(),
         );
-        y += 20.0 + 8.0;
+        y += space::XXL;
         for (index, galley) in note_galleys.iter().enumerate() {
             announce(
                 ui,
@@ -541,7 +546,7 @@ fn draw(
             );
             let h = galley.size().y;
             painter.galley(pos2(left, y), galley.clone(), color::text_detail());
-            y += h + 10.0;
+            y += h + space::M;
         }
     }
 
