@@ -2057,16 +2057,10 @@ impl ScreenGallery {
     }
 
     /// The ringing card and the call strip of the call looks.
-    fn call_surfaces(
-        &self,
-        ctx: &Context,
-        look: OnlineLook,
-        accent: Color32,
-        language: crate::ui::i18n::Language,
-    ) {
+    fn call_surfaces(&self, ctx: &Context, look: OnlineLook, language: crate::ui::i18n::Language) {
         use crate::screens::calls;
         if let Some(card) = calls::card_data(&self.online, 0) {
-            calls::incoming_card(ctx, accent, &card, language, 1.0, true);
+            calls::incoming_card(ctx, &card, language, 1.0, true);
         }
         if matches!(
             look,
@@ -2497,7 +2491,7 @@ impl ScreenGallery {
             self.friends.show(shell, &ctx, &events, &data);
         }
         if let ScreenPage::Online(look) = self.page {
-            self.call_surfaces(&ctx, look, accent, language);
+            self.call_surfaces(&ctx, look, language);
         }
         if let ScreenPage::Together(look) = self.page {
             crate::screens::gallery_together::paint(&ctx, accent, look, language);

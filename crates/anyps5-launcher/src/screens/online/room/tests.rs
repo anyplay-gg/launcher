@@ -175,3 +175,23 @@ fn play_together_is_the_primary_card_of_a_party_with_company() {
     let plan = room.plan(5);
     assert_eq!(plan.stop(plan.start()), Some(Stop::Card(0)));
 }
+
+#[test]
+fn leaving_is_the_last_stop_and_the_only_one_that_ends_something() {
+    let online = online(&[(1, "Mira"), (2, "Lumen")], 1);
+    let room = Room::new(&data(&online));
+    // The page draws it alone at the far end; the focus still reaches it last, after the others.
+    let last = room.actions.last().expect("the party has actions");
+    assert_eq!(last.stop, Stop::Leave);
+    assert!(last.destructive);
+    let ending: Vec<Stop> = room
+        .voice
+        .iter()
+        .chain(&room.actions)
+        .filter(|b| b.destructive)
+        .map(|b| b.stop)
+        .collect();
+    assert_eq!(ending, [Stop::Leave]);
+    // The one that ends something is never the primary action.
+    assert_ne!(room.primary, Some(Stop::Leave));
+}
