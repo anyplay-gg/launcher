@@ -283,6 +283,9 @@ fn paint(
             // nothing is answered by accident (and nothing behind it is hit).
             ui.expand_to_include_rect(screen);
             let painter = ui.painter().clone();
+            // Text carries explicit colours, so only the painter's opacity fades it with the card.
+            let mut text_painter = painter.clone();
+            text_painter.set_opacity(v);
             paint_scrim(&painter, screen, SCRIM * v);
 
             let width = card_width(screen.width());
@@ -349,7 +352,7 @@ fn paint(
             .widget_info(|| {
                 egui::WidgetInfo::labeled(egui::accesskit::Role::Heading, true, title.text())
             });
-            painter.galley(pos2(x, y), title, faded(color::text()));
+            text_painter.galley(pos2(x, y), title, color::text());
             y += title_h;
             if let Some(message) = message {
                 y += space::S;
@@ -362,13 +365,13 @@ fn paint(
                 .widget_info(|| {
                     egui::WidgetInfo::labeled(egui::accesskit::Role::Label, true, message.text())
                 });
-                painter.galley(pos2(x, y), message, faded(color::text_label()));
+                text_painter.galley(pos2(x, y), message, color::text_label());
                 y += h;
             }
             if let Some(note) = note {
                 y += space::S;
                 let h = note.size().y;
-                painter.galley(pos2(x, y), note, faded(color::text_detail()));
+                text_painter.galley(pos2(x, y), note, color::text_detail());
                 y += h;
             }
             y += space::XL;
@@ -508,6 +511,26 @@ mod tests {
             nav.command(Command::Select, &kinds).effect,
             PanelEffect::Activate { row: 1 }
         );
+    }
+
+    #[test]
+    fn a_very_long_title_and_sentence_are_cut_at_three_and_eight_rows() {
+        let ctx = Context::default();
+        crate::ui::theme::install(&ctx);
+        let long = "A very long name that keeps going and going ".repeat(60);
+        let mut rows = (0, 0);
+        // Fonts arrive with the second pass.
+        for _ in 0..2 {
+            let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let painter = ui.painter().clone();
+                rows = (
+                    title_galley(&painter, &long, 300.0).rows.len(),
+                    message_galley(&painter, &long, 300.0).rows.len(),
+                );
+            });
+            output.drop_without_applying_deltas();
+        }
+        assert_eq!(rows, (TITLE_ROWS, MESSAGE_ROWS));
     }
 
     #[test]

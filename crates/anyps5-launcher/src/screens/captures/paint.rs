@@ -924,6 +924,8 @@ fn centred_row(ui: &mut Ui, rect: Rect, mut add: impl FnMut(&mut Ui)) {
     add(&mut row);
 }
 
+/// How much of the card's width the file name in the sentence may take.
+const FILE_NAME_SHARE: f32 = 0.8;
 /// The animation identity of the delete question's card.
 const CONFIRM_CARD: &str = "captures-confirm";
 
@@ -952,7 +954,7 @@ fn confirm(
         &painter,
         ty::QUESTION,
         &capture.file_name(),
-        dialog::inner_width(&ctx) * 0.8,
+        dialog::inner_width(&ctx) * FILE_NAME_SHARE,
     );
     let body = CapturesText::DeleteBody.format(language, &[Arg::Str(&name)]);
     // The card of every question (screens::dialog): Delete first, Cancel last, the focus on the
