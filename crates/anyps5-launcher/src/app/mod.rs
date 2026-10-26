@@ -178,6 +178,8 @@ pub struct LauncherApp {
     pub assume_focus: bool,
     /// The window's Mac dress (see `macstyle`); inert off macOS.
     mac: crate::macstyle::MacStyle,
+    /// Screenshots: show the glass although the system asks for reduced transparency.
+    pub glass_anyway: bool,
 }
 
 impl LauncherApp {
@@ -226,6 +228,7 @@ impl LauncherApp {
             offline: false,
             freeze_backdrop: false,
             mac: crate::macstyle::MacStyle::default(),
+            glass_anyway: false,
             assume_focus: false,
         }
     }
@@ -571,6 +574,7 @@ impl LauncherApp {
             glass_setting,
             fullscreen: ctx.input(|i| i.viewport().fullscreen).unwrap_or(false),
             game_running: self.model.running.is_some(),
+            ignore_system: self.glass_anyway,
         };
         let outcome = self.mac.frame(ctx, window, want);
         self.shell.backdrop.window_glass = outcome.glass;

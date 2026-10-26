@@ -1034,6 +1034,7 @@ impl PreviewApp {
                 Some(Scene::HomeInGame | Scene::HomeInGameClose)
             );
         inner.freeze_backdrop = !demo;
+        inner.glass_anyway = std::env::args().any(|a| a == "--glass-anyway");
         if demo {
             crate::ui::home_button::test_game_from_env(&inner.shell.home);
         }

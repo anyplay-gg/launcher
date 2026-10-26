@@ -32,6 +32,9 @@ pub struct Want {
     pub fullscreen: bool,
     /// A game runs: the launcher is behind it and must cost nothing.
     pub game_running: bool,
+    /// Screenshots only (`--glass-anyway` of the hidden gallery): do not ask the system whether
+    /// transparency is reduced. The CI machines say yes, and the glass could not be photographed.
+    pub ignore_system: bool,
 }
 
 /// What the window did this frame.
@@ -50,7 +53,7 @@ pub fn glass_active(want: Want, reduce_transparency: bool) -> bool {
         && want.glass_setting
         && !want.fullscreen
         && !want.game_running
-        && !reduce_transparency
+        && (!reduce_transparency || want.ignore_system)
 }
 
 /// The window's Mac dress. Hold one per window and call [`frame`](Self::frame) every frame.
@@ -436,6 +439,7 @@ mod tests {
         glass_setting: true,
         fullscreen: false,
         game_running: false,
+        ignore_system: false,
     };
 
     #[test]

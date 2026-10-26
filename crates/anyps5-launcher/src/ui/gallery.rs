@@ -223,6 +223,7 @@ impl eframe::App for Gallery {
         let ctx = ui.ctx().clone();
         let want = crate::macstyle::Want {
             glass_setting: !self.solid,
+            ignore_system: std::env::args().any(|a| a == "--glass-anyway"),
             ..Default::default()
         };
         self.shell.backdrop.window_glass = self.mac.frame(&ctx, frame, want).glass;

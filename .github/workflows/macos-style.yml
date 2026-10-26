@@ -81,7 +81,7 @@ jobs:
         run: |
           mkdir -p shots
           for mode in glass solid; do
-            flag=""; [ "$mode" = solid ] && flag="--solid"
+            flag="--glass-anyway"; [ "$mode" = solid ] && flag="--solid"
             for scene in home settings controls; do
               target/release/anyplay-launcher --gallery="$scene" $flag --frames=90 \
                 --screenshot="shots/$scene-$mode-frame.png"
@@ -112,7 +112,7 @@ jobs:
       - name: Screen
         run: |
           for mode in glass solid; do
-            flag=""; [ "$mode" = solid ] && flag="--solid"
+            flag="--glass-anyway"; [ "$mode" = solid ] && flag="--solid"
             for scene in home settings; do
               target/release/anyplay-launcher --gallery="$scene" $flag --frames=100000 --size=760x520 \
                 --screenshot="shots/unused.png" &
@@ -127,10 +127,7 @@ jobs:
       - name: Launcher log
         if: always()
         run: |
-          for f in "$HOME"/Library/Logs/AnyPS5/launcher.log "$HOME"/Library/Application Support/AnyPS5/Logs/launcher.log; do
-            [ -f "$f" ] && { echo "== $f"; grep -h "mac style" "$f" | tail -20; }
-          done
-          find "$HOME" -name launcher.log -not -path "*/node_modules/*" 2>/dev/null | head
+          grep -h "mac style" "$HOME/Library/Application Support/AnyPlay Launcher/Logs/launcher.log" | tail -20
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mac-style-${{ matrix.os }}
