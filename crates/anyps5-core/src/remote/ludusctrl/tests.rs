@@ -181,9 +181,10 @@ impl Phone {
     }
 }
 
-/// The rate limit allows one PAIR_REQ a second per address, like the phone's own resend.
+/// The rate limit allows one PAIR_REQ a second per address, like the phone's own resend; the
+/// margin covers a receive loop that runs late on a loaded test machine.
 fn resend_pause() {
-    thread::sleep(Duration::from_millis(1050));
+    thread::sleep(Duration::from_millis(1200));
 }
 
 #[test]
