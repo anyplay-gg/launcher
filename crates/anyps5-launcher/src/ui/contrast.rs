@@ -351,7 +351,11 @@ fn panel(report: &mut Report) {
             theme.title(crate::ui::i18n::Language::English),
             if glass { " glass" } else { "" }
         );
-        let under = if glass { glassed(lit(theme)) } else { lit(theme) };
+        let under = if glass {
+            glassed(lit(theme))
+        } else {
+            lit(theme)
+        };
         let overlay = if glass {
             color::side_panel().gamma_multiply(crate::ui::glass::WINDOW_GLASS_PANEL)
         } else {
