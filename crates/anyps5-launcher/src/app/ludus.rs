@@ -6,7 +6,8 @@
 //! `anyps5_core::remote::ludusctrl` (`docs/ludusctrl-api.md`). This module meets it only through
 //! [`LudusReceiver`] and a [`Start`] function, so the core plugs in at one place,
 //! [`start_receiver`]. The shown state is the model's [`LudusState`], the same shape as the phone
-//! server's [`PhoneState`](crate::app::phone::PhoneState).
+//! server's [`PhoneState`](crate::app::phone::PhoneState). The virtual controller is the one the
+//! phone server also drives ([`SharedPad`]), handed to the server as soon as it runs.
 
 use std::sync::{
     Arc, Mutex,
@@ -14,9 +15,13 @@ use std::sync::{
 };
 
 use anyps5_core::paths::AppPaths;
-use anyps5_core::remote::{MAX_DEVICES, VirtualPadStatus, vpad};
+use anyps5_core::remote::{
+    LudusConfig, LudusEvents, LudusServer, LudusStatus, LudusStore, LudusVia, MAX_DEVICES,
+    PadTarget, PairingRequest, VirtualPadStatus, vpad,
+};
 
 use crate::app::model::Model;
+use crate::app::pad::SharedPad;
 use crate::screens::ludus::LudusAction;
 use crate::screens::phone_strings::PhoneText;
 use crate::ui::i18n::Arg;
@@ -68,6 +73,8 @@ pub trait LudusReceiver: Send + Sync {
     fn respond(&self, id: u64, allow: bool);
     /// Forget a paired phone; a phone that holds the pad lets go of it at once.
     fn forget(&self, phone_id: &str);
+    /// The virtual controller the server writes to, or none (no driver).
+    fn set_pad(&self, pad: Option<Arc<dyn PadTarget>>);
     /// Stop listening and unplug the pad.
     fn stop(&self);
 }
@@ -77,19 +84,75 @@ pub type Events = Arc<dyn Fn(LudusEvent) + Send + Sync>;
 /// Starts the server with its files under the launcher's config folder.
 pub type Start = fn(&AppPaths, Events) -> std::io::Result<Arc<dyn LudusReceiver>>;
 
-/// The core's server. Until `anyps5_core::remote::ludusctrl` is in this build the option says it
-/// could not start. The binding: `LudusServer::start(LudusConfig::new(LudusStore::file_in(paths)),
-/// events)`, its `status` events mapped to [`LudusEvent`], and the virtual pad handed to it with
-/// `set_pad` at once (the LudusCtrl pad also drives the launcher), shared with the phone server's
-/// pad so the system sees one controller.
-pub fn start_receiver(
-    _paths: &AppPaths,
-    _events: Events,
-) -> std::io::Result<Arc<dyn LudusReceiver>> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "the LudusCtrl server is not part of this build",
-    ))
+/// The core's server on every interface with the beacon on, as the app expects it. Its events
+/// become [`LudusEvent`]s; a browser holding the pad (a later step) reads as no phone.
+pub fn start_receiver(paths: &AppPaths, events: Events) -> std::io::Result<Arc<dyn LudusReceiver>> {
+    let config = LudusConfig::new(LudusStore::file_in(paths));
+    let server = LudusServer::start(config, Arc::new(Forward(events)))
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+    Ok(Arc::new(server))
+}
+
+/// The core's events as the launcher's.
+struct Forward(Events);
+
+fn event_of(status: LudusStatus) -> LudusEvent {
+    match status {
+        LudusStatus::Linked {
+            via: LudusVia::App { name },
+            controller,
+            ..
+        } => LudusEvent::Linked { name, controller },
+        LudusStatus::Linked {
+            via: LudusVia::Browser { .. },
+            ..
+        }
+        | LudusStatus::Waiting => LudusEvent::Waiting,
+    }
+}
+
+impl LudusEvents for Forward {
+    fn pairing(&self, request: PairingRequest) {
+        (self.0)(LudusEvent::Pairing(LudusPairing {
+            id: request.id,
+            phone_name: request.device_name,
+            code: request.code,
+        }));
+    }
+    fn pairing_ended(&self, id: u64) {
+        (self.0)(LudusEvent::PairingEnded(id));
+    }
+    fn status(&self, status: LudusStatus) {
+        (self.0)(event_of(status));
+    }
+}
+
+impl LudusReceiver for LudusServer {
+    fn port(&self) -> u16 {
+        LudusServer::port(self)
+    }
+    fn paired(&self) -> Vec<LudusPhone> {
+        LudusServer::paired(self)
+            .into_iter()
+            .map(|p| LudusPhone {
+                id: p.id,
+                name: p.name,
+                added: p.added,
+            })
+            .collect()
+    }
+    fn respond(&self, id: u64, allow: bool) {
+        LudusServer::respond(self, id, allow);
+    }
+    fn forget(&self, phone_id: &str) {
+        LudusServer::forget(self, phone_id);
+    }
+    fn set_pad(&self, pad: Option<Arc<dyn PadTarget>>) {
+        LudusServer::set_pad(self, pad);
+    }
+    fn stop(&self) {
+        LudusServer::stop(self);
+    }
 }
 
 /// What the settings page and the top bar show of LudusCtrl.
@@ -124,6 +187,10 @@ pub struct LudusService {
     tx: Sender<LudusEvent>,
     rx: Receiver<LudusEvent>,
     receiver: Option<Arc<dyn LudusReceiver>>,
+    /// The one virtual controller, shared with the phone server.
+    shared_pad: Arc<SharedPad>,
+    /// The server has the controller (it may not: no driver yet).
+    pad_given: bool,
     last_pad_check: f64,
 }
 
@@ -133,11 +200,20 @@ pub fn wanted(prefs: &anyps5_core::settings::Preferences) -> bool {
 }
 
 impl LudusService {
-    pub fn new(wake: Arc<dyn Fn() + Send + Sync>, simulated: bool) -> Self {
-        Self::with_start(start_receiver, wake, simulated)
+    pub fn new(
+        wake: Arc<dyn Fn() + Send + Sync>,
+        simulated: bool,
+        shared_pad: Arc<SharedPad>,
+    ) -> Self {
+        Self::with_start(start_receiver, wake, simulated, shared_pad)
     }
 
-    pub fn with_start(start: Start, wake: Arc<dyn Fn() + Send + Sync>, simulated: bool) -> Self {
+    pub fn with_start(
+        start: Start,
+        wake: Arc<dyn Fn() + Send + Sync>,
+        simulated: bool,
+        shared_pad: Arc<SharedPad>,
+    ) -> Self {
         let (tx, rx) = channel();
         Self {
             start,
@@ -146,7 +222,24 @@ impl LudusService {
             tx,
             rx,
             receiver: None,
+            shared_pad,
+            pad_given: false,
             last_pad_check: f64::NEG_INFINITY,
+        }
+    }
+
+    /// Hands the server the controller once there is one. The LudusCtrl pad also drives the
+    /// launcher, so it is given at once, not only while a game runs.
+    fn give_pad(&mut self) {
+        let Some(receiver) = &self.receiver else {
+            return;
+        };
+        if self.pad_given {
+            return;
+        }
+        if let Some(pad) = self.shared_pad.get() {
+            receiver.set_pad(Some(pad));
+            self.pad_given = true;
         }
     }
 
@@ -169,6 +262,8 @@ impl LudusService {
                 model.ludus.port = Some(receiver.port());
                 model.ludus.paired = receiver.paired();
                 self.receiver = Some(receiver);
+                self.pad_given = false;
+                self.give_pad();
             }
             Err(error) => {
                 tracing::warn!("the LudusCtrl server could not start: {error}");
@@ -182,6 +277,7 @@ impl LudusService {
         if let Some(receiver) = self.receiver.take() {
             receiver.stop();
         }
+        self.pad_given = false;
         while self.rx.try_recv().is_ok() {}
         let pad = model.ludus.pad.take();
         model.ludus = LudusState {
@@ -206,6 +302,10 @@ impl LudusService {
         {
             self.last_pad_check = model.now;
             model.ludus.pad = Some(vpad::status());
+            // The driver may have been installed since the start.
+            if model.ludus.pad == Some(VirtualPadStatus::Ready) {
+                self.give_pad();
+            }
         }
         for command in std::mem::take(&mut model.ludus.commands) {
             self.command(model, command);
@@ -303,6 +403,7 @@ mod tests {
         responses: Vec<(u64, bool)>,
         forgotten: Vec<String>,
         stopped: usize,
+        pads: Vec<Option<Arc<dyn PadTarget>>>,
         events: Option<Events>,
     }
 
@@ -343,9 +444,20 @@ mod tests {
         fn forget(&self, phone_id: &str) {
             calls().lock().unwrap().forgotten.push(phone_id.into());
         }
+        fn set_pad(&self, pad: Option<Arc<dyn PadTarget>>) {
+            calls().lock().unwrap().pads.push(pad);
+        }
         fn stop(&self) {
             calls().lock().unwrap().stopped += 1;
         }
+    }
+
+    fn failing_start(_: &AppPaths, _: Events) -> std::io::Result<Arc<dyn LudusReceiver>> {
+        Err(std::io::Error::new(std::io::ErrorKind::AddrInUse, "busy"))
+    }
+
+    fn inert_pad() -> Arc<SharedPad> {
+        SharedPad::with_open(Box::new(|_| Ok(anyps5_core::remote::VirtualPad::inert())))
     }
 
     fn fake_start(_paths: &AppPaths, events: Events) -> std::io::Result<Arc<dyn LudusReceiver>> {
@@ -373,7 +485,7 @@ mod tests {
     }
 
     fn service() -> LudusService {
-        LudusService::with_start(fake_start, Arc::new(|| {}), false)
+        LudusService::with_start(fake_start, Arc::new(|| {}), false, inert_pad())
     }
 
     #[test]
@@ -407,7 +519,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut model = model(&dir);
         on(&mut model);
-        let mut service = LudusService::with_start(start_receiver, Arc::new(|| {}), false);
+        let mut service =
+            LudusService::with_start(failing_start, Arc::new(|| {}), false, inert_pad());
         service.sync(&mut model);
         assert!(model.ludus.failed && !service.is_running());
         service.sync(&mut model);
@@ -490,12 +603,79 @@ mod tests {
     }
 
     #[test]
+    fn the_server_gets_the_one_shared_controller_at_once() {
+        let _serial = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let mut model = model(&dir);
+        on(&mut model);
+        let shared = inert_pad();
+        let mut service =
+            LudusService::with_start(fake_start, Arc::new(|| {}), false, shared.clone());
+        service.sync(&mut model);
+        service.sync(&mut model);
+        let pads = std::mem::take(&mut calls().lock().unwrap().pads);
+        assert_eq!(pads.len(), 1, "given once, with the start");
+        let given = pads[0].clone().expect("a pad");
+        // The phone server asks the same SharedPad: one controller for both.
+        let phone_side: Arc<dyn PadTarget> = shared.get().unwrap();
+        assert!(std::ptr::addr_eq(
+            Arc::as_ptr(&given),
+            Arc::as_ptr(&phone_side)
+        ));
+    }
+
+    #[test]
+    fn a_driver_installed_later_reaches_the_server() {
+        let _serial = serial();
+        let dir = tempfile::tempdir().unwrap();
+        let mut model = model(&dir);
+        on(&mut model);
+        let missing = SharedPad::with_open(Box::new(|_| {
+            Err(anyps5_core::remote::VirtualPadError::Unsupported)
+        }));
+        let mut service = LudusService::with_start(fake_start, Arc::new(|| {}), false, missing);
+        service.sync(&mut model);
+        assert!(service.is_running(), "the server runs without a pad");
+        assert!(calls().lock().unwrap().pads.is_empty());
+    }
+
+    #[test]
+    fn the_core_status_becomes_the_launchers_event() {
+        assert_eq!(
+            event_of(LudusStatus::Linked {
+                via: LudusVia::App {
+                    name: "Pixel 8".into()
+                },
+                layout: anyps5_core::remote::PadLayout::Xbox,
+                controller: true,
+                pad_live: true,
+            }),
+            LudusEvent::Linked {
+                name: "Pixel 8".into(),
+                controller: true
+            }
+        );
+        assert_eq!(event_of(LudusStatus::Waiting), LudusEvent::Waiting);
+        assert_eq!(
+            event_of(LudusStatus::Linked {
+                via: LudusVia::Browser {
+                    peer: "192.168.1.40".parse().unwrap()
+                },
+                layout: anyps5_core::remote::PadLayout::Unknown,
+                controller: false,
+                pad_live: true,
+            }),
+            LudusEvent::Waiting
+        );
+    }
+
+    #[test]
     fn previews_never_start_the_server() {
         let _serial = serial();
         let dir = tempfile::tempdir().unwrap();
         let mut model = model(&dir);
         on(&mut model);
-        let mut service = LudusService::with_start(fake_start, Arc::new(|| {}), true);
+        let mut service = LudusService::with_start(fake_start, Arc::new(|| {}), true, inert_pad());
         service.sync(&mut model);
         assert!(!service.is_running() && !model.ludus.failed);
     }

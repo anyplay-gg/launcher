@@ -98,6 +98,12 @@ impl VirtualPad {
         }
     }
 
+    /// A pad with no driver behind it: it takes every state and the system sees nothing. For
+    /// tests and previews of the code that shares one pad.
+    pub fn inert() -> VirtualPad {
+        VirtualPad::with_backend(Box::new(Inert))
+    }
+
     fn with_backend(backend: Box<dyn Backend>) -> VirtualPad {
         VirtualPad {
             inner: Mutex::new(Inner {
@@ -171,6 +177,18 @@ impl PadSink for VirtualPad {
     fn ended(&self) {
         self.release();
     }
+}
+
+struct Inert;
+
+impl Backend for Inert {
+    fn plug(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+    fn update(&mut self, _: &PadState) -> Result<(), String> {
+        Ok(())
+    }
+    fn unplug(&mut self) {}
 }
 
 /// LudusCtrl's pad is already an XInput state.

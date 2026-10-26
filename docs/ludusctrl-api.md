@@ -150,7 +150,8 @@ WebSocket, the token) is step 2 and not built.
 **Two servers, one pad.** The AnyPS5 Remote server opens its own `VirtualPad` while a game runs (`app::phone::attach_pad`). If
 both features are on, `app::phone` must keep **one** `Arc<VirtualPad>` and hand it to LudusCtrl (`set_pad`) and to the Remote
 server (`set_pad_sink`), or Windows shows two controllers. `VirtualPad` is both a `PadSink` and a `PadTarget`, so one value serves
-both; whichever feeds it last wins, and only one phone plays at a time in practice. Not built yet; the glue is the UI branch's.
+both; whichever feeds it last wins, and only one phone plays at a time in practice. Built as `app::pad::SharedPad`: opened on
+first use, handed to LudusCtrl when its server starts and to the Remote server while a game runs; rumble goes to the Remote phone.
 
 ## Pairing question flow in the launcher
 

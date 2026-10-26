@@ -29,6 +29,7 @@ pub mod online;
 pub mod online_local;
 pub mod online_screen;
 pub mod overlay;
+pub mod pad;
 pub mod panels;
 pub mod phone;
 pub mod pipeline;
@@ -195,9 +196,15 @@ impl LauncherApp {
         let repaint = ctx.clone();
         let wake: std::sync::Arc<dyn Fn() + Send + Sync> =
             std::sync::Arc::new(move || repaint.request_repaint());
+        let shared_pad = pad::SharedPad::new();
         Self {
-            phone: phone::PhoneService::new(wake.clone(), simulated, shell.home.clone()),
-            ludus: ludus::LudusService::new(wake.clone(), simulated),
+            phone: phone::PhoneService::new(
+                wake.clone(),
+                simulated,
+                shell.home.clone(),
+                shared_pad.clone(),
+            ),
+            ludus: ludus::LudusService::new(wake.clone(), simulated, shared_pad),
             clips: clips::ClipsService::new(wake.clone(), simulated),
             online: online::OnlineService::new(wake, simulated),
             shell,
