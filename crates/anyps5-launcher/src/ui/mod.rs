@@ -50,8 +50,8 @@ pub mod pad_info;
 pub mod press;
 pub mod ps_button;
 pub mod shade;
-pub mod state_page;
 pub mod sound;
+pub mod state_page;
 pub mod text;
 pub mod theme;
 

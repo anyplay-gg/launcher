@@ -719,6 +719,7 @@ impl CompareScreen {
         (rect, pill)
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Loading, offline, failed, hidden and empty: one block of words under the header.
     fn draw_state(
         &self,

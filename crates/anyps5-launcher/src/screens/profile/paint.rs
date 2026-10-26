@@ -48,8 +48,6 @@ const BUTTON_GAP: f32 = 12.0;
 const STAT_GAP: f32 = 44.0;
 const BOTTOM: f32 = 64.0;
 const BODY_GAP: f32 = 28.0;
-/// The height of the block of words of a state: disc, title, note.
-
 const NAME: TextStyle = ty::SCREEN_TITLE;
 const ABOUT: TextStyle = ty::BODY;
 const SECTION: TextStyle = ty::CATEGORY_SELECTED;

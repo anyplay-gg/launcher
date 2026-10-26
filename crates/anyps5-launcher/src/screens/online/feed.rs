@@ -26,9 +26,7 @@ use crate::ui::input::{self, Command};
 use crate::ui::sound::Cue;
 use crate::ui::state_page::{self, StatePage};
 use crate::ui::text;
-use crate::ui::theme::{
-    self, TextStyle, Weight, black, color, fade, mix, radius, size, space, ty, white,
-};
+use crate::ui::theme::{self, TextStyle, Weight, black, color, fade, mix, radius, size, space, ty};
 
 /// Items from the end at which the next older page is fetched.
 const PREFETCH: usize = 3;
