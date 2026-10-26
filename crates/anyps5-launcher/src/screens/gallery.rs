@@ -2,7 +2,7 @@
 //! be screenshotted and compared with the original (`docs/DESIGN.md` screenshot table).
 //!
 //! ```text
-//! anyplay-launcher --gallery=settings|settings1..6|game-settings|confirm|controls|controls-capture|
+//! anyplay-launcher --gallery=settings|settings1..6|game-settings|game-settings-foot|confirm|controls|controls-capture|
 //!                           controls-end|advanced|trophies|trophies-hidden|trophies-revealed|banner|start|unlocking|log|report|library|
 //!                           captures-empty|captures-few|captures-many|captures-clips|captures-screenshot|captures-clip|
 //!                           captures-clip-plain|captures-confirm|captures-missing|captures-loading|
@@ -90,6 +90,8 @@ pub enum ScreenPage {
     /// Settings on a category (0 = Appearance, in its rows; the others at the category level).
     Settings(usize),
     GameSettings,
+    /// The foot of the game settings: the last group and Uninstall alone under it.
+    GameSettingsFoot,
     /// The game sheet on "Toolkit for This Game", the game staying on its own release.
     GameToolkit,
     Confirm,
@@ -687,6 +689,7 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
     Some(match name {
         "settings" => ScreenPage::Settings(0),
         "game-settings" => ScreenPage::GameSettings,
+        "game-settings-foot" => ScreenPage::GameSettingsFoot,
         "game-toolkit" => ScreenPage::GameToolkit,
         "confirm" => ScreenPage::Confirm,
         "controls" => ScreenPage::Controls,
@@ -2641,8 +2644,9 @@ impl ScreenGallery {
     fn open_page(&mut self, shell: &mut Shell, ctx: &Context) {
         match self.page {
             ScreenPage::Settings(n) => self.settings.open_at(n, n == 0),
-            ScreenPage::GameSettings => self.game_panel.open_row(3),
-            ScreenPage::GameToolkit => self.game_panel.open_row(10),
+            ScreenPage::GameSettings => self.game_panel.open_row(5),
+            ScreenPage::GameSettingsFoot => self.game_panel.open_row(18),
+            ScreenPage::GameToolkit => self.game_panel.open_row(11),
             ScreenPage::Confirm => self.uninstall.open(),
             ScreenPage::Saves | ScreenPage::SavesEmpty => self.saves.open(),
             ScreenPage::Restore => self.restore.open(),
