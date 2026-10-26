@@ -79,8 +79,15 @@ pub struct Toast {
     pub id: u64,
     pub text: String,
     pub icon: Icon,
-    /// UI-clock time at which it starts to leave.
+    /// UI-clock time at which it starts to leave; infinite while it stays until dismissed.
     pub until: f64,
+}
+
+impl Toast {
+    /// A failure stays until the player dismisses it; a routine toast fades by itself.
+    pub fn stays(&self) -> bool {
+        self.until.is_infinite()
+    }
 }
 
 /// The launcher update notice on the home screen.
@@ -523,6 +530,9 @@ impl Model {
 
     /// Shows a toast; a warning plays the error cue, every other one the soft chime.
     pub fn toast(&mut self, text: impl Into<String>, icon: Icon) {
+        if self.failure_toast_up() {
+            return;
+        }
         // Only a failure sounds by itself: the other toasts answer an action that has its own cue,
         // or choose one with `toast_with` (an unasked-for event: a request, a missed call).
         if matches!(
@@ -537,8 +547,27 @@ impl Model {
 
     /// A toast with its own cue: a message, an invitation.
     pub fn toast_with(&mut self, text: impl Into<String>, icon: Icon, cue: Cue) {
+        if self.failure_toast_up() {
+            return;
+        }
         self.sound(cue);
         self.toast_silent(text, icon);
+    }
+
+    /// A failure toast is on screen: a routine toast does not replace it (it would take away the
+    /// message the player has to read); only another failure does.
+    fn failure_toast_up(&self) -> bool {
+        self.toast_visible() && self.toast.as_ref().is_some_and(Toast::stays)
+    }
+
+    /// A failure the player has to read: the error cue, and the toast stays until it is dismissed.
+    /// A plain notice ("nothing to back up") is `toast` and fades.
+    pub fn toast_failure(&mut self, text: impl Into<String>) {
+        self.sound(Cue::Error);
+        self.toast_silent(text, Icon::WARNING);
+        if let Some(toast) = self.toast.as_mut() {
+            toast.until = f64::INFINITY;
+        }
     }
 
     fn toast_silent(&mut self, text: impl Into<String>, icon: Icon) {
@@ -549,6 +578,27 @@ impl Model {
             icon,
             until: self.now + TOAST_SECONDS,
         });
+    }
+
+    /// The player put the toast away (its Close button, or Back while a failure is up): the Back cue.
+    pub fn dismiss_toast(&mut self) {
+        if !self.toast_visible() {
+            return;
+        }
+        let now = self.now;
+        if let Some(toast) = self.toast.as_mut() {
+            toast.until = toast.until.min(now);
+            self.sound(Cue::Back);
+        }
+    }
+
+    /// A new start or unlock begins: a failure left from the last try goes without a sound, so Back
+    /// reaches the splash and not the stale toast.
+    fn end_staying_toast(&mut self) {
+        let now = self.now;
+        if let Some(toast) = self.toast.as_mut().filter(|t| t.stays()) {
+            toast.until = now;
+        }
     }
 
     /// The toast is on screen (it is kept after that so it can animate out).
@@ -854,7 +904,7 @@ impl Model {
                             self.text(Key::UnlockFailed)
                         };
                         let text = format!("{headline}: {name}");
-                        self.toast(text, Icon::WARNING);
+                        self.toast_failure(text);
                     }
                 }
                 self.rescan_after_unlock();
@@ -895,7 +945,7 @@ impl Model {
                     self.starting = None;
                 }
                 let text = format!("{}: {message}", self.text(Key::StartFailed));
-                self.toast(text, Icon::WARNING);
+                self.toast_failure(text);
             }
             PipelineEvent::Exited { game, diagnosis } => {
                 if self.running.as_ref() != Some(&game) && self.starting.as_ref() != Some(&game) {
@@ -919,12 +969,12 @@ impl Model {
                 match diagnosis {
                     Some(summary) => {
                         let name = self.game(&game).map(|g| g.name.clone()).unwrap_or_default();
-                        self.toast(format!("{name}: {summary}"), Icon::WARNING);
+                        self.toast_failure(format!("{name}: {summary}"));
                         self.diagnoses.insert(game, summary);
                     }
                     None if without_window => {
                         let text = self.text(Key::StartFailed);
-                        self.toast(text, Icon::WARNING);
+                        self.toast_failure(text);
                     }
                     None => {}
                 }
@@ -980,6 +1030,7 @@ impl Model {
         if self.prefs.games_folder.is_none() {
             return;
         }
+        self.end_staying_toast();
         if self.is_preparing(id) {
             self.promote(id);
             return;
@@ -1050,6 +1101,7 @@ impl Model {
             p.last_played.insert(id.as_str().to_owned(), stamp);
         });
         self.sound(Cue::Select);
+        self.end_staying_toast();
         self.starting = Some(id.clone());
         self.effects
             .push(Effect::Pipeline(PipelineCommand::Play(id.clone())));
@@ -1191,6 +1243,14 @@ impl Model {
 
     /// One command from keyboard or gamepad.
     pub fn handle(&mut self, command: Command) -> Routed {
+        // A failure toast stays until dismissed: Back puts it away before it navigates.
+        if command == Command::Back
+            && self.toast_visible()
+            && self.toast.as_ref().is_some_and(Toast::stays)
+        {
+            self.dismiss_toast();
+            return Routed::Done;
+        }
         if !self.onboarded() {
             self.onboarding_command(command);
             return Routed::Done;
@@ -2284,6 +2344,68 @@ mod tests {
         m.tick(13.3);
         assert!(!m.toast_visible());
         assert!(m.toast.is_some());
+    }
+
+    #[test]
+    fn a_new_start_clears_a_stale_failure_so_back_reaches_the_splash() {
+        let g = game("a", Some("v1"), ExecutableKind::Elf);
+        let id = g.id.clone();
+        let mut m = model_with(vec![g]);
+        m.toast_failure("Could not start");
+        m.play(&id);
+        assert!(!m.toast_visible());
+        assert!(m.starting.is_some());
+        m.handle(Command::Back);
+        assert!(m.starting.is_none(), "the first Back cancels the start");
+    }
+
+    #[test]
+    fn a_routine_toast_does_not_replace_a_failure() {
+        let mut m = model_with(vec![]);
+        m.toast_failure("Could not start");
+        m.toast("Saved", Icon::CHECK);
+        assert_eq!(m.toast.as_ref().unwrap().text, "Could not start");
+        m.toast_failure("Could not save");
+        assert_eq!(m.toast.as_ref().unwrap().text, "Could not save");
+        m.dismiss_toast();
+        m.toast("Saved", Icon::CHECK);
+        assert_eq!(m.toast.as_ref().unwrap().text, "Saved");
+    }
+
+    #[test]
+    fn an_unlock_clears_a_stale_failure() {
+        let g = game("a", None, ExecutableKind::Elf);
+        let id = g.id.clone();
+        let mut m = model_with(vec![g]);
+        m.toast_failure("Could not unlock");
+        m.unlock(&id);
+        assert!(!m.toast_visible());
+    }
+
+    #[test]
+    fn dismissing_a_toast_that_is_leaving_does_nothing() {
+        let mut m = model_with(vec![]);
+        m.toast_failure("Could not start");
+        m.dismiss_toast();
+        m.effects.clear();
+        m.dismiss_toast();
+        assert!(m.effects.is_empty(), "no second cue during the exit");
+    }
+
+    #[test]
+    fn a_failure_toast_stays_until_dismissed_and_back_dismisses_it_first() {
+        let mut m = model_with(vec![]);
+        m.toast_failure("Could not start");
+        m.tick(m.now + 60.0);
+        assert!(m.toast_visible(), "a failure does not fade by itself");
+        m.handle(Command::Back);
+        assert!(!m.toast_visible());
+        // A routine toast is not Back's: it fades on its own.
+        m.toast("Saved", Icon::CHECK);
+        assert!(!m.toast.as_ref().unwrap().stays());
+        // A plain notice that only borrows the warning glyph fades too.
+        m.toast("Nothing to back up", Icon::WARNING);
+        assert!(!m.toast.as_ref().unwrap().stays());
     }
 
     /// A model with one game that runs and shows its window.

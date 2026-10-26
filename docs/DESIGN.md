@@ -398,7 +398,7 @@ key..." pulse, the banner pop.
 | 24 | Log in/out | opacity | spring overlay |
 | 25 | Launch splash in/out | opacity + scale 1.04 -> 1, `Motion.overlay` | spring overlay |
 | 26 | Splash breathing | icon scale 0.985 <-> 1.015, glow alpha 0.2 <-> 0.55 and radius 18 <-> 40, `easeInOut 1.6 s` repeat autoreverse (off in reduced motion) | triangle wave, easeInOut 1.6 each way |
-| 27 | Toast in/out | move from top + opacity, `Motion.overlay`; stays 3.2 s | spring overlay, `offset_y = -(1 - v) * 80`; a new toast replaces the old one and restarts the 3.2 s timer |
+| 27 | Toast in/out | move from top + opacity, `Motion.overlay`; a routine toast stays 3.2 s, a failure until dismissed | spring overlay, `offset_y = -(1 - v) * 80`; a new toast replaces the old one and restarts the 3.2 s timer; a failure toast has no timer |
 | 28 | Banner slide in | card offset y from -150 to 14 and opacity 0 -> 1, spring 0.55 / 0.78 (easeOut 0.25 in reduced motion) | see 5.14 |
 | 29 | Banner icon pop | icon scale 0.6 -> 1 and glow opacity 0 -> 1, spring 0.45 / 0.55, delay 0.18 s | see 5.14 |
 | 30 | Banner out | after 5 s: easeIn 0.3 s back up and out; next banner starts 0.35 s later | see 5.14 |
@@ -1275,8 +1275,14 @@ the splash leaves (overlay spring), the launcher optionally hides ("Hide Launche
 
 ### 5.6 Toast
 
-Pill at the top centre (top 26): glyph 17 semibold + text 16 medium (max 2 lines); padding 22 x 14; glass radius 28 with black 0.6;
-shadow (1.4). 3.2 s on screen, spring in/out (animation 27). Events that raise toasts: unlock ready/failed, unreadable dump, no
+Pill at the top centre (top 26): glyph 17 semibold + text 16 medium (max 3 lines); padding 22 x 14; glass radius 28 with black 0.6;
+shadow (1.4). 3.2 s on screen, spring in/out (animation 27). A routine toast fades after 3.2 s.
+
+**A failure toast stays until the player dismisses it.** The call site chooses (`Model::toast_failure`: the error cue, no timer). It is used for: start and unlock failures, a game's diagnosis, and every failure of something the player did and has to act on: a report, clip, capture or saves backup that could not be saved, restored, copied, deleted or opened, an uninstall that failed, a clip recorder that could not start or stopped, a toolkit that could not be fetched or removed. A plain notice that only borrows the warning glyph ("nothing to back up", "close the game first", "nothing recorded yet") is `toast` and fades, and online-status notices (a request, a call, a connection) are out of scope and fade too. The same message behaves the same on every path. A routine toast never replaces a failure that is up (it is dropped); only another failure does. A new start or unlock clears a staying toast without a sound.
+
+**Close and Back.** A failure toast carries a Close button at its end (the shared icon-only `ConsoleButton`, Small 32, with its hover and press states; accessible name "Close" / "Kapat"; the status node carries the message) and, while keys or the pad are in use, a Back hint ("Esc Close" or the pad's circle) beside it. Back puts the toast away first, before it navigates; Back and the button play the Back cue (`dismiss_toast`), and neither does anything while the toast is leaving. Select and Enter are never taken. A failure that arrives during a start is dismissed by the first Back; the second Back cancels the start.
+
+**Width and leading.** The toast shows its whole message (up to eight rows; a routine toast three) at the open leading of 1.4 from three rows on. It is capped to the width the top bar leaves free (442 dp each side of the centre: the buttons' 430 plus 12 of air; 760 at most), so it never covers the top bar's buttons; it may overlay the tile row below (scenes `toast-error`, `toast-error-long`). Events that raise toasts: unlock ready/failed, unreadable dump, no
 toolkit (`noToolkit`), start failed, uninstall done, shader cache cleared, report saved/failed, settings exported/imported/file
 invalid, "game: diagnosis".
 
@@ -1466,7 +1472,7 @@ up-down arrows, curve, scope, gauge, waveform, timer, tortoise, keyboard, trigge
 
 Full-screen overlay over the home (black 0.74 blurred): header `library` (40 light) + count (22 medium, 0.5, 8 leading) + hint bar
 without options; below, a scrolling grid of **196** tiles (gap 26 x 30) with as many columns as fit the width, at least three (`columns_for`; up and down move by that row). Each cell: tile with focus ring on the
-keyboard-selected one, name (15; semibold white when focused, else regular 0.75; 1 line, truncated), state label (12). Click =
+keyboard-selected one, name (15; semibold white when focused, else regular 0.75; 1 line, truncated; the focused tile's name takes up to two lines; a third is cut, but the full name is in the accessible name and in the title on Home. Its state line moves down inside the cell's own gap, so no other tile shifts: this is the one exception to "nothing moves on focus", and it touches only the cell's own content; scene `library-longname` with a state line), state label (12). Click =
 select that game and close. Keys: arrows move (up/down jump a row of 6), select picks, back/options close. The focused tile scrolls
 to the centre (animation 31). The plain "Ready" is not drawn under a tile (it stays in the accessible name): every game would repeat it, and it would hide the one that differs ("Playing", "Update available"). With no games the grid says what the empty home says ("No games yet" and the line about the games folder, no count) and offers the same one button (Pick or Change Folder; Select does the same; scene `library-empty`). (S-library. The tile shown "Playing" uses the coral accent.)
 
