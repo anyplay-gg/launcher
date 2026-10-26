@@ -35,8 +35,9 @@ pub use devices::{PairedDevice, PairedDevices};
 pub use discovery::{choose_addresses, lan_addresses};
 pub use layouts::Layouts;
 pub use ludusctrl::{
-    BeaconTarget, Holding, LUDUS_BEACON_PORT, LUDUS_PORT, LudusConfig, LudusEvents, LudusPhone,
-    LudusServer, LudusStatus, LudusStore, LudusVia, Owner, PadLayout, PadSlot, PadTarget, Refusal,
+    BeaconTarget, BrowserConfig, BrowserInfo, Certificate, Holding, LUDUS_BEACON_PORT, LUDUS_PORT,
+    LUDUS_WEB_PORT, LudusConfig, LudusEvents, LudusPhone, LudusServer, LudusStatus, LudusStore,
+    LudusVia, Owner, PadLayout, PadSlot, PadTarget, Refusal,
 };
 pub use protocol::{
     HELLO_SIZE, INPUT_SIZE, InputPacket, Message, OUTPUT_SIZE, OutputPacket, PROTOCOL_VERSION,

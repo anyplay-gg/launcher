@@ -553,6 +553,12 @@ impl PanelHost {
             SettingsAction::Ludus(crate::screens::ludus::LudusAction::OpenProjectPage) => {
                 open_known_url(crate::screens::ludus_strings::PROJECT_PAGE);
             }
+            SettingsAction::Ludus(crate::screens::ludus::LudusAction::CopyLink(link)) => {
+                cx.ctx.copy_text(link);
+                let text = crate::screens::ludus_web_strings::BrowserText::ToastCopied
+                    .text(model.language());
+                model.toast(text, crate::ui::icons::Icon::CHECK_CIRCLE);
+            }
             SettingsAction::Ludus(action) => model.ludus.commands.push(action),
             SettingsAction::Quit => cx.ctx.send_viewport_cmd(ViewportCommand::Close),
         }
