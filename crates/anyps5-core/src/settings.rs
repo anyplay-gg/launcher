@@ -488,8 +488,9 @@ pub struct Preferences {
     /// Home screen music.
     #[serde(default = "yes")]
     pub music: bool,
-    /// The running game on the player's Discord profile.
-    #[serde(default = "yes")]
+    /// The running game on the player's Discord profile. Off until the player turns it on: it
+    /// tells other people what they play (7.4).
+    #[serde(default)]
     pub discord_presence: bool,
     /// A "Join on AnyPlay" button on that Discord status, while the player plays online.
     #[serde(default = "yes")]
@@ -620,7 +621,7 @@ impl Default for Preferences {
             reduced_motion: false,
             sounds: true,
             music: true,
-            discord_presence: true,
+            discord_presence: false,
             discord_join_button: true,
             hide_while_playing: false,
             prepare_games: true,
@@ -1267,7 +1268,11 @@ mod tests {
         let prefs = Preferences::load(&paths);
         assert!(prefs.onboarded);
         assert_eq!(prefs.theme, Theme::Sunset);
-        assert!(prefs.sounds && prefs.music && prefs.discord_presence && prefs.game_artwork);
+        assert!(prefs.sounds && prefs.music && prefs.game_artwork);
+        assert!(
+            !prefs.discord_presence,
+            "a file that never chose shows no game on Discord"
+        );
         assert!(prefs.discord_join_button, "an old file turns the button on");
         assert!(prefs.fullscreen);
         assert!(

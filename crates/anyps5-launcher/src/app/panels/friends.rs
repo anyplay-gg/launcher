@@ -161,6 +161,7 @@ pub(super) fn online_action(model: &mut Model, action: OnlineAction) {
         OnlineAction::ManageAccount => {
             online.send(Purpose::AccountPage, Command::AccountPage);
         }
+        OnlineAction::OpenLegal(page) => page.open(),
         OnlineAction::Appeal { action, text } => {
             online.send(Purpose::Appeal(action), Command::Appeal { action, text });
         }

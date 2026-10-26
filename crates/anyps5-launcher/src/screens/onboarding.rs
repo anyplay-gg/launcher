@@ -7,6 +7,7 @@
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
 use egui::{Align2, Color32, Id, Painter, Rect, Role, Sense, Shape, Ui, WidgetInfo, pos2, vec2};
 
+use crate::screens::legal::{Legal, consent_line};
 use crate::screens::onboarding_strings::OnboardingText as OT;
 use crate::screens::online_strings::OnlineText;
 use crate::screens::{ScreenCx, place, wrapped};
@@ -34,6 +35,8 @@ enum Press {
     Start,
     /// Sign In, Create Account or Not Now on the online step.
     Online(usize),
+    /// A link of the sentence under them: the Terms of Service or the Privacy Policy.
+    Legal(Legal),
     Back,
 }
 
@@ -123,6 +126,7 @@ pub fn show(ui: &mut Ui, cx: &mut ScreenCx<'_>) {
             }
             Press::Start => cx.model.onboarding_start(),
             Press::Online(i) => cx.model.tap_online(i),
+            Press::Legal(page) => page.open(),
             Press::Back => cx.model.onboarding_back(),
         }
     }
@@ -472,9 +476,16 @@ fn online_step(
             }
         }
     });
+    // What creating an account means agreeing to, under the buttons that lead there.
+    let consent_top = y + size::BUTTON_MIN_HEIGHT + 16.0;
+    let (page, consent_height) =
+        consent_line(ui, pos2(origin.x, consent_top), 800.0, language, on_step);
+    if let Some(page) = page {
+        presses.push(Press::Legal(page));
+    }
     text::paint(
         &painter,
-        pos2(origin.x, y + size::BUTTON_MIN_HEIGHT + 22.0),
+        pos2(origin.x, consent_top + consent_height + 14.0),
         Align2::LEFT_TOP,
         ty::DETAIL,
         OT::OnlineLater.text(language),

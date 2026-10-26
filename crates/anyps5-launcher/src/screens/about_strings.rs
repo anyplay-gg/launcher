@@ -20,17 +20,21 @@ pub enum AboutText {
     DiscordDetail,
     Privacy,
     Terms,
+    /// Before an account is made: the pages it means agreeing to. `{terms}` and `{privacy}` stand
+    /// for the pages' names, which are links where the text can hold them.
+    Consent,
     /// Who the launcher builds on.
     Credits,
 }
 
 impl AboutText {
-    pub const ALL: [AboutText; 6] = [
+    pub const ALL: [AboutText; 7] = [
         AboutText::Website,
         AboutText::Discord,
         AboutText::DiscordDetail,
         AboutText::Privacy,
         AboutText::Terms,
+        AboutText::Consent,
         AboutText::Credits,
     ];
 
@@ -41,6 +45,9 @@ impl AboutText {
             AboutText::DiscordDetail => "News, help and other players",
             AboutText::Privacy => "Privacy Policy",
             AboutText::Terms => "Terms of Service",
+            AboutText::Consent => {
+                "By creating an account you agree to the {terms} and the {privacy}."
+            }
             AboutText::Credits => {
                 "Built on AnyPS5 by boykopovar. The launcher began as utkuhalis' AnyPS5-ARM launcher for macOS."
             }
@@ -54,6 +61,9 @@ impl AboutText {
             AboutText::DiscordDetail => "Haberler, yardım ve diğer oyuncular",
             AboutText::Privacy => "Gizlilik Politikası",
             AboutText::Terms => "Hizmet Şartları",
+            AboutText::Consent => {
+                "Hesap oluşturarak {terms} ve {privacy} metinlerini kabul edersin."
+            }
             AboutText::Credits => {
                 "boykopovar'ın AnyPS5'i üzerine kurulu. Launcher, utkuhalis'in macOS için AnyPS5-ARM launcher'ı olarak başladı."
             }

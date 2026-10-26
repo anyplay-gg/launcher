@@ -1841,6 +1841,7 @@ mod tests {
         let g = game("a", Some("v1"), ExecutableKind::Elf);
         let id = g.id.clone();
         let mut m = model_with(vec![g.clone()]);
+        m.prefs.discord_presence = true;
         m.handle(Command::Select);
         m.on_pipeline(PipelineEvent::Spawned { game: id.clone() });
         m.effects.clear();
