@@ -49,6 +49,9 @@ const TILE_HEIGHT: f32 = 214.0;
 const AVATAR_TOP: f32 = 36.0;
 const TILE_GAP: f32 = size::CONTROL_GAP;
 const AVATAR: f32 = 88.0;
+/// The fade over the bottom edge of a page that goes on below: its height and its darkest alpha.
+const FADE_HEIGHT: f32 = 48.0;
+const FADE_ALPHA: u8 = 150;
 /// The dark disc and the glyph of a mark (muted, deafened) on an avatar.
 const MARK_DISC: f32 = 14.0;
 const MARK_GLYPH: f32 = 14.0;
@@ -935,7 +938,28 @@ fn draw(
         output.inner_rect.height(),
         output.state.clamped_offset().y,
     );
+    // More below: the bottom edge fades, so the page does not end in a cut button.
+    let hidden =
+        output.content_size.y - output.inner_rect.height() - output.state.clamped_offset().y;
+    if hidden > 2.0 {
+        paint_more_below(ui.painter(), output.inner_rect);
+    }
     view
+}
+
+/// A soft dark band along the bottom edge of the scrolling page: there is more under it.
+fn paint_more_below(painter: &egui::Painter, area: Rect) {
+    let band = Rect::from_min_max(pos2(area.min.x, area.max.y - FADE_HEIGHT), area.max);
+    let clear = egui::Color32::from_black_alpha(0);
+    let dark = egui::Color32::from_black_alpha(FADE_ALPHA);
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(band.left_top(), clear);
+    mesh.colored_vertex(band.right_top(), clear);
+    mesh.colored_vertex(band.right_bottom(), dark);
+    mesh.colored_vertex(band.left_bottom(), dark);
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    painter.add(egui::Shape::mesh(mesh));
 }
 
 /// A row of buttons, 12 dp apart, wrapping at the width of the page. The ones that end something
@@ -1158,7 +1182,7 @@ fn seat_tile(ui: &mut Ui, width: f32, focused: bool, language: Language) -> bool
     painter.circle_stroke(
         centre,
         AVATAR * 0.5,
-        egui::Stroke::new(1.5, color::hairline_hover()),
+        egui::Stroke::new(1.5, color::hairline_control()),
     );
     painter.text(
         centre,

@@ -351,7 +351,8 @@ pub(crate) fn incoming_card(
             // The caller: avatar, name, and what is happening.
             let inner = rect.shrink(PAD);
             let centre = pos2(inner.min.x + AVATAR * 0.5, inner.min.y + AVATAR * 0.5);
-            // The caller looks the way they do in the friends list and in a thread.
+            // The caller has the monogram colour and initial the friends list and a thread give
+            // them (the card has no picture to show).
             let mut faded = painter.clone();
             faded.set_opacity(a);
             paint_row_avatar(
@@ -667,7 +668,7 @@ pub(crate) fn call_strip(
                 }
             }
             if discord.is_none() || discord.is_some_and(|d| d.link.is_some()) {
-                child.add_space(LEAVE_GAP - 2.0 * GAP);
+                child.add_space(LEAVE_GAP - GAP);
             }
             let focused = keyboard_focus(&child);
             if ConsoleButton::icon_only(Icon::SIGN_OUT, CT::Leave.text(language))
