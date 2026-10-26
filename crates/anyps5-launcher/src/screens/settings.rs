@@ -569,6 +569,13 @@ pub fn build_categories(
             .detail(Extra::HomeMusicDetail.text(language))
             .icon(Icon::MUSIC_NOTES),
         Row::toggle(
+            "gameMusic",
+            Extra::GameMusic.text(language),
+            prefs.game_music,
+        )
+        .detail(Extra::GameMusicDetail.text(language))
+        .icon(Icon::GAME_CONTROLLER),
+        Row::toggle(
             "discord",
             Extra::DiscordPresence.text(language),
             prefs.discord_presence,
@@ -1227,6 +1234,10 @@ pub fn apply_value(prefs: &mut Preferences, change: &Change) -> bool {
             index,
         } => prefs.vibration = convert::vibration_to_core(*index),
         Change::Toggle { row: "music", on } => prefs.music = *on,
+        Change::Toggle {
+            row: "gameMusic",
+            on,
+        } => prefs.game_music = *on,
         Change::Toggle { row: "discord", on } => prefs.discord_presence = *on,
         Change::Toggle {
             row: "discordJoin",

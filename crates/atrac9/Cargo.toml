@@ -1,0 +1,17 @@
+[package]
+name = "anyplay-atrac9"
+description = "ATRAC9 decoding for the launcher's game music: LibAtrac9 (C, MIT) built from source, behind a safe wrapper"
+version.workspace = true
+edition.workspace = true
+# The wrapper is GPL-2.0-only like the launcher; the vendored C in libatrac9/ is MIT (libatrac9/LICENSE).
+license = "GPL-2.0-only AND MIT"
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+links = "atrac9"
+
+[lib]
+name = "anyplay_atrac9"
+
+[build-dependencies]
+cc = "1"

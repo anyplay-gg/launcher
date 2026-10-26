@@ -51,6 +51,13 @@ fi
   -c "$network/about.toml" -m "$network/crates/share-worker/Cargo.toml" -o "$work/share.json"
 mkdir -p "$(dirname "$out")"
 node "$here/notices.mjs" "$out" "$work/launcher.json" "$work/net.json" "$work/share.json"
+# C code built into the launcher from source, which cargo-about does not see: LibAtrac9 decodes the
+# games' own music (crates/atrac9).
+{
+  printf '\n%s\n%s\n\n' "LibAtrac9 by Alex Barney (C source in crates/atrac9/libatrac9, built into the launcher" \
+    "to play a game's own music on the home screen):"
+  cat "$root/crates/atrac9/libatrac9/LICENSE"
+} >> "$out"
 # Not part of the release: Cisco's own binary, downloaded to the player's PC when they turn the
 # codec on. Cisco's licence asks for its full text where licences are shown.
 {
