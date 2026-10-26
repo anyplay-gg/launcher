@@ -708,11 +708,7 @@ impl Extra {
         substitute(self.text(language), args)
     }
 
-<<<<<<< HEAD
-    pub const ALL: [Extra; 156] = [
-=======
-    pub const ALL: [Extra; 155] = [
->>>>>>> origin/main
+    pub const ALL: [Extra; 158] = [
         Extra::Toolkit,
         Extra::UpdateCheck,
         Extra::UpdateCheckDetail,
