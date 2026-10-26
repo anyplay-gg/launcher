@@ -603,8 +603,9 @@ pub struct Preferences {
     /// (docs/DESIGN.md 18). Off until the player turns it on.
     #[serde(default)]
     pub phone_remote: bool,
-    /// LudusCtrl, an option of the phone server: a controller connected to an Android phone plays
-    /// on this PC through the LudusCtrl app. Off until the player turns it on.
+    /// LudusCtrl, an option of the phone server: a controller connected to a phone plays on this
+    /// PC, through the LudusCtrl app on Android or the phone's browser (the browser client runs
+    /// with it). Off until the player turns it on.
     #[serde(default)]
     pub phone_ludusctrl: bool,
     /// Clips: how many seconds of the running game the launcher keeps for a clip (one of
@@ -1318,6 +1319,21 @@ mod tests {
         let again: Value =
             serde_json::from_slice(&fs::read(paths.preferences_file()).unwrap()).unwrap();
         assert_eq!(again["futureThing"], json!({"a": [1, 2]}));
+    }
+
+    #[test]
+    fn a_file_with_the_old_browser_client_switch_still_loads() {
+        // The browser client had a switch of its own before it ran with LudusCtrl.
+        let prefs: Preferences = serde_json::from_str(
+            r#"{"phoneRemote": true, "phoneLudusctrl": true, "phoneLudusctrlBrowser": true}"#,
+        )
+        .unwrap();
+        assert!(prefs.phone_remote && prefs.phone_ludusctrl);
+        assert_eq!(
+            prefs.extra["phoneLudusctrlBrowser"],
+            json!(true),
+            "kept, unread"
+        );
     }
 
     #[test]

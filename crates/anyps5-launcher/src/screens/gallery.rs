@@ -250,6 +250,16 @@ pub enum PhoneLook {
     LudusConnected,
     /// A phone of the phone server and a LudusCtrl phone both connected: the whole page.
     Both,
+    /// LudusCtrl's browser client waits: the QR code, the link, two other addresses.
+    BrowserWaiting,
+    /// A browser holds the pad.
+    BrowserLinked,
+    /// The certificate was made again and the port was busy: both notes.
+    BrowserReissued,
+    /// The browser client could not start.
+    BrowserFailed,
+    /// LudusCtrl's server could not start for the app: the browser client runs alone.
+    AppFailed,
 }
 
 impl PhoneLook {
@@ -266,6 +276,18 @@ impl PhoneLook {
                 | PhoneLook::LudusPairing
                 | PhoneLook::LudusConnected
                 | PhoneLook::Both
+        ) || self.browser_on()
+    }
+
+    /// Whether this look is one of the browser client's scenes.
+    fn browser_on(self) -> bool {
+        matches!(
+            self,
+            PhoneLook::BrowserWaiting
+                | PhoneLook::BrowserLinked
+                | PhoneLook::BrowserReissued
+                | PhoneLook::BrowserFailed
+                | PhoneLook::AppFailed
         )
     }
 }
@@ -545,7 +567,14 @@ fn sample_phone(look: PhoneLook) -> crate::app::phone::PhoneState {
             state.info = None;
             state.failed = true;
         }
-        PhoneLook::LudusWaiting | PhoneLook::LudusPairing | PhoneLook::LudusConnected => {}
+        PhoneLook::LudusWaiting
+        | PhoneLook::LudusPairing
+        | PhoneLook::LudusConnected
+        | PhoneLook::BrowserWaiting
+        | PhoneLook::BrowserLinked
+        | PhoneLook::BrowserReissued
+        | PhoneLook::BrowserFailed
+        | PhoneLook::AppFailed => {}
         PhoneLook::Both => {
             state.connected = Some("Pixel 8".into());
             state.latency_ms = Some(4.0);
@@ -566,6 +595,7 @@ fn sample_ludus(look: PhoneLook) -> crate::app::ludus::LudusState {
     };
     let mut state = LudusState {
         port: Some(45989),
+        addresses: vec!["192.168.178.20".parse().expect("an address")],
         pad: Some(VirtualPadStatus::Ready),
         ..LudusState::default()
     };
@@ -585,9 +615,69 @@ fn sample_ludus(look: PhoneLook) -> crate::app::ludus::LudusState {
                 phone("d4", "Redmi Note 13 Pro", "2026-10-26T08:15:52Z"),
             ];
         }
+        PhoneLook::BrowserWaiting
+        | PhoneLook::BrowserLinked
+        | PhoneLook::BrowserReissued
+        | PhoneLook::BrowserFailed => {
+            state.paired = vec![phone("c3", "Galaxy Tab S9", "2026-10-25T20:41:07Z")];
+        }
+        PhoneLook::AppFailed => {
+            state.failed = true;
+            state.port = None;
+            state.addresses.clear();
+        }
         _ => {}
     }
+    // The browser client runs whenever LudusCtrl does.
+    if look.ludus_on() {
+        state.browser = sample_browser(look);
+    }
     state
+}
+
+/// An invented browser client for the same page. The token is made up and as long as a real one
+/// (22 characters), so the link row shows its true width.
+fn sample_browser(look: PhoneLook) -> crate::app::ludus_web::BrowserState {
+    use crate::app::ludus_web::{BrowserInfo, BrowserState, Certificate, LUDUS_WEB_PORT};
+    if look == PhoneLook::BrowserFailed {
+        return BrowserState {
+            failed: true,
+            ..BrowserState::default()
+        };
+    }
+    let token = "q8Zk3VtW0bHn5sLc2pRj1A";
+    let port = if look == PhoneLook::BrowserReissued {
+        51234
+    } else {
+        LUDUS_WEB_PORT
+    };
+    let link = |address: &str| format!("https://{address}:{port}/#t={token}");
+    // The other addresses show in the browser client's own scene.
+    let urls = if look == PhoneLook::BrowserWaiting {
+        vec![
+            link("192.168.178.20"),
+            link("10.0.0.7"),
+            link("172.20.144.1"),
+        ]
+    } else {
+        vec![link("192.168.178.20")]
+    };
+    BrowserState {
+        info: Some(BrowserInfo {
+            urls,
+            port,
+            preferred_port: port == LUDUS_WEB_PORT,
+            certificate: if look == PhoneLook::BrowserReissued {
+                Certificate::Reissued
+            } else {
+                Certificate::Kept
+            },
+            fingerprint: String::new(),
+        }),
+        failed: false,
+        peer: (look == PhoneLook::BrowserLinked).then(|| "192.168.178.41".into()),
+        device: (look == PhoneLook::BrowserLinked).then(|| "iPhone".into()),
+    }
 }
 
 /// The page named on the command line.
@@ -660,6 +750,11 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "phone-ludus-pairing" => ScreenPage::Phone(PhoneLook::LudusPairing),
         "phone-ludus-connected" => ScreenPage::Phone(PhoneLook::LudusConnected),
         "phone-both" => ScreenPage::Phone(PhoneLook::Both),
+        "phone-browser" => ScreenPage::Phone(PhoneLook::BrowserWaiting),
+        "phone-browser-linked" => ScreenPage::Phone(PhoneLook::BrowserLinked),
+        "phone-browser-reissued" => ScreenPage::Phone(PhoneLook::BrowserReissued),
+        "phone-browser-failed" => ScreenPage::Phone(PhoneLook::BrowserFailed),
+        "phone-ludus-failed" => ScreenPage::Phone(PhoneLook::AppFailed),
         "toolkit" => ScreenPage::Toolkit(ToolkitLook::Stable),
         "toolkit-update" => ScreenPage::Toolkit(ToolkitLook::Update),
         "toolkit-newer" => ScreenPage::Toolkit(ToolkitLook::Newer),
@@ -2314,6 +2409,7 @@ impl ScreenGallery {
                     worker: Some(("ready".into(), None)),
                 }
             }),
+            windows_rows: true,
             clips: crate::screens::settings::ClipsEnv {
                 count: if self.prefs.clips_seconds > 0 { 3 } else { 0 },
                 capturing: matches!(self.page, ScreenPage::BehaviourClipsKey),
@@ -2764,7 +2860,10 @@ impl ScreenGallery {
                 self.whats_new
                     .open_launcher(&self.launcher_notes.notes, shell.language);
             }
-            ScreenPage::BehaviourLinks => self.settings.open_at(3, true),
+            ScreenPage::BehaviourLinks => {
+                self.settings.open_at(3, true);
+                self.settings.focus_row_id("links");
+            }
             ScreenPage::SettingsCodec(on) => {
                 self.prefs.online_openh264 = on;
                 self.settings.open_at(6, true);
@@ -2782,33 +2881,41 @@ impl ScreenGallery {
             ScreenPage::BehaviourClipsOff => {
                 self.prefs.clips_seconds = 0;
                 self.settings.open_at(3, true);
-                self.settings.focus_row(8);
+                self.settings.focus_row_id("clips");
             }
             ScreenPage::BehaviourClips | ScreenPage::BehaviourClipsKey => {
                 self.prefs.clips_seconds = 30;
                 self.settings.open_at(3, true);
                 self.settings
-                    .focus_row(if self.page == ScreenPage::BehaviourClipsKey {
-                        9
+                    .focus_row_id(if self.page == ScreenPage::BehaviourClipsKey {
+                        "clipsKey"
                     } else {
-                        8
+                        "clips"
                     });
             }
             ScreenPage::BehaviourSteam => {
                 self.settings.open_at(3, true);
-                self.settings.focus_row(12);
+                self.settings.focus_row_id("addToSteam");
             }
             ScreenPage::Phone(look) => {
                 self.settings.open_at(4, true);
                 // The question lands on its first answer.
                 if look == PhoneLook::Pairing {
-                    self.settings.focus_row(4);
+                    self.settings.focus_row_id("pairAllow");
                 }
                 // LudusCtrl's question lands on its first answer; a connected LudusCtrl phone
-                // shows the end of the page, where the app comes from.
+                // shows the end of the page, where the app comes from. LudusCtrl waiting is the
+                // switch just turned on, which keeps the QR code in view; the browser client's
+                // scenes land on the QR code's group.
                 let focus = match look {
+                    PhoneLook::LudusWaiting => Some("ludusctrl"),
                     PhoneLook::LudusPairing => Some("ludusAllow"),
                     PhoneLook::LudusConnected => Some("ludusApp"),
+                    PhoneLook::BrowserWaiting => Some("browserCopy"),
+                    PhoneLook::BrowserLinked => Some("browserStatus"),
+                    PhoneLook::BrowserFailed => Some("browserFailed"),
+                    PhoneLook::AppFailed => Some("ludusFailed"),
+                    PhoneLook::BrowserReissued => Some("browserNewLink"),
                     _ => None,
                 };
                 if let Some(focus) = focus {

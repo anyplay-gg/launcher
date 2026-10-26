@@ -288,7 +288,7 @@ impl OnlineText {
             }
             OnlineText::RecordNetwork => "Record Network Calls",
             OnlineText::RecordNetworkDetail => {
-                "Games write what they ask the network for to the Logs folder, to help build online support. Nothing is uploaded."
+                "Games write their network requests to the Logs folder, to help build online support. Nothing is uploaded."
             }
             OnlineText::AppearOffline => "Appear Offline",
             OnlineText::AppearOfflineDetail => "Friends see you as offline",
@@ -297,8 +297,10 @@ impl OnlineText {
             OnlineText::RelayOnlyNote => {
                 "Other players reach you only through a relay and never see your IP address. Games can respond a little slower."
             }
-            OnlineText::Openh264 => "Share Screen Video Codec",
-            OnlineText::Openh264Off => "Share Screen cannot send or show video while it is off",
+            OnlineText::Openh264 => "Video for Share Screen",
+            OnlineText::Openh264Off => {
+                "Turn on to download Cisco's video codec. Share Screen cannot send or show video without it"
+            }
             OnlineText::Openh264Downloading => "Downloading from Cisco",
             OnlineText::Openh264Ready => "Downloaded from Cisco",
             OnlineText::Openh264Missing => "Not downloaded yet",
@@ -442,8 +444,10 @@ impl OnlineText {
             OnlineText::RelayOnlyNote => {
                 "Diğer oyuncular sana yalnızca bir aktarıcı üzerinden ulaşır ve IP adresini hiç görmez. Oyunlar biraz daha geç tepki verebilir."
             }
-            OnlineText::Openh264 => "Ekran Paylaşımı Video Kodeği",
-            OnlineText::Openh264Off => "Kapalıyken ekran paylaşımı video gönderemez ve gösteremez",
+            OnlineText::Openh264 => "Ekran Paylaşımında Video",
+            OnlineText::Openh264Off => {
+                "Cisco'nun video kodeğini indirmek için aç. Kodek olmadan ekran paylaşımı video gönderemez ve gösteremez"
+            }
             OnlineText::Openh264Downloading => "Cisco'dan indiriliyor",
             OnlineText::Openh264Ready => "Cisco'dan indirildi",
             OnlineText::Openh264Missing => "Henüz indirilmedi",

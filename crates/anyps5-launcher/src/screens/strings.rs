@@ -18,7 +18,6 @@ pub enum Extra {
     UpdateAvailable,
     CheckFailed,
     LastChecked,
-    NeverChecked,
     ToolkitMissing,
     ToolkitInstall,
     ToolkitInstallUpdate,
@@ -76,7 +75,6 @@ pub enum Extra {
     /// The log box before the game wrote anything.
     EmptyLog,
     /// The button of the removal confirmation (its title already says what is removed).
-    Remove,
     /// Controls row: the keyboard layout and its choices.
     Layout,
     LayoutLauncher,
@@ -272,7 +270,6 @@ impl Extra {
             Extra::UpdateAvailable => "Update available: %@",
             Extra::CheckFailed => "Could not check",
             Extra::LastChecked => "Last Checked",
-            Extra::NeverChecked => "Never",
             Extra::ToolkitMissing => "Not installed",
             Extra::ToolkitInstall => "Download the Toolkit",
             Extra::ToolkitInstallUpdate => "Install the Update",
@@ -330,7 +327,6 @@ impl Extra {
             }
             Extra::TrophyShow => "Show",
             Extra::EmptyLog => "No log yet. Play the game once and it appears here.",
-            Extra::Remove => "Remove",
             Extra::ToolkitFolderInvalid => {
                 "This folder is not a toolkit. Pick the folder that holds the relinker and libs."
             }
@@ -485,7 +481,6 @@ impl Extra {
             Extra::UpdateAvailable => "Güncelleme var: %@",
             Extra::CheckFailed => "Denetlenemedi",
             Extra::LastChecked => "Son Denetleme",
-            Extra::NeverChecked => "Hiç",
             Extra::ToolkitMissing => "Kurulu değil",
             Extra::ToolkitInstall => "Araç Setini İndir",
             Extra::ToolkitInstallUpdate => "Güncellemeyi Kur",
@@ -539,7 +534,6 @@ impl Extra {
             }
             Extra::TrophyShow => "Göster",
             Extra::EmptyLog => "Henüz günlük yok. Oyunu bir kez oynadığında burada görünür.",
-            Extra::Remove => "Kaldır",
             Extra::ToolkitFolderInvalid => {
                 "Bu klasör bir araç seti değil. relinker ve libs içeren klasörü seç."
             }
@@ -692,7 +686,7 @@ impl Extra {
         substitute(self.text(language), args)
     }
 
-    pub const ALL: [Extra; 154] = [
+    pub const ALL: [Extra; 152] = [
         Extra::Toolkit,
         Extra::UpdateCheck,
         Extra::UpdateCheckDetail,
@@ -702,7 +696,6 @@ impl Extra {
         Extra::UpdateAvailable,
         Extra::CheckFailed,
         Extra::LastChecked,
-        Extra::NeverChecked,
         Extra::ToolkitMissing,
         Extra::ToolkitInstall,
         Extra::ToolkitInstallUpdate,
@@ -741,7 +734,6 @@ impl Extra {
         Extra::ShowHiddenTrophiesDetail,
         Extra::TrophyShow,
         Extra::EmptyLog,
-        Extra::Remove,
         Extra::Layout,
         Extra::LayoutLauncher,
         Extra::LayoutMouse,
