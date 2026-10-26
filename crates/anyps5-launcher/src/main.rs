@@ -7,6 +7,7 @@ mod app;
 mod fonts;
 mod instance;
 mod logging;
+mod macstyle;
 mod screens;
 mod startup;
 mod ui;

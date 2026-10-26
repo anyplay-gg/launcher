@@ -528,6 +528,12 @@ pub fn build_categories(
     }
     appearance
         .push(Row::toggle("artwork", t(Key::GameArtwork), prefs.game_artwork).icon(Icon::IMAGE));
+    // Only the Mac has a window to see through (docs/DESIGN.md 19).
+    if crate::macstyle::AVAILABLE {
+        appearance.push(
+            Row::toggle("glass", t(Key::GlassWindow), prefs.glass_window).icon(Icon::APP_WINDOW),
+        );
+    }
     appearance.push(
         Row::choice(
             "motion",
@@ -1236,6 +1242,7 @@ pub fn apply_value(prefs: &mut Preferences, change: &Change) -> bool {
             }
         }
         Change::Toggle { row: "artwork", on } => prefs.game_artwork = *on,
+        Change::Toggle { row: "glass", on } => prefs.glass_window = *on,
         Change::Choice {
             row: "motion",
             index,
@@ -1923,7 +1930,22 @@ mod tests {
             .rows
             .iter()
             .map(|r| r.id)
+            .filter(|id| *id != "glass")
             .collect()
+    }
+
+    #[test]
+    fn only_the_mac_has_the_glass_window_row() {
+        let prefs = Preferences::first_run();
+        let cats = build_categories(&prefs, &env(None, UpdateState::Unknown), Language::English);
+        let has = cats
+            .iter()
+            .find(|c| c.category == Category::Appearance)
+            .unwrap()
+            .rows
+            .iter()
+            .any(|r| r.id == "glass");
+        assert_eq!(has, crate::macstyle::AVAILABLE);
     }
 
     #[test]

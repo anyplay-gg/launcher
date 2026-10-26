@@ -3,7 +3,7 @@
 //! [`paint_glass`] draws one panel; [`GlassStyle`] has a preset for every use in the original
 //! (info cards, toast, log boxes, full-screen panels, side panel, splash).
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use bytemuck::{Pod, Zeroable};
 use eframe::egui_wgpu::{self, wgpu};
@@ -343,6 +343,16 @@ pub(crate) fn panels_painted() -> bool {
     PANELS.load(Ordering::Relaxed) > 0
 }
 
+/// Mac style: the window is see-through, so panels let a little of it through (docs/DESIGN.md 19.2).
+static WINDOW_GLASS: AtomicBool = AtomicBool::new(false);
+/// How much of a panel is opaque while the window is see-through.
+pub const WINDOW_GLASS_PANEL: f32 = 0.96;
+
+/// Set by the backdrop at the start of a frame.
+pub(crate) fn set_window_glass(on: bool) {
+    WINDOW_GLASS.store(on, Ordering::Relaxed);
+}
+
 /// Next free position in this pass's uniform ring.
 fn next_index(ctx: &Context) -> usize {
     #[derive(Clone, Default)]
@@ -378,6 +388,9 @@ pub fn paint_glass_on(
 ) {
     let mut style = style;
     style.alpha *= painter.opacity();
+    if WINDOW_GLASS.load(Ordering::Relaxed) {
+        style.alpha *= WINDOW_GLASS_PANEL;
+    }
     if style.alpha <= 0.0 {
         return;
     }

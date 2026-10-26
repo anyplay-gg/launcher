@@ -176,6 +176,8 @@ pub struct LauncherApp {
     pub freeze_backdrop: bool,
     /// Behave as if the window had focus (the demo, to measure a focused launcher unattended).
     pub assume_focus: bool,
+    /// The window's Mac dress (see `macstyle`); inert off macOS.
+    mac: crate::macstyle::MacStyle,
 }
 
 impl LauncherApp {
@@ -223,6 +225,7 @@ impl LauncherApp {
             scan_on_start: config.scan_on_start,
             offline: false,
             freeze_backdrop: false,
+            mac: crate::macstyle::MacStyle::default(),
             assume_focus: false,
         }
     }
@@ -553,6 +556,39 @@ impl LauncherApp {
         }
     }
 
+    /// Mac style, once per frame before the frame is drawn: dresses the window, decides whether it
+    /// is see-through, and opens Settings when the app menu asked for it. Does nothing off macOS.
+    pub fn dress_window(
+        &mut self,
+        ctx: &Context,
+        window: &impl raw_window_handle::HasWindowHandle,
+        glass_setting: bool,
+    ) {
+        if !crate::macstyle::AVAILABLE {
+            return;
+        }
+        let want = crate::macstyle::Want {
+            glass_setting,
+            fullscreen: ctx.input(|i| i.viewport().fullscreen).unwrap_or(false),
+            game_running: self.model.running.is_some(),
+        };
+        let outcome = self.mac.frame(ctx, window, want);
+        self.shell.backdrop.window_glass = outcome.glass;
+        if outcome.open_settings {
+            self.handle_event(ctx, InputEvent::OpenSettings);
+        }
+    }
+
+    /// What the window is cleared with: nothing while it is see-through, black otherwise.
+    #[cfg(target_os = "macos")]
+    pub fn clear_color(&self) -> [f32; 4] {
+        if self.shell.backdrop.window_glass {
+            [0.0; 4]
+        } else {
+            [0.0, 0.0, 0.0, 1.0]
+        }
+    }
+
     /// Executes what the model queued.
     fn run_effects(&mut self, ctx: &Context) {
         for _ in 0..4 {
@@ -733,7 +769,10 @@ impl LauncherApp {
             ctx: &ctx,
         };
         self.panels.frame(&mut cx);
-        if let Some(fullscreen) = crate::ui::caption::show(&ctx) {
+        if crate::macstyle::AVAILABLE {
+            // The Mac has its own traffic lights.
+            crate::macstyle::drag_strip(&ctx);
+        } else if let Some(fullscreen) = crate::ui::caption::show(&ctx) {
             self.set_fullscreen(&ctx, fullscreen);
         }
         crate::ui::intro::paint_curtain(&ctx);
@@ -964,6 +1003,7 @@ pub fn run(inbox: Option<crate::instance::Inbox>, arguments: Vec<String>) -> efr
         ])
         // Filling the screen starts from a plain window (see `enter_fullscreen`).
         .with_maximized(!fullscreen);
+    let viewport = crate::macstyle::MacStyle::viewport(viewport);
     // X11 and Wayland match the window to its desktop entry by this name.
     #[cfg(not(windows))]
     let viewport = viewport.with_app_id(APP_ID);
@@ -1041,6 +1081,8 @@ impl eframe::App for App {
             window_chrome::apply(frame);
         }
         let ctx = ui.ctx().clone();
+        let glass_setting = self.app.model.prefs.glass_window;
+        self.app.dress_window(&ctx, frame, glass_setting);
         self.frames = self.frames.saturating_add(1);
         if self.frames <= 3 {
             crate::startup::mark(&format!("frame {} begins", self.frames));
@@ -1052,6 +1094,11 @@ impl eframe::App for App {
         self.app.paint(ui);
         self.app.finish_frame(&ctx);
         crate::ui::latency::frame_done();
+    }
+
+    #[cfg(target_os = "macos")]
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        self.app.clear_color()
     }
 
     fn on_exit(&mut self) {

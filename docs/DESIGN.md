@@ -43,7 +43,7 @@ settings categories other than Appearance, or the Windows-irrelevant move-to-App
 
 Contents: 1 Tokens, 2 Motion, 3 Backgrounds (shaders), 4 Materials and blur on the GPU, 5 Screens and components, 6 Input,
 7 Sounds and media, 8 Localization, 9 Deviations, 10 Assets and licences, 11 Implementation notes for egui,
-18 Phone as controller.
+18 Phone as controller, 19 Mac style.
 
 ---
 
@@ -1214,7 +1214,7 @@ category's rows (5.8).
 
 | Category (key) | Glyph | Rows (id, kind, key, notes) |
 |---|---|---|
-| Appearance (`appearance`) | brush | `theme` choice (Cosmic/Aurora/Sunset), `accent` choice (six), `backdrop` choice (`backgroundTheme` / `backgroundImage` / `backgroundVideo`; picking image/video opens a file dialog when no file is set or the kind changed), `file` action `chooseFile` (only when backdrop is not theme; detail = file name), `artwork` toggle `gameArtwork`, `motion` choice (`motionFull` / `motionReduced`) |
+| Appearance (`appearance`) | brush | `theme` choice (Cosmic/Aurora/Sunset), `accent` choice (six), `backdrop` choice (`backgroundTheme` / `backgroundImage` / `backgroundVideo`; picking image/video opens a file dialog when no file is set or the kind changed), `file` action `chooseFile` (only when backdrop is not theme; detail = file name), `artwork` toggle `gameArtwork`, `glass` toggle `glassWindow` (macOS only, 19), `motion` choice (`motionFull` / `motionReduced`) |
 | Library (`storage`) | 2x2 grid | `folder` action `folder` (detail = path or an em dash; opens the folder dialog), `rescan` action `rescan` (detail `gamesFound` with count; sound `select`), then the rows of the unlocked games location ("Unlocked Games Location" below): `unlockedLocation` with its note (`installedSize` by default), `unlockedDefault`, and while copies move `moveCancel`, `moveContinue`, `moveLeave` |
 | Language (`language`) | globe | `language` choice (Türkçe, English; shown in their own language) |
 | Behaviour (`behaviour`) | sliders | `name` text field `profileName` (live edit), `sounds` toggle, `music` toggle (Home Screen Music, 7.3), `gameMusic` toggle (Game Music, game controller glyph, 7.3), `hide` toggle `hideWhilePlaying`, `prepare` toggle `prepareGames` (Prepare New Games Automatically), `hiddenTrophies` toggle `showHiddenTrophies` (trophy glyph; detail `showHiddenTrophiesDetail`; the trophy list's only option, 5.11) (+ platform row, see 9) |
@@ -1637,7 +1637,7 @@ shortcut below). While a native dialog is open the launcher does not handle keys
 to the text field (the original never handles them; the port additionally lets Enter and Esc blur the field, see section 9). While a
 binding waits for a key (controls panel) every key is captured by the panel. Key repeat is ours, not the OS's (2026-10-25): the OS repeat events of an arrow
 key are dropped and a held arrow runs the same repeat as a held direction on the pad (6.3), so a list moves the same under a finger
-and under a thumb. It ends when the key is up, when a dialog opens or when a binding starts to wait for a key. **Shortcut**: `Cmd+,` opens Settings when onboarded -> `Ctrl+,`. F11 toggles fullscreen (Windows addition).
+and under a thumb. It ends when the key is up, when a dialog opens or when a binding starts to wait for a key. **Shortcut**: `Cmd+,` opens Settings when onboarded -> `Ctrl+,` on Windows and Linux; on a Mac it stays `Cmd+,` (egui's `command` modifier is Ctrl there and Cmd on the Mac, so one check serves both, and the app menu's Settings item shows it, 19.4). F11 toggles fullscreen (Windows addition).
 
 ### 6.2 Mouse and wheel
 
@@ -2345,7 +2345,7 @@ sizes use decimal units (1 GB = 10^9 bytes) with the language's decimal separato
 |---|---|
 | Hidden, transparent title bar; window moves by dragging the background | **No title bar** (`with_decorations(false)`); the launcher draws its own caption (`ui::caption`): a drag strip along the top edge, 32 dp high, moves the window through the system move loop (`StartDrag`, so Snap still works) and a double click maximises or restores; minimise, maximise/restore and close sit in the top-right corner at the Windows 11 size (46 x 32 points; a large window does not grow it, a small one shrinks it with the UI so it stays above the top bar; 10 dp glyphs with 1 px strokes, white 0.6 at rest and white on hover, hover fill white 0.08, close hover #C42B1C), hidden while a controller is in use unless the pointer comes near the top; while the window is not maximised a 6 point band along each edge resizes it (`BeginResize` on the press). Fullscreen shows none of it. DWM keeps the shadow (`with_undecorated_shadow`), and is asked for dark mode (system menu), a black border and round corners. Window title `AnyPS5` (taskbar, Alt+Tab). |
 | Starts maximised to the screen's visible frame; green button = fullscreen | starts in borderless fullscreen on the screen it opens on, like a console (preference `fullscreen`, default on); `F11` or the caption's middle button switches to a maximised window and back, and the choice is remembered; min size 1100 x 650 |
-| Menu bar: `Cmd+,` Settings, no New | no menu bar; `Ctrl+,` opens Settings (when onboarded); `Alt+F4` closes; the "Quit" row in About stays |
+| Menu bar: `Cmd+,` Settings, no New | no menu bar (on the Mac there is one, 19.4); `Ctrl+,` opens Settings (when onboarded); `Alt+F4` closes; the "Quit" row in About stays |
 | `NSOpenPanel` / `NSSavePanel` | native Windows dialogs through the `rfd` crate: pick folder (games, screenshots, fonts), pick file (picture; video later; settings JSON import), save file (settings export, default name `"<game> - AnyPlay.json"`), dialog titles from `pickFolder`, `chooseFile`, `exportSettings`, `importSettings`. While a dialog is open the launcher ignores input. |
 | Finder (reveal in Finder) | Explorer: `explorer.exe /select,"<path>"`; label `showInFinder` -> "Show in Explorer" |
 | `UserDefaults` | JSON file `%APPDATA%\AnyPS5\preferences.json` (same fields, section 5.7) |
@@ -2878,3 +2878,56 @@ The AnyPS5 Remote phone app of the macOS fork ([utkuhalis/AnyPS5-ARM](https://gi
   - *Words.* English and Turkish like the rest (`screens/phone_strings.rs`). The product text names no console brand.
 
 **Tests.** `fake-phone` (`crates/fake-phone`, never shipped) is a phone and a game in one binary: `fake-phone phone --addr 127.0.0.1:47700 --key-file k.txt --script "select:ID,launch:ID,press:cross,..."`, `fake-phone phone --discover` finds the PC through mDNS, `fake-phone game` greets on the bridge. `crates/fake-phone/tests/e2e.rs` drives the real server with it: protocol round trip, pairing and key reuse, an unpaired phone rejected, a denied phone rejected, a request flood limited. The unit tests of `remote` cover the packets (golden hex), the device file, the layouts file, the rate limiter, the on-link rule, the relay's identity checks, the mDNS adapter choice and the pad mapping. The scenes render in the gallery; `docs/media/phone-off.jpg` is a real screenshot of the off state. Gallery scenes: `phone-off`, `phone-waiting`, `phone-pairing`, `phone-connected`, `phone-driver` (Windows without ViGEmBus), `phone-access` (Linux without access to uinput), `phone-failed`, and `home-phone` (the top bar). Not tested without hardware: a real phone on a real network and a real virtual pad in a real game (any game needs the user's go).
+
+---
+
+## 19. Mac style (2026-10-26)
+
+The Mac version is this launcher: the same screens, layout, features and version as on Windows and Linux. On macOS only, it is dressed in **Mac style**: a see-through window with the system's blur behind it, the Mac's window chrome, and the Mac's conventions. Windows and Linux keep their look unchanged. All of it is one module, `macstyle` (`crates/anyps5-launcher/src/macstyle.rs`); the AppKit code in it is compiled on macOS only, and elsewhere the module does nothing. Nothing here comes from another launcher; it is our own design and code.
+
+### 19.1 The window
+
+| Item | Value |
+|---|---|
+| Window | transparent (`with_transparent`), standard decorations with a transparent title bar, no title, the content under the title bar (`with_fullsize_content_view`). The traffic lights are the system's. Dark appearance, always: the launcher is dark only. |
+| Start | a window the size of the screen's usable area, not full screen: the default of the `fullscreen` preference is off on a Mac (on elsewhere), because the glass needs the desktop behind it. The green button and Ctrl+Cmd+F use the system's full screen; F11 and the preference still work. |
+| Drag | the system's title bar drags. A strip along the top edge (28 points, never into the home screen's top bar at 34 dp) is the fallback if the title bar passes the press on. |
+| Caption | none: the Windows caption buttons (9.2) are not drawn. |
+| Traffic lights | they occupy about 84 x 34 points in the top-left corner. The home top bar starts at 34 dp and its centre line is at 56 dp, so even at the smallest window (scale 0.69) the title sits below the lights; a test (`macstyle::tests`) keeps it so. Panels start at 64 dp or lower. |
+
+### 19.2 Glass
+
+The window is **see-through** when all of these hold: the player's setting "Glass Window" is on (default on, Settings > Appearance, `glassWindow`; EN "Glass Window", TR "Cam Pencere", after "Show the Selected Game's Artwork"), the window is not in full screen, no game runs, and the system setting Reduce Transparency is off (`NSWorkspace.accessibilityDisplayShouldReduceTransparency`, read once a second while the window could be see-through). Otherwise everything is solid, as before: the animated theme background on an opaque black window. The rule is one function, `macstyle::glass_active`.
+
+Layers, from the back:
+
+1. **The system blur**, a view behind the content view in the window's frame view: `NSGlassEffectView` (Liquid Glass, style Regular) on macOS 26 and newer, found at run time by class lookup; `NSVisualEffectView` (material HUD window, behind window, always active) on earlier systems. `ANYPLAY_GLASS_MATERIAL=blur` forces the older one. Hidden, and the window made opaque, when the window is not see-through.
+2. **A plate**: black 0.50 over the whole window (`GLASS_PLATE`).
+3. **The theme**, a still of the theme background (the shader frame at 260 s, the same as the gallery stills) at opacity 0.62 (`GLASS_VEIL`). Nothing moves: the backdrop clock stops and asks for no frames, and the offscreen image is not redrawn, so an idle launcher costs nothing. The theme's colour still shows through as a tint, which is what makes the glass this launcher's and not any window's.
+4. The game artwork, scrims and the UI, unchanged.
+5. **Glass panels** (section 4) keep their recipe; each is drawn at 0.96 of its opacity (`WINDOW_GLASS_PANEL`), so the window is faintly present through them. Text sits on the panels and on the plate, never on the bare blur.
+
+Reduce Transparency, full screen and a running game each switch to the solid look; a game in front also hides the effect view, so the window server has no blur to compute for a window nobody sees.
+
+**Contrast.** The system blur's brightness is not under our control, so the worst case is a bound: a dark material over a white wallpaper is taken as sRGB 115 (45 %), well above what the dark HUD material gives. Over that, plate, theme (deep and lit tones) and the side panel are composited like every ground in 3.10; `ui::contrast` measures them (grounds "glass window", panels "glass") and every ink reaches its ratio there too (the weakest is the destructive text on a pressed row on Sunset, just above 4.5:1). The real brightness of the material needs a Mac; if it is brighter than the bound, raise `GLASS_PLATE`.
+
+### 19.3 Chrome and the top of the screen
+
+The traffic lights sit in the top-left margin above the top bar (19.1). In full screen they are hidden by the system, and nothing else changes. The window's size limits (1100 x 650) and scaling (1.1) are unchanged.
+
+### 19.4 Menu and keys
+
+The menu bar (replacing the default, whose items would carry the executable's name):
+
+| Menu | Items |
+|---|---|
+| AnyPlay Launcher | About AnyPlay Launcher (the system's about panel, from the bundle: name, version, icon), Settings… ⌘, (opens Settings when onboarded, like the shortcut), Hide AnyPlay Launcher ⌘H, Hide Others ⌥⌘H, Show All, Quit AnyPlay Launcher ⌘Q |
+| Window | Minimize ⌘M, Zoom, Enter Full Screen ⌃⌘F |
+
+The menu's items use the system's own actions; only Settings is ours. The menu is in English: the launcher's language setting does not reach AppKit's menu.
+
+Keys: wherever Windows and Linux use Ctrl, a Mac uses Cmd. There is one such shortcut, Settings (`Ctrl+,` / `Cmd+,`); egui's `command` modifier is that key on each system. Everything else is as in 6.1: any key with Cmd (or Ctrl, Alt) held is ignored by the launcher, so the system's own shortcuts (Cmd+H, Cmd+Q, Cmd+M) are never taken. In the controls panel the key caps say `Option` and `Cmd` on a Mac (6.5), `Alt` and `Win` elsewhere. The ⌘ appears in the menu, where the system draws it; the launcher itself shows no Ctrl hint anywhere.
+
+### 19.5 What is checked where
+
+Compiled and linted for `aarch64-apple-darwin` on the build laptop (`cargo check` and `clippy`, with the C build steps of dependencies stubbed) and in the CI job `macos`. The job `macos-style` renders a few scenes with and without the glass (`--solid`) on the Metal runner and saves the launcher's own frame and a `screencapture` of the screen with the window on it. What needs a real Mac (the system blur's look over real wallpapers, Liquid Glass, the traffic light positions, dragging, native full screen, Reduce Transparency, the menu) is listed in the pull request that added this section.

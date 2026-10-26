@@ -26,6 +26,14 @@ _Avoid_: Image, rip, backup
 The one folder the player points the launcher at. Games are looked for inside it, a few levels deep.
 _Avoid_: Library folder, root
 
+**Mac style**:
+On macOS only, the launcher is dressed for the Mac: a see-through window with the system blur behind it, the Mac's window chrome and menu. It is the same launcher with the same screens (docs/DESIGN.md 19).
+_Avoid_: Mac version (the Mac has no different launcher), skin, theme (a theme is a background)
+
+**Glass Window**:
+The setting that turns the see-through window of Mac style on and off. The window is solid in full screen, while a game runs, and when the system asks for less transparency, whatever the setting says.
+_Avoid_: Transparency, blur, vibrancy (in visible text)
+
 **Home button**:
 The PS or Guide button of a controller, and the PS button of the phone controller. While a game runs it brings the launcher in front of the game, with the game's quick panel, and back (docs/DESIGN.md 6.6).
 _Avoid_: PS button in visible text

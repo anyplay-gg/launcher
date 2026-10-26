@@ -122,7 +122,7 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Option<Options> {
 /// Opens the gallery window.
 pub fn run(options: Options) -> eframe::Result {
     let mut native = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
+        viewport: crate::macstyle::MacStyle::viewport(egui::ViewportBuilder::default())
             .with_title("AnyPlay Launcher gallery")
             .with_inner_size([options.size.0, options.size.1])
             .with_resizable(false),
@@ -143,6 +143,9 @@ struct Gallery {
     shot_requested: bool,
     sample_art: Option<TextureHandle>,
     screens: Option<crate::screens::gallery::ScreenGallery>,
+    /// The Mac window's dress; `--solid` leaves the glass off.
+    mac: crate::macstyle::MacStyle,
+    solid: bool,
 }
 
 impl Gallery {
@@ -165,6 +168,8 @@ impl Gallery {
             frames: 0,
             shot_requested: false,
             sample_art: None,
+            mac: crate::macstyle::MacStyle::default(),
+            solid: std::env::args().any(|a| a == "--solid"),
             screens: match page {
                 Page::Screen(page) => Some(crate::screens::gallery::ScreenGallery::new(
                     page, language, theme,
@@ -205,8 +210,22 @@ impl Gallery {
 }
 
 impl eframe::App for Gallery {
-    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+    #[cfg(target_os = "macos")]
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        if self.shell.backdrop.window_glass {
+            [0.0; 4]
+        } else {
+            [0.0, 0.0, 0.0, 1.0]
+        }
+    }
+
+    fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        let want = crate::macstyle::Want {
+            glass_setting: !self.solid,
+            ..Default::default()
+        };
+        self.shell.backdrop.window_glass = self.mac.frame(&ctx, frame, want).glass;
         let _ = self.shell.begin_frame(&ctx);
         let screen = ctx.content_rect();
         let painter = ui.painter().clone();

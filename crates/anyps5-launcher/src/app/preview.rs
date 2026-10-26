@@ -905,7 +905,7 @@ pub fn run(options: Options, inbox: Option<crate::instance::Inbox>) -> eframe::R
         viewport = viewport.with_position([x, y]);
     }
     let mut native = eframe::NativeOptions {
-        viewport: viewport
+        viewport: crate::macstyle::MacStyle::viewport(viewport)
             .with_title("AnyPlay Launcher preview")
             // Frameless like the launcher, so the demo shows its caption as users see it.
             .with_decorations(false)
@@ -962,6 +962,8 @@ impl PreviewApp {
             },
             onboarded: demo,
             theme: crate::screens::convert::theme_to_core(theme),
+            // `--solid`: the Mac window as it is without the glass (screenshots).
+            glass_window: !std::env::args().any(|a| a == "--solid"),
             ..Preferences::default()
         };
         let mut shell = Shell::headless(cc, theme);
@@ -1086,6 +1088,11 @@ impl PreviewApp {
 }
 
 impl eframe::App for PreviewApp {
+    #[cfg(target_os = "macos")]
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        self.inner.clear_color()
+    }
+
     fn raw_input_hook(&mut self, _ctx: &Context, raw_input: &mut egui::RawInput) {
         if let Some((x, y)) = self.options.hover {
             raw_input
@@ -1099,6 +1106,8 @@ impl eframe::App for PreviewApp {
             crate::app::window_chrome::apply(frame);
         }
         let ctx = ui.ctx().clone();
+        let glass_setting = self.inner.model.prefs.glass_window;
+        self.inner.dress_window(&ctx, frame, glass_setting);
         if self.frames <= 3 {
             crate::startup::mark(&format!("frame {} begins", self.frames + 1));
         }

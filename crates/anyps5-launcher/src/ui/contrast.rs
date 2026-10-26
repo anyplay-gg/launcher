@@ -147,6 +147,16 @@ fn grounds(theme: Theme) -> Vec<Ground> {
             art: false,
         },
         Ground {
+            name: format!("{t} deep, glass window"),
+            base: Base::Fixed(glassed(p.deep_color())),
+            art: false,
+        },
+        Ground {
+            name: format!("{t} lit, glass window"),
+            base: Base::Fixed(glassed(lit(theme))),
+            art: false,
+        },
+        Ground {
             name: format!("{t} + white picture"),
             base: Base::Fixed(Color32::WHITE),
             art: true,
@@ -316,10 +326,38 @@ fn home(report: &mut Report) {
 }
 
 /// The surfaces of a panel over a theme's lit tone.
+/// The brightest the system's blur behind a see-through window can be: a dark material over a
+/// white wallpaper. Measured values are not at hand without a Mac, so this is a bound set well
+/// above what the dark HUD material gives (docs/DESIGN.md 19.2); the Mac owner checks the real one.
+const WORST_BLUR: u8 = 115;
+
+/// A colour of the theme as seen in a see-through window at its worst: the theme over the plate
+/// over the brightest blur.
+fn glassed(theme_color: Color32) -> Color32 {
+    let under = over(
+        black(crate::ui::background::GLASS_PLATE),
+        Color32::from_gray(WORST_BLUR),
+    );
+    over(
+        theme_color.gamma_multiply(crate::ui::background::GLASS_VEIL),
+        under,
+    )
+}
+
 fn panel(report: &mut Report) {
-    for theme in Theme::ALL {
-        let name = theme.title(crate::ui::i18n::Language::English);
-        let panel = over(color::side_panel(), lit(theme));
+    for (theme, glass) in Theme::ALL.into_iter().flat_map(|t| [(t, false), (t, true)]) {
+        let name = format!(
+            "{}{}",
+            theme.title(crate::ui::i18n::Language::English),
+            if glass { " glass" } else { "" }
+        );
+        let under = if glass { glassed(lit(theme)) } else { lit(theme) };
+        let overlay = if glass {
+            color::side_panel().gamma_multiply(crate::ui::glass::WINDOW_GLASS_PANEL)
+        } else {
+            color::side_panel()
+        };
+        let panel = over(overlay, under);
         let row = over(color::surface_row(), panel);
         let hover = over(color::surface_hover(), panel);
         let focus = over(color::surface_focus(), panel);
