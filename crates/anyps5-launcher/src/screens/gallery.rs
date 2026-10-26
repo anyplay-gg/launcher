@@ -268,6 +268,14 @@ pub enum OnlineLook {
     Party,
     /// Picking friends to invite to the party.
     PartyPicker,
+    /// The party of the player and Lumen.
+    PartyPair,
+    /// Four members, voice on, Lumen speaking.
+    PartyFour,
+    /// The player muted and deafened, voice on.
+    PartyMuted,
+    /// A party of one: the room invites.
+    PartyAlone,
     /// The conversations, a message request apart, unread first.
     Messages,
     /// One message in full.
@@ -592,6 +600,10 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "friends-picker" => ScreenPage::Online(OnlineLook::Picker),
         "friends-party" => ScreenPage::Online(OnlineLook::Party),
         "friends-party-picker" => ScreenPage::Online(OnlineLook::PartyPicker),
+        "friends-party-pair" => ScreenPage::Online(OnlineLook::PartyPair),
+        "friends-party-four" => ScreenPage::Online(OnlineLook::PartyFour),
+        "friends-party-muted" => ScreenPage::Online(OnlineLook::PartyMuted),
+        "friends-party-alone" => ScreenPage::Online(OnlineLook::PartyAlone),
         "friends-messages" => ScreenPage::Online(OnlineLook::Messages),
         "friends-message" => ScreenPage::Online(OnlineLook::Message),
         "friends-conversation" => ScreenPage::Online(OnlineLook::Conversation),
@@ -838,6 +850,27 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         OnlineLook::PartyNone => {
             state.social.apply_party(None);
         }
+        OnlineLook::PartyPair | OnlineLook::PartyAlone => {
+            if let Some(party) = &mut state.social.party {
+                party
+                    .members
+                    .truncate(if look == OnlineLook::PartyAlone { 1 } else { 2 });
+            }
+            if look == OnlineLook::PartyAlone {
+                state.session = None;
+            }
+        }
+        OnlineLook::PartyFour => {
+            if let Some(party) = &mut state.social.party {
+                party.members.push(anyps5_core::online::api::PartyMember {
+                    account: account(3, "Juno"),
+                    joined: 0,
+                    endpoint: String::new(),
+                    relay: None,
+                    voice: false,
+                });
+            }
+        }
         _ => {}
     }
     sample_voice(&mut state, look);
@@ -966,6 +999,9 @@ fn sample_voice(state: &mut anyps5_core::online::Online, look: OnlineLook) {
     if !matches!(
         look,
         OnlineLook::PartyVoice
+            | OnlineLook::PartyFour
+            | OnlineLook::PartyMuted
+            | OnlineLook::PartyPair
             | OnlineLook::InCall
             | OnlineLook::InCallDiscord
             | OnlineLook::PartyMember
@@ -1018,6 +1054,10 @@ fn sample_voice(state: &mut anyps5_core::online::Online, look: OnlineLook) {
         }
     }
     state.voice.state = VoiceState::On;
+    if look == OnlineLook::PartyMuted {
+        state.voice.muted = true;
+        state.voice.deafened = true;
+    }
     state.voice.me = VoiceLevel {
         level: 0,
         speaking: false,
@@ -2343,9 +2383,12 @@ impl ScreenGallery {
                     OnlineLook::Account | OnlineLook::AccountAppearing => {
                         self.friends.show_page(Page::Account, &data);
                     }
-                    OnlineLook::Party | OnlineLook::TogetherParty => {
-                        self.friends.show_page(Page::Party, &data);
-                    }
+                    OnlineLook::Party
+                    | OnlineLook::PartyPair
+                    | OnlineLook::PartyFour
+                    | OnlineLook::PartyMuted
+                    | OnlineLook::PartyAlone
+                    | OnlineLook::TogetherParty => self.friends.show_page(Page::Party, &data),
                     OnlineLook::TogetherFriend => self
                         .friends
                         .show_page(Page::Friend(anyps5_core::online::api::AccountId(2)), &data),

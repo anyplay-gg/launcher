@@ -194,7 +194,7 @@ Screen paddings:
 | Screen | Padding |
 |---|---|
 | Home top bar | horizontal 64, top 34 |
-| Home tile row | top 34 below the top bar; leading 64 |
+| Home tile row | top 34 below the top bar; leading 64 (92 from the second game on, see Tile row in 3.7) |
 | Home hero info | horizontal 72 |
 | Home hint bar | horizontal 64, vertical 28 |
 | Onboarding | horizontal 110, vertical 80 |
@@ -367,7 +367,7 @@ key..." pulse, the banner pop.
 | # | What | Original spec | Port |
 |---|---|---|---|
 | 1 | Tile focus: scale/ring/shadow of the selected tile | `Motion.focus` on `focused` | spring focus; ring alpha 0 -> 0.95, glow 0 -> 0.45, shadow r10 -> 22 |
-| 2 | Tile row move on selection change | `Motion.layout` on `selected` | per tile spring layout on x, y offset, size (see 5.3); previous tiles fade to 0 opacity as they leave left |
+| 2 | Tile row move on selection change | `Motion.layout` on `selected` | per tile spring layout on x, y offset, size (see 5.3); the game before the selected one stays at 0.4 opacity, the ones before it fade to 0 as they leave left |
 | 3 | Tile size 118 <-> 176 | `Motion.layout` on `size` | spring layout on a `size` scalar (animate size, not scale; text is outside the tile) |
 | 4 | Hero info swap on game change | `.id(game.id)`, insertion opacity + y offset 14, removal opacity, `Motion.layout` | new hero: spring layout 0 -> 1 on opacity (no travel: the hero changes on every arrow press); old hero (2026-10-25): opacity 1 -> 0 on `Motion.exit` (easeOut 0.18 s), quicker than the arriving spring: it is under 0.3 when the new one is half in and the two together never dip below 0.6 of one title (test `the_hero_pair_never_dips_and_the_old_one_leaves_first`) |
 | 5 | Tile-row name label | opacity transition, `Motion.layout` | opacity spring layout |
@@ -660,7 +660,10 @@ The launcher keeps the port's structure but trims what read as noise next to the
 - **Tile row.** The selected tile no longer carries its name beside it (the hero title shows it,
   the state line moves above the title), so the row closes up (`TILE_LABEL_COLUMN = 0`). Small
   tiles share the large tile's centre line. Only the selected tile shows the locked badge and dim.
-- **Hero.** One left edge with the top bar (`HERO_X = 64`). The four boxed info cards become a
+  From the second game on the row moves 28 dp right (`TILE_PEEK_SHIFT`) and the game before the
+  selected one stays on screen at 0.4 opacity (`TILE_PEEK_OPACITY`), partly past the window edge;
+  it can be clicked to select it. On the first game the row sits at `leading` as before.
+- **Hero.** One left edge with the top bar (`HERO_X = 64`; the tile row is the exception from the second game on, see Tile row). The four boxed info cards become a
   plain facts line (Size, Title ID, Version: 13 dp tracked overline over a 17 dp value, 48 dp
   apart, no card). The status card is gone; the state stands above the title. Switching games
   cross-fades without the 14 dp slide (it happens on every arrow press). The "more" button is a
@@ -1077,12 +1080,13 @@ one centre line, the clock's digits included. (S-home.)
 **Tile row** (height `176 + 10`, leading 64). All tiles are in one layer; for tile `i` with `offset = i - selected`:
 
 ```
-x = offset < 0 : 64 + offset * (118 + 16)            // tiles left of the selection sit off to the left (opacity 0)
-    offset == 0: 64
-    offset  > 0: 64 + 176 + 16 + 300 + (offset - 1) * (118 + 16)     // after the 300-wide label column
+leading = 64 + (selected > 0 ? 28 : 0)               // TILE_PEEK_SHIFT: the row moves right past the first game
+x = offset < 0 : leading + offset * (118 + 16)       // the game before the selection stays visible, partly past the window edge
+    offset == 0: leading
+    offset  > 0: leading + 176 + 16 + 300 + (offset - 1) * (118 + 16)     // after the 300-wide label column
 y = selected ? 0 : (176 - 118) * 0.18               // small tiles hang 10.44 lower
 size = selected ? 176 : 118
-opacity = offset < 0 ? 0 : 1
+opacity = offset == -1 ? 0.4 : offset < -1 ? 0 : 1   // TILE_PEEK_OPACITY for the previous game
 ```
 
 Selected tile has the focus ring only while focus is on the tiles and no overlay is open. Next to the selected tile: label column
@@ -2675,6 +2679,7 @@ The launcher's side of the AnyPlay network ([anyplaynet/network](https://github.
   - *Sections and pages.* Every page of the table below belongs to a section (`Page::section`): Friends holds Home, a friend, the requests, an invitation, Add a Friend, Report and the invitation picker; Party holds the party, a member, Invite Friends, a party invitation, Voice and the devices; Messages holds the list, a conversation, its options, quick replies and the on-screen keyboard, a request and a message; Activity is the feed; Settings is the account page, a blocked account and (when opened from there) a restriction. A restriction page belongs to the page it was opened from. The first page of each section (`Page::is_root`) is where Back leaves the screen; any other page goes up one.
   - *Friends page.* The default. From the top: the state of the connection when it is not up (Connecting… as a note; offline as a note with Try Again, which starts the net service again), a limit on the account, friend requests (up to five, each with its avatar, "Wants to be your friend", Accept and Decline), invitations (a game's, then a party's), Playing Together (only once someone besides you is in the session), Add a Friend, then the friends in three groups with their own captions: Playing Now (joinable first), Online, Offline, then Sent Requests. A friend's row is the avatar (36 dp; a dot in the accent while they are here, quieter while they are not), the handle, what they play, and the quick actions at its end: **Join** (only when their session is open to friends), **Message**, **Invite to Party** (when the player may add to the party and there is room), **View Profile** and **Options** (their page: call, remove, block, report). The actions rest hidden and come up with the focus or the pointer; select presses the chosen one (the first to begin with), left and right choose, and a click on the row's body opens Options. A friend with no profile picture on this PC shows the monogram. With no friends yet the page says "No friends yet. Add one by the name they chose." over Add a Friend.
   - *Party page without a party.* The first page of Party stands without one: a note ("A party keeps you together across games, with chat and voice."), the party invitations that wait, Start a Party and Voice. In a party it is the party page of the table.
+  - *Party room.* In a party the page is a room, not a list (`screens::online::room`): the members as large avatars in a grid of equal tiles (88 dp avatar, the handle, one line in words: speaking, muted, deafened, not in voice, else online or offline, and the game they play), the leader with a chip, a ring in the accent round a member who speaks and a mark (a muted microphone or speaker) on an avatar that is muted or deafened; an empty seat for the leader while there is room. Under the tiles the cards of what the party can do together (take the party into the session, the streams: one button each), then the player's voice (Mute, Deafen, Voice Settings; Turn On Voice while it is off; Open in Discord with a link on Discord) and the party's actions (Invite Friends, Party Chat, Share Screen, Leave Party). One primary action: Invite Friends in a party of one, else the button that takes the party into the game. Pressing a member opens the member page (volume, mute, leader) and Back returns to that member. The focus is a grid of its own (`room::step`): left and right within a row, up and down between rows, the column kept as far as the next row reaches; Left on the first stop leaves for the rail. Without a party the page has one picture, one sentence and Start a Party, with the invitations that wait as cards. The rows of the page stay the model of its title and tests. Gallery scenes: `friends-party`, `friends-party-pair`, `friends-party-four`, `friends-party-muted`, `friends-party-alone`, `friends-party-voice`, `friends-party-none`. Others' own mute and deafen are not reported by the net service, so a tile shows only the player's own and what the player muted.
   - *Focus.* Two zones (`friends::nav::step`, pure and tested): the rail and the page. Up and down walk the rail and show the section they stop on; right or select crosses to the page; left on the page crosses back to the rail once the row under the focus has nothing left to step through (a row of buttons or a choice keeps left until it is on its first). Back from the rail or from the first page of a section leaves the screen. The pad, the keyboard and the pointer reach every entry and every row; the screen reader follows the ring (`ui/a11y.rs`) and reads the rail as buttons, the current section selected.
   - *Back.* Back returns to where the screen was opened from, like the profile screen: home for the friends button and the profile button before sign-in; the profile screen when it was opened from there (`Model::friends_back`). A friend's View Profile opens their profile screen; Back from it comes back to the Friends screen on the page and the row it left.
   - *Motion.* The screen comes in and goes out with the overlay spring of the other full-screen panels (opacity and a scale from 1.03); nothing else moves except the rows' own focus and hover, and the quick actions fade with the focus. Reduced motion swaps the springs for the short eases of every other overlay (`AnimExt`); no motion of this screen is the only carrier of a state.

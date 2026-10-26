@@ -45,7 +45,7 @@ pub fn path_text(link: Option<Link>, rtt_ms: Option<u32>, language: Language) ->
 }
 
 /// "Your screen is shared with 2 people".
-fn shared_with(watchers: usize, language: Language) -> String {
+pub(super) fn shared_with(watchers: usize, language: Language) -> String {
     match watchers {
         0 => X::SharedNobody.text(language).to_owned(),
         1 => X::SharedOne.text(language).to_owned(),

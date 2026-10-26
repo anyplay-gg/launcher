@@ -7,6 +7,7 @@ mod feed;
 mod local;
 mod profile;
 mod restriction;
+mod room;
 pub mod screen;
 mod social;
 mod voice;
@@ -164,6 +165,10 @@ pub enum OnlineAction {
     OpenDiscord(String),
     // Party voice
     Voice(bool),
+    /// Mute or unmute the player's own microphone.
+    MicMute(bool),
+    /// Stop or resume hearing everyone.
+    Deafen(bool),
     VoiceProvider(VoiceProvider),
     VoiceMode(VoiceMode),
     /// The key held to talk, by its egui name.
@@ -384,6 +389,10 @@ pub struct OnlinePanel {
     chat: chat::ChatState,
     /// The item the feed's focus is on, to keep it there when items come in above it.
     feed_anchor: Option<u64>,
+    /// Where the focus stands in the party room.
+    room_focus: room::RoomFocus,
+    /// How many member tiles the room drew in a row last frame (0 before the first).
+    room_columns: usize,
 }
 
 impl OnlinePanel {
@@ -471,6 +480,9 @@ impl OnlinePanel {
         if self.feed_is_list(data) {
             return self.feed_focus.slot.is_none();
         }
+        if self.room_is_page() {
+            return self.room_left_leaves();
+        }
         if self.chat_is_list(data) {
             return true;
         }
@@ -557,6 +569,10 @@ impl OnlinePanel {
         let in_chat = |page: &Page| matches!(page, Page::Conversation(_) | Page::MessageRequest(_));
         let within_chat = (matches!(self.page, Page::Message(..)) && in_chat(&page))
             || (in_chat(&self.page) && matches!(page, Page::Message(..)));
+        let from_member = match (&self.page, &page) {
+            (Page::PartyMember(id), Page::Party) => Some(*id),
+            _ => None,
+        };
         if self.page != page && !within_chat {
             self.previous = Some(std::mem::take(&mut self.page));
         }
@@ -565,6 +581,9 @@ impl OnlinePanel {
             self.chat.opened = None;
         }
         self.page = page;
+        if self.page == Page::Party {
+            self.room_start(data, from_member);
+        }
         let rows = self.rows(data).2;
         // A page opens on its first row that takes focus.
         let first = rows::kinds(&rows)
@@ -664,6 +683,13 @@ impl OnlinePanel {
                 }
                 continue;
             }
+            if self.room_is_page() {
+                if self.room_command(shell, command, data, &mut actions) {
+                    self.step_back(shell, data, &mut actions);
+                    break;
+                }
+                continue;
+            }
             if self.chat_is_list(data) {
                 if self.chat_list_command(shell, command, data, &mut actions) {
                     self.step_back(shell, data, &mut actions);
@@ -719,6 +745,10 @@ impl OnlinePanel {
         // Each kind of page keeps its own scroll: walking the rail never lands on an old offset.
         let list_id = ("online-rows", std::mem::discriminant(&self.page));
         let events = match self.page.clone() {
+            Page::Party => {
+                self.room_draw(shell, ui, data, open && focused, &mut actions);
+                Vec::new()
+            }
             Page::Messages if self.chat_is_list(data) => {
                 self.chat_list_draw(ui, data, open && focused, &mut actions);
                 Vec::new()

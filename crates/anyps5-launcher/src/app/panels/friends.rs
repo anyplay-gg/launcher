@@ -121,6 +121,8 @@ pub(super) fn online_action(model: &mut Model, action: OnlineAction) {
             model.open_profile(account, crate::app::profile::Back::Friends);
         }
         OnlineAction::Voice(on) => online.set_voice(on),
+        OnlineAction::MicMute(muted) => online.set_mic_mute(muted),
+        OnlineAction::Deafen(deafened) => online.set_deafen(deafened),
         OnlineAction::VoiceProvider(provider) => online.set_voice_provider(provider),
         OnlineAction::Call(account) => {
             let friend = online.known(account).cloned();
