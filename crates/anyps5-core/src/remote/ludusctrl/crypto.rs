@@ -6,7 +6,7 @@ use hmac::{Hmac, KeyInit, Mac};
 use p256::{
     FieldBytes, PublicKey, SecretKey, ecdh::diffie_hellman, elliptic_curve::sec1::ToSec1Point,
 };
-use sha2_v11::{Digest, Sha256};
+use sha2_0_11::{Digest, Sha256};
 
 use crate::remote::security::{constant_time_eq, random_bytes};
 
