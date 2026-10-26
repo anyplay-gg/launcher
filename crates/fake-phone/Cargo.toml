@@ -12,6 +12,8 @@ publish = false
 anyps5-core = { path = "../anyps5-core" }
 tungstenite = "0.30"
 mdns-sd = "0.21"
+# The browser mode's TLS client: the same rustls on ring as the core, without aws-lc.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 
 [dev-dependencies]
 tempfile.workspace = true

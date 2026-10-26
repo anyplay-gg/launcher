@@ -659,7 +659,8 @@ mod tests {
         assert_eq!(
             event_of(LudusStatus::Linked {
                 via: LudusVia::Browser {
-                    peer: "192.168.1.40".parse().unwrap()
+                    peer: "192.168.1.40".parse().unwrap(),
+                    device: None,
                 },
                 layout: anyps5_core::remote::PadLayout::Unknown,
                 controller: false,

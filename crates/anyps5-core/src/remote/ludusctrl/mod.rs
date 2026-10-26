@@ -6,15 +6,16 @@
 //! One UDP port carries pairing, input and acks; a beacon tells phones on the network where it is.
 //! A phone pairs once (ECDH on P-256, commit then reveal, a six-digit code the player compares on
 //! the launcher's pairing question) and signs every input packet with the key that came of it.
-//! Its pad goes to the launcher's virtual controller through the one [`PadSlot`], which a browser
-//! client will share later. Nothing here starts unless the player switched it on, and nothing
-//! touches the internet.
+//! Its pad goes to the launcher's virtual controller through the one [`PadSlot`], which the browser
+//! client (`web`, for phones without the app) shares. Nothing here starts unless the player
+//! switched it on, and nothing touches the internet.
 
 mod crypto;
 mod link;
 mod pairing;
 mod slot;
 mod store;
+mod web;
 mod wire;
 
 use std::{
@@ -30,6 +31,7 @@ use std::{
 
 pub use slot::{Holding, Owner, PadSlot, Refusal};
 pub use store::{LudusPhone, LudusStore};
+pub use web::{BrowserConfig, BrowserInfo, Certificate, LUDUS_WEB_PORT};
 pub use wire::PadLayout;
 
 use super::{
@@ -78,8 +80,12 @@ pub trait LudusEvents: Send + Sync {
 pub enum LudusVia {
     /// A phone of the LudusCtrl app, by the name it paired with.
     App { name: String },
-    /// A browser client (step 2 of the feature; nothing claims this yet).
-    Browser { peer: IpAddr },
+    /// A browser client. `device` is a coarse name from its User-Agent ("iPhone", "iPad",
+    /// "Android", "Mac", "Windows", "Linux"), `None` when it says nothing useful.
+    Browser {
+        peer: IpAddr,
+        device: Option<String>,
+    },
 }
 
 /// What the settings show of LudusCtrl.
@@ -163,6 +169,8 @@ struct Shared {
     socket: UdpSocket,
     core: Mutex<Core>,
     slot: Arc<PadSlot>,
+    /// The device names of the browser connections, for the status.
+    browsers: Arc<web::Devices>,
     events: Arc<dyn LudusEvents>,
     stop: AtomicBool,
     linked: AtomicBool,
@@ -172,6 +180,7 @@ struct Shared {
 pub struct LudusServer {
     shared: Arc<Shared>,
     port: u16,
+    web: Mutex<Option<web::Bridge>>,
 }
 
 impl LudusServer {
@@ -198,6 +207,7 @@ impl LudusServer {
                 subnets_at: Instant::now(),
             }),
             slot: Arc::new(PadSlot::default()),
+            browsers: Arc::default(),
             events,
             stop: AtomicBool::new(false),
             linked: AtomicBool::new(false),
@@ -213,7 +223,11 @@ impl LudusServer {
                 .name("ludusctrl-beacon".into())
                 .spawn(move || beacon.beacon(&target, port, pc_id))?;
         }
-        Ok(LudusServer { shared, port })
+        Ok(LudusServer {
+            shared,
+            port,
+            web: Mutex::new(None),
+        })
     }
 
     /// The UDP port really bound.
@@ -259,7 +273,54 @@ impl LudusServer {
         self.shared.slot.clone()
     }
 
+    /// Starts the browser client (docs/ludusctrl-web-api.md), or restarts it with a new token.
+    /// Fails when no TCP port can be bound or this server has stopped; a busy preferred port is
+    /// not a failure (`BrowserInfo::preferred_port`).
+    pub fn start_browser(&self, config: BrowserConfig) -> Result<BrowserInfo, RemoteError> {
+        let mut web = self.web();
+        if let Some(mut old) = web.take() {
+            old.stop();
+        }
+        if self.shared.stop.load(Ordering::Relaxed) {
+            return Err(RemoteError::Io(std::io::Error::other(
+                "the LudusCtrl server has stopped",
+            )));
+        }
+        let bridge = web::Bridge::start(
+            config,
+            self.shared.slot.clone(),
+            self.shared.browsers.clone(),
+        )?;
+        let info = bridge.info();
+        *web = Some(bridge);
+        Ok(info)
+    }
+
+    /// The running browser client's links and state; `None` when it does not run.
+    pub fn browser(&self) -> Option<BrowserInfo> {
+        self.web().as_ref().map(web::Bridge::info)
+    }
+
+    /// New Link: a new token, and every open page is closed and told its link is old. The
+    /// certificate stays.
+    pub fn new_browser_link(&self) -> Option<BrowserInfo> {
+        self.web().as_mut().map(web::Bridge::new_link)
+    }
+
+    /// Stops the browser client; a browser holding the pad lets go of it.
+    pub fn stop_browser(&self) {
+        let bridge = self.web().take();
+        if let Some(mut bridge) = bridge {
+            bridge.stop();
+        }
+    }
+
+    fn web(&self) -> std::sync::MutexGuard<'_, Option<web::Bridge>> {
+        self.web.lock().expect("ludusctrl browser")
+    }
+
     pub fn stop(&self) {
+        self.stop_browser();
         if self.shared.stop.swap(true, Ordering::Relaxed) {
             return;
         }
@@ -300,8 +361,14 @@ impl Shared {
                             .map(|p| p.name.clone())
                             .unwrap_or_default(),
                     },
-                    Owner::Browser(_) => LudusVia::Browser {
+                    Owner::Browser(connection) => LudusVia::Browser {
                         peer: holding.source.ip().to_canonical(),
+                        device: self
+                            .browsers
+                            .lock()
+                            .expect("browser devices")
+                            .get(&connection)
+                            .cloned(),
                     },
                 },
                 layout: holding.layout,
