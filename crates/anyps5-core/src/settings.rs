@@ -67,6 +67,11 @@ impl Overlay {
     }
 }
 
+/// The default of `fullscreen`: a console fills its screen, the Mac's glass window does not.
+fn fills_screen() -> bool {
+    !cfg!(target_os = "macos")
+}
+
 fn yes() -> bool {
     true
 }
@@ -522,9 +527,14 @@ pub struct Preferences {
     /// Local only: the network never sees it.
     #[serde(default)]
     pub show_hidden_trophies: bool,
-    /// The launcher fills its screen, like a console; off, it is a maximised window (F11).
-    #[serde(default = "yes")]
+    /// The launcher fills its screen, like a console; off, it is a maximised window (F11). On a
+    /// Mac it starts as a window instead: the glass needs the desktop behind it.
+    #[serde(default = "fills_screen")]
     pub fullscreen: bool,
+    /// Mac style: the window is see-through, with the system blur behind it ("Glass Window").
+    /// Only the Mac has the setting; the file keeps it everywhere.
+    #[serde(default = "yes")]
+    pub glass_window: bool,
     #[serde(default = "default_profile_name")]
     pub profile_name: String,
     /// The games folder; `None` until the player picks one.
@@ -648,7 +658,8 @@ impl Default for Preferences {
             ps_button: true,
             vibration: Vibration::Medium,
             show_hidden_trophies: false,
-            fullscreen: true,
+            fullscreen: fills_screen(),
+            glass_window: true,
             profile_name: default_profile_name(),
             games_folder: None,
             unlocked_folder: None,
@@ -1304,7 +1315,8 @@ mod tests {
             "a file that never chose shows no game on Discord"
         );
         assert!(prefs.discord_join_button, "an old file turns the button on");
-        assert!(prefs.fullscreen);
+        assert_eq!(prefs.fullscreen, !cfg!(target_os = "macos"));
+        assert!(prefs.glass_window, "an old file gets the glass");
         assert!(
             !prefs.phone_remote,
             "the phone server is off until the player turns it on"

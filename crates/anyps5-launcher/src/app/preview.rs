@@ -62,6 +62,8 @@ pub enum Scene {
     HomePreparingWaiting,
     HomeRelinking,
     HomeFailed,
+    HomeFailedLong,
+    HomeLongTitle,
     HomeQueued,
     HomeRunning,
     /// The running game with the Home button's quick panel in front.
@@ -142,6 +144,8 @@ impl Scene {
             "home-preparing-waiting" => Scene::HomePreparingWaiting,
             "home-relinking" => Scene::HomeRelinking,
             "home-failed" => Scene::HomeFailed,
+            "home-failed-long" => Scene::HomeFailedLong,
+            "home-long-title" => Scene::HomeLongTitle,
             "home-queued" => Scene::HomeQueued,
             "home-running" => Scene::HomeRunning,
             "home-ingame" => Scene::HomeInGame,
@@ -199,6 +203,8 @@ impl Scene {
         "home-preparing-waiting",
         "home-relinking",
         "home-failed",
+        "home-failed-long",
+        "home-long-title",
         "home-queued",
         "home-running",
         "home-ingame",
@@ -668,6 +674,24 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
                 .to_owned(),
             );
         }
+        Scene::HomeFailedLong => {
+            m.selected = at(4);
+            m.failures.insert(
+                ids[at(4)].clone(),
+                crate::screens::prepare_strings::failure(
+                    anyps5_core::unlock::FailureKind::LocationMissing,
+                    m.language(),
+                )
+                .to_owned(),
+            );
+        }
+        Scene::HomeLongTitle => {
+            m.selected = at(1);
+            if let Some(game) = m.games.iter_mut().find(|g| g.id == ids[at(1)]) {
+                game.name = "The Extraordinarily Long Title of a Remastered Collection: Director's Cut, Complete Edition".into();
+            }
+            m.focus = HomeFocus::Actions(0);
+        }
         Scene::HomeQueued => {
             m.selected = at(4);
             m.queue.push(ids[at(4)].clone());
@@ -935,12 +959,15 @@ pub fn run(options: Options, inbox: Option<crate::instance::Inbox>) -> eframe::R
         viewport = viewport.with_position([x, y]);
     }
     let mut native = eframe::NativeOptions {
-        viewport: viewport
-            .with_title("AnyPlay Launcher preview")
-            // Frameless like the launcher, so the demo shows its caption as users see it.
-            .with_decorations(false)
-            .with_inner_size([options.size.0, options.size.1])
-            .with_resizable(options.scene.is_none()),
+        // Frameless like the launcher, so the demo shows its caption as users see it; the Mac
+        // keeps its own frame.
+        viewport: crate::macstyle::MacStyle::viewport(
+            viewport
+                .with_title("AnyPlay Launcher preview")
+                .with_decorations(false)
+                .with_inner_size([options.size.0, options.size.1])
+                .with_resizable(options.scene.is_none()),
+        ),
         ..Default::default()
     };
     crate::ui::restrict_backends(&mut native);
@@ -992,6 +1019,8 @@ impl PreviewApp {
             },
             onboarded: demo,
             theme: crate::screens::convert::theme_to_core(theme),
+            // `--solid`: the Mac window as it is without the glass (screenshots).
+            glass_window: !std::env::args().any(|a| a == "--solid"),
             ..Preferences::default()
         };
         let mut shell = Shell::headless(cc, theme);
@@ -1059,6 +1088,7 @@ impl PreviewApp {
                 Some(Scene::HomeInGame | Scene::HomeInGameClose)
             );
         inner.freeze_backdrop = !demo;
+        inner.glass_anyway = std::env::args().any(|a| a == "--glass-anyway");
         if demo {
             crate::ui::home_button::test_game_from_env(&inner.shell.home);
         }
@@ -1116,6 +1146,11 @@ impl PreviewApp {
 }
 
 impl eframe::App for PreviewApp {
+    #[cfg(target_os = "macos")]
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        self.inner.clear_color()
+    }
+
     fn raw_input_hook(&mut self, _ctx: &Context, raw_input: &mut egui::RawInput) {
         if let Some((x, y)) = self.options.hover {
             raw_input
@@ -1129,6 +1164,8 @@ impl eframe::App for PreviewApp {
             crate::app::window_chrome::apply(frame);
         }
         let ctx = ui.ctx().clone();
+        let glass_setting = self.inner.model.prefs.glass_window;
+        self.inner.dress_window(&ctx, frame, glass_setting);
         if self.frames <= 3 {
             crate::startup::mark(&format!("frame {} begins", self.frames + 1));
         }

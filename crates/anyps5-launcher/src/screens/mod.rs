@@ -35,6 +35,7 @@ pub mod compare;
 pub mod compare_strings;
 pub mod controls;
 pub mod convert;
+pub mod dialog;
 pub mod dialogs;
 pub mod discord_strings;
 pub mod failure_strings;

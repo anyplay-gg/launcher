@@ -11,16 +11,17 @@ use super::{
     ViewFocus, Zone, duration_text, filter_text,
 };
 use crate::screens::captures_strings::CapturesText;
+use crate::screens::dialog;
 use crate::screens::format;
+use crate::screens::rows::{ListEvent, Row};
 use crate::screens::scroll::Follow;
 use crate::screens::{clamped, right_aligned_hints};
 use crate::ui::anim::{AnimExt, Motion};
-use crate::ui::chrome::{TileImage, glass_card};
+use crate::ui::chrome::TileImage;
 use crate::ui::components::{
     self, ConsoleButton, ControlSize, corner, paint_focus_glow, paint_focus_stroke, paint_hairline,
     paint_spinner_arc,
 };
-use crate::ui::glass::GlassStyle;
 use crate::ui::i18n::{Arg, Language};
 use crate::ui::icons::Icon;
 use crate::ui::input;
@@ -930,22 +931,6 @@ fn confirm(
     let painter = ui.painter().clone();
     let language = data.language;
     let capture = &data.captures[flat[place]];
-    let screen = ui.max_rect();
-    // A click beside the card is Cancel.
-    let scrim = ui.interact(
-        screen,
-        ui.make_persistent_id("captures-scrim"),
-        Sense::click(),
-    );
-    if scrim.clicked() {
-        pressed.back = true;
-    }
-    let shown = ctx.animate_from_to("captures-confirm", 0.0, 1.0, Motion::Hover);
-    painter.rect_filled(screen, 0.0, theme::black(0.55 * shown));
-
-    let width = 560.0f32.min(screen.width() - 48.0);
-    let pad_x = 36.0;
-    let inner = width - 2.0 * pad_x;
     let (title, verb) = match capture.kind {
         Kind::Screenshot => (
             CapturesText::DeleteScreenshotTitle,
@@ -953,72 +938,25 @@ fn confirm(
         ),
         Kind::Clip => (CapturesText::DeleteClipTitle, CapturesText::DeleteClip),
     };
-    let name = text::middle_truncate(&painter, ty::QUESTION, &capture.file_name(), inner * 0.8);
+    let name = text::middle_truncate(&painter, ty::QUESTION, &capture.file_name(), 360.0);
     let body = CapturesText::DeleteBody.format(language, &[Arg::Str(&name)]);
-    let body_galley = clamped(
-        &painter,
-        ty::QUESTION,
-        &body,
-        color::text_subtitle(),
-        inner,
-        4,
-    );
-    let height = 32.0
-        + ty::TOP_BAR_TITLE.line_height()
-        + 14.0
-        + body_galley.size().y
-        + 28.0
-        + size::CONTROL_M
-        + 32.0;
-    let card = Rect::from_center_size(screen.center(), vec2(width, height));
-    glass_card(
-        &ctx,
-        &painter,
-        card,
-        GlassStyle::glass(theme::radius::CARD + 8.0, 0.62),
-    );
-    // Swallows the click, so the scrim behind does not take it.
-    ui.interact(card, ui.make_persistent_id("captures-card"), Sense::click());
-    let mut y = card.min.y + 32.0;
-    text::paint(
-        &painter,
-        pos2(card.min.x + pad_x, y),
-        Align2::LEFT_TOP,
-        ty::TOP_BAR_TITLE,
-        title.text(language),
-        Color32::WHITE,
-    );
-    y += ty::TOP_BAR_TITLE.line_height() + 14.0;
-    let h = body_galley.size().y;
-    painter.galley(
-        pos2(card.min.x + pad_x, y),
-        body_galley,
-        color::text_subtitle(),
-    );
-    y += h + 28.0;
-    let row = Rect::from_min_size(pos2(card.min.x + pad_x, y), vec2(inner, size::CONTROL_M));
-    let mut layout = ui.new_child(
-        UiBuilder::new()
-            .max_rect(row)
-            .layout(UiLayout::right_to_left(Align::Center)),
-    );
-    layout.spacing_mut().item_spacing.x = size::CONTROL_GAP;
-    // Right to left: Delete first, then Cancel to its left.
-    let delete = ConsoleButton::new(verb.text(language))
-        .size(ControlSize::Medium)
-        .destructive(true)
-        .focused(button == 1)
-        .show(&mut layout);
-    crate::ui::a11y::follow(&ctx, delete.id, button == 1);
-    if delete.clicked() {
-        pressed.confirm = Some(1);
-    }
-    let cancel = ConsoleButton::new(CapturesText::Cancel.text(language))
-        .size(ControlSize::Medium)
-        .focused(button == 0)
-        .show(&mut layout);
-    crate::ui::a11y::follow(&ctx, cancel.id, button == 0);
-    if cancel.clicked() {
-        pressed.confirm = Some(0);
+    // The card of every question (screens::dialog): Delete first, Cancel last, the focus on the
+    // button the model holds (0 = Cancel, 1 = Delete).
+    let rows = vec![
+        Row::command("delete", verb.text(language)).destructive(),
+        Row::command("cancel", CapturesText::Cancel.text(language)),
+    ];
+    let card = dialog::Card {
+        id: "captures-confirm",
+        title: title.text(language),
+        message: Some(&body),
+        language,
+        focus: usize::from(button == 0),
+        force: None,
+    };
+    for event in dialog::draw(&ctx, true, &card, &rows).unwrap_or_default() {
+        if let ListEvent::Effect { row, .. } = event {
+            pressed.confirm = Some(usize::from(row == 0));
+        }
     }
 }

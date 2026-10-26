@@ -84,6 +84,7 @@ pub enum Key {
     BackgroundVideo,
     ChooseFile,
     GameArtwork,
+    GlassWindow,
     Motion,
     MotionFull,
     MotionReduced,
@@ -222,7 +223,7 @@ pub enum Key {
 
 impl Key {
     /// All keys in declaration order.
-    pub const ALL: [Key; 212] = [
+    pub const ALL: [Key; 213] = [
         Key::Welcome,
         Key::WelcomeSubtitle,
         Key::ChooseLanguage,
@@ -301,6 +302,7 @@ impl Key {
         Key::BackgroundVideo,
         Key::ChooseFile,
         Key::GameArtwork,
+        Key::GlassWindow,
         Key::Motion,
         Key::MotionFull,
         Key::MotionReduced,
@@ -518,6 +520,7 @@ impl Key {
             Key::BackgroundVideo => "backgroundVideo",
             Key::ChooseFile => "chooseFile",
             Key::GameArtwork => "gameArtwork",
+            Key::GlassWindow => "glassWindow",
             Key::Motion => "motion",
             Key::MotionFull => "motionFull",
             Key::MotionReduced => "motionReduced",
@@ -741,6 +744,7 @@ impl Key {
             Key::BackgroundVideo => "My Video",
             Key::ChooseFile => "Choose File",
             Key::GameArtwork => "Show the Selected Game's Artwork",
+            Key::GlassWindow => "Glass Window",
             Key::Motion => "Animations",
             Key::MotionFull => "Full",
             Key::MotionReduced => "Reduced",
@@ -984,6 +988,7 @@ impl Key {
             Key::BackgroundVideo => "Kendi Videom",
             Key::ChooseFile => "Dosya Seç",
             Key::GameArtwork => "Seçili Oyunun Görselini Göster",
+            Key::GlassWindow => "Cam Pencere",
             Key::Motion => "Animasyonlar",
             Key::MotionFull => "Tam",
             Key::MotionReduced => "Azaltılmış",
