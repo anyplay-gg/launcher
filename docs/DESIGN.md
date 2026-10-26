@@ -1720,10 +1720,10 @@ Behaviour, "Home Button Opens the Launcher").
 | no game runs | nothing (the phone's button keeps its old job: close the panel, restore the window) | as usual |
 
 **Where it is read.** `ui::home_button::HomeButton` holds the state the input threads need (running, game window,
-preference, focus) as atomics; the UI fills it every frame (`LauncherApp::sync_home_button`). Three sources press it, each on its
+preference, focus) as atomics; the UI fills it every frame (`LauncherApp::sync_home_button`). Four sources press it, each on its
 own thread, because a minimised launcher draws no frames: the gilrs thread (`Button::Mode`), a thread polling `XInputGetStateEx`
 for the Guide bit (Windows; Windows.Gaming.Input, which gilrs uses, hands a pad to the focused window only and never shows
-Guide), and the phone server. Presses within 350 ms count once (gilrs and XInput can both see one press). The pure `route`
+Guide), the PS button reader (below), and the phone server. Presses within 350 ms count once (gilrs and XInput can both see one press). The pure `route`
 function is the state machine and carries the tests. The UI takes two flags once per frame, `take_summoned` and `take_returned`,
 and opens or closes the panel.
 
@@ -1735,6 +1735,29 @@ trophies and settings are that game's. Back on the panel, a click beside it and 
 home screen does the same while the launcher is there because of the Home button (`Model::summoned`); it is cleared when the
 launcher loses the focus, and when the game ends the panel closes.
 While the panel is up, the phone's navigation reaches the launcher and its virtual pad is detached from the game.
+
+**The PS button reader** (`ui::ps_button`, 2026-10-26). Windows.Gaming.Input and evdev deliver a PlayStation pad to the focused window, so
+with a game in front gilrs never hears its PS button. While a game runs and the preference is on, a thread opens every DualSense
+(054C:0CE6, Edge 0DF2) and DualShock 4 (05C4, 09CC, adapter 0BA0) through `hidapi` 2 (Windows: its HID backend; Linux: hidraw),
+shared and read only, and watches bit 0 of the third button byte of the input report. The reader never writes a report: rumble and
+light bar stay the game's. The layouts are generic device facts from the Linux kernel (`hid-playstation.c`) and SDL
+(`SDL_hidapi_ps5.c`, `SDL_hidapi_ps4.c`) and are written in the module's comment: DualSense USB (report 0x01, 64 bytes, byte 10) and
+Bluetooth (0x31, 78 bytes, byte 11), DualShock 4 USB (0x01, byte 7) and Bluetooth (0x11, byte 9), and the 10-byte short Bluetooth
+report both send before they are switched to the full one (byte 7). Bluetooth reports are accepted only with a valid CRC-32. An
+edge (up, then down) is one press and goes into the same `HomeButton::press` as the Guide button, so gilrs seeing the same press,
+or a second pad, counts once (350 ms). Pads are looked for again every 3 s while a game runs (a pad plugged in later is found), and
+every device is closed again when the game ends or the preference is off.
+
+*If a pad cannot be opened* the reader says so once per pad in `launcher.log` and leaves the button to the other sources (gilrs
+where the launcher has the focus, XInput for what shows itself as an Xbox pad); it keeps looking every 3 s without logging again.
+Linux needs read access to `/dev/hidraw*`: many desktops give it only to root, and `docs/INSTALL.md` has the udev rule (`TAG+="uaccess"`
+for the Sony ids). *Steam Input* (with the pad held in its own configuration) and *HidHide* hide the physical pad from every HID reader,
+this one too; what they show instead is a virtual Xbox pad, whose Guide button the XInput thread already reads. Nothing is
+done for a pad they hide, on purpose. macOS has no reader here (IOKit HID delivers the button to a background process).
+
+*Other buttons while a game is in front.* The gilrs thread asks `gamepad::press_effect` for every press: with a game in front only
+Home and Create (which saves a clip, 9.8) do anything; every other button and the D-pad and stick are dropped before they reach
+the UI, so the game's play never moves the focus of the launcher behind it (tested for all buttons).
 
 *Windows.* A background process may not simply take the foreground, and a gamepad press counts as no input event.
 `win::activate_window` restores the window if minimised, calls `SetForegroundWindow`, and when that does not take, attaches the input
@@ -1748,7 +1771,8 @@ game what is behind it.
 *The game's own use of the button.* The mapping of AnyPS5 v0.1.3 names no PS or Guide button, so nothing the game gets is taken
 away. If a later AnyPS5 maps it to the PS5 home button, both would react; the preference turns the launcher's side off.
 
-*Not verified with hardware:* that Windows delivers a physical pad's Guide button to the launcher behind a game, and the
+*Not verified with hardware:* that Windows delivers a physical pad's Guide button to the launcher behind a game, the PS button reader
+on a real DualSense and DualShock 4 (USB and Bluetooth, Windows and Linux; its parser is tested on synthetic reports), and the
 foreground switch against a real game window. The test hook is `--demo` with `ANYPS5_INSTANCE=<name>` and
 `ANYPS5_PS_TEST_WINDOW=<hwnd>`: that window becomes the running game, each line `ps` on stdin is a press, and the log prints
 the foreground window before and after (`ps-test: ...`).
@@ -1822,8 +1846,9 @@ while a window of the process has focus, which suits the launcher's own screens;
 - **Settings > Behaviour** has a note under Controller Vibration: what to try when the controller is not found (Steam Input,
   DS4Windows).
 
-Not done, on purpose: a direct HID reader for the DualSense and DualShock. WGI and evdev both see them; the cases that make a pad invisible
-(Steam Input holding it, HidHide hiding it) hide it from HID readers as well. The one gap a HID reader would close is the Home button of a PlayStation pad while a game is in front.
+A direct HID reader for the DualSense and DualShock reads the pad itself for nothing but the PS button, because that is the one gap WGI and evdev leave
+while a game is in front (6.6, "The PS button reader"). The cases that make a pad invisible (Steam Input holding it, HidHide hiding it) hide it from
+HID readers as well, so the pad is still not found for everything else by it.
 Not verified on hardware: a DualSense or DualShock over USB and Bluetooth through WGI, the battery reading of a Bluetooth DualSense through WGI, the A/B hints on a real Xbox pad.
 
 ## 7. Sounds and media
