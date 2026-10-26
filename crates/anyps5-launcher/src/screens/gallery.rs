@@ -589,6 +589,7 @@ fn sample_ludus(look: PhoneLook) -> crate::app::ludus::LudusState {
     };
     let mut state = LudusState {
         port: Some(45989),
+        addresses: vec!["192.168.178.20".parse().expect("an address")],
         pad: Some(VirtualPadStatus::Ready),
         ..LudusState::default()
     };
@@ -617,6 +618,7 @@ fn sample_ludus(look: PhoneLook) -> crate::app::ludus::LudusState {
         PhoneLook::AppFailed => {
             state.failed = true;
             state.port = None;
+            state.addresses.clear();
         }
         _ => {}
     }

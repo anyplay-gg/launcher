@@ -180,11 +180,11 @@ pub fn page(
     if !prefs.phone_remote {
         return rows;
     }
-    // The PC's address with LudusCtrl's own port, for typing into its app.
-    let address = phone
-        .info
-        .as_ref()
-        .and_then(|info| info.addresses.first())
+    // The PC's address with LudusCtrl's own port, for typing into its app: LudusCtrl's own
+    // address list, so the row stays when the phone server could not start.
+    let address = ludus
+        .addresses
+        .first()
         .zip(ludus.port)
         .map(|(address, port)| format!("{address}:{port}"));
     rows.extend(crate::screens::ludus::rows(
@@ -453,6 +453,7 @@ mod tests {
         let ludus = LudusState {
             pad: Some(VirtualPadStatus::DriverMissing),
             port: Some(45989),
+            addresses: vec!["192.168.178.20".parse().unwrap()],
             ..LudusState::default()
         };
         let quiet = PhoneState {
@@ -481,6 +482,12 @@ mod tests {
         let list = page(&both, &failed, &ludus, Language::English);
         assert_eq!(list.iter().filter(|r| r.id == "padStatus").count(), 1);
         assert!(list.iter().any(|r| r.id == "padOpen"));
+        let address = list.iter().find(|r| r.id == "ludusAddress");
+        assert_eq!(
+            address.map(|r| &r.control),
+            Some(&Control::Info(Some("192.168.178.20:45989".into()))),
+            "LudusCtrl's own address list"
+        );
 
         // Both run: one controller section, after both groups; LudusCtrl's address is the PC's.
         let phone = PhoneState {

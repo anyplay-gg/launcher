@@ -460,3 +460,17 @@ fn a_panic_that_held_the_state_does_not_take_the_caller_down() {
     let _ = rig.server.status();
     assert!(rig.server.paired().is_empty());
 }
+
+#[test]
+fn the_addresses_for_the_app_are_the_beacons() {
+    let rig = rig();
+    assert_eq!(rig.server.addresses(), [Ipv4Addr::LOCALHOST]);
+    let dir = tempfile::tempdir().unwrap();
+    let config = LudusConfig::new(dir.path().join("LudusCtrl.json"));
+    let (tx, _events) = channel();
+    let alone = LudusServer::start_without_app(config, Arc::new(Recorder(Mutex::new(tx)))).unwrap();
+    assert!(
+        alone.addresses().is_empty(),
+        "nothing to type without the app"
+    );
+}

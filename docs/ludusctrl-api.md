@@ -37,6 +37,9 @@ impl LudusServer {
     /// the app's port cannot be bound: the pad slot, the paired phones and the status run; `port()` is 0.
     pub fn start_without_app(config: LudusConfig, events: Arc<dyn LudusEvents>) -> Result<LudusServer, RemoteError>;
     pub fn port(&self) -> u16;                 // the UDP port really bound (the beacon advertises it)
+    /// The addresses for typing into the app beside port(), the most likely first: the beacon's
+    /// (BeaconTarget::from, else lan_addresses()); empty without the app. Looks at the adapters once per call.
+    pub fn addresses(&self) -> Vec<Ipv4Addr>;
     pub fn status(&self) -> LudusStatus;
     pub fn respond(&self, request: u64, allow: bool); // the answer to a pairing question
     pub fn paired(&self) -> Vec<LudusPhone>;

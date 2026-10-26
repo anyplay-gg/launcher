@@ -77,6 +77,9 @@ pub trait LudusReceiver: Send + Sync + BrowserBridge {
     /// The UDP port really bound, for typing into the app next to the PC's address; `None` when
     /// the server runs without the app (its port could not be bound) and serves only the browser.
     fn port(&self) -> Option<u16>;
+    /// This PC's addresses for typing into the app beside the port, the most likely first; none
+    /// without the app.
+    fn addresses(&self) -> Vec<std::net::Ipv4Addr>;
     /// The paired phones, oldest first.
     fn paired(&self) -> Vec<LudusPhone>;
     /// The player's answer to [`LudusEvent::Pairing`].
@@ -165,6 +168,9 @@ impl LudusReceiver for LudusServer {
         // 0: started without the app.
         Some(LudusServer::port(self)).filter(|port| *port != 0)
     }
+    fn addresses(&self) -> Vec<std::net::Ipv4Addr> {
+        LudusServer::addresses(self)
+    }
     fn paired(&self) -> Vec<LudusPhone> {
         LudusServer::paired(self)
             .into_iter()
@@ -202,6 +208,8 @@ pub struct LudusState {
     pub pairing: Option<LudusPairing>,
     /// The UDP port the server listens on.
     pub port: Option<u16>,
+    /// This PC's addresses for the app, the most likely first (LudusCtrl's own, from the start).
+    pub addresses: Vec<std::net::Ipv4Addr>,
     pub paired: Vec<LudusPhone>,
     /// Whether the system can host the virtual controller; `None` until looked at.
     pub pad: Option<VirtualPadStatus>,
@@ -295,6 +303,7 @@ impl LudusService {
         match (self.start)(&model.paths, events) {
             Ok(receiver) => {
                 model.ludus.port = receiver.port();
+                model.ludus.addresses = receiver.addresses();
                 model.ludus.failed = model.ludus.port.is_none();
                 model.ludus.paired = receiver.paired();
                 self.receiver = Some(receiver);
@@ -554,6 +563,12 @@ mod tests {
         fn port(&self) -> Option<u16> {
             (!calls().lock().unwrap().no_app).then_some(45989)
         }
+        fn addresses(&self) -> Vec<std::net::Ipv4Addr> {
+            if calls().lock().unwrap().no_app {
+                return Vec::new();
+            }
+            vec![std::net::Ipv4Addr::new(192, 168, 178, 20)]
+        }
         fn paired(&self) -> Vec<LudusPhone> {
             let forgotten = calls().lock().unwrap().forgotten.clone();
             [("a", "Pixel 8"), ("b", "Galaxy S23")]
@@ -629,6 +644,10 @@ mod tests {
         service.sync(&mut model);
         assert!(service.is_running());
         assert_eq!(model.ludus.port, Some(45989));
+        assert_eq!(
+            model.ludus.addresses,
+            [std::net::Ipv4Addr::new(192, 168, 178, 20)]
+        );
         assert_eq!(model.ludus.paired.len(), 2);
         assert!(
             model.ludus.pad.is_some(),

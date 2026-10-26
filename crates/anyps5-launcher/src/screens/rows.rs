@@ -17,7 +17,7 @@ use crate::ui::i18n::{Key, Language};
 use crate::ui::icons::Icon;
 use crate::ui::input::Command;
 use crate::ui::sound::Cue;
-use crate::ui::theme::size;
+use crate::ui::theme::{size, space};
 
 use anyps5_core::controls::Controls;
 
@@ -82,6 +82,10 @@ pub struct Row {
     pub warning: bool,
     /// Starts a new group: the list leaves a double gap above it.
     pub group_start: bool,
+    /// Starts a section (an option with rows of its own): a group with `space::XL` more above
+    /// it, so it reads apart from the group before (SYSTEM.md 5: at least twice the gap in a
+    /// group).
+    pub section_start: bool,
     /// A note that belongs to the row above: no gap between them.
     pub attached: bool,
     /// A text row whose field takes the room the title leaves, written from the left.
@@ -106,6 +110,7 @@ impl Row {
             destructive: false,
             warning: false,
             group_start: false,
+            section_start: false,
             attached: false,
             wide: false,
             avatar: None,
@@ -144,6 +149,13 @@ impl Row {
     /// Starts a new group (a double gap above the row).
     pub fn group_start(mut self) -> Row {
         self.group_start = true;
+        self
+    }
+
+    /// Starts a section: a group with more room above it.
+    pub fn section_start(mut self) -> Row {
+        self.group_start = true;
+        self.section_start = true;
         self
     }
 
@@ -618,7 +630,11 @@ pub fn list_with_header(
                     };
                     let row = &mut rows[index];
                     if row.group_start && index > 0 {
-                        ui.add_space(size::ROW_GAP);
+                        ui.add_space(if row.section_start {
+                            size::ROW_GAP + space::XL
+                        } else {
+                            size::ROW_GAP
+                        });
                     }
                     let focused = options.focus == Some(index);
                     let force = options.force.and_then(|(i, f)| (i == index).then_some(f));
@@ -692,6 +708,7 @@ fn show_row(
         destructive,
         warning,
         group_start: _,
+        section_start: _,
         attached,
         wide,
         avatar,

@@ -179,6 +179,7 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
         after_title = phone_status(
             ui,
             pos2(title.max.x + PHONE_STATUS_GAP, mid),
+            Icon::DEVICE_MOBILE,
             name,
             &label,
             None,
@@ -303,6 +304,7 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
         && let Some(right) = phone_status(
             ui,
             pos2(next_left(after_title), mid),
+            Icon::GAME_CONTROLLER,
             &name,
             &label,
             Some(row.min_rect().min.x - group_gap),
@@ -503,11 +505,13 @@ const PHONE_STATUS_NAME_MAX: f32 = 150.0;
 
 /// The status of a connected phone (the phone server's, or a LudusCtrl phone): its icon and name
 /// on the pills' surface, 32 high so it reads as a note beside the 44 high buttons. Not a button:
-/// nothing happens on a press. `label` is what a screen reader says. With `limit_x` it is left
-/// out (`None`) when it would reach past it.
+/// nothing happens on a press. The phone server's pill wears `device-mobile`, LudusCtrl's the
+/// game controller of its switch, so the two differ without reading. `label` is what a screen
+/// reader says. With `limit_x` it is left out (`None`) when it would reach past it.
 fn phone_status(
     ui: &mut Ui,
     left_middle: egui::Pos2,
+    icon: Icon,
     name: &str,
     label: &str,
     limit_x: Option<f32>,
@@ -533,8 +537,8 @@ fn phone_status(
     painter.text(
         pos2(rect.min.x + 12.0 + glyph * 0.5, rect.center().y),
         Align2::CENTER_CENTER,
-        Icon::DEVICE_MOBILE.glyph(),
-        Icon::DEVICE_MOBILE.font(text::quantize_size(glyph), false),
+        icon.glyph(),
+        icon.font(text::quantize_size(glyph), false),
         ink,
     );
     text::paint(

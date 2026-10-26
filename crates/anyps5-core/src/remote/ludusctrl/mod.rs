@@ -181,6 +181,8 @@ struct Shared {
 pub struct LudusServer {
     shared: Arc<Shared>,
     port: u16,
+    /// The beacon's addresses (`BeaconTarget::from`); `None`: every LAN adapter's.
+    from: Option<Vec<Ipv4Addr>>,
     web: Mutex<Option<web::Bridge>>,
 }
 
@@ -234,6 +236,10 @@ impl LudusServer {
             linked: AtomicBool::new(false),
             allow_all: config.allow_all,
         });
+        let from = config
+            .beacon
+            .as_ref()
+            .and_then(|target| target.from.clone());
         let receiver = shared.clone();
         thread::Builder::new()
             .name("ludusctrl".into())
@@ -247,6 +253,7 @@ impl LudusServer {
         Ok(LudusServer {
             shared,
             port,
+            from,
             web: Mutex::new(None),
         })
     }
@@ -254,6 +261,16 @@ impl LudusServer {
     /// The UDP port really bound; 0 without the app ([`LudusServer::start_without_app`]).
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    /// This PC's addresses for typing into the app beside [`LudusServer::port`], the most likely
+    /// first: the ones the beacon goes out from (every LAN adapter's unless the config names
+    /// them). None without the app. Looks at the adapters: call it once, not every frame.
+    pub fn addresses(&self) -> Vec<Ipv4Addr> {
+        if self.port == 0 {
+            return Vec::new();
+        }
+        self.from.clone().unwrap_or_else(lan_addresses)
     }
 
     pub fn status(&self) -> LudusStatus {

@@ -63,7 +63,7 @@ pub fn rows(
     let switch = Row::toggle("ludusctrl", t(LudusText::Title), prefs.phone_ludusctrl)
         .detail(t(LudusText::SwitchDetail))
         .icon(Icon::GAME_CONTROLLER)
-        .group_start();
+        .section_start();
     if !prefs.phone_ludusctrl {
         return vec![switch];
     }
@@ -220,8 +220,8 @@ mod tests {
         assert!(detail.contains("LudusCtrl app") && detail.contains("paired"));
         assert!(detail.contains("scan the code"), "the browser client too");
         assert!(
-            rows[0].group_start,
-            "its own group after the phone server's rows"
+            rows[0].group_start && rows[0].section_start,
+            "its own section after the phone server's rows"
         );
     }
 
