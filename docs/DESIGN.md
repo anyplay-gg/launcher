@@ -1380,8 +1380,8 @@ Per-game settings (defaults): resolution nil, fullscreen false, windowSize 75, v
 and window size are the launcher's own window logic, the resolution is a patch. `core::compat` knows from which toolkit release each
 variable and input line is read; what an older toolkit lacks is left out, and `ANYPS5_SCREENSHOTS` needs a build newer than v0.1.3.
 
-**Confirm uninstall panel**: title `uninstall`, subtitle `uninstallConfirm`; two rows: `uninstall` (destructive, trash glyph) and
-`cancel`. Opens in rows focus on the first row.
+**Confirm uninstall panel**: title `uninstall`, subtitle `uninstallConfirm`; two rows: `uninstall` (destructive, trash glyph; its label repeats the title, "Remove Installation") and
+`cancel`, which holds the focus when the panel opens. The line under the title is `uninstallConfirm` followed by `uninstallBacksUp`.
 
 **Controls panel** (S-controls): subtitle `controls`; first row is an info hint (`controlsHint`, not focusable), then one `keys` row
 per pad action in this order with titles: `✕ Cross`, `○ Circle`, `□ Square`, `△ Triangle`, `L1`, `R1`, `L2`, `R2`, `L3`, `R3`,
@@ -2260,7 +2260,7 @@ this table. Some keys exist in the table without being used by the current UI (f
 | `openLog` | Open Log | Günlüğü Aç |
 | `uninstall` | Remove Installation | Kurulumu Kaldır |
 | `clearShaderCache` | Clear Shader Cache | Shader Önbelleğini Temizle |
-| `uninstallConfirm` | Remove the installation? Your game files stay; the game shows as locked again. | Kurulum kaldırılsın mı? Oyun dosyaların silinmez, oyun tekrar kilitli görünür. |
+| `uninstallConfirm` | Your game files stay and the game shows as locked again. | Oyun dosyaların silinmez, oyun tekrar kilitli görünür. |
 | `uninstallDone` | Installation removed | Kurulum kaldırıldı |
 | `cacheCleared` | Shader cache cleared | Shader önbelleği temizlendi |
 | `appearance` | Appearance | Görünüm |
@@ -2981,7 +2981,7 @@ The AnyPS5 Remote phone app of the macOS fork ([utkuhalis/AnyPS5-ARM](https://gi
   - *macOS* builds of this launcher have no virtual controller: the page shows "Not available".
 
 **Interface.**
-  - *Settings, "Phone as Controller"* (the category after Behaviour, glyph `device-mobile`). Rows: the switch (detail: "Use your phone as a controller. Only phones on your home network can connect, and each one has to be paired first."); with it on: Status ("Waiting for a phone", "Connecting to Pixel 8", "Connected to Pixel 8 · 4 ms": the delay is part of the status while connected), the pairing question when a phone asks (the title "Pair Pixel 8?" with the code as its value, the note "Pair only if your phone shows the same code.", then Pair Phone and Deny as two commands), Address with the note for manual entry (and notes when the port was busy or the PC could not announce itself), the Paired phones caption with one "Remove Pixel 8" command per phone (ink, not danger red: pairing again undoes it) ("Paired on 2026-10-24"), and the Virtual controller status with its notes. When the server cannot start, one note says so and the switch stays.
+  - *Settings, "Phone as Controller"* (the category after Behaviour, glyph `device-mobile`). Rows: the switch (detail: "Use your phone as a controller. Only phones on your home network can connect, and each one has to be paired first."); with it on: Status ("Waiting for a phone", "Connecting to Pixel 8", "Connected to Pixel 8 · 4 ms": the delay is part of the status while connected), the pairing question when a phone asks (the title "Pair Pixel 8?" with the code as its value, the note "Pair only if your phone shows the same code.", then Pair Phone and Deny as two commands), Address (globe glyph, so every title shares the status row's edge) with the note for manual entry (and notes when the port was busy or the PC could not announce itself), the Paired phones caption with one "Remove Pixel 8" command per phone (ink, not danger red: pairing again undoes it) ("Paired on 2026-10-24"), and the Virtual controller status with its notes. When the server cannot start, one note says so and the switch stays.
   - *The question comes to the player.* When a phone asks to be paired while nothing else is open and no game starts or runs, the settings open on this page (the link `anyps5://settings/phone` does the same). Otherwise a toast says who asks and where to answer; the question stays up for the minute the server waits.
   - *Top bar.* While a phone is welcomed, a pill 32 dp high (the buttons' surface, white 0.10) with the `device-mobile` glyph and the phone's name (14 medium, cut in the middle past 150 dp) sits 48 dp after the title, clear of the scanning spinner. It is a status, not a button: not focusable, named "Phone connected: Pixel 8" for screen readers. It is ink on the pill, not accent: the accent is for being online with the network.
   - *Words.* English and Turkish like the rest (`screens/phone_strings.rs`). The product text names no console brand.

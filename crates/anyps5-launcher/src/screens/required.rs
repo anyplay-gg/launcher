@@ -30,6 +30,12 @@ const COLUMN: f32 = 440.0;
 /// "What's New" panel's.
 const NOTE_LINES: usize = 3;
 /// Between two bordered controls (docs/DESIGN.md 3.9).
+/// The glyph over the title.
+const ICON: f32 = 44.0;
+/// The hint bar at the bottom: 40 above the edge, 24 high, 16 clear.
+const HINTS_ROOM: f32 = 80.0;
+/// The room kept for three notes of two lines, with their caption.
+const NOTES_RESERVE: f32 = 196.0;
 const BUTTON_GAP: f32 = space::M;
 /// The progress line: its width (the buttons'), its height, and the gap above it.
 const BUTTON_WIDTH: f32 = 320.0;
@@ -383,7 +389,6 @@ fn draw(
         2,
     );
 
-    const ICON: f32 = 44.0;
     let button_h = ControlSize::Large.height();
     let buttons_h = button_h * 2.0 + BUTTON_GAP;
     // The bar's room is kept in every state, so the buttons do not move when the state changes.
@@ -415,11 +420,9 @@ fn draw(
                 .map(|g| g.size().y + space::M)
                 .sum::<f32>()
     };
-    let hints_room = 40.0 + 24.0 + 16.0;
     // Room for the notes is kept in every state of a tall window, with or without notes, for the
     // same reason; a short window centres what it has.
-    const NOTES_RESERVE: f32 = 170.0;
-    let fits = core_h + NOTES_RESERVE + hints_room * 2.0 <= screen.height();
+    let fits = core_h + NOTES_RESERVE + HINTS_ROOM * 2.0 <= screen.height();
     let show_notes = notes_h > 0.0 && fits;
     let total = core_h + if fits { NOTES_RESERVE } else { 0.0 };
     let mut y = (screen.center().y - total * 0.5).max(screen.min.y + space::XL);
