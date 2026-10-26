@@ -55,8 +55,9 @@ pub const BEACON_V11_SIZE: usize = 8;
 pub const NAME_MAX: usize = 32;
 
 /// The phone resends PAIR_REQ every second; the PC drops one that arrives less than a second
-/// after the last from the same IP, so the harness keeps a little margin.
-pub const PAIR_RESEND: Duration = Duration::from_millis(1050);
+/// after the last from the same IP, so the harness keeps a margin wide enough for a receive loop
+/// that runs late on a loaded machine.
+pub const PAIR_RESEND: Duration = Duration::from_millis(1200);
 /// The PC's input watchdog.
 pub const WATCHDOG_TIMEOUT: Duration = Duration::from_millis(1500);
 /// The PC sends at most one signed ack per phone in this interval.

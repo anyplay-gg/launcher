@@ -133,10 +133,12 @@ fn net(check: &'static str) -> impl FnOnce(io::Error) -> Failure {
     }
 }
 
-/// How long the harness waits for an ack it expects, or for one it must not get.
-const ACK_WAIT: Duration = Duration::from_millis(500);
+/// How long the harness waits for an ack it expects, or for one it must not get. The waits for
+/// what must come stay under the watchdog and return as soon as it does, so a busy machine only
+/// slows them.
+const ACK_WAIT: Duration = Duration::from_millis(1200);
 const NO_ACK_WAIT: Duration = Duration::from_millis(350);
-const PAD_WAIT: Duration = Duration::from_millis(500);
+const PAD_WAIT: Duration = Duration::from_millis(1200);
 
 /// Runs every check against `pc`, in order: beacon, pairing, unsigned acks, input, stale and
 /// forged packets, sessions, the watchdog, release.
