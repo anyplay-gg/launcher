@@ -1141,7 +1141,7 @@ Row sketch (S-home):
 
 **Hint bar** (right aligned, padding h 64 v 28, item gap 22): `← → ↑ ↓` "Move", `↩ / ✕` "Select", `esc / ○` "Back", `O / △` "Options"
 (keys in a keycap: 12 bold, padding 7 x 3, white 0.16 fill, radius 5; label 13 medium; all white 0.72; gap 8). Library, trophies and
-onboarding show it without "Options". A hint names only a key that does something: on the home screen "Back" is shown only while the launcher is in front because of the Home button (Back returns to the game) or a Play Together card is up (Back closes it); otherwise the bar is "Select" and "Options". The glyphs are the fixed text above (PlayStation face names), not adapted to the pad in use.
+onboarding show it without "Options". A hint names only a key that does something: on the home screen "Back" is shown only while the launcher is in front because of the Home button (Back returns to the game) or a Play Together card is up (Back closes it), or the focus is off the tile row (Back returns to it); otherwise the bar is "Select" and "Options". The glyphs are the fixed text above (PlayStation face names), not adapted to the pad in use.
 
 **Empty library** (no games): centred column, gap 18: icon 54 thin (magnifier while scanning, otherwise a stack-slash icon, white
 0.8), title (`scanning` or `emptyLibraryTitle`, 34 light), text `emptyLibraryText` (17, white 0.65), the games folder path if set

@@ -1000,11 +1000,14 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
 // Hero
 // ---------------------------------------------------------------------------------------------
 
-/// Back does something on the home screen only in two cases: the launcher is in front because of
-/// the Home button (it goes back to the game), or a Play Together card is up (it closes it).
-/// Anywhere else there is nothing to go back to, so the hint bar does not offer it.
+/// Back does something on the home screen in three cases: the launcher is in front because of the
+/// Home button (it goes back to the game), a Play Together card is up (it closes it), or the focus
+/// is off the tile row (it returns there). On the tile row itself there is nothing to go back to,
+/// so the hint bar does not offer it.
 fn back_does_something(model: &Model) -> bool {
-    (model.summoned && model.running.is_some()) || crate::app::together::card(model).is_some()
+    (model.summoned && model.running.is_some())
+        || crate::app::together::card(model).is_some()
+        || model.focus != HomeFocus::Tiles
 }
 
 fn hints(ui: &mut Ui, language: Language, set: HintSet, screen: Rect) {
