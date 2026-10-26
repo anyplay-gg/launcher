@@ -68,6 +68,14 @@ jobs:
           sw_vers
           system_profiler SPDisplaysDataType | head -20
           defaults read com.apple.universalaccess reduceTransparency 2>&1 || true
+      # The runner images ask for reduced transparency, which (rightly) turns the glass off. Turn it
+      # back on for the captures, and say what the system answers afterwards.
+      - name: Transparency
+        run: |
+          defaults write com.apple.universalaccess reduceTransparency -bool false || true
+          killall cfprefsd 2>/dev/null || true
+          sleep 2
+          defaults read com.apple.universalaccess reduceTransparency 2>&1 || true
       # The launcher's own frame: transparent where the window is see-through.
       - name: Frames
         run: |
