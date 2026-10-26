@@ -2400,6 +2400,101 @@ mod tests {
     }
 
     #[test]
+    fn every_irreversible_action_waits_for_its_answer() {
+        let mut online = online();
+        list(
+            &mut online,
+            vec![
+                conversation("a", ConversationKind::Direct, &[(2, "Lumen")], 4, 4),
+                conversation(
+                    "g",
+                    ConversationKind::Group,
+                    &[(2, "Lumen"), (3, "Juno")],
+                    1,
+                    1,
+                ),
+            ],
+            vec![conversation(
+                "r",
+                ConversationKind::Direct,
+                &[(4, "Nyx")],
+                1,
+                0,
+            )],
+        );
+        online
+            .social
+            .apply_party(Some(party(1, &[(1, "Mira"), (2, "Lumen")])));
+        let cases: [(Page, &str, Vec<OnlineAction>, Page); 3] = [
+            (
+                Page::ChatOptions("a".into()),
+                "blockChat",
+                vec![OnlineAction::Block(AccountId(2))],
+                Page::Messages,
+            ),
+            (
+                Page::ChatOptions("g".into()),
+                "leaveConversation",
+                vec![OnlineAction::LeaveConversation("g".into())],
+                Page::Messages,
+            ),
+            (
+                Page::Party,
+                "leaveParty",
+                vec![OnlineAction::PartyLeave],
+                Page::Party,
+            ),
+        ];
+        for (page, row, expected, after) in cases {
+            let mut panel = OnlinePanel::default();
+            panel.go(page.clone(), &data(&online));
+            let at = crate::screens::rows::position(&panel.rows(&data(&online)).2, row).unwrap();
+            panel.side.nav.row = at;
+            let mut actions = Vec::new();
+            panel.run(row, &data(&online), &mut actions);
+            assert!(actions.is_empty(), "{row} ran before the answer");
+            assert!(panel.asks(), "{row} did not ask");
+            // Cancel leads back to the page and the row the question came from.
+            panel.run("confirmCancel", &data(&online), &mut actions);
+            assert_eq!(panel.page, page, "{row}");
+            assert_eq!(panel.side.nav.row, at, "{row}: the focus is where it was");
+            assert!(actions.is_empty());
+            panel.run(row, &data(&online), &mut actions);
+            panel.run("confirmYes", &data(&online), &mut actions);
+            assert_eq!(actions, expected, "{row}");
+            assert_eq!(panel.page, after, "{row}");
+        }
+        // The answer bar of a message request blocks the sender and drops the request.
+        let mut panel = OnlinePanel::default();
+        panel.go(Page::MessageRequest("r".into()), &data(&online));
+        panel.ask(super::Ask::BlockRequest("r".into()), &data(&online));
+        let mut actions = Vec::new();
+        panel.run("confirmYes", &data(&online), &mut actions);
+        assert_eq!(
+            actions,
+            [
+                OnlineAction::Block(AccountId(4)),
+                OnlineAction::LeaveConversation("r".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn a_question_about_something_that_is_gone_leads_back() {
+        let mut online = online();
+        online
+            .social
+            .apply_party(Some(party(1, &[(1, "Mira"), (2, "Lumen")])));
+        let mut panel = OnlinePanel::default();
+        panel.go(Page::Party, &data(&online));
+        panel.run("leaveParty", &data(&online), &mut Vec::new());
+        assert!(panel.asks());
+        assert_eq!(panel.confirm_follow(&data(&online)), None);
+        online.social.apply_party(None);
+        assert_eq!(panel.confirm_follow(&data(&online)), Some(Page::Party));
+    }
+
+    #[test]
     fn a_message_is_answered_edited_unsent_and_reported() {
         let mut online = online();
         let mut panel = thread(&mut online);

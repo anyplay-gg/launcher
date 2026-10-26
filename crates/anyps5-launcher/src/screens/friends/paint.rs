@@ -31,6 +31,8 @@ const AVATAR_GAP: f32 = 20.0;
 
 const HANDLE: TextStyle = theme::ty::SCREEN_TITLE;
 const PAGE_TITLE: TextStyle = theme::ty::SIDE_PANEL_TITLE;
+/// The leading of a confirmation's question: three lines and more need 1.4 and over.
+const QUESTION_LEADING: f32 = 1.45;
 const PAGE_NOTE: TextStyle = TextStyle::new(15.0, Weight::Regular);
 const BADGE: TextStyle = TextStyle::new(13.0, Weight::SemiBold);
 
@@ -214,8 +216,8 @@ fn paint_badge(painter: &Painter, row: Rect, count: u32) {
 }
 
 /// The title and the line under it, from `at`. Returns the height they take. A `question` is the
-/// line a confirmation asks with: body size and ink, up to three lines, since the player decides
-/// on it.
+/// line a confirmation asks with: body size and ink with room between the lines, since the player
+/// decides on it.
 pub fn page_title(
     ui: &mut Ui,
     at: egui::Pos2,
@@ -241,7 +243,7 @@ pub fn page_title(
             text::layout_font_pretty(
                 &painter,
                 ty::QUESTION.font(),
-                ty::QUESTION.size * 1.45,
+                ty::QUESTION.size * QUESTION_LEADING,
                 ty::QUESTION.tracking,
                 note,
                 Color32::PLACEHOLDER,

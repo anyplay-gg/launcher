@@ -12,6 +12,8 @@ pub enum ConfirmText {
     /// `%@` = who.
     BlockNote,
     /// `%@` = who.
+    BlockRequestNote,
+    /// `%@` = who.
     RemoveFriendTitle,
     RemoveFriendNote,
     UnsendTitle,
@@ -31,6 +33,9 @@ impl ConfirmText {
             ConfirmText::BlockTitle => "Block %@?",
             ConfirmText::BlockNote => {
                 "%@ can no longer message you or send you friend requests. You can unblock in Settings."
+            }
+            ConfirmText::BlockRequestNote => {
+                "%@ can no longer message you or send you friend requests, and this request is removed. You can unblock in Settings."
             }
             ConfirmText::RemoveFriendTitle => "Remove %@ as a friend?",
             ConfirmText::RemoveFriendNote => {
@@ -56,6 +61,9 @@ impl ConfirmText {
             ConfirmText::BlockTitle => "%@ engellensin mi?",
             ConfirmText::BlockNote => {
                 "%@ artık sana mesaj ya da arkadaşlık isteği gönderemez. Engeli Ayarlar'dan kaldırabilirsin."
+            }
+            ConfirmText::BlockRequestNote => {
+                "%@ artık sana mesaj ya da arkadaşlık isteği gönderemez ve bu istek kaldırılır. Engeli Ayarlar'dan kaldırabilirsin."
             }
             ConfirmText::RemoveFriendTitle => "%@ arkadaşlıktan çıkarılsın mı?",
             ConfirmText::RemoveFriendNote => {
@@ -96,6 +104,7 @@ mod tests {
         for text in [
             ConfirmText::BlockTitle,
             ConfirmText::BlockNote,
+            ConfirmText::BlockRequestNote,
             ConfirmText::RemoveFriendTitle,
             ConfirmText::RemoveMemberTitle,
             ConfirmText::UnsendTitle,
@@ -121,6 +130,7 @@ mod tests {
         }
         for note in [
             ConfirmText::BlockNote,
+            ConfirmText::BlockRequestNote,
             ConfirmText::RemoveFriendNote,
             ConfirmText::UnsendNote,
             ConfirmText::LeavePartyNote,

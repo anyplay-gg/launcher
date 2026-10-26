@@ -9,6 +9,7 @@ use anyps5_core::online::others;
 
 use super::{OnlineAction, OnlineData, OnlinePanel, Page};
 use crate::screens::online_confirm_strings::ConfirmText as C;
+use crate::screens::online_screen_strings::ScreenText as X;
 use crate::screens::online_social_strings::SocialText as S;
 use crate::screens::online_strings::OnlineText as T;
 use crate::screens::rows::Row;
@@ -58,6 +59,7 @@ impl OnlinePanel {
     /// Shows the question; Back and Cancel lead to the page it was asked on.
     pub(super) fn ask(&mut self, ask: Ask, data: &OnlineData<'_>) {
         let from = self.page.clone();
+        self.confirm_row = self.side.nav.row;
         self.go(Page::Confirm(ask, Box::new(from)), data);
     }
 
@@ -68,10 +70,10 @@ impl OnlinePanel {
 
     /// The player's name for someone, for a sentence.
     fn who(data: &OnlineData<'_>, id: AccountId) -> String {
-        data.online
-            .known(id)
-            .map(|a| a.handle.clone())
-            .unwrap_or_default()
+        data.online.known(id).map_or_else(
+            || X::SomeoneUnknown.text(data.language).to_owned(),
+            |a| a.handle.clone(),
+        )
     }
 
     /// The other of a conversation, for a sentence.
@@ -81,7 +83,7 @@ impl OnlinePanel {
             .social
             .get(conversation)
             .and_then(|c| others(c, me).first().map(|a| a.handle.clone()))
-            .unwrap_or_default()
+            .unwrap_or_else(|| X::SomeoneUnknown.text(data.language).to_owned())
     }
 
     /// The title, the question and the rows of a confirmation.
@@ -103,11 +105,21 @@ impl OnlinePanel {
                     Icon::PROHIBIT,
                 )
             }
-            Ask::BlockChat(id) | Ask::BlockRequest(id) => {
+            Ask::BlockChat(id) => {
                 let who = Self::who_in(data, id);
                 (
                     named(C::BlockTitle, &who),
                     named(C::BlockNote, &who),
+                    T::Block.text(language),
+                    Icon::PROHIBIT,
+                )
+            }
+            // A request is dropped with the block: the note says so.
+            Ask::BlockRequest(id) => {
+                let who = Self::who_in(data, id);
+                (
+                    named(C::BlockTitle, &who),
+                    named(C::BlockRequestNote, &who),
                     T::Block.text(language),
                     Icon::PROHIBIT,
                 )
@@ -165,7 +177,10 @@ impl OnlinePanel {
             return false;
         };
         match row {
-            "confirmCancel" => self.go(*from, data),
+            "confirmCancel" => {
+                self.go(*from, data);
+                self.side.open_at(self.confirm_row);
+            }
             "confirmYes" => self.confirmed(ask, data, actions),
             _ => return false,
         }

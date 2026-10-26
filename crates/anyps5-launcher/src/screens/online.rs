@@ -401,6 +401,8 @@ pub struct OnlinePanel {
     room_focus: room::RoomFocus,
     /// How many member tiles the room drew in a row last frame (0 before the first).
     room_columns: usize,
+    /// The row a confirmation was asked from: Cancel and Back put the focus there again.
+    confirm_row: usize,
 }
 
 impl OnlinePanel {
@@ -831,8 +833,14 @@ impl OnlinePanel {
     }
 
     fn back(&mut self, data: &OnlineData<'_>, actions: &mut Vec<OnlineAction>) {
+        let asked_from = self.asks().then_some(self.confirm_row);
         match self.back_page(data) {
-            Some(page) => self.go(page, data),
+            Some(page) => {
+                self.go(page, data);
+                if let Some(row) = asked_from {
+                    self.side.open_at(row);
+                }
+            }
             None => self.close_panel(data, actions),
         }
     }
