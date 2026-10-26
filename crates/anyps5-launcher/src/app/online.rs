@@ -1303,7 +1303,7 @@ mod tests {
             updated: 0,
             request: true,
             party: None,
-            unread: 0,
+            unread: 1,
             muted: false,
             pinned: false,
             rev: 0,

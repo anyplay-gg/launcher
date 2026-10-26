@@ -96,7 +96,13 @@ pub fn paint_tile(painter: &Painter, rect: Rect, style: &TileStyle) {
         return;
     }
     if style.ring {
-        components::paint_focus_glow(painter, rect, r, 3.0, style.focus * alpha);
+        components::paint_focus_glow(
+            painter,
+            rect,
+            r,
+            size::FOCUS_RING_LARGE,
+            style.focus * alpha,
+        );
     }
     // Focus is the full ring; the pointer alone draws it at 45 %.
     let ring_t = (if style.ring { style.focus } else { 0.0 }).max(0.45 * style.hover);
@@ -145,7 +151,7 @@ pub fn paint_tile(painter: &Painter, rect: Rect, style: &TileStyle) {
     }
     paint_tile_overlay(painter, rect, r, style, alpha);
     if ring_t > 0.0 {
-        components::paint_focus_stroke(painter, rect, r, 3.0, ring_t * alpha);
+        components::paint_focus_stroke(painter, rect, r, size::FOCUS_RING_LARGE, ring_t * alpha);
     }
 }
 
@@ -906,10 +912,16 @@ impl<'a> PanelRow<'a> {
 
         // Value control.
         self.reveal_alpha = if self.reveal { hover_t.max(t) } else { 1.0 };
-        let value_rect = Rect::from_min_max(
-            pos2(rect.max.x - pad - value_width, rect.min.y),
-            pos2(rect.max.x - pad, rect.max.y),
-        );
+        // A row of buttons without a title (the keys of the on-screen keyboard) is centred.
+        let centred = self.title.is_empty() && matches!(self.control, RowControl::Buttons { .. });
+        let value_rect = if centred {
+            Rect::from_center_size(rect.center(), vec2(value_width, rect.height()))
+        } else {
+            Rect::from_min_max(
+                pos2(rect.max.x - pad - value_width, rect.min.y),
+                pos2(rect.max.x - pad, rect.max.y),
+            )
+        };
         self.paint_value(ui, &ctx, value_rect, fg, t, &mut out);
         out
     }
@@ -1611,7 +1623,7 @@ pub fn language_card(
         it.hover,
         it.focus,
         it.press,
-        3.0,
+        size::FOCUS_RING_LARGE,
     );
     paint_hairline(painter, rect, r, color::hairline_card());
     let ink = Color32::WHITE;

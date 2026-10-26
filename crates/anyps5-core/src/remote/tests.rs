@@ -6,7 +6,7 @@ use std::{
         Arc, Mutex,
         mpsc::{Receiver, Sender, channel},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use tungstenite::{WebSocket, client::IntoClientRequest, stream::MaybeTlsStream};
@@ -399,16 +399,22 @@ fn the_welcome_names_the_relay_and_input_reaches_the_sink() {
     let udp = UdpSocket::bind("127.0.0.1:0").unwrap();
     let mut packet = InputPacket::neutral(session.parse().unwrap());
     packet.buttons = button::CROSS;
-    udp.send_to(&packet.encode(), ("127.0.0.1", udp_port))
-        .unwrap();
-    std::thread::sleep(Duration::from_millis(300));
-    assert_eq!(
-        sink.0.load(std::sync::atomic::Ordering::SeqCst),
-        button::CROSS
-    );
+    let buttons = || sink.0.load(std::sync::atomic::Ordering::SeqCst);
+    // A phone streams input, so keep sending until it lands: a busy CI machine can take longer
+    // than any fixed wait to read the first packet.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while buttons() != button::CROSS && Instant::now() < deadline {
+        udp.send_to(&packet.encode(), ("127.0.0.1", udp_port))
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(buttons(), button::CROSS);
     drop(phone);
-    std::thread::sleep(Duration::from_millis(500));
-    assert_eq!(sink.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while buttons() != 0 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(buttons(), 0);
 }
 
 #[test]

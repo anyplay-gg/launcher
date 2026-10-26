@@ -25,6 +25,15 @@ pub type Notifier = Arc<dyn Fn() + Send + Sync>;
 #[derive(Clone, Debug, Default)]
 pub struct CancelToken(Arc<AtomicBool>);
 
+/// Two tokens are equal when they are the same flag.
+impl PartialEq for CancelToken {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for CancelToken {}
+
 impl CancelToken {
     pub fn new() -> Self {
         Self::default()
@@ -60,6 +69,12 @@ pub enum CoreEvent {
     },
     /// The running game earned a trophy.
     TrophyUnlocked { game: GameId, trophy: Trophy },
+    /// The unlocked games location was looked at (it can sit on a drive that is gone).
+    LocationChecked(crate::location::Report),
+    /// Moving the unlocked games to a new location: how far it is.
+    MoveProgress(crate::relocate::Progress),
+    /// The move ended: what moved, what stayed.
+    MoveFinished(crate::relocate::Report),
     /// What the player earned in a title, read for the network without texts or pictures.
     TrophyRecords {
         title_id: String,

@@ -144,6 +144,15 @@ pub enum Effect {
     SaveClip,
     /// The player came online: read what they earned in every unlocked game for the network.
     SyncTrophies,
+    /// Look at the unlocked games location (is the drive there, how much is free).
+    CheckLocation,
+    /// Move the unlocked copies from the store `from` to the store `to`, except `running`.
+    StartMove {
+        from: std::path::PathBuf,
+        to: std::path::PathBuf,
+        running: Vec<String>,
+        cancel: anyps5_core::events::CancelToken,
+    },
 }
 
 /// What became of a command.
@@ -225,6 +234,8 @@ pub struct Model {
 
     pub games: Vec<Game>,
     pub scanning: bool,
+    /// The unlocked games location and the move of the copies (`app::relocation`).
+    pub location: crate::app::relocation::LocationState,
     pub selected: usize,
     pub focus: HomeFocus,
     pub overlay: Option<Overlay>,
@@ -345,6 +356,7 @@ impl Model {
             now: 0.0,
             games: Vec::new(),
             scanning: false,
+            location: Default::default(),
             selected: 0,
             focus: HomeFocus::Tiles,
             overlay: None,
@@ -455,6 +467,7 @@ impl Model {
         self.now = now;
         self.checkpoint(Instant::now());
         self.prepare_tick();
+        self.resume_move_tick();
     }
 
     // --- playtime ----------------------------------------------------------------------------
@@ -660,6 +673,7 @@ impl Model {
     pub fn choose_folder(&mut self, folder: Option<std::path::PathBuf>) {
         let Some(folder) = folder else { return };
         self.edit_prefs(|p| p.games_folder = Some(folder));
+        self.games_folder_changed();
         self.forget_known_games();
         self.selected = 0;
         if !self.onboarded() && self.onboarding.step == 2 {
@@ -788,7 +802,7 @@ impl Model {
             CoreEvent::TrophyRecords { title_id, earned } => {
                 self.online.upload_trophies(&title_id, &earned);
             }
-            _ => {}
+            other => self.on_location_event(other),
         }
     }
 
