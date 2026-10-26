@@ -118,7 +118,7 @@ jobs:
         run: |
           for mode in glass solid; do
             flag="--glass-anyway"; [ "$mode" = solid ] && flag="--solid"
-            for scene in home settings; do
+            for scene in home home-noartwork settings; do
               target/release/anyplay-launcher --gallery="$scene" $flag --frames=100000 --size=760x520 \
                 --screenshot="shots/unused.png" &
               pid=$!
