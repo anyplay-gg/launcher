@@ -1539,6 +1539,7 @@ impl PanelHost {
             language,
             accent,
             folder_set: cx.model.prefs.games_folder.is_some(),
+            scanning: cx.model.scanning,
         };
         for action in self.library.show(cx.shell, cx.ctx, &events, &data) {
             let model = &mut *cx.model;

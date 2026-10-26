@@ -69,6 +69,8 @@ pub struct LibraryData<'a> {
     pub accent: Color32,
     /// A games folder is set: the empty grid offers to change it, not to pick one.
     pub folder_set: bool,
+    /// The games are being looked for: the empty grid asks for nothing yet.
+    pub scanning: bool,
 }
 
 /// The grid overlay.
@@ -151,11 +153,12 @@ impl LibraryGrid {
                         self.close();
                         actions.push(LibraryAction::Pick(self.index));
                     }
-                    Command::Select => {
+                    Command::Select if !data.scanning => {
                         shell.play(Cue::Select);
                         self.close();
                         actions.push(LibraryAction::ChooseFolder);
                     }
+                    Command::Select => {}
                     Command::Back | Command::Options => {
                         shell.play(Cue::Close);
                         self.close();
@@ -273,11 +276,14 @@ fn draw(
         } else {
             Key::PickFolder
         });
-        if ConsoleButton::new(title)
-            .icon(Icon::FOLDER)
-            .prominent(true)
-            .show(&mut child)
-            .clicked()
+        // The only control of the page: it holds the focus, so a key or the pad sees what Select does.
+        if !data.scanning
+            && ConsoleButton::new(title)
+                .icon(Icon::FOLDER)
+                .prominent(true)
+                .focused(true)
+                .show(&mut child)
+                .clicked()
         {
             *folder = true;
         }

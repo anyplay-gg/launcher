@@ -2417,6 +2417,7 @@ impl ScreenGallery {
                 language,
                 accent,
                 folder_set: false,
+                scanning: false,
             },
         );
         let diagnosis =
