@@ -312,9 +312,9 @@ impl ControlSize {
     /// Space between the edge and the content of a button with text.
     pub const fn text_pad(self) -> f32 {
         match self {
-            ControlSize::Large => 30.0,
-            ControlSize::Medium => 20.0,
-            ControlSize::Small => 14.0,
+            ControlSize::Large => size::BUTTON_PADDING,
+            ControlSize::Medium => size::BUTTON_PADDING_MEDIUM,
+            ControlSize::Small => size::CHIP_PADDING,
         }
     }
     /// The glyph: next to text, and on its own.
@@ -322,7 +322,7 @@ impl ControlSize {
         match (self, with_text) {
             (ControlSize::Large, true) => size::BUTTON_ICON,
             (ControlSize::Large, false) => size::BUTTON_ICON_ONLY,
-            (ControlSize::Medium, true) => 18.0,
+            (ControlSize::Medium, true) => size::BUTTON_ICON_MEDIUM,
             (ControlSize::Medium, false) => size::ICON_BUTTON_GLYPH,
             (ControlSize::Small, _) => size::CHIP_ICON,
         }
@@ -331,7 +331,7 @@ impl ControlSize {
     pub const fn gap(self) -> f32 {
         match self {
             ControlSize::Large => size::BUTTON_GAP,
-            ControlSize::Medium => 8.0,
+            ControlSize::Medium => size::BUTTON_GAP_MEDIUM,
             ControlSize::Small => size::CHIP_GAP,
         }
     }
@@ -423,7 +423,7 @@ pub const LIFT_FOCUS: f32 = 0.11;
 pub const LIFT_PRESS: f32 = 0.06;
 
 /// Fill and focus ring of a container that can be focused (a row, a card, a cell): `rest` is its
-/// white-based fill at rest. Hover lifts it by 5 %, focus by 9 % and draws the ring (`ring` dp wide,
+/// white-based fill at rest. Hover lifts it by 5 %, focus by 11 % and draws the ring (`ring` dp wide,
 /// 0 for none); the press adds 6 %. The ring is outside the shape, so nothing grows or reflows.
 #[allow(clippy::too_many_arguments)]
 pub fn paint_surface(
@@ -1199,7 +1199,7 @@ impl Hint<'_> {
                     }
                 }
                 Device::Keyboard => {
-                    painter.rect_filled(cap, corner(radius::KEYCAP_HINT), color::keycap());
+                    painter.rect_filled(cap, corner(radius::KEYCAP), color::keycap());
                     text::paint(
                         &painter,
                         cap.center(),

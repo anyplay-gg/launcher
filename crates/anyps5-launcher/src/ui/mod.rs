@@ -48,6 +48,7 @@ pub mod latency;
 pub mod nudge;
 pub mod pad_info;
 pub mod press;
+pub mod ps_button;
 pub mod shade;
 pub mod sound;
 pub mod text;
@@ -121,6 +122,7 @@ impl Shell {
         let home = Arc::new(HomeButton::new(&cc.egui_ctx));
         let pad = gamepad::spawn(cc.egui_ctx.clone(), home.clone());
         home_button::spawn_xinput(home.clone());
+        ps_button::spawn(home.clone());
         let language = Language::system();
         Self {
             input: Input::new(Some(pad)),

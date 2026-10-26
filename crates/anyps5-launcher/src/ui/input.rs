@@ -13,7 +13,7 @@
 use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
-use egui::{Context, Event, Key, Modifiers, MouseWheelUnit};
+use egui::{Context, Event, Key, Modifiers, MouseWheelUnit, PointerButton};
 
 /// The seven abstract commands every screen understands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -423,14 +423,22 @@ impl Input {
         let events = ctx.input(|i| i.events.clone());
         for event in events {
             match event {
-                Event::PointerButton { pressed: true, .. } => {
+                Event::PointerButton {
+                    button, pressed, ..
+                } => {
                     set_keys_steer(ctx, false);
-                    set_focus_visible(ctx, false);
+                    if pressed {
+                        set_focus_visible(ctx, false);
+                    }
                     self.pad_in_use = false;
-                }
-                Event::PointerButton { .. } => {
-                    set_keys_steer(ctx, false);
-                    self.pad_in_use = false;
+                    // The mouse's back button (button 4) is the Back command, like Escape.
+                    if button == PointerButton::Extra1
+                        && pressed
+                        && !self.capture_keys
+                        && !in_text_field
+                    {
+                        out.push(InputEvent::Command(Command::Back));
+                    }
                 }
                 Event::PointerMoved(_) => {
                     set_device(ctx, Device::Keyboard);

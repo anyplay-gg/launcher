@@ -54,6 +54,7 @@ Entry ids are lowercase letters, digits and dashes, and unique within a game. Ru
 
 - `mode`: how the game finds others. Only `lan` (a broadcast on the local network) exists. A launcher ignores an entry whose mode it does not know, so a later mode can be added without breaking old launchers.
 - `max_players`: the most players the game allows in one world, host included (2 to 64). It becomes the session's `max_members`.
+- `version`: how far the host's and the joiner's versions of the game may differ. `exact` (the same version) is the default when the field is missing, and what a game needs when its clients refuse another protocol version (Minecraft). `major` lets versions with the same first part join: `01.044.000` and `01.050.000`, not `02.000.000`. `any` lets all versions join. Choose `major` or `any` only for a game that someone has seen play across versions, and put the evidence in the pull request. A value the launcher does not know refuses the whole file, and the test below checks the shipped one. The rule is data: the launcher reads it and sends it along with a join, so the net service and the cloud apply it without knowing any game. Whatever the rule, a player who is told the versions differ can still choose "Try anyway".
 - Add a title only after someone has seen it work (an observation log, or a run on two PCs), and put the evidence in the pull request.
 
 Run `cargo test -p anyps5-core play_together` before you open the pull request.

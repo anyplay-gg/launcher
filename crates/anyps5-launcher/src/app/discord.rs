@@ -99,6 +99,14 @@ mod tests {
 
     use super::*;
 
+    /// The preferences of a player who turned the status on: it is off for a new profile.
+    fn presence_on() -> Preferences {
+        Preferences {
+            discord_presence: true,
+            ..Preferences::default()
+        }
+    }
+
     fn played() -> Played {
         Played::now("Hollow Orchard".into())
     }
@@ -159,7 +167,7 @@ mod tests {
 
     #[test]
     fn without_a_network_it_is_todays_line() {
-        let prefs = Preferences::default();
+        let prefs = presence_on();
         let online = Online::default();
         let shown = wanted(Some(&played()), &prefs, &online, unix_now()).unwrap();
         assert_eq!(shown.game, "Hollow Orchard");
@@ -170,31 +178,25 @@ mod tests {
     fn presence_off_sends_nothing_at_all() {
         let prefs = Preferences {
             discord_presence: false,
-            ..Preferences::default()
+            ..presence_on()
         };
         let mut online = Online::default();
         signed_in(&mut online);
         assert!(wanted(Some(&played()), &prefs, &online, unix_now()).is_none());
-        assert!(wanted(None, &Preferences::default(), &online, unix_now()).is_none());
+        assert!(wanted(None, &presence_on(), &online, unix_now()).is_none());
     }
 
     #[test]
     fn signed_in_without_a_session_or_party_is_still_the_plain_line() {
         let mut online = Online::default();
         signed_in(&mut online);
-        let shown = wanted(
-            Some(&played()),
-            &Preferences::default(),
-            &online,
-            unix_now(),
-        )
-        .unwrap();
+        let shown = wanted(Some(&played()), &presence_on(), &online, unix_now()).unwrap();
         assert!(shown.online.is_none());
     }
 
     #[test]
     fn a_party_shows_its_size_and_the_code_makes_the_button() {
-        let prefs = Preferences::default();
+        let prefs = presence_on();
         let mut online = Online::default();
         signed_in(&mut online);
         online.social.apply_party(Some(party(2, 4)));
@@ -220,7 +222,7 @@ mod tests {
         issue(&mut online);
         let prefs = Preferences {
             discord_join_button: false,
-            ..Preferences::default()
+            ..presence_on()
         };
         let shown = wanted(Some(&played()), &prefs, &online, unix_now())
             .and_then(|p| p.online)
@@ -263,14 +265,9 @@ mod tests {
             ),
         )));
         assert_eq!(online.sync_join_offer(true), None, "not asked again");
-        let shown = wanted(
-            Some(&played()),
-            &Preferences::default(),
-            &online,
-            unix_now(),
-        )
-        .and_then(|p| p.online)
-        .unwrap();
+        let shown = wanted(Some(&played()), &presence_on(), &online, unix_now())
+            .and_then(|p| p.online)
+            .unwrap();
         assert_eq!(shown.join_url, None);
     }
 

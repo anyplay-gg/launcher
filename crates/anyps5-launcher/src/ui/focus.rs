@@ -90,6 +90,8 @@ pub enum HomeIntent {
     /// A button of the launcher update notice (0 = the main one).
     UpdateAction(usize),
     OpenLibrary,
+    /// The captures button: the screenshots and clips.
+    OpenCaptures,
     OpenSettings,
     /// The friends button: the online area on the friends list, or on sign-in while signed out.
     OpenFriends,
@@ -112,18 +114,20 @@ pub struct HomeStep {
 
 impl HomeFocus {
     pub const LIBRARY: HomeFocus = HomeFocus::Top(0);
-    pub const FRIENDS: HomeFocus = HomeFocus::Top(1);
-    pub const SETTINGS: HomeFocus = HomeFocus::Top(2);
-    pub const PROFILE: HomeFocus = HomeFocus::Top(3);
+    pub const CAPTURES: HomeFocus = HomeFocus::Top(1);
+    pub const FRIENDS: HomeFocus = HomeFocus::Top(2);
+    pub const SETTINGS: HomeFocus = HomeFocus::Top(3);
+    pub const PROFILE: HomeFocus = HomeFocus::Top(4);
     /// The last stop of the top bar.
-    const LAST_TOP: u8 = 3;
+    const LAST_TOP: u8 = 4;
 
     /// What a press on stop `index` of the top bar does.
     pub fn top_intent(index: u8) -> HomeIntent {
         match index {
             0 => HomeIntent::OpenLibrary,
-            1 => HomeIntent::OpenFriends,
-            2 => HomeIntent::OpenSettings,
+            1 => HomeIntent::OpenCaptures,
+            2 => HomeIntent::OpenFriends,
+            3 => HomeIntent::OpenSettings,
             _ => HomeIntent::OpenOnline,
         }
     }
@@ -510,6 +514,7 @@ mod tests {
                 HomeFocus::Top(1),
                 HomeFocus::Top(2),
                 HomeFocus::Top(3),
+                HomeFocus::Top(4),
                 HomeFocus::Tiles,
                 HomeFocus::Actions(0),
                 HomeFocus::Actions(1),
@@ -584,9 +589,10 @@ mod tests {
     fn top_bar_navigation() {
         let c = ctx(3, 1, false);
         let nav = |from: HomeFocus, command| from.navigate(command, c);
-        // Left to right: library, friends, settings, profile; no wrap at either end.
+        // Left to right: library, captures, friends, settings, profile; no wrap at either end.
         let order = [
             HomeFocus::LIBRARY,
+            HomeFocus::CAPTURES,
             HomeFocus::FRIENDS,
             HomeFocus::SETTINGS,
             HomeFocus::PROFILE,
@@ -607,6 +613,7 @@ mod tests {
         );
         for (focus, intent) in [
             (HomeFocus::LIBRARY, HomeIntent::OpenLibrary),
+            (HomeFocus::CAPTURES, HomeIntent::OpenCaptures),
             (HomeFocus::FRIENDS, HomeIntent::OpenFriends),
             (HomeFocus::SETTINGS, HomeIntent::OpenSettings),
             (HomeFocus::PROFILE, HomeIntent::OpenOnline),

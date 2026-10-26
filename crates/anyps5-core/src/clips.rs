@@ -234,7 +234,7 @@ impl HotkeyListener {
 // --- files ------------------------------------------------------------------------------------
 
 /// A name for a file that is safe on Windows and Linux: no separators or reserved characters.
-fn safe_name(title: &str) -> String {
+pub fn safe_name(title: &str) -> String {
     let cleaned: String = title
         .chars()
         .map(|c| {
