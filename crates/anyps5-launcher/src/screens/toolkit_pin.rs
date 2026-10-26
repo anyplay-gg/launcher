@@ -8,6 +8,7 @@ use anyps5_core::compat;
 use anyps5_core::toolkit::{GameToolkit, compare_tags, pin_tag};
 use egui::{Color32, Context};
 
+use crate::screens::dialog;
 use crate::screens::rows::{self, Change, Row};
 use crate::screens::side::{self, SideState, SideView};
 use crate::screens::strings::Extra;
@@ -269,7 +270,9 @@ fn missing_rows(data: &MissingData<'_>) -> Vec<Row> {
     vec![
         download,
         Row::command("follow", Pin::FollowGlobal.text(language)).icon(Icon::STACK),
-        Row::command("cancel", language.text(Key::Cancel)).icon(Icon::X),
+        Row::command("cancel", language.text(Key::Cancel))
+            .icon(Icon::X)
+            .refusal(),
     ]
 }
 
@@ -326,7 +329,7 @@ impl MissingPanel {
         let language = data.language;
         if self.side.is_open() {
             let rows = missing_rows(data);
-            let driven = rows::drive(shell, &mut self.side.nav, &rows, &side::commands(events));
+            let driven = dialog::drive(shell, &mut self.side.nav, &rows, &side::commands(events));
             for change in &driven.changes {
                 self.handle(change, &mut actions);
             }

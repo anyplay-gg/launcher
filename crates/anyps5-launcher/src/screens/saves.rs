@@ -7,6 +7,7 @@ use anyps5_core::saves::{Backup, Reason};
 use egui::{Color32, Context};
 
 use crate::app::clock;
+use crate::screens::dialog;
 use crate::screens::rows::{self, Row};
 use crate::screens::side::{self, SideState, SideView};
 use crate::screens::strings::Extra;
@@ -284,7 +285,7 @@ impl RestorePanel {
         let build = || confirm_rows(language);
         if self.side.is_open() {
             let rows = build();
-            let driven = rows::drive(shell, &mut self.side.nav, &rows, &side::commands(events));
+            let driven = dialog::drive(shell, &mut self.side.nav, &rows, &side::commands(events));
             for change in &driven.changes {
                 self.handle(change, &mut actions);
             }
@@ -296,7 +297,7 @@ impl RestorePanel {
         let mut rows = build();
         let ask = Extra::SavesRestoreAsk.format(language, &[Arg::Str(stamp)]);
         let view = SideView {
-            title: Extra::SavesRestore.text(language),
+            title: Extra::SavesRestoreTitle.text(language),
             subtitle: Some(&ask),
             question: true,
             list_id: "restore-rows",
@@ -327,9 +328,10 @@ impl RestorePanel {
 pub fn confirm_rows(language: Language) -> Vec<Row> {
     vec![
         Row::command("restore", Extra::SavesRestore.text(language))
-            .icon(Icon::ARROW_COUNTER_CLOCKWISE)
-            .destructive(),
-        Row::command("cancel", language.text(Key::Cancel)).icon(Icon::X),
+            .icon(Icon::ARROW_COUNTER_CLOCKWISE),
+        Row::command("cancel", language.text(Key::Cancel))
+            .icon(Icon::X)
+            .refusal(),
     ]
 }
 
@@ -414,10 +416,10 @@ mod tests {
     }
 
     #[test]
-    fn the_question_opens_on_cancel_and_the_destructive_row_is_the_restore() {
+    fn the_question_opens_on_cancel_and_the_restore_is_the_primary_answer() {
         let rows = confirm_rows(Language::English);
         assert_eq!(ids(&rows), ["restore", "cancel"]);
-        assert!(rows[0].destructive && !rows[1].destructive);
+        assert!(!rows[0].destructive && rows[1].refusal);
         let mut panel = RestorePanel::default();
         panel.open();
         assert_eq!(panel.side.nav.row, 1);

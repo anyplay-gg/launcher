@@ -147,6 +147,16 @@ fn grounds(theme: Theme) -> Vec<Ground> {
             art: false,
         },
         Ground {
+            name: format!("{t} deep, glass window"),
+            base: Base::Fixed(glassed(p.deep_color())),
+            art: false,
+        },
+        Ground {
+            name: format!("{t} lit, glass window"),
+            base: Base::Fixed(glassed(lit(theme))),
+            art: false,
+        },
+        Ground {
             name: format!("{t} + white picture"),
             base: Base::Fixed(Color32::WHITE),
             art: true,
@@ -316,13 +326,40 @@ fn home(report: &mut Report) {
 }
 
 /// The surfaces of a panel over a theme's lit tone.
+/// The brightest the system's blur behind a see-through window can be: the dark material over a
+/// white wallpaper. The macOS runners show 92 to 96 (sRGB, gray) for Liquid Glass and for the
+/// sidebar material there (docs/DESIGN.md 19.2), so 105 leaves a margin.
+const WORST_BLUR: u8 = 105;
+
+/// A colour of the theme as seen in a see-through window at its worst: the theme over the plate
+/// over the brightest blur.
+fn glassed(theme_color: Color32) -> Color32 {
+    let under = over(
+        black(crate::ui::background::GLASS_PLATE),
+        Color32::from_gray(WORST_BLUR),
+    );
+    over(
+        theme_color.gamma_multiply(crate::ui::background::GLASS_VEIL),
+        under,
+    )
+}
+
 fn panel(report: &mut Report) {
-    for theme in Theme::ALL {
-        let name = theme.title(crate::ui::i18n::Language::English);
+    for (theme, glass) in Theme::ALL.into_iter().flat_map(|t| [(t, false), (t, true)]) {
+        let name = format!(
+            "{}{}",
+            theme.title(crate::ui::i18n::Language::English),
+            if glass { " glass" } else { "" }
+        );
+        let under = if glass {
+            glassed(lit(theme))
+        } else {
+            lit(theme)
+        };
         // The frame of the game panels is a full-screen area: the game panels' black (GlassStyle::game_panel) over the lit backdrop.
         let panel = over(
             crate::ui::theme::black(crate::ui::glass::GlassStyle::game_panel().black),
-            lit(theme),
+            under,
         );
         let row = over(color::surface_row(), panel);
         let hover = over(color::surface_hover(), panel);

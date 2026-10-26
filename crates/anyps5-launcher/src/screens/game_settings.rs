@@ -6,6 +6,7 @@
 use anyps5_core::settings::{ConsoleLanguage, GameSettings, Overlay};
 use egui::{Color32, Context};
 
+use crate::screens::dialog;
 use crate::screens::rows::{self, Change, Row, RowId};
 use crate::screens::saves;
 use crate::screens::share_strings::Share;
@@ -461,12 +462,14 @@ impl UninstallPanel {
                 Row::command("uninstall", language.text(Key::Uninstall))
                     .icon(Icon::TRASH)
                     .destructive(),
-                Row::command("cancel", language.text(Key::Cancel)).icon(Icon::X),
+                Row::command("cancel", language.text(Key::Cancel))
+                    .icon(Icon::X)
+                    .refusal(),
             ]
         };
         if self.side.is_open() {
             let rows = build();
-            let driven = rows::drive(shell, &mut self.side.nav, &rows, &side::commands(events));
+            let driven = dialog::drive(shell, &mut self.side.nav, &rows, &side::commands(events));
             for change in &driven.changes {
                 self.handle(change, &mut actions);
             }
@@ -483,7 +486,7 @@ impl UninstallPanel {
             Extra::UninstallBacksUp.text(language)
         );
         let view = SideView {
-            title: language.text(Key::Uninstall),
+            title: Extra::UninstallTitle.text(language),
             subtitle: Some(&ask),
             question: true,
             list_id: "uninstall-rows",

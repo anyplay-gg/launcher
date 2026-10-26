@@ -246,19 +246,28 @@ impl FriendsScreen {
                 let area = screen.shrink2(vec2(pad::TROPHIES.0, pad::TROPHIES.1));
                 // The bar stands bottom right like on Home; the Back button is on screen, so the
                 // bar leaves "Back" out.
-                footer_hints_enter(ui, screen, language, HintSet::BASIC.without_back(), enter);
-                let mut back = ui.new_child(
-                    UiBuilder::new()
-                        .max_rect(Rect::from_min_size(area.min, vec2(200.0, 32.0)))
-                        .layout(Layout::left_to_right(Align::Center)),
-                );
-                if ConsoleButton::new(language.text(Key::Back))
-                    .icon(Icon::CARET_LEFT)
-                    .size(ControlSize::Small)
-                    .show(&mut back)
-                    .clicked()
-                {
-                    back_clicked = true;
+                // A question is a card over this page: it brings its own hints and answers Back.
+                if !asks {
+                    footer_hints_enter(
+                        ui,
+                        screen,
+                        language,
+                        HintSet::BASIC.without_back(),
+                        enter,
+                    );
+                    let mut back = ui.new_child(
+                        UiBuilder::new()
+                            .max_rect(Rect::from_min_size(area.min, vec2(200.0, 32.0)))
+                            .layout(Layout::left_to_right(Align::Center)),
+                    );
+                    if ConsoleButton::new(language.text(Key::Back))
+                        .icon(Icon::CARET_LEFT)
+                        .size(ControlSize::Small)
+                        .show(&mut back)
+                        .clicked()
+                    {
+                        back_clicked = true;
+                    }
                 }
                 let mut top = area.min.y + 32.0 + 28.0;
                 let (page_left, page_width) = if chat {
@@ -303,8 +312,8 @@ impl FriendsScreen {
                     let width = area.width().min(640.0);
                     (area.center().x - width * 0.5, width)
                 };
-                let list_top = if thread {
-                    // The thread draws its own header.
+                let list_top = if thread || asks {
+                    // The thread draws its own header; a question is the card's.
                     top
                 } else {
                     let (title, note) = self.panel.heading(data);
@@ -323,7 +332,6 @@ impl FriendsScreen {
                         page_width - 2.0 * inset,
                         &title,
                         note,
-                        asks,
                     );
                     top + used + 22.0
                 };

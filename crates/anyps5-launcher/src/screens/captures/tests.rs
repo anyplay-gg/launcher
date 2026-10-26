@@ -283,9 +283,9 @@ fn delete_asks_first_opens_on_cancel_and_deletes_only_on_a_second_choice() {
     rig.press(Command::Select);
     rig.press(Command::Back);
     assert!(matches!(rig.screen.mode(), Mode::View { .. }));
-    // Moving to Delete and selecting deletes that capture.
+    // Moving to Delete (it stands left of Cancel) and selecting deletes that capture.
     rig.press(Command::Select);
-    rig.press(Command::Right);
+    rig.press(Command::Left);
     assert_eq!(
         rig.screen.mode(),
         Mode::Confirm {

@@ -27,6 +27,7 @@ use anyps5_core::online::{
 };
 use egui::{Color32, Context, Ui};
 
+use crate::screens::dialog;
 use crate::screens::friends_strings::FriendsText as FX;
 use crate::screens::legal::Legal;
 use crate::screens::online_call_strings::{self as call_text, CallText as CT};
@@ -502,7 +503,8 @@ impl OnlinePanel {
     /// Whether Left on the focused row would only bump into its start: then the screen takes it
     /// to the rail. A row that steps (a choice, buttons) keeps it while it still has a step to go.
     pub fn left_leaves(&self, data: &OnlineData<'_>) -> bool {
-        if self.capturing {
+        // A question's buttons are side by side: Left walks them, it never leaves for the rail.
+        if self.capturing || self.asks() {
             return false;
         }
         if self.feed_is_list(data) {
@@ -551,7 +553,12 @@ impl OnlinePanel {
 
     /// Shows `page` (previews jump straight to one).
     pub fn show_page(&mut self, page: Page, data: &OnlineData<'_>) {
+        let asks = matches!(page, Page::Confirm(..));
         self.go(page, data);
+        // A question opens on its safe answer, like the real `ask`.
+        if asks {
+            self.side.open_at(confirm::CANCEL_ROW);
+        }
     }
 
     /// Shows `page`, focused on its first row that takes focus.
@@ -742,7 +749,12 @@ impl OnlinePanel {
                 break;
             }
             let rows = self.rows(data).2;
-            let driven = rows::drive(shell, &mut self.side.nav, &rows, &[command]);
+            // A question is a card: Left and Right walk its buttons.
+            let driven = if self.asks() {
+                dialog::drive(shell, &mut self.side.nav, &rows, &[command])
+            } else {
+                rows::drive(shell, &mut self.side.nav, &rows, &[command])
+            };
             for change in &driven.changes {
                 self.handle(ctx, change, data, &mut actions);
             }
@@ -766,7 +778,7 @@ impl OnlinePanel {
     ) -> Vec<OnlineAction> {
         let mut actions = Vec::new();
         let open = self.side.is_open();
-        let (_, _, mut rows) = self.rows(data);
+        let (head, sentence, mut rows) = self.rows(data);
         let opts = rows::ListOptions {
             accent: data.accent,
             language: data.language,
@@ -803,6 +815,17 @@ impl OnlinePanel {
                         note.map(|n| n.text(language)),
                     );
                 })
+            }
+            Page::Confirm(..) => {
+                let card = dialog::Card {
+                    id: "online-confirm",
+                    title: &head,
+                    message: sentence.as_deref(),
+                    language: data.language,
+                    focus: self.side.nav.row,
+                    force: None,
+                };
+                dialog::draw(ctx, open, &card, &rows).unwrap_or_default()
             }
             _ => rows::list(ui, list_id, &mut rows, &opts),
         };
@@ -2577,10 +2600,10 @@ mod tests {
             let (heading, question, rows) = panel.rows(&data(&online));
             assert_eq!(heading, title);
             assert!(question.is_some());
-            assert_eq!(ids(&rows), ["confirmCancel", "confirmYes"]);
-            assert!(rows[1].destructive && !rows[0].destructive);
-            // The page opens on Cancel; Back and Cancel lead to where the question was asked.
-            assert_eq!(panel.side.nav.row, 0);
+            assert_eq!(ids(&rows), ["confirmYes", "confirmCancel"]);
+            assert!(rows[0].destructive && !rows[1].destructive);
+            // The card opens on Cancel; Back and Cancel lead to where the question was asked.
+            assert_eq!(panel.side.nav.row, 1);
             assert_eq!(
                 panel.back_page(&data(&online)),
                 Some(Page::Friend(AccountId(2)))

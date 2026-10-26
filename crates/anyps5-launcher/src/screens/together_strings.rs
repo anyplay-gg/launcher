@@ -22,9 +22,9 @@ pub enum TogetherText {
     /// Under the headline when the places are not known.
     OfferNoPlaces,
     Join,
-    NotNow,
+    Decline,
     Close,
-    /// The quiet answer on a version blocker: join although the versions do not fit.
+    /// The secondary answer on a version blocker: join although the versions do not fit.
     TryAnyway,
     SignIn,
     SwitchOn,
@@ -43,7 +43,7 @@ pub enum TogetherText {
     WrongVersionLine,
     /// `%@` = the game, `%@` = the version. You are ahead of the session.
     WrongVersionLineAhead,
-    /// Said under the version blocker's line, where "Try anyway" is offered.
+    /// Said under the version blocker's line, where "Try Anyway" is offered.
     TryAnywayNote,
     /// `%@` = the toolkit needed, the toolkit the player has.
     WrongBuildHeadline,
@@ -91,11 +91,11 @@ impl TogetherText {
             TogetherText::OfferPlaces => "%@ of %@ players",
             TogetherText::OfferNoPlaces => "Your game starts in their session",
             TogetherText::Join => "Join",
-            TogetherText::NotNow => "Not now",
+            TogetherText::Decline => "Decline",
             TogetherText::Close => "Close",
-            TogetherText::TryAnyway => "Try anyway",
-            TogetherText::SignIn => "Sign in",
-            TogetherText::SwitchOn => "Switch on online play",
+            TogetherText::TryAnyway => "Try Anyway",
+            TogetherText::SignIn => "Sign In",
+            TogetherText::SwitchOn => "Switch On",
             TogetherText::SignedOutHeadline => "Sign in to use Play Together",
             TogetherText::SignedOutLine => "Play Together uses your AnyPlay account.",
             TogetherText::OfflineHeadline => "You are offline",
@@ -150,10 +150,10 @@ impl TogetherText {
             TogetherText::OfferPlaces => "%@ / %@ oyuncu",
             TogetherText::OfferNoPlaces => "Oyunun onların oturumunda açılır",
             TogetherText::Join => "Katıl",
-            TogetherText::NotNow => "Şimdi değil",
+            TogetherText::Decline => "Reddet",
             TogetherText::Close => "Kapat",
-            TogetherText::TryAnyway => "Yine de dene",
-            TogetherText::SignIn => "Giriş yap",
+            TogetherText::TryAnyway => "Yine de Dene",
+            TogetherText::SignIn => "Giriş Yap",
             TogetherText::SwitchOn => "Aç",
             TogetherText::SignedOutHeadline => "Birlikte oynamak için giriş yap",
             TogetherText::SignedOutLine => "Birlikte oyna, AnyPlay hesabını kullanır.",
@@ -242,7 +242,7 @@ pub fn blocker_text(blocker: &Blocker, language: Language) -> (String, String) {
             (
                 T::WrongVersionHeadline
                     .format(language, &[Arg::Str(title), Arg::Str(need), Arg::Str(have)]),
-                // The note belongs to the "Try anyway" button that sits under this line.
+                // The note belongs to the "Try Anyway" button that sits under this line.
                 format!(
                     "{} {}",
                     line.format(language, &[Arg::Str(title), Arg::Str(need)]),

@@ -108,7 +108,15 @@ pub struct Backdrop {
     pub paused: bool,
     /// Glass panels need the blurred copy; turn it off while no panel is visible to save the work.
     pub blur: Option<BlurSettings>,
+    /// Mac style: the window is see-through. The backdrop is a still of the theme over a dark
+    /// plate, seen through at `GLASS_VEIL`; nothing moves, so nothing is redrawn.
+    pub window_glass: bool,
 }
+
+/// The theme still's opacity over the plate while the window is see-through (docs/DESIGN.md 19.2).
+pub const GLASS_VEIL: f32 = 0.20;
+/// Black under the veil: the least dark the window gets over the system blur (alpha 0..1).
+pub const GLASS_PLATE: f32 = 0.05;
 
 impl Backdrop {
     pub fn new(theme: Theme) -> Self {
@@ -120,6 +128,7 @@ impl Backdrop {
             painted_once: false,
             paused: false,
             blur: Some(BlurSettings::default()),
+            window_glass: false,
         }
     }
 
@@ -149,7 +158,7 @@ impl Backdrop {
     /// display rate; input draws at once.
     pub fn update(&mut self, ctx: &Context) {
         let dt = f64::from(ctx.input(|i| i.unstable_dt));
-        let paused = self.paused || ctx.reduced_motion();
+        let paused = self.paused || ctx.reduced_motion() || self.window_glass;
         self.clock.advance(dt, paused);
         if !paused {
             ctx.request_repaint_after(IDLE_REPAINT);
@@ -159,9 +168,19 @@ impl Backdrop {
     /// Paints the backdrop into `rect`.
     pub fn paint(&mut self, ctx: &Context, painter: &Painter, rect: Rect) {
         crate::ui::glass::begin_frame();
-        let time = self.clock.time();
+        crate::ui::glass::set_window_glass(self.window_glass);
+        if self.window_glass && crate::macstyle::probe() {
+            return;
+        }
+        let (time, veil) = if self.window_glass {
+            painter.rect_filled(rect, 0.0, crate::ui::theme::black(GLASS_PLATE));
+            (STILL_TIME_FULL, GLASS_VEIL)
+        } else {
+            (self.clock.time(), 1.0)
+        };
         let mut layer = Background::new(SLOT_MAIN, self.theme, time);
         layer.blur = self.blur;
+        layer.alpha = veil;
         layer.paint(painter, rect);
         if let Some(from) = self.fade_from {
             let alpha =
@@ -170,7 +189,7 @@ impl Backdrop {
                 self.fade_from = None;
             } else {
                 let mut old = Background::new(SLOT_FADE, from, time);
-                old.alpha = alpha;
+                old.alpha = alpha * veil;
                 old.paint(painter, rect);
             }
         }

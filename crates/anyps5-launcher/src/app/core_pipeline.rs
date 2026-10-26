@@ -338,9 +338,18 @@ impl CorePipeline {
                 return;
             }
             Err(error) => {
+                // The technical reason goes to the log; the game page says what to do.
+                tracing::warn!("no toolkit for {}: {error}", game.id.as_str());
+                let language = *self.language.lock().expect("language lock");
+                let kind = match error {
+                    toolkit::ToolkitError::PinMissing(_) => unlock::FailureKind::ToolkitMissing,
+                    _ => unlock::FailureKind::Other,
+                };
                 self.push(PipelineEvent::UnlockFinished {
                     game: game.id.clone(),
-                    result: Err(error.to_string()),
+                    result: Err(
+                        crate::screens::prepare_strings::failure(kind, language).to_owned()
+                    ),
                 });
                 return;
             }
