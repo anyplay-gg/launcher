@@ -87,7 +87,11 @@ pub fn rows(
 
     // The address for typing it in.
     if let Some(address) = address {
-        rows.push(Row::info("ludusAddress", p(PhoneText::Address), Some(address)).group_start());
+        rows.push(
+            Row::info("ludusAddress", p(PhoneText::Address), Some(address))
+                .icon(Icon::GLOBE)
+                .group_start(),
+        );
         rows.push(Row::info("ludusAddressNote", p(PhoneText::AddressNote), None).attached());
     }
 
@@ -103,8 +107,7 @@ pub fn rows(
                 PhoneText::Remove.format(language, &[Arg::Str(&phone.name)]),
             )
             .detail(PhoneText::PairedOn.format(language, &[Arg::Str(date_of(&phone.added))]))
-            .icon(Icon::X_CIRCLE)
-            .destructive(),
+            .icon(Icon::X_CIRCLE),
         );
     }
 
@@ -279,7 +282,10 @@ mod tests {
         let first = rows.iter().find(|r| r.id == "ludus0").unwrap();
         assert_eq!(first.title, "Remove Pixel 8");
         assert_eq!(first.detail.as_deref(), Some("Paired on 2026-10-24"));
-        assert!(first.destructive);
+        assert!(
+            !first.destructive,
+            "pairing again undoes it: ink, not danger red"
+        );
         assert!(!ids(&rows).contains(&"ludusPairedNone"));
         assert!(!ids(&rows).contains(&"ludus2"));
         assert_eq!(

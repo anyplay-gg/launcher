@@ -75,7 +75,6 @@ pub enum Extra {
     /// The log box before the game wrote anything.
     EmptyLog,
     /// The button of the removal confirmation (its title already says what is removed).
-    Remove,
     /// Controls row: the keyboard layout and its choices.
     Layout,
     LayoutLauncher,
@@ -328,7 +327,6 @@ impl Extra {
             }
             Extra::TrophyShow => "Show",
             Extra::EmptyLog => "No log yet. Play the game once and it appears here.",
-            Extra::Remove => "Remove",
             Extra::ToolkitFolderInvalid => {
                 "This folder is not a toolkit. Pick the folder that holds the relinker and libs."
             }
@@ -536,7 +534,6 @@ impl Extra {
             }
             Extra::TrophyShow => "Göster",
             Extra::EmptyLog => "Henüz günlük yok. Oyunu bir kez oynadığında burada görünür.",
-            Extra::Remove => "Kaldır",
             Extra::ToolkitFolderInvalid => {
                 "Bu klasör bir araç seti değil. relinker ve libs içeren klasörü seç."
             }
@@ -689,7 +686,7 @@ impl Extra {
         substitute(self.text(language), args)
     }
 
-    pub const ALL: [Extra; 153] = [
+    pub const ALL: [Extra; 152] = [
         Extra::Toolkit,
         Extra::UpdateCheck,
         Extra::UpdateCheckDetail,
@@ -737,7 +734,6 @@ impl Extra {
         Extra::ShowHiddenTrophiesDetail,
         Extra::TrophyShow,
         Extra::EmptyLog,
-        Extra::Remove,
         Extra::Layout,
         Extra::LayoutLauncher,
         Extra::LayoutMouse,
