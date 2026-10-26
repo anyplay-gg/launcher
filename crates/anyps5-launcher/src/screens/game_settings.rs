@@ -458,7 +458,7 @@ impl UninstallPanel {
         }
         let build = || {
             vec![
-                Row::command("uninstall", Extra::Remove.text(language))
+                Row::command("uninstall", language.text(Key::Uninstall))
                     .icon(Icon::TRASH)
                     .destructive(),
                 Row::command("cancel", language.text(Key::Cancel)).icon(Icon::X),

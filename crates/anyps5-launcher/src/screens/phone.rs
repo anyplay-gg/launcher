@@ -61,15 +61,20 @@ pub fn rows(prefs: &Preferences, phone: &PhoneState, language: Language) -> Vec<
         (None, Some(name)) => PhoneText::ConnectingTo.format(language, &[Arg::Str(name)]),
         (None, None) => t(PhoneText::Waiting),
     };
+    // The delay belongs to the connection: one row says both ("Connected to Pixel 8 · 4 ms").
+    let status = match (&phone.connected, phone.latency_ms) {
+        (Some(_), Some(milliseconds)) => {
+            let delay =
+                PhoneText::DelayValue.format(language, &[Arg::Int(milliseconds.round() as i64)]);
+            format!("{status} · {delay}")
+        }
+        _ => status,
+    };
     rows.push(
         Row::info("phoneStatus", t(PhoneText::Status), Some(status))
             .icon(Icon::WIFI_HIGH)
             .group_start(),
     );
-    if let (Some(_), Some(milliseconds)) = (&phone.connected, phone.latency_ms) {
-        let text = PhoneText::DelayValue.format(language, &[Arg::Int(milliseconds.round() as i64)]);
-        rows.push(Row::info("phoneDelay", t(PhoneText::Delay), Some(text)));
-    }
 
     // The pairing question: the code, a note, the two answers.
     if let Some(request) = &phone.pairing {
@@ -91,6 +96,7 @@ pub fn rows(prefs: &Preferences, phone: &PhoneState, language: Language) -> Vec<
                 t(PhoneText::Address),
                 Some(format!("{address}:{}", info.control_port)),
             )
+            .icon(Icon::GLOBE)
             .group_start(),
         );
         rows.push(Row::info("phoneAddressNote", t(PhoneText::AddressNote), None).attached());
@@ -114,8 +120,7 @@ pub fn rows(prefs: &Preferences, phone: &PhoneState, language: Language) -> Vec<
                 PhoneText::Remove.format(language, &[Arg::Str(&device.name)]),
             )
             .detail(PhoneText::PairedOn.format(language, &[Arg::Str(date_of(&device.added))]))
-            .icon(Icon::X_CIRCLE)
-            .destructive(),
+            .icon(Icon::X_CIRCLE),
         );
     }
 
@@ -355,11 +360,18 @@ mod tests {
         let first = rows.iter().find(|r| r.id == "phone0").unwrap();
         assert_eq!(first.title, "Remove Pixel 8");
         assert_eq!(first.detail.as_deref(), Some("Paired on 2026-10-24"));
-        assert!(first.destructive);
+        assert!(
+            !first.destructive,
+            "pairing again undoes it: ink, not danger red"
+        );
         assert!(rows.iter().any(|r| r.id == "phone1"));
         assert!(!rows.iter().any(|r| r.id == "phone2"));
-        let delay = rows.iter().find(|r| r.id == "phoneDelay").unwrap();
-        assert_eq!(delay.control, Control::Info(Some("4 ms".into())));
+        let status = rows.iter().find(|r| r.id == "phoneStatus").unwrap();
+        assert_eq!(
+            status.control,
+            Control::Info(Some("Connected to Pixel 8 · 4 ms".into()))
+        );
+        assert!(!ids(&rows).contains(&"phoneDelay"));
         assert_eq!(
             action(&state, &Change::Run { row: "phone1" }),
             Some(PhoneAction::Forget("b".into()))
