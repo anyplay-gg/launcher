@@ -46,6 +46,12 @@ pub fn place<R>(ui: &mut Ui, rect: Rect, add: impl FnOnce(&mut Ui) -> R) -> R {
     .inner
 }
 
+/// The plain, expected state: installed and current. It is not worth a line of its own where every
+/// game would repeat it (the hero, the library grid); the Play button and the tile already say it.
+pub fn is_plain_ready(state: &GameState) -> bool {
+    matches!(state, GameState::Installed { outdated: false })
+}
+
 /// Glyph, tint and text of a game's state (DESIGN.md 5.1), for the label beside the tile, the
 /// status card and the library grid.
 pub struct StateLabel {

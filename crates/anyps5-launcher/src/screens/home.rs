@@ -22,8 +22,8 @@ use crate::screens::together_strings::TogetherText;
 use crate::screens::toolkit_pin;
 use crate::screens::update_strings::UpdateText;
 use crate::screens::{
-    ScreenCx, StateLabel, paint_gradient_circle, paint_label, paint_spinner, place, state_label,
-    wrapped,
+    ScreenCx, StateLabel, is_plain_ready, paint_gradient_circle, paint_label, paint_spinner, place,
+    state_label, wrapped,
 };
 use crate::ui::anim::{AnimExt, Motion, lerp};
 use crate::ui::chrome::{self, TileImage, TileOverlay, TileStyle};
@@ -58,8 +58,9 @@ const ASK_LABEL_GAP: f32 = 16.0;
 const FRIENDS_GAP: f32 = 12.0;
 /// Height of the action row (the console button).
 const ACTION_ROW: f32 = size::BUTTON_MIN_HEIGHT;
-/// Longest a failure or diagnosis text gets.
+/// Longest a failure or diagnosis text gets, and the least it is given.
 const MESSAGE_WIDTH: f32 = 520.0;
+const STATUS_MIN_WIDTH: f32 = 240.0;
 
 /// A press the model has to hear about, collected while painting.
 #[derive(Clone, Copy, Debug)]
@@ -158,7 +159,7 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
         Align2::LEFT_CENTER,
         ty::TOP_BAR_TITLE,
         language.text(Key::Games),
-        Color32::WHITE,
+        color::text(),
     );
     // An empty library shows its own scanning state in the middle.
     if cx.model.scanning && !cx.model.games.is_empty() {
@@ -167,7 +168,7 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
             pos2(title.max.x + group_gap * 0.5 + 8.0, mid),
             7.0,
             cx.ctx.clock(),
-            Color32::WHITE,
+            color::text(),
         );
     }
 
@@ -401,7 +402,7 @@ fn update_notice(
         Align2::CENTER_CENTER,
         Icon::ARROW_CIRCLE_DOWN.glyph(),
         Icon::ARROW_CIRCLE_DOWN.font(text::quantize_size(glyph), false),
-        white(0.92),
+        color::text_label(),
     );
     let label_width = text::width(&painter, ty::DETAIL_LARGE, &text);
     let (label, response) = row.allocate_exact_size(vec2(label_width, height), Sense::hover());
@@ -511,7 +512,7 @@ fn phone_status(
         return Some(rect.max.x);
     }
     components::paint_capsule(&painter, rect, color::surface());
-    let ink = white(0.92);
+    let ink = color::text_label();
     painter.text(
         pos2(rect.min.x + 12.0 + glyph * 0.5, rect.center().y),
         Align2::CENTER_CENTER,
@@ -576,7 +577,7 @@ fn pad_status(
         return Some(rect.max.x);
     }
     components::paint_capsule(&painter, rect, color::surface());
-    let ink = white(0.92);
+    let ink = color::text_label();
     painter.text(
         pos2(rect.min.x + 12.0 + glyph * 0.5, rect.center().y),
         Align2::CENTER_CENTER,
@@ -668,7 +669,7 @@ fn paint_pill(painter: &egui::Painter, it: &components::Interaction) -> (Rect, f
 
 /// The ink of a pill: the same white as the icon buttons, focused or not.
 fn pill_ink(_focus: f32) -> Color32 {
-    Color32::WHITE
+    color::text()
 }
 
 /// The avatar (or the sign-in glyph) and the name as one button, on the surface of the icon
@@ -773,7 +774,7 @@ fn profile_button(
             Align2::LEFT_CENTER,
             ty::CHIP,
             words,
-            white(0.72),
+            color::text_detail(),
         )
         .max
         .x;
@@ -791,7 +792,7 @@ fn profile_button(
             Align2::CENTER_CENTER,
             BADGE,
             &count,
-            Color32::BLACK,
+            theme::readable_ink(white(0.92)),
         );
     }
     it.response
@@ -1166,7 +1167,7 @@ fn paint_hero(
         &painter,
         ty::HERO_TITLE,
         &game.name,
-        Color32::WHITE,
+        color::text(),
         width,
         2,
     );
@@ -1175,7 +1176,7 @@ fn paint_hero(
             break;
         }
         let style = text::scaled(ty::HERO_TITLE, 1.0 - 0.1 * step as f32);
-        title = wrapped(&painter, style, &game.name, Color32::WHITE, width, 2);
+        title = wrapped(&painter, style, &game.name, color::text(), width, 2);
     }
     // A low window must not push a two-line title (and the state above it) over the tile row.
     let state_height = ty::STATE_LABEL.line_height() + STATE_GAP;
@@ -1186,27 +1187,30 @@ fn paint_hero(
             &painter,
             ty::HERO_TITLE,
             &game.name,
-            Color32::WHITE,
+            color::text(),
             width,
             1,
         );
     }
     let title_top = geometry.title_bottom - title.size().y;
-    painter.galley(pos2(x, title_top), title, Color32::WHITE);
+    painter.galley(pos2(x, title_top), title, color::text());
 
-    // The state, right above the title (the selected tile carries no label of its own).
-    paint_label(
-        &painter,
-        pos2(
-            x,
-            title_top - STATE_GAP - ty::STATE_LABEL.line_height() * 0.5,
-        ),
-        &state_label(&state, language),
-        ty::STATE_LABEL,
-        width,
-        1,
-        1.0,
-    );
+    // The state, right above the title (the selected tile carries no label of its own). The plain
+    // "Ready" is left out: the Play button says it, and every game would repeat it.
+    if !is_plain_ready(&state) {
+        paint_label(
+            &painter,
+            pos2(
+                x,
+                title_top - STATE_GAP - ty::STATE_LABEL.line_height() * 0.5,
+            ),
+            &state_label(&state, language),
+            ty::STATE_LABEL,
+            width,
+            1,
+            1.0,
+        );
+    }
 
     // 2. Action row.
     let row = Rect::from_min_size(pos2(x, geometry.actions_top), vec2(width, ACTION_ROW));
@@ -1225,7 +1229,8 @@ fn paint_hero(
         let primary = ConsoleButton::new(primary_title)
             .icon(primary_icon)
             .icon_fill(primary_fill)
-            .prominent(true)
+            // While the game starts nothing can be pressed: the button only reports.
+            .prominent(!matches!(state, GameState::Starting))
             .min_width(size::PLAY_MIN_WIDTH)
             .focused(focused(0))
             .show(ui);
@@ -1264,39 +1269,19 @@ fn paint_hero(
     if live && let Some(focus) = pressed {
         presses.push(Press::Focus(focus));
     }
-    action_row_status(ui, cx, game, &state, after_buttons.x, geometry.actions_top);
+    action_row_status(
+        ui,
+        cx,
+        game,
+        &state,
+        after_buttons.x,
+        geometry.actions_top,
+        screen.max.x - pad::HERO_X,
+    );
 
-    // The glibc notice takes the line under Play while it applies: it says why a start may fail.
-    let glibc_line = cx
-        .model
-        .glibc
-        .filter(|_| glibc_notice_applies(&state))
-        .map(|short| shortfall_text(&short, language));
-    if let Some(line) = &glibc_line {
-        let top = geometry.actions_top + ACTION_ROW + FRIENDS_GAP;
-        let rect = Rect::from_min_size(pos2(x, top), vec2(width, ty::DETAIL_LARGE.line_height()));
-        let response = place(ui, rect, |ui| {
-            ui.allocate_exact_size(rect.size(), Sense::hover()).1
-        });
-        response.widget_info(|| WidgetInfo::labeled(Role::Label, true, line.as_str()));
-        paint_label(
-            &painter,
-            pos2(x, rect.center().y),
-            &StateLabel {
-                icon: Icon::WARNING,
-                fill: true,
-                tint: color::warning_text(),
-                text: line.clone(),
-            },
-            ty::DETAIL_LARGE,
-            width,
-            1,
-            1.0,
-        );
-    }
     // Friends who play this game now, under Play.
     let names = cx.model.online.friends_playing(&game.title_id);
-    if let Some(line) = friends_line(&names, language).filter(|_| glibc_line.is_none()) {
+    if let Some(line) = friends_line(&names, language) {
         let galley = wrapped(
             &painter,
             ty::DETAIL_LARGE,
@@ -1450,11 +1435,23 @@ fn primary_look(state: &GameState, language: Language) -> (&'static str, Icon, b
             (language.text(Key::Cancel), Icon::X, false)
         }
         GameState::Starting => (language.text(Key::Starting), Icon::HOURGLASS, false),
-        GameState::Running => (language.text(Key::Running), Icon::PLAY_CIRCLE, false),
+        // The button names what a press does (it brings the game's window back); the state line
+        // above the title already says "Playing".
+        GameState::Running => (
+            crate::screens::ingame::InGameText::BackToGame.text(language),
+            Icon::PLAY_CIRCLE,
+            false,
+        ),
     }
 }
 
 /// To the right of the buttons: the unlock progress, the failure or the diagnosis.
+/// How wide the status to the right of the buttons may be: the usual measure, or what the hero
+/// leaves of the window.
+fn status_width(x: f32, hero_right: f32) -> f32 {
+    MESSAGE_WIDTH.min((hero_right - x).max(STATUS_MIN_WIDTH))
+}
+
 fn action_row_status(
     ui: &mut Ui,
     cx: &mut ScreenCx<'_>,
@@ -1462,11 +1459,13 @@ fn action_row_status(
     state: &GameState,
     x: f32,
     top: f32,
+    screen_right: f32,
 ) {
     let language = cx.language();
     let accent = cx.accent();
     let painter = ui.painter().clone();
     let mid = top + ACTION_ROW * 0.5;
+    let room = status_width(x + 16.0, screen_right);
     let running = match state {
         GameState::Installing { step, fraction } => Some((*step, *fraction, false)),
         GameState::Preparing { progress, paused } => progress.map(|(s, f)| (s, f, *paused)),
@@ -1490,7 +1489,7 @@ fn action_row_status(
                 ),
                 ty::PROGRESS_PERCENT,
                 &percent,
-                white(0.85),
+                color::text_label(),
             );
             // The time left, from the measured speed; nothing until there is enough to tell.
             let note = if paused {
@@ -1550,7 +1549,7 @@ fn action_row_status(
                 ty::DETAIL_LARGE,
                 note,
                 color::text_subtitle(),
-                MESSAGE_WIDTH,
+                room,
                 2,
             );
             let top = mid - galley.size().y * 0.5;
@@ -1563,7 +1562,7 @@ fn action_row_status(
                 ty::ROW_TITLE,
                 crate::screens::prepare_strings::failure_headline(language),
                 color::error_text(),
-                MESSAGE_WIDTH,
+                room,
                 2,
             );
             let detail = wrapped(
@@ -1571,7 +1570,7 @@ fn action_row_status(
                 ty::DETAIL,
                 message,
                 color::text_subtitle(),
-                MESSAGE_WIDTH,
+                room,
                 2,
             );
             let gap = 4.0;
@@ -1580,7 +1579,7 @@ fn action_row_status(
             painter.galley(pos2(x + 16.0, top), headline, color::error_text());
             let total = Rect::from_min_size(
                 pos2(x + 16.0, top),
-                vec2(MESSAGE_WIDTH, detail_top + detail.size().y - top),
+                vec2(room, detail_top + detail.size().y - top),
             );
             let name = format!(
                 "{} {message}",
@@ -1591,7 +1590,20 @@ fn action_row_status(
             painter.galley(pos2(x + 16.0, detail_top), detail, color::text_subtitle());
         }
         _ => {
-            if let Some(summary) = cx.model.diagnoses.get(&game.id) {
+            // One status at a time: the glibc shortfall (why a start may fail) before the last
+            // run's diagnosis.
+            let glibc = cx
+                .model
+                .glibc
+                .filter(|_| glibc_notice_applies(state))
+                .map(|short| shortfall_text(&short, language));
+            if let Some(text) = glibc.or_else(|| cx.model.diagnoses.get(&game.id).cloned()) {
+                let room = status_width(x, screen_right);
+                let response = ui.allocate_rect(
+                    Rect::from_min_size(pos2(x, top), vec2(room, ACTION_ROW)),
+                    Sense::hover(),
+                );
+                response.widget_info(|| WidgetInfo::labeled(Role::Label, true, text.as_str()));
                 paint_label(
                     &painter,
                     pos2(x, mid),
@@ -1599,11 +1611,11 @@ fn action_row_status(
                         icon: Icon::WARNING,
                         fill: true,
                         tint: color::warning_text(),
-                        text: summary.clone(),
+                        text,
                     },
                     ty::DETAIL_LARGE,
-                    MESSAGE_WIDTH,
-                    2,
+                    room,
+                    3,
                     1.0,
                 );
             }
@@ -1611,12 +1623,13 @@ fn action_row_status(
     }
 }
 
-/// The glibc notice belongs to the states in which a player unlocks or starts a game; a running
-/// game has started already.
+/// The glibc notice belongs to the states in which a player is about to unlock or start a game and
+/// the status place is free. Installing, preparing and failed have a status of their own there; a
+/// running game has started already.
 fn glibc_notice_applies(state: &GameState) -> bool {
-    !matches!(
+    matches!(
         state,
-        GameState::Running | GameState::Starting | GameState::Unreadable
+        GameState::Locked | GameState::Queued | GameState::Installed { .. }
     )
 }
 
@@ -1650,7 +1663,7 @@ fn fact(ui: &mut Ui, at: egui::Pos2, title: &str, value: &str, language: Languag
         Align2::LEFT_TOP,
         ty::INFO_VALUE,
         value,
-        white(0.92),
+        color::text_label(),
     );
     width
 }
@@ -1714,7 +1727,7 @@ fn empty_library(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut
         Align2::CENTER_TOP,
         ty::EMPTY_TITLE,
         title,
-        Color32::WHITE,
+        color::text(),
     );
     y += ty::EMPTY_TITLE.line_height() + 18.0;
     // While the scan runs the advice to add dumps would contradict the title.
@@ -1750,6 +1763,10 @@ fn empty_library(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut
         y += ty::DETAIL.line_height() + 18.0;
     }
     y += 10.0;
+    // While the scan runs there is nothing to ask for: the state stands alone.
+    if scanning {
+        return;
+    }
     let focused = cx.model.overlay.is_none();
     let button_title = language.text(if folder_set {
         Key::ChangeFolder

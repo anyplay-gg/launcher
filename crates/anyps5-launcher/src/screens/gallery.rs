@@ -82,7 +82,6 @@ use crate::ui::chrome::{TileImage, TileOverlay};
 use crate::ui::i18n::Key;
 use crate::ui::icons::Icon;
 use crate::ui::input::InputEvent;
-use crate::ui::theme::white;
 use anyps5_core::gamefiles::{GameInput, parse_input_ini};
 
 /// The page to show.
@@ -111,6 +110,8 @@ pub enum ScreenPage {
     /// The review of a report to AnyPS5.
     Report,
     Library,
+    /// The library grid with no games.
+    LibraryEmpty,
     /// The Captures area, in one of its states.
     Captures(crate::screens::captures::sample::CapturesLook),
     /// The Toolkit category, in its rows: stable, an update waiting, pinned, a local build.
@@ -609,6 +610,7 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "log" => ScreenPage::Log,
         "report" => ScreenPage::Report,
         "library" => ScreenPage::Library,
+        "library-empty" => ScreenPage::LibraryEmpty,
         "captures-empty" => ScreenPage::Captures(CapturesLook::Empty),
         "captures-few" => ScreenPage::Captures(CapturesLook::Few),
         "captures-many" => ScreenPage::Captures(CapturesLook::Many),
@@ -2229,7 +2231,12 @@ impl ScreenGallery {
                 .get_or_insert_with(|| HomeStand::new(&ctx, self.prefs.clone(), scene, !unlocking))
                 .paint(ui, shell);
         }
-        let entries: Vec<LibraryEntry> = (0..NAMES.len())
+        let shown = if matches!(self.page, ScreenPage::LibraryEmpty) {
+            0
+        } else {
+            NAMES.len()
+        };
+        let entries: Vec<LibraryEntry> = (0..shown)
             .map(|i| LibraryEntry {
                 name: NAMES[i].to_owned(),
                 icon: Some(self.tile(i)),
@@ -2243,12 +2250,14 @@ impl ScreenGallery {
                         icon: Icon::PLAY_CIRCLE,
                         text: language.text(Key::Running).into(),
                         tint: crate::ui::theme::color::text_active(),
+                        quiet: false,
                     }
                 } else {
                     StateText {
                         icon: Icon::CHECK_CIRCLE,
                         text: language.text(Key::Ready).into(),
-                        tint: white(0.75),
+                        tint: crate::ui::theme::color::text_detail(),
+                        quiet: true,
                     }
                 },
             })
@@ -2311,6 +2320,7 @@ impl ScreenGallery {
                     worker: Some(("ready".into(), None)),
                 }
             }),
+            windows_rows: true,
             clips: crate::screens::settings::ClipsEnv {
                 count: if self.prefs.clips_seconds > 0 { 3 } else { 0 },
                 capturing: matches!(self.page, ScreenPage::BehaviourClipsKey),
@@ -2490,6 +2500,8 @@ impl ScreenGallery {
                 entries: &entries,
                 language,
                 accent,
+                folder_set: false,
+                scanning: false,
             },
         );
         let diagnosis =
@@ -2729,6 +2741,7 @@ impl ScreenGallery {
                 self.trophies.reveal(SECRET_TROPHY);
             }
             ScreenPage::Library => self.library.open(1),
+            ScreenPage::LibraryEmpty => self.library.open(0),
             ScreenPage::Captures(look) => self.open_captures(ctx, look),
             ScreenPage::ControlsEnd => self.controls.open_row(30),
             ScreenPage::Toolkit(look) => {
@@ -2758,7 +2771,10 @@ impl ScreenGallery {
                 self.whats_new
                     .open_launcher(&self.launcher_notes.notes, shell.language);
             }
-            ScreenPage::BehaviourLinks => self.settings.open_at(3, true),
+            ScreenPage::BehaviourLinks => {
+                self.settings.open_at(3, true);
+                self.settings.focus_row_id("links");
+            }
             ScreenPage::SettingsCodec(on) => {
                 self.prefs.online_openh264 = on;
                 self.settings.open_at(6, true);
@@ -2776,27 +2792,27 @@ impl ScreenGallery {
             ScreenPage::BehaviourClipsOff => {
                 self.prefs.clips_seconds = 0;
                 self.settings.open_at(3, true);
-                self.settings.focus_row(8);
+                self.settings.focus_row_id("clips");
             }
             ScreenPage::BehaviourClips | ScreenPage::BehaviourClipsKey => {
                 self.prefs.clips_seconds = 30;
                 self.settings.open_at(3, true);
                 self.settings
-                    .focus_row(if self.page == ScreenPage::BehaviourClipsKey {
-                        9
+                    .focus_row_id(if self.page == ScreenPage::BehaviourClipsKey {
+                        "clipsKey"
                     } else {
-                        8
+                        "clips"
                     });
             }
             ScreenPage::BehaviourSteam => {
                 self.settings.open_at(3, true);
-                self.settings.focus_row(12);
+                self.settings.focus_row_id("addToSteam");
             }
             ScreenPage::Phone(look) => {
                 self.settings.open_at(4, true);
                 // The question lands on its first answer.
                 if look == PhoneLook::Pairing {
-                    self.settings.focus_row(4);
+                    self.settings.focus_row_id("pairAllow");
                 }
                 // LudusCtrl's question lands on its first answer; a connected LudusCtrl phone
                 // shows the end of the page, where the app comes from.
