@@ -12,7 +12,7 @@
 use std::collections::BTreeSet;
 
 use anyps5_core::library::Game;
-use anyps5_core::online::api::{AccountId, Invitation, SessionKind};
+use anyps5_core::online::api::{AccountId, Invitation, SessionKind, VersionRule};
 use anyps5_core::online::control::Host;
 use anyps5_core::online::{Command, Join, Purpose, Status};
 use anyps5_core::paths::GameId;
@@ -32,6 +32,8 @@ pub struct Together {
     pub host: Option<(GameId, Host)>,
     /// The session this launcher's running game opened.
     pub hosting: Option<String>,
+    /// The offer the last join was for: what "Try Anyway" joins when the versions do not fit.
+    attempt: Option<Offer>,
 }
 
 /// What the card in front of the player shows.
@@ -62,6 +64,8 @@ pub enum Action {
     Close,
     /// The blocker's remedy.
     Fix(Fix),
+    /// "Try anyway" on a version blocker: join the last offer although the versions do not fit.
+    TryAnyway,
 }
 
 /// What mends a blocker from the card.
@@ -80,6 +84,11 @@ impl Fix {
             _ => None,
         }
     }
+}
+
+/// Does the blocker offer "Try anyway" beside its primary action?
+pub fn can_try_anyway(blocker: &Blocker) -> bool {
+    matches!(blocker, Blocker::WrongVersion { .. })
 }
 
 impl Together {
@@ -198,18 +207,40 @@ pub fn join_invitation(model: &mut Model, invitation: &Invitation) {
 /// The local checks, then the net service's. The answer comes back to
 /// [`OnlineService`](super::online::OnlineService), which starts the game.
 pub fn join(model: &mut Model, offer: Offer) {
+    join_with(model, offer, false);
+}
+
+/// [`join`], or with `try_anyway` the same join that skips the version check on purpose: the
+/// player read that the versions do not fit and chose to go on. The net service and the cloud are
+/// told with an explicit flag, and the launcher's log keeps the choice. Everything else still holds.
+fn join_with(model: &mut Model, offer: Offer, try_anyway: bool) {
     let world = world(model, &offer.title_id);
-    if let Err(blocker) = play_together::check(&offer, &world) {
+    let rule = play_together::version_rule(&offer.title_id);
+    model.together.attempt = Some(offer.clone());
+    let accepted = if try_anyway { VersionRule::Any } else { rule };
+    if let Err(blocker) = play_together::check_as(&offer, &world, accepted) {
         model.together.block(blocker);
         return;
     }
     model.together.blocked = None;
     let have = world.owned.map(|o| o.version).unwrap_or_default();
+    if try_anyway {
+        tracing::info!(
+            session = %offer.session,
+            title_id = %offer.title_id,
+            host_version = %offer.version,
+            own_version = %have,
+            ?rule,
+            "Play Together: joining although the versions do not fit (Try Anyway)"
+        );
+    }
     let command = Command::CheckJoin {
         session: offer.session.clone(),
         title_id: offer.title_id.clone(),
         version: have.clone(),
         build: world.build.clone(),
+        version_rule: rule,
+        override_version: try_anyway,
     };
     model.online.send(
         Purpose::CheckJoin(Join {
@@ -219,6 +250,8 @@ pub fn join(model: &mut Model, offer: Offer) {
             version: have,
             build: world.build,
             friend: offer.host,
+            rule,
+            override_version: try_anyway,
         }),
         command,
     );
@@ -303,6 +336,10 @@ pub fn apply(model: &mut Model, action: Action) {
             }
         }
         Action::Close => model.together.blocked = None,
+        Action::TryAnyway => match model.together.attempt.clone() {
+            Some(offer) => join_with(model, offer, true),
+            None => model.together.blocked = None,
+        },
         Action::Fix(fix) => {
             model.together.blocked = None;
             match fix {
