@@ -4,7 +4,7 @@
 //! One glass card at the top centre, below the toast and below a call's card or strip, on its own
 //! layer like those. It comes in with the overlay spring (fade and a short slide down) and leaves the
 //! same way. It holds at most one question: the offer has "Join" as its one primary action and a
-//! quiet "Not now"; a blocker says what is the case in a headline and what to do under it, and has
+//! quiet "Later"; a blocker says what is the case in a headline and what to do under it, and has
 //! "Close" (and, for the two it can mend, the remedy as the primary action). The version blocker
 //! also has a quiet "Try anyway" beside Close. Nothing on it moves
 //! while it stays. The pad reaches every button of the card as a stop of the home screen
@@ -33,18 +33,22 @@ use crate::ui::glass::{GlassStyle, paint_glass};
 use crate::ui::i18n::{Arg, Language};
 use crate::ui::icons::Icon;
 use crate::ui::text;
-use crate::ui::theme::{self, TextStyle, Weight, fade, radius, shadows, size, ty, white};
+use crate::ui::theme::{self, TextStyle, color, fade, radius, shadows, size, space, ty};
 
+/// Below the toast (28 from the top) and its one row.
 const TOP: f32 = size::TOAST_TOP + 72.0;
 const CARD_WIDTH: f32 = 420.0;
-const PAD: f32 = 24.0;
+const PAD: f32 = space::XL;
 const LEAD: f32 = 56.0;
-const TEXT_GAP: f32 = 16.0;
+const TEXT_GAP: f32 = space::L;
 /// Between the lines of text and the buttons.
-const BODY_GAP: f32 = 20.0;
+const BODY_GAP: f32 = space::XL;
 const GAP: f32 = size::CONTROL_GAP;
-/// The headline is a semibold 16, the line under it a regular 14 with the room a few lines need.
-const HEADLINE: TextStyle = TextStyle::new(16.0, Weight::SemiBold);
+/// The glyph in the warning lead (SYSTEM.md 7: 24 for a state glyph).
+const LEAD_ICON: f32 = 24.0;
+/// The headline is a semibold 16 (the Medium button size), the line under it the note role with
+/// the room a few lines need.
+const HEADLINE: TextStyle = ty::BUTTON_MEDIUM;
 const HEADLINE_LEADING: f32 = 1.3;
 const LINE_LEADING: f32 = 1.45;
 const HEADLINE_ROWS: usize = 3;
@@ -140,7 +144,7 @@ fn view(card: &Card, language: Language) -> View {
                     .format(language, &[Arg::Str(&offer.host), Arg::Str(&offer.title)]),
                 line,
                 quiet: Some((
-                    T::NotNow.text(language).to_owned(),
+                    T::Later.text(language).to_owned(),
                     Action::Dismiss {
                         key: key.clone(),
                         invitation: invitation.clone(),
@@ -221,10 +225,10 @@ fn lay(
     painter.layout_job(job)
 }
 
-/// The slide and fade: the card drops in from 24 dp above and leaves the same way.
+/// The slide and fade: the card drops in from one step (24 dp) above and leaves the same way.
 fn entrance(shown: f32) -> (f32, f32) {
     let v = shown.clamp(0.0, 1.0);
-    (v, -(1.0 - v) * 24.0)
+    (v, -(1.0 - v) * space::XL)
 }
 
 /// A button's focus from the keyboard: the id it will get, looked up in egui's memory.
@@ -263,7 +267,7 @@ pub(crate) fn paint(
         HEADLINE,
         HEADLINE_LEADING,
         &view.headline,
-        Color32::WHITE,
+        fade(color::text(), a),
         text_width,
         HEADLINE_ROWS,
     );
@@ -272,11 +276,11 @@ pub(crate) fn paint(
         ty::NOTE,
         LINE_LEADING,
         &view.line,
-        Color32::WHITE,
+        fade(color::text_detail(), a),
         text_width,
         LINE_ROWS,
     );
-    let text_height = headline.size().y + 4.0 + line.size().y;
+    let text_height = headline.size().y + space::XS + line.size().y;
     let body = text_height.max(LEAD);
     let height = PAD * 2.0 + body + BODY_GAP + size::BUTTON_MIN_HEIGHT;
     let rect = Rect::from_min_size(
@@ -296,13 +300,13 @@ pub(crate) fn paint(
             paint_shadow(
                 &painter,
                 rect,
-                radius::TOAST * 0.5,
+                radius::CARD,
                 egui::epaint::Shadow {
                     color: fade(shadows::toast().color, a * a),
                     ..shadows::toast()
                 },
             );
-            let mut style = GlassStyle::glass(radius::TOAST * 0.5, 0.6);
+            let mut style = GlassStyle::glass(radius::CARD, 0.6);
             style.black *= a;
             style.alpha = a;
             paint_glass(ctx, &painter, rect, style);
@@ -337,13 +341,13 @@ pub(crate) fn paint(
                     );
                 }
                 Lead::Warning => {
-                    painter.circle_filled(centre, LEAD * 0.5, fade(white(0.10), a));
+                    painter.circle_filled(centre, LEAD * 0.5, fade(color::surface(), a));
                     painter.text(
                         centre,
                         Align2::CENTER_CENTER,
                         Icon::WARNING.glyph().to_string(),
-                        Icon::WARNING.font(26.0, true),
-                        fade(white(0.92), a),
+                        Icon::WARNING.font(LEAD_ICON, true),
+                        fade(color::text_label(), a),
                     );
                 }
             }
@@ -351,9 +355,13 @@ pub(crate) fn paint(
             // The words, set against the top of the lead.
             let text_x = inner.min.x + LEAD + TEXT_GAP;
             let top = inner.min.y + (body - text_height) * 0.5;
-            let line_top = top + headline.size().y + 4.0;
-            painter.galley(pos2(text_x, top), headline, fade(Color32::WHITE, a));
-            painter.galley(pos2(text_x, line_top), line, fade(white(0.7), a));
+            let line_top = top + headline.size().y + space::XS;
+            painter.galley(pos2(text_x, top), headline, fade(color::text(), a));
+            painter.galley(
+                pos2(text_x, line_top),
+                line,
+                fade(color::text_detail(), a),
+            );
             let status = ui.interact(rect, Id::unique("together-card-status"), Sense::hover());
             let label = format!("{}. {}", view.headline, view.line);
             status.widget_info(|| {

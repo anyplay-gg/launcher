@@ -55,7 +55,7 @@ pub enum Card {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Action {
     Join(Offer),
-    /// "Not now": the key, and the invitation to decline.
+    /// "Later": the key, and the invitation to decline.
     Dismiss {
         key: String,
         invitation: Option<String>,
