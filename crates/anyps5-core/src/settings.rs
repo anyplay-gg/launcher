@@ -488,6 +488,9 @@ pub struct Preferences {
     /// Home screen music.
     #[serde(default = "yes")]
     pub music: bool,
+    /// The selected game's own music (`sce_sys/snd0.at9`) in place of the home screen music.
+    #[serde(default = "yes")]
+    pub game_music: bool,
     /// The running game on the player's Discord profile.
     #[serde(default = "yes")]
     pub discord_presence: bool,
@@ -526,6 +529,15 @@ pub struct Preferences {
     /// The games folder; `None` until the player picks one.
     #[serde(default)]
     pub games_folder: Option<PathBuf>,
+    /// Where the unlocked copies live when the player keeps them away from the dumps (a faster
+    /// drive); `None` is the default, next to the games. See [`crate::location`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unlocked_folder: Option<PathBuf>,
+    /// The store root (the folder that holds `.AnyPS5`) the unlocked copies are being moved out
+    /// of; set from the moment the location changes until the last copy is at the new place or the
+    /// player leaves the rest where it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unlocked_moving_from: Option<PathBuf>,
     #[serde(default)]
     pub screenshots_folder: Option<PathBuf>,
     #[serde(default)]
@@ -620,6 +632,7 @@ impl Default for Preferences {
             reduced_motion: false,
             sounds: true,
             music: true,
+            game_music: true,
             discord_presence: true,
             discord_join_button: true,
             hide_while_playing: false,
@@ -632,6 +645,8 @@ impl Default for Preferences {
             fullscreen: true,
             profile_name: default_profile_name(),
             games_folder: None,
+            unlocked_folder: None,
+            unlocked_moving_from: None,
             screenshots_folder: None,
             fonts_folder: None,
             games: BTreeMap::new(),
@@ -680,6 +695,15 @@ pub fn run_question_key(title_id: &str, version: &str, toolkit: &str) -> String 
 }
 
 impl Preferences {
+    /// The folder that holds the `.AnyPS5` store: the unlocked-games location when the player set
+    /// one, else the games folder. `None` until there is a games folder.
+    pub fn store_root(&self) -> Option<PathBuf> {
+        self.games_folder.as_ref()?;
+        self.unlocked_folder
+            .clone()
+            .or_else(|| self.games_folder.clone())
+    }
+
     pub fn toolkit_channel(&self) -> ToolkitChannel {
         if self.toolkit.is_some() {
             ToolkitChannel::Local

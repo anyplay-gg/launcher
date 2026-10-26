@@ -888,7 +888,13 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
         size::TILE_GAP,
         size::TILE_LABEL_COLUMN,
     );
-    let leading = screen.min.x + pad::HOME_X;
+    // Past the first game the row moves right a little, so the previous game stays on screen.
+    let peek_shift = if cx.model.selected > 0 {
+        size::TILE_PEEK_SHIFT
+    } else {
+        0.0
+    };
+    let leading = screen.min.x + pad::HOME_X + peek_shift;
     let row_top = screen.min.y + pad::HOME_TOP + size::ICON_BUTTON + 34.0;
     let selected = cx.model.selected;
     let ring_on = focus_visible(cx.model) && cx.model.focus == HomeFocus::Tiles;
@@ -918,7 +924,12 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
         let x = ctx.animate_to(key("tile-x"), target_x, Motion::Layout);
         let opacity = ctx.animate_to(
             key("tile-opacity"),
-            if offset < 0 { 0.0 } else { 1.0 },
+            match offset {
+                // The previous game stays, dimmed; the ones before it are gone.
+                -1 => size::TILE_PEEK_OPACITY,
+                ..=-2 => 0.0,
+                _ => 1.0,
+            },
             Motion::Layout,
         );
         let side = lerp(small, large, t);
@@ -939,7 +950,7 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
         style.ring = ring_t > 0.002;
         style.opacity = opacity.clamp(0.0, 1.0);
         let under_pointer = interactive
-            && opacity > 0.5
+            && opacity > 0.25
             && input::pointer_in_use(&ctx)
             && ctx.pointer_hover_pos().is_some_and(|p| rect.contains(p));
         style.hover = ctx.animate_to(key("tile-hover"), f32::from(under_pointer), Motion::Hover);
@@ -956,7 +967,7 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
             chrome::paint_preparing_caption(&painter, rect, &caption, style.opacity);
         }
 
-        if interactive && opacity > 0.5 {
+        if interactive && opacity > 0.25 {
             let state = cx.model.state_of(&game);
             let label = format!("{}, {}", game.name, state_label(&state, language).text);
             let response =

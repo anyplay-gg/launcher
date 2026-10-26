@@ -739,7 +739,7 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
                 updated: last,
                 request,
                 party: None,
-                unread: 0,
+                unread: last.saturating_sub(read),
                 muted: false,
                 pinned: false,
                 rev: 0,

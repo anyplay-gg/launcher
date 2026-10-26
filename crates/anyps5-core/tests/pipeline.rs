@@ -1188,3 +1188,129 @@ fn a_kept_relinker_output_does_not_report_timings() {
             .any(|e| matches!(e, UnlockEvent::Timings { .. }))
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// The unlocked games location (launcher#35): the store sits in another folder than the dumps.
+
+/// A request whose store lives in `fast`, a folder besides the games folder.
+fn dump_with_store_in(w: &World, fast: &Path, name: &str, title_id: &str) -> UnlockRequest {
+    let mut request = w.dump(name, title_id, &elf_bytes());
+    request.root = fast.to_path_buf();
+    request
+}
+
+fn listing(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    fn visit(dir: &Path, out: &mut Vec<(PathBuf, Vec<u8>)>) {
+        let mut entries: Vec<_> = fs::read_dir(dir).unwrap().flatten().collect();
+        entries.sort_by_key(|e| e.file_name());
+        for entry in entries {
+            let path = entry.path();
+            if path.is_dir() {
+                out.push((path.clone(), Vec::new()));
+                visit(&path, out);
+            } else {
+                out.push((path.clone(), fs::read(&path).unwrap()));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    visit(root, &mut out);
+    out
+}
+
+#[test]
+fn a_store_in_another_folder_gets_the_copy_and_the_dumps_stay_untouched() {
+    let w = world(&[]);
+    let fast = w._dir.path().join("fast");
+    fs::create_dir_all(&fast).unwrap();
+    let mut request = dump_with_store_in(&w, &fast, "Stray", "PPSA03000");
+    request.link_mode = LinkMode::ForceCopy;
+    let before = listing(&w.root);
+    let (result, _events) = run(&request);
+    result.expect("unlock succeeds");
+
+    let copy = unlock::unlocked_copy("PPSA03000", &request.game, &fast);
+    assert!(copy.join(EXECUTABLE).is_file());
+    assert!(copy.starts_with(fast.join(".AnyPS5/Games")));
+    assert_eq!(
+        fs::read(copy.join("app0/data/level1.pak")).unwrap(),
+        b"LEVEL-ONE-DATA"
+    );
+    assert!(
+        !w.root.join(".AnyPS5").exists(),
+        "nothing was made in the games folder"
+    );
+    assert_eq!(
+        listing(&w.root),
+        before,
+        "the dump folder is byte for byte as it was"
+    );
+    no_leftovers(&fast);
+}
+
+// (macOS shares files by cloning, which keeps a link count of 1.)
+#[cfg(all(unix, not(target_os = "macos")))]
+#[test]
+fn files_are_linked_on_one_volume_and_copied_when_forced() {
+    use std::os::unix::fs::MetadataExt;
+    let w = world(&[]);
+    let fast = w._dir.path().join("fast");
+    fs::create_dir_all(&fast).unwrap();
+
+    let linked = dump_with_store_in(&w, &fast, "Linked", "PPSA03001");
+    run(&linked).0.expect("unlock succeeds");
+    let copy = unlock::unlocked_copy("PPSA03001", &linked.game, &fast);
+    let pak = copy.join("app0/data/level1.pak");
+    assert!(
+        fs::metadata(&pak).unwrap().nlink() > 1,
+        "same volume: a hard link"
+    );
+
+    let mut copied = dump_with_store_in(&w, &fast, "Copied", "PPSA03002");
+    copied.link_mode = LinkMode::ForceCopy;
+    run(&copied).0.expect("unlock succeeds");
+    let copy = unlock::unlocked_copy("PPSA03002", &copied.game, &fast);
+    let pak = copy.join("app0/data/level1.pak");
+    assert_eq!(
+        fs::metadata(&pak).unwrap().nlink(),
+        1,
+        "another volume: a copy of its own"
+    );
+    assert_eq!(fs::read(&pak).unwrap(), b"LEVEL-ONE-DATA");
+}
+
+#[test]
+fn a_location_that_is_gone_stops_before_anything_is_written() {
+    let w = world(&[]);
+    let gone = w._dir.path().join("unplugged");
+    let request = dump_with_store_in(&w, &gone, "Stray", "PPSA03003");
+    let (result, events) = run(&request);
+    let error = result.unwrap_err();
+    assert!(matches!(&error, UnlockError::LocationMissing(p) if p.ends_with("unplugged")));
+    assert_eq!(error.kind(), unlock::FailureKind::LocationMissing);
+    assert!(!gone.exists(), "no folder is made on the wrong disk");
+    assert!(!w.root.join(".AnyPS5").exists());
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, UnlockEvent::Progress { .. }))
+    );
+}
+
+#[test]
+fn the_space_check_measures_the_drive_of_the_location() {
+    let w = world(&[]);
+    let fast = w._dir.path().join("fast");
+    fs::create_dir_all(&fast).unwrap();
+    let mut request = dump_with_store_in(&w, &fast, "Tight", "PPSA03004");
+    request.free_space_override = Some(Some(1024 * 1024));
+    let error = run(&request).0.unwrap_err();
+    match error {
+        UnlockError::NotEnoughSpace { folder, free, .. } => {
+            assert_eq!(folder, fast, "the message names the location's drive");
+            assert_eq!(free, 1024 * 1024);
+        }
+        other => panic!("expected NotEnoughSpace, got {other}"),
+    }
+    assert!(!fast.join(".AnyPS5/Games").exists());
+}

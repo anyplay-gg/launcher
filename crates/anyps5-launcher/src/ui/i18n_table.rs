@@ -751,7 +751,7 @@ impl Key {
             Key::Storage => "Library",
             Key::Rescan => "Scan Again",
             Key::InstalledSize => {
-                "Unlocked games are kept in the .AnyPS5 folder inside your games folder."
+                "Unlocked games sit next to your dumps and share their files where the drive allows. Choose another folder to keep them on a different drive."
             }
             Key::About => "About",
             Key::AboutText => "AnyPlay Launcher runs PS5 games natively on Windows with AnyPS5.",
@@ -996,7 +996,7 @@ impl Key {
             Key::Storage => "Kütüphane",
             Key::Rescan => "Yeniden Tara",
             Key::InstalledSize => {
-                "Kilidi açılan oyunlar oyun klasörünün içindeki .AnyPS5 klasöründe saklanır."
+                "Kilidi açılan oyunlar dökümlerinin yanında durur ve sürücü izin verdiği yerde dosyalarını paylaşır. Onları başka bir sürücüde tutmak için başka bir klasör seç."
             }
             Key::About => "Hakkında",
             Key::AboutText => {

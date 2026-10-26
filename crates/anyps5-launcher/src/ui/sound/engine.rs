@@ -1,12 +1,15 @@
 //! The mixer on the audio thread (docs/DESIGN.md section 7.3): cue voices plus the home music,
-//! with the music fading in and out on request and dipping under every cue. The launcher talks
-//! to it only through [`Command`]s, so nothing on the UI thread ever waits for audio.
+//! with the music fading in and out on request and dipping under every cue. The selected game's
+//! theme song takes the home music's place while it plays: one fades out as the other fades in.
+//! The launcher talks to it only through [`Command`]s, so nothing on the UI thread ever waits
+//! for audio.
 
 use std::num::NonZero;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
 
+use anyps5_core::theme_song::{ThemePlayer, ThemeSong};
 use rodio::Source;
 
 use super::cues::{Cue, render};
@@ -17,6 +20,8 @@ pub enum Command {
     Cue(Cue),
     /// Fade the home music in (`true`) or out.
     Music(bool),
+    /// Play this theme song in place of the home music, or fade the theme out (`None`).
+    Theme(Option<Arc<ThemeSong>>),
 }
 
 /// Cues playing at once; a cue beyond that fades the oldest out over 5 ms.
@@ -27,6 +32,11 @@ pub const HOVER_VOICES: usize = 2;
 const POLL: u32 = 64;
 const MUSIC_IN_SECONDS: f32 = 2.0;
 const MUSIC_OUT_SECONDS: f32 = 0.8;
+/// A theme song comes in a little faster than the home music and leaves as fast as it.
+const THEME_IN_SECONDS: f32 = 1.5;
+const THEME_OUT_SECONDS: f32 = 0.8;
+/// Theme songs are mastered loud; this sits them a little above the quiet home music.
+const THEME_GAIN_DB: f32 = -10.0;
 
 struct Voice {
     cue: Cue,
@@ -62,12 +72,12 @@ struct Fader {
 }
 
 impl Fader {
-    fn new(rate: f32) -> Self {
+    fn new(rate: f32, in_seconds: f32, out_seconds: f32) -> Self {
         Self {
             position: 0.0,
             target: 0.0,
-            up: 1.0 / (MUSIC_IN_SECONDS * rate),
-            down: 1.0 / (MUSIC_OUT_SECONDS * rate),
+            up: 1.0 / (in_seconds * rate),
+            down: 1.0 / (out_seconds * rate),
         }
     }
 
@@ -143,6 +153,45 @@ impl Duck {
     }
 }
 
+/// A theme song at the output rate: the song's frames, interpolated linearly between neighbours.
+struct ThemeVoice {
+    player: ThemePlayer,
+    /// Song frames per output frame.
+    step: f64,
+    phase: f64,
+    current: (f32, f32),
+    following: (f32, f32),
+}
+
+impl ThemeVoice {
+    fn new(song: Arc<ThemeSong>, rate: u32) -> Self {
+        let mut player = ThemePlayer::new(song);
+        let step = f64::from(player.rate()) / f64::from(rate.max(1));
+        let current = player.next_frame();
+        let following = player.next_frame();
+        Self {
+            player,
+            step,
+            phase: 0.0,
+            current,
+            following,
+        }
+    }
+
+    fn next(&mut self) -> (f32, f32) {
+        let t = self.phase as f32;
+        let left = self.current.0 + (self.following.0 - self.current.0) * t;
+        let right = self.current.1 + (self.following.1 - self.current.1) * t;
+        self.phase += self.step;
+        while self.phase >= 1.0 {
+            self.phase -= 1.0;
+            self.current = self.following;
+            self.following = self.player.next_frame();
+        }
+        (left, right)
+    }
+}
+
 /// A last guard against overlapping cues clipping: linear up to 0.9, then bent towards 1.
 fn limit(x: f32) -> f32 {
     let a = x.abs();
@@ -161,7 +210,13 @@ pub struct Engine {
     cues: Vec<Arc<[f32]>>,
     voices: Vec<Voice>,
     music: Music,
+    /// Whether the home music is asked for; it still waits while a theme song plays.
+    music_on: bool,
     fader: Fader,
+    theme: Option<ThemeVoice>,
+    /// The song that starts once the playing theme has faded out.
+    theme_next: Option<Arc<ThemeSong>>,
+    theme_fader: Fader,
     duck: Duck,
     poll: u32,
     right: Option<f32>,
@@ -180,7 +235,11 @@ impl Engine {
                 .collect(),
             voices: Vec::with_capacity(VOICES + 4),
             music: Music::new(rate, seed),
-            fader: Fader::new(rate as f32),
+            music_on: false,
+            fader: Fader::new(rate as f32, MUSIC_IN_SECONDS, MUSIC_OUT_SECONDS),
+            theme: None,
+            theme_next: None,
+            theme_fader: Fader::new(rate as f32, THEME_IN_SECONDS, THEME_OUT_SECONDS),
             duck: Duck::new(rate as f32),
             poll: 0,
             right: None,
@@ -192,7 +251,8 @@ impl Engine {
         loop {
             match self.commands.try_recv() {
                 Ok(Command::Cue(cue)) => self.start(cue),
-                Ok(Command::Music(on)) => self.fader.target = if on { 1.0 } else { 0.0 },
+                Ok(Command::Music(on)) => self.music_on = on,
+                Ok(Command::Theme(song)) => self.theme(song),
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
                     self.ended = true;
@@ -201,6 +261,32 @@ impl Engine {
             }
         }
         self.voices.retain(|v| !v.done());
+        // The home music steps aside while a theme song plays or is about to.
+        let theme_wanted = self.theme_next.is_some() || self.theme_fader.target > 0.0;
+        self.fader.target = if self.music_on && !theme_wanted {
+            1.0
+        } else {
+            0.0
+        };
+    }
+
+    /// A new theme starts at once when nothing plays; otherwise the playing one fades out first.
+    fn theme(&mut self, song: Option<Arc<ThemeSong>>) {
+        match song {
+            Some(song) if self.theme.is_none() || self.theme_fader.silent() => {
+                self.theme = Some(ThemeVoice::new(song, self.rate));
+                self.theme_next = None;
+                self.theme_fader.target = 1.0;
+            }
+            Some(song) => {
+                self.theme_next = Some(song);
+                self.theme_fader.target = 0.0;
+            }
+            None => {
+                self.theme_next = None;
+                self.theme_fader.target = 0.0;
+            }
+        }
     }
 
     fn start(&mut self, cue: Cue) {
@@ -247,6 +333,22 @@ impl Engine {
         if !self.fader.silent() {
             let level = self.fader.next() * duck;
             let (l, r) = self.music.next();
+            left += l * level;
+            right += r * level;
+        }
+        if self.theme.is_some() && self.theme_fader.silent() {
+            // Faded out: the waiting song starts, or the theme is done.
+            self.theme = self
+                .theme_next
+                .take()
+                .map(|song| ThemeVoice::new(song, self.rate));
+            if self.theme.is_some() {
+                self.theme_fader.target = 1.0;
+            }
+        }
+        if let Some(theme) = &mut self.theme {
+            let level = self.theme_fader.next() * duck * db_to_gain(THEME_GAIN_DB);
+            let (l, r) = theme.next();
             left += l * level;
             right += r * level;
         }
@@ -402,6 +504,51 @@ mod tests {
         duck.trigger(Cue::Hover);
         assert!((0..RATE).all(|_| duck.next() == 1.0));
     }
+    fn theme() -> Arc<ThemeSong> {
+        Arc::new(anyps5_core::theme_song::tests_support::silent_song())
+    }
+
+    #[test]
+    fn a_theme_song_takes_the_home_musics_place_and_gives_it_back() {
+        let (tx, rx) = channel();
+        let mut engine = Engine::new(RATE, rx, 1);
+        tx.send(Command::Music(true)).unwrap();
+        take(&mut engine, 3.0);
+        assert_eq!(engine.fader.target, 1.0);
+        tx.send(Command::Theme(Some(theme()))).unwrap();
+        take(&mut engine, 0.01);
+        assert_eq!((engine.fader.target, engine.theme_fader.target), (0.0, 1.0));
+        take(&mut engine, MUSIC_OUT_SECONDS + 0.1);
+        assert!(engine.fader.silent());
+        tx.send(Command::Theme(None)).unwrap();
+        take(&mut engine, 0.01);
+        // The home music comes back while the theme leaves: a crossfade, not a gap.
+        assert_eq!((engine.fader.target, engine.theme_fader.target), (1.0, 0.0));
+        take(&mut engine, THEME_OUT_SECONDS + 0.1);
+        assert!(engine.theme.is_none());
+    }
+
+    #[test]
+    fn a_new_theme_waits_until_the_playing_one_has_faded_out() {
+        let (tx, rx) = channel();
+        let mut engine = Engine::new(RATE, rx, 1);
+        tx.send(Command::Theme(Some(theme()))).unwrap();
+        take(&mut engine, THEME_IN_SECONDS + 0.1);
+        tx.send(Command::Theme(Some(theme()))).unwrap();
+        take(&mut engine, 0.01);
+        assert!(engine.theme_next.is_some());
+        assert_eq!(engine.theme_fader.target, 0.0);
+        take(&mut engine, THEME_OUT_SECONDS + 0.1);
+        assert!(engine.theme_next.is_none() && engine.theme.is_some());
+        assert_eq!(engine.theme_fader.target, 1.0);
+    }
+
+    #[test]
+    fn the_theme_is_resampled_to_the_output_rate() {
+        let voice = ThemeVoice::new(theme(), RATE);
+        assert!((voice.step - 2.0).abs() < 1e-9, "{}", voice.step);
+    }
+
     #[test]
     fn dropping_the_sender_ends_the_source() {
         let (tx, rx) = channel();

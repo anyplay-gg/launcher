@@ -211,6 +211,7 @@ impl Model {
         let free = self.prefs.prepare_games
             && self.library_loaded
             && self.prefs.games_folder.is_some()
+            && self.prefs.unlocked_moving_from.is_none()
             && self.toolkit.is_some()
             && self.starting.is_none()
             && self.running.is_none()

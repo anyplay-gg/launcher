@@ -246,6 +246,34 @@ fn steer_id() -> egui::Id {
     egui::Id::unique("input-keys-steer")
 }
 
+/// Whether the focus ring shows: like `:focus-visible`, only while keyboard or gamepad steer. A click
+/// or tap anywhere hides it (the control answers with its press, nothing lingers), and the next
+/// key, stick or d-pad press brings it back on the control that holds the focus. It shows at
+/// start, where nothing has been clicked yet.
+pub fn focus_visible(ctx: &Context) -> bool {
+    ctx.data(|d| d.get_temp(focus_visible_id())).unwrap_or(true)
+}
+
+/// Sets [`focus_visible`] (the input pipeline does this; previews force it).
+pub fn set_focus_visible(ctx: &Context, visible: bool) {
+    ctx.data_mut(|d| d.insert_temp(focus_visible_id(), visible));
+    ctx.request_repaint();
+}
+
+fn focus_visible_id() -> egui::Id {
+    egui::Id::unique("input-focus-visible")
+}
+
+/// Keys or the pad were used: shows the ring. True when it was hidden, so the press that brings it
+/// back only shows where the focus is and does not also move it.
+fn reveal_focus(ctx: &Context) -> bool {
+    let hidden = !focus_visible(ctx);
+    if hidden {
+        set_focus_visible(ctx, true);
+    }
+    hidden
+}
+
 /// `response.hovered()`, but only while the pointer is the device in use. The element it says
 /// yes for is what the hover tick follows (see [`take_hovered`]).
 pub fn hovered(ctx: &Context, response: &egui::Response) -> bool {
@@ -334,17 +362,26 @@ impl Input {
                         if direction.is_some() {
                             crate::ui::latency::pad_event_seen();
                         }
+                        let revealed = direction.is_some() && reveal_focus(ctx);
                         if let Some(command) = self.repeater.set_direction(direction, now) {
                             *fresh = true;
                             self.last_direction = Some(command);
-                            out.push(InputEvent::Command(command));
+                            if !revealed {
+                                out.push(InputEvent::Command(command));
+                            }
                         }
                     }
                     PadMessage::Button(command) => {
                         crate::ui::latency::pad_event_seen();
-                        out.push(InputEvent::Command(command));
+                        let revealed = reveal_focus(ctx);
+                        if !(revealed && command.is_direction()) {
+                            out.push(InputEvent::Command(command));
+                        }
                     }
-                    PadMessage::Create => out.push(InputEvent::Create),
+                    PadMessage::Create => {
+                        reveal_focus(ctx);
+                        out.push(InputEvent::Create);
+                    }
                 }
             }
         }
@@ -386,6 +423,11 @@ impl Input {
         let events = ctx.input(|i| i.events.clone());
         for event in events {
             match event {
+                Event::PointerButton { pressed: true, .. } => {
+                    set_keys_steer(ctx, false);
+                    set_focus_visible(ctx, false);
+                    self.pad_in_use = false;
+                }
                 Event::PointerButton { .. } => {
                     set_keys_steer(ctx, false);
                     self.pad_in_use = false;
@@ -405,8 +447,13 @@ impl Input {
                     set_device(ctx, Device::Keyboard);
                     // Only a key that steers the launcher hands the lighting over, not a
                     // modifier or a letter that means nothing here.
-                    if !in_text_field && command_for_key(key, modifiers).is_some() {
+                    let mut revealed = false;
+                    if !in_text_field
+                        && (command_for_key(key, modifiers).is_some()
+                            || (key == Key::Tab && is_tab_press(modifiers)))
+                    {
                         set_keys_steer(ctx, true);
+                        revealed = reveal_focus(ctx);
                     }
                     self.pad_in_use = false;
                     if self.capture_keys {
@@ -445,7 +492,10 @@ impl Input {
                                 *fresh = true;
                                 self.last_direction = Some(command);
                             }
-                            out.push(InputEvent::Command(command));
+                            // The press that brings a hidden ring back only shows it.
+                            if !(revealed && command.is_direction()) {
+                                out.push(InputEvent::Command(command));
+                            }
                         }
                         crate::ui::a11y::consume_activation(ctx);
                     }
@@ -505,6 +555,17 @@ mod tests {
             pointer_in_use(&ctx),
             "moving, clicking or the wheel gives it back"
         );
+    }
+
+    #[test]
+    fn the_ring_hides_on_a_click_and_a_key_brings_it_back_without_moving() {
+        let ctx = Context::default();
+        assert!(focus_visible(&ctx), "the ring shows at start");
+        set_focus_visible(&ctx, false);
+        assert!(!focus_visible(&ctx));
+        assert!(reveal_focus(&ctx), "the first press only reveals");
+        assert!(focus_visible(&ctx));
+        assert!(!reveal_focus(&ctx), "the next press moves");
     }
 
     #[test]
