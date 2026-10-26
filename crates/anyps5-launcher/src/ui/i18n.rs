@@ -1,5 +1,5 @@
 //! Ported from utkuhalis/AnyPS5-ARM (Localization.swift, GPL-2.0-only) and changed since; see README "Credits".
-//! Localisation (docs/DESIGN.md section 8): English and Turkish, 212 keys generated from the
+//! Localisation (docs/DESIGN.md section 8): English and Turkish, 213 keys generated from the
 //! macOS launcher's `Localization.swift` by `tools/gen-i18n.mjs`, with the Windows replacements
 //! of section 9.3 already applied.
 //!
@@ -318,8 +318,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_212_keys_exist_in_both_languages() {
-        assert_eq!(Key::ALL.len(), 212);
+    fn all_213_keys_exist_in_both_languages() {
+        assert_eq!(Key::ALL.len(), 213);
         for key in Key::ALL {
             for language in Language::ALL {
                 assert!(

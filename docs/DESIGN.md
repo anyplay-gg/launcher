@@ -43,7 +43,7 @@ settings categories other than Appearance, or the Windows-irrelevant move-to-App
 
 Contents: 1 Tokens, 2 Motion, 3 Backgrounds (shaders), 4 Materials and blur on the GPU, 5 Screens and components, 6 Input,
 7 Sounds and media, 8 Localization, 9 Deviations, 10 Assets and licences, 11 Implementation notes for egui,
-18 Phone as controller.
+18 Phone as controller, 19 Mac style.
 
 ---
 
@@ -669,7 +669,8 @@ The launcher keeps the port's structure but trims what read as noise next to the
   selected one stays on screen at 0.4 opacity (`TILE_PEEK_OPACITY`), partly past the window edge;
   it can be clicked to select it. On the first game the row sits at `leading` as before.
 - **Hero.** One left edge with the top bar (`HERO_X = 64`; the tile row is the exception from the second game on, see Tile row). The four boxed info cards become a
-  plain facts line (Size, Title ID, Version: 13 dp tracked overline over a 17 dp value, 48 dp
+  plain facts line (Size, Version with the title ID beside it in 14 dp quiet ink, then Runs, Toolkit and Played when
+  there is something to say; at most four, the playing time gives way first; 13 dp tracked overline over a 17 dp value, 48 dp
   apart, no card). The status card is gone; the state stands above the title. Switching games
   cross-fades without the 14 dp slide (it happens on every arrow press). The "more" button is a
   54 dp square with three painted dots.
@@ -871,8 +872,7 @@ under reduced motion because it moves nothing); the press scale (0.97) is the on
 middle (two dots on the digits' cap height), so the minute ticking over moves nothing and the digits need no tabular cells
 (whose spaced 1s read as a typo). Centred on the bar's centre line with the buttons.
 
-**Failed unlock** says what happened and what to do in one headline ("Unlocking stopped. Try again. ..."), with the technical
-message as a quiet line under it.
+**Failed unlock** says what happened in the headline ("Unlocking stopped.") and, under it, one plain sentence that names the way out (free some space, connect the drive, try again, Options > Log). Every failure reaches the page as such a sentence (`prepare_strings::failure`); the technical error, including a toolkit that could not be opened, goes to the log and never to the page. The sentence runs to three lines and, when it is cut, is read in full under the pointer. Scenes `home-failed`, `home-failed-long`.
 
 **Round 2 (2026-10-25).**
 - *Press is immediate.* The press scale (0.97) rides `Motion::Press`: easeOut 0.10 s both ways, retargeted from the
@@ -1763,7 +1763,7 @@ shortcut below). While a native dialog is open the launcher does not handle keys
 to the text field (the original never handles them; the port additionally lets Enter and Esc blur the field, see section 9). While a
 binding waits for a key (controls panel) every key is captured by the panel. Key repeat is ours, not the OS's (2026-10-25): the OS repeat events of an arrow
 key are dropped and a held arrow runs the same repeat as a held direction on the pad (6.3), so a list moves the same under a finger
-and under a thumb. It ends when the key is up, when a dialog opens or when a binding starts to wait for a key. **Shortcut**: `Cmd+,` opens Settings when onboarded -> `Ctrl+,`. F11 toggles fullscreen (Windows addition).
+and under a thumb. It ends when the key is up, when a dialog opens or when a binding starts to wait for a key. **Shortcut**: `Cmd+,` opens Settings when onboarded -> `Ctrl+,` on Windows and Linux; on a Mac it stays `Cmd+,` (egui's `command` modifier is Ctrl there and Cmd on the Mac, so one check serves both, and the app menu's Settings item shows it, 19.4). F11 toggles fullscreen (Windows addition).
 
 ### 6.2 Mouse and wheel
 
@@ -1965,7 +1965,8 @@ while a window of the process has focus, which suits the launcher's own screens;
   600 ms ago, so Steam Input or DS4Windows with both the real pad and their virtual Xbox pad visible do not press twice; after 600 ms of quiet the
   other pad takes over. The family (`ui::pad_info::Family`: PlayStation, Xbox, Nintendo, other) is read from the vendor id, else the name.
 - **Top bar.** A small status after the title (and the phone status) shows a controller icon and, when the pad reports one, its battery
-  in percent (read every 10 s; wired pads and pads without a reading show the icon alone). It is not a button and outside the focus order.
+  in percent (read every 10 s; wired pads and pads without a reading show the icon alone). It is not a button and outside the focus order,
+  and it wears no surface: icon and text in the detail ink, so nothing on the bar that only reports looks pressable.
   Screen readers get "Controller connected, battery 82 percent".
 - **Hints.** With an Xbox or other pad the hint bar and key strings name the buttons A, B, X, Y; a Switch pad swaps A with B and X with Y
   (the positions). A PlayStation pad keeps the shapes. Before any pad was seen the shapes are used.
@@ -2496,7 +2497,7 @@ sizes use decimal units (1 GB = 10^9 bytes) with the language's decimal separato
 |---|---|
 | Hidden, transparent title bar; window moves by dragging the background | **No title bar** (`with_decorations(false)`); the launcher draws its own caption (`ui::caption`): a drag strip along the top edge, 32 dp high, moves the window through the system move loop (`StartDrag`, so Snap still works) and a double click maximises or restores; minimise, maximise/restore and close sit in the top-right corner at the Windows 11 size (46 x 32 points; a large window does not grow it, a small one shrinks it with the UI so it stays above the top bar; 10 dp glyphs with 1 px strokes, white 0.6 at rest and white on hover, hover fill white 0.08, close hover #C42B1C), hidden while a controller is in use unless the pointer comes near the top; while the window is not maximised a 6 point band along each edge resizes it (`BeginResize` on the press). Fullscreen shows none of it. DWM keeps the shadow (`with_undecorated_shadow`), and is asked for dark mode (system menu), a black border and round corners. Window title `AnyPS5` (taskbar, Alt+Tab). |
 | Starts maximised to the screen's visible frame; green button = fullscreen | starts in borderless fullscreen on the screen it opens on, like a console (preference `fullscreen`, default on); `F11` or the caption's middle button switches to a maximised window and back, and the choice is remembered; min size 1100 x 650 |
-| Menu bar: `Cmd+,` Settings, no New | no menu bar; `Ctrl+,` opens Settings (when onboarded); `Alt+F4` closes; the "Quit" row in About stays |
+| Menu bar: `Cmd+,` Settings, no New | no menu bar (on the Mac there is one, 19.4); `Ctrl+,` opens Settings (when onboarded); `Alt+F4` closes; the "Quit" row in About stays |
 | `NSOpenPanel` / `NSSavePanel` | native Windows dialogs through the `rfd` crate: pick folder (games, screenshots, fonts), pick file (picture; video later; settings JSON import), save file (settings export, default name `"<game> - AnyPlay.json"`), dialog titles from `pickFolder`, `chooseFile`, `exportSettings`, `importSettings`. While a dialog is open the launcher ignores input. |
 | Finder (reveal in Finder) | Explorer: `explorer.exe /select,"<path>"`; label `showInFinder` -> "Show in Explorer" |
 | `UserDefaults` | JSON file `%APPDATA%\AnyPS5\preferences.json` (same fields, section 5.7) |
@@ -2558,7 +2559,7 @@ The old macOS launcher used Sparkle; this one has its own flow. Core module `any
 - **Swap.** Windows cannot overwrite a running exe but can rename it. The staged file is copied beside the running exe (`<name>.new`, it may be on another drive), hashed again, the running exe is renamed to `<name>.old`, the copy takes its place. A failure in the second step moves the old one back. The next start deletes `.old` files and stale downloads (one still in use stays until a later start). It works for the installed exe (`%LOCALAPPDATA%\Programs\AnyPlay Launcher`, or `...\AnyPS5 Launcher` for an install from v0.1.x) and for the portable exe in any writable folder. The swap keeps the exe's file name; nothing depends on it. A folder that refuses new files is reported before anything is downloaded.
 - **Where the player sees it.** An update is visible in two places, and never as a toast or a progress bar in the way.
   - *About*, under *Version* (which always shows the version that runs): the row *Launcher Update* with one short value and, under it, one sentence and at most one row that acts. Checking: "Checking…". Nothing newer: "Up to date" and *Check Now*. Downloading: "Downloading 42%", then "Verifying"; this is the only place with progress. Ready: "0.2.5 ready", "Restart now, or it installs the next time you close the launcher.", *Restart Now* and *What's New in 0.2.5*. Held for a game: "Waiting for your game", *Cancel Restart*. A read-only folder, a release that was refused (signature, expiry, hash, size) or any other failure: "Update failed" or "0.2.5 available" with the one thing to do, *Download from GitHub*. Offline: "Could not check" and *Check Now*; the launcher tries again by itself. A refusal is logged and says nothing anywhere else.
-  - *The notice on the home screen*, after the title, only while a verified update waits and the player has not sent it away: "Launcher 0.2.5 is ready" with *Restart Now* (the one primary button) and *Later*. *Later* hides it until the next start; the About row stays. While a restart waits for a game, the notice says "Restarts when your game closes" with *Cancel Restart*. The pad reaches it from the library button (left of it), so every action has a key and a pad path. It is out of the way of the top bar and only appears where it fits.
+  - *The notice on the home screen*, after the title, only while a verified update waits and the player has not sent it away: "Launcher 0.2.5 is ready" with *Restart Now* (the one primary button) and *Later*. *Later* hides it until the next start; the About row stays. One place at a time: the notice (sentence and buttons, no glyph) while it is wanted and fits, the dot on the gear once it was sent away or has no room, and the About row as the detail in Settings; the three are never on screen together as announcements. While a restart waits for a game, the notice says "Restarts when your game closes" with *Cancel Restart*. The pad reaches it from the library button (left of it), so every action has a key and a pad path. It is out of the way of the top bar and only appears where it fits.
 - **Restart Now.** Closes the launcher, swaps, starts the new exe with the same flags and **opens where the player was**: the link of the selected game (`anyps5://game/<TITLEID>`, which selects it again) or, from the settings, `anyps5://settings/about`. It never interrupts a running game: while a game runs or starts, the restart is held, the About row and the notice say so, and it goes ahead the moment no game runs. Closing the launcher by hand still installs the update, without starting it again.
 - **What's New.** The notes of the staged release are taken from the release data the check fetched anyway (display only; nothing is decided by them) and shown in the same full-screen panel as the toolkit's notes: every `###` heading of the release is a group, every bullet a line, all groups unfolded. *Back* returns to About.
 - **Linux.** The AppImage updates itself the same verified way, through the signed manifest only (its `linux-x86_64` entry; Linux has no unsigned path). The running image comes from `APPIMAGE` (checked against `APPDIR`, a regular `.AppImage` file in a writable folder); the verified download is copied beside it, set to 0755, hash-checked once more and renamed over it atomically, which Linux allows while it runs. Restart starts the new file with the same arguments. A launcher from the `.tar.gz` cannot replace itself: About shows "<v> available" with *Download from GitHub*, and nothing is downloaded. A manifest from before the Linux entry offers Linux nothing, quietly. Details in [UPDATES.md](UPDATES.md#linux-the-appimage).
@@ -3051,7 +3052,7 @@ The AnyPS5 Remote phone app of the macOS fork ([utkuhalis/AnyPS5-ARM](https://gi
 **Interface.**
   - *Settings, "Phone as Controller"* (the category after Behaviour, glyph `device-mobile`). Rows: the switch (detail: "Use your phone as a controller. Only phones on your home network can connect, and each one has to be paired first."); with it on: Status ("Waiting for a phone", "Connecting to Pixel 8", "Connected to Pixel 8 · 4 ms": the delay is part of the status while connected), the pairing question when a phone asks (the title "Pair Pixel 8?" with the code as its value, the note "Pair only if your phone shows the same code.", then Pair Phone and Deny as two commands), Address (globe glyph, so every title shares the status row's edge) with the note for manual entry (and notes when the port was busy or the PC could not announce itself), the Paired phones caption with one "Remove Pixel 8" command per phone (ink, not danger red: pairing again undoes it) ("Paired on 2026-10-24"), and the Virtual controller status with its notes. When the server cannot start, one note says so and the switch stays.
   - *The question comes to the player.* When a phone asks to be paired while nothing else is open and no game starts or runs, the settings open on this page (the link `anyps5://settings/phone` does the same). Otherwise a toast says who asks and where to answer; the question stays up for the minute the server waits.
-  - *Top bar.* While a phone is welcomed, a pill 32 dp high (the buttons' surface, white 0.10) with the `device-mobile` glyph and the phone's name (14 medium, cut in the middle past 150 dp) sits 48 dp after the title, clear of the scanning spinner. It is a status, not a button: not focusable, named "Phone connected: Pixel 8" for screen readers. It is ink on the pill, not accent: the accent is for being online with the network.
+  - *Top bar.* While a phone is welcomed, a status of 32 dp height (no surface, detail ink) with the `device-mobile` glyph and the phone's name (14 medium, cut in the middle past 150 dp) sits 48 dp after the title, clear of the scanning spinner. It is a status, not a button: not focusable, named "Phone connected: Pixel 8" for screen readers. It is ink, not accent: the accent is for being online with the network.
   - *Words.* English and Turkish like the rest (`screens/phone_strings.rs`). The product text names no console brand.
 
 **LudusCtrl** (2026-10-26). [LudusCtrl](https://github.com/parl0v/ludusctrl) is a second way in, for a real controller: the controller is connected to an Android phone or tablet over Bluetooth, and the LudusCtrl app passes its input on to this PC over the home network (its own UDP protocol on port 45989 with a beacon on 45990, a six-digit pairing code, signed input). It is an **option of Phone as Controller**: the preference `phoneLudusctrl`, off by default, and its server runs only while the phone switch is on too. With it on, the browser client (below) runs as well: a phone without the app scans a code and plays, so the switch covers both ways in. The phone only carries the pad: it does not browse the library or start games, and the pad it feeds is the player's controller for the launcher as well as for games. The server is the core's, `anyps5_core::remote::ludusctrl` (its interface in `docs/ludusctrl-api.md`); the launcher meets it in `app::ludus` (the state, the `LudusReceiver` trait and `start_receiver`, the one place the core plugs in), and the rows and words are `screens::ludus` and `screens::ludus_strings`.
@@ -3081,3 +3082,56 @@ The AnyPS5 Remote phone app of the macOS fork ([utkuhalis/AnyPS5-ARM](https://gi
   - *Gallery.* Every LudusCtrl scene shows the browser client too (`phone-ludus` has the focus on the switch, as just turned on, with the code in view). `phone-browser` (waiting: the QR code, the link, two other addresses), `phone-browser-linked` (a browser holds the pad), `phone-browser-reissued` (a new certificate and a busy port), `phone-browser-failed` (the app's server runs alone), `phone-ludus-failed` (the browser client runs without the app), and `home-browser` (the top bar with the phone's pill and the browser's).
 
 **Tests.** `fake-phone` (`crates/fake-phone`, never shipped) is a phone and a game in one binary: `fake-phone phone --addr 127.0.0.1:47700 --key-file k.txt --script "select:ID,launch:ID,press:cross,..."`, `fake-phone phone --discover` finds the PC through mDNS, `fake-phone game` greets on the bridge. `crates/fake-phone/tests/e2e.rs` drives the real server with it: protocol round trip, pairing and key reuse, an unpaired phone rejected, a denied phone rejected, a request flood limited. The unit tests of `remote` cover the packets (golden hex), the device file, the layouts file, the rate limiter, the on-link rule, the relay's identity checks, the mDNS adapter choice and the pad mapping. The scenes render in the gallery; `docs/media/phone-off.jpg` is a real screenshot of the off state. Gallery scenes: `phone-off`, `phone-waiting`, `phone-pairing`, `phone-connected`, `phone-driver` (Windows without ViGEmBus), `phone-access` (Linux without access to uinput), `phone-failed`, and `home-phone` (the top bar). Not tested without hardware: a real phone on a real network and a real virtual pad in a real game (any game needs the user's go).
+
+---
+
+## 19. Mac style (2026-10-26)
+
+The Mac version is this launcher: the same screens, layout, features and version as on Windows and Linux. On macOS only, it is dressed in **Mac style**: a see-through window with the system's blur behind it, the Mac's window chrome, and the Mac's conventions. Windows and Linux keep their look unchanged. All of it is one module, `macstyle` (`crates/anyps5-launcher/src/macstyle.rs`); the AppKit code in it is compiled on macOS only, and elsewhere the module does nothing. Nothing here comes from another launcher; it is our own design and code.
+
+### 19.1 The window
+
+| Item | Value |
+|---|---|
+| Window | transparent (`with_transparent`), standard decorations with a transparent title bar, no title, the content under the title bar (`with_fullsize_content_view`). The traffic lights are the system's. Dark appearance, always: the launcher is dark only. |
+| Start | a window the size of the screen's usable area, not full screen: the default of the `fullscreen` preference is off on a Mac (on elsewhere), because the glass needs the desktop behind it. The green button and Ctrl+Cmd+F use the system's full screen; F11 and the preference still work. |
+| Drag | the system's title bar drags. A strip along the top edge (28 points, never into the home screen's top bar at 34 dp) is the fallback if the title bar passes the press on. |
+| Caption | none: the Windows caption buttons (9.2) are not drawn. |
+| Traffic lights | they occupy about 84 x 34 points in the top-left corner. The home top bar starts at 34 dp and its centre line is at 56 dp, so even at the smallest window (scale 0.69) the title sits below the lights; a test (`macstyle::tests`) keeps it so. Panels start at 64 dp or lower. |
+
+### 19.2 Glass
+
+The window is **see-through** when all of these hold: the player's setting "Glass Window" is on (default on, Settings > Appearance, `glassWindow`; EN "Glass Window", TR "Cam Pencere", after "Show the Selected Game's Artwork"), the window is not in full screen, no game runs, and the system setting Reduce Transparency is off (`NSWorkspace.accessibilityDisplayShouldReduceTransparency`, read at most once a second, when a frame is drawn, so a window nobody touches wakes for nothing; Increase Contrast counts the same). Otherwise everything is solid, as before: the animated theme background on an opaque black window. The rule is one function, `macstyle::glass_active`.
+
+Layers, from the back:
+
+1. **The system blur**, a view behind the content view in the window's frame view: `NSGlassEffectView` (Liquid Glass, style Regular) on macOS 26 and newer, found at run time by class lookup; `NSVisualEffectView` (material sidebar, behind window, always active) on earlier systems. `ANYPLAY_GLASS_MATERIAL=blur` forces the older one. Hidden, and the window made opaque, when the window is not see-through.
+2. **A plate**: black 0.05 over the whole window (`GLASS_PLATE`).
+3. **The theme**, a still of the theme background (the shader frame at 260 s, the same as the gallery stills) at opacity 0.20 (`GLASS_VEIL`). Nothing moves: the backdrop clock stops and asks for no frames, and the offscreen image is not redrawn, so an idle launcher costs nothing. The theme's colour still shows through as a tint, which is what makes the glass this launcher's and not any window's.
+4. The game artwork at 0.40 of its opacity (`WINDOW_GLASS_ARTWORK`), under its scrims at full strength, so the window shows through the picture and the text keeps at least the contrast it has on a solid window; then the UI, unchanged.
+5. **Glass panels** (section 4), the side panel and the full-screen panels keep their recipe and stay opaque: they sit on top of the screen's own UI, so making them see-through would show that UI, not the window. Text sits on the panels and on the plate, never on the bare blur.
+
+Reduce Transparency, full screen and a running game each switch to the solid look; a game in front also hides the effect view, so the window server has no blur to compute for a window nobody sees.
+
+**Contrast.** The system blur's brightness is not under our control, so the worst case is a bound. With the dark look asked for (19.1), the macOS 15 and macOS 26 runners show the blur over a white wallpaper at sRGB 92 to 96 (gray; the probe images of the `macos-style` job), and over saturated bars at the same luminance. The bound is 105 (`WORST_BLUR` in `ui::contrast`). Over that, plate, theme (deep and lit tones) and the side panel are composited like every ground in 3.10; `ui::contrast` measures them (grounds "glass window", panels "glass") and every ink reaches its ratio there too (the weakest pair, a hint key on Aurora, is 5.5:1). The artwork under the glass is drawn at 0.45 under scrims of full strength, which is never brighter than the full picture under the same scrims that 3.10 measures. If a system brings a brighter blur, raise `GLASS_PLATE`.
+
+### 19.3 Chrome and the top of the screen
+
+The traffic lights sit in the top-left margin above the top bar (19.1). In full screen they are hidden by the system, and nothing else changes. The window's size limits (1100 x 650) and scaling (1.1) are unchanged.
+
+### 19.4 Menu and keys
+
+The menu bar (replacing the default, whose items would carry the executable's name):
+
+| Menu | Items |
+|---|---|
+| AnyPlay Launcher | About AnyPlay Launcher (the system's about panel, from the bundle: name, version, icon), Settings… ⌘, (opens Settings when onboarded, like the shortcut), Hide AnyPlay Launcher ⌘H, Hide Others ⌥⌘H, Show All, Quit AnyPlay Launcher ⌘Q (closes the window like its red button, so the launcher saves and ends through its own path) |
+| Window | Close ⌘W, Minimize ⌘M, Zoom, Enter Full Screen ⌃⌘F |
+
+The menu's items use the system's own actions; only Settings is ours. The menu is in English: the launcher's language setting does not reach AppKit's menu.
+
+Keys: wherever Windows and Linux use Ctrl, a Mac uses Cmd. There is one such shortcut, Settings (`Ctrl+,` / `Cmd+,`); egui's `command` modifier is that key on each system. Everything else is as in 6.1: any key with Cmd (or Ctrl, Alt) held is ignored by the launcher, so the system's own shortcuts (Cmd+H, Cmd+Q, Cmd+M) are never taken. In the controls panel the key caps say `Option` and `Cmd` on a Mac (6.5), `Alt` and `Win` elsewhere. The ⌘ appears in the menu, where the system draws it; the launcher itself shows no Ctrl hint anywhere.
+
+### 19.5 What is checked where
+
+Compiled and linted for `aarch64-apple-darwin` on the build laptop (`cargo check` and `clippy`, with the C build steps of dependencies stubbed) and in the CI job `macos`. The job `macos-style` renders a few scenes with and without the glass (`--solid`) on the Metal runner and saves the launcher's own frame and a `screencapture` of the screen with the window on it. What needs a real Mac (the system blur's look over real wallpapers, Liquid Glass, the traffic light positions, dragging, native full screen, Reduce Transparency, the menu) is listed in the pull request that added this section.

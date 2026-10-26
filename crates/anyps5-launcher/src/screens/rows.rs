@@ -562,7 +562,10 @@ pub fn source_label(source: &str, language: Language) -> String {
         ("KEY", "Right") => "→".to_owned(),
         ("KEY", "Left Shift" | "Right Shift") => "Shift".to_owned(),
         ("KEY", "Left Ctrl" | "Right Ctrl") => "Ctrl".to_owned(),
-        // Windows: Alt and the Windows key, not Option and Cmd (docs/DESIGN.md 6.5).
+        // The Mac says Option and Cmd (docs/DESIGN.md 6.5, 19.4); Windows and Linux say Alt and
+        // the Windows key.
+        ("KEY", "Left Alt" | "Right Alt") if crate::macstyle::AVAILABLE => "Option".to_owned(),
+        ("KEY", "Left GUI" | "Right GUI") if crate::macstyle::AVAILABLE => "Cmd".to_owned(),
         ("KEY", "Left Alt" | "Right Alt") => "Alt".to_owned(),
         ("KEY", "Left GUI" | "Right GUI") => "Win".to_owned(),
         (_, name) => name.to_owned(),
@@ -1097,8 +1100,15 @@ mod tests {
     fn source_labels_read_like_keys_on_a_pc() {
         let en = Language::English;
         assert_eq!(source_label("KEY:Left Shift", en), "Shift");
-        assert_eq!(source_label("KEY:Right Alt", en), "Alt");
-        assert_eq!(source_label("KEY:Left GUI", en), "Win");
+        let mac = crate::macstyle::AVAILABLE;
+        assert_eq!(
+            source_label("KEY:Right Alt", en),
+            if mac { "Option" } else { "Alt" }
+        );
+        assert_eq!(
+            source_label("KEY:Left GUI", en),
+            if mac { "Cmd" } else { "Win" }
+        );
         assert_eq!(source_label("KEY:Up", en), "↑");
         assert_eq!(source_label("KEY:Escape", en), "Esc");
         assert_eq!(source_label("KEY:K", en), "K");

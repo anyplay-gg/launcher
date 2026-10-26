@@ -3,7 +3,8 @@
 //! the returned [`InputEvent`]s and draw focus from their own model (see `ui::focus`).
 //!
 //! * Keyboard: arrows, Enter/Space/NumpadEnter = select, Esc/Backspace = back, `O` = options.
-//!   Keys with Ctrl or Alt held are ignored, except `Ctrl+,` (settings) and `F11` (fullscreen).
+//!   Keys with Ctrl or Alt held are ignored, except `Ctrl+,` (settings; `Cmd+,` on a Mac) and `F11`
+//!   (fullscreen).
 //! * Wheel: +-40 dp of accumulated scroll make one step (one classic wheel notch = one step).
 //! * Gamepad: D-pad and left stick (> 0.55) are directions; A/B/Y/Start are select/back/options/options.
 //! * A held direction, from the pad or from an arrow key, fires at once, repeats after 0.36 s every
@@ -46,7 +47,7 @@ pub enum InputEvent {
     /// `Tab` (`backwards` with Shift): the next or previous stop in reading order. Each screen
     /// decides what that is; text fields and a call on screen keep Tab for egui.
     Tab { backwards: bool },
-    /// `Ctrl+,`
+    /// `Ctrl+,`, `Cmd+,` on a Mac
     OpenSettings,
     /// `F11`
     ToggleFullscreen,
@@ -400,7 +401,7 @@ impl Input {
             && (self.blocked
                 || self.capture_keys
                 || crate::ui::a11y::foreign_focus(ctx)
-                || ctx.input(|i| !i.key_down(key) || i.modifiers.ctrl || i.modifiers.alt))
+                || ctx.input(|i| !i.key_down(key) || i.modifiers.command || i.modifiers.alt))
         {
             self.held_key = None;
             self.key_repeater.set_direction(None, now);
@@ -488,7 +489,7 @@ impl Input {
                         crate::ui::a11y::consume_tab(ctx);
                     } else if key == Key::F11 {
                         out.push(InputEvent::ToggleFullscreen);
-                    } else if key == Key::Comma && modifiers.ctrl && !modifiers.alt {
+                    } else if key == Key::Comma && modifiers.command && !modifiers.alt {
                         out.push(InputEvent::OpenSettings);
                     } else if let Some(command) = command_for_key(key, modifiers) {
                         // The OS repeat is ignored: a held arrow repeats on our clock, held action
