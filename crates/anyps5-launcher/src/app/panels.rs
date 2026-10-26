@@ -1534,6 +1534,7 @@ impl PanelHost {
                         icon: label.icon,
                         text: label.text,
                         tint: label.tint,
+                        quiet: crate::screens::is_plain_ready(&state),
                     },
                 }
             })
@@ -1542,6 +1543,8 @@ impl PanelHost {
             entries: &entries,
             language,
             accent,
+            folder_set: cx.model.prefs.games_folder.is_some(),
+            scanning: cx.model.scanning,
         };
         for action in self.library.show(cx.shell, cx.ctx, &events, &data) {
             let model = &mut *cx.model;
@@ -1555,6 +1558,10 @@ impl PanelHost {
                     model.dismiss_overlay();
                 }
                 LibraryAction::Close => model.dismiss_overlay(),
+                LibraryAction::ChooseFolder => {
+                    model.dismiss_overlay();
+                    model.request_folder_dialog();
+                }
             }
         }
     }
