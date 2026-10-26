@@ -218,6 +218,10 @@ pub enum Extra {
     SavesEmpty,
     /// Section caption over the list.
     SavesCaption,
+    /// Captions over the three groups of the game settings.
+    GroupScreen,
+    GroupPlay,
+    GroupMaintenance,
     /// Note under the list: `%@` = how many are kept.
     SavesKept,
     /// Why a backup was made.
@@ -437,6 +441,9 @@ impl Extra {
                 "No backups yet. Back Up Now keeps a copy of your saves and trophies."
             }
             Extra::SavesCaption => "Backups",
+            Extra::GroupScreen => "Screen",
+            Extra::GroupPlay => "Play",
+            Extra::GroupMaintenance => "Maintenance",
             Extra::SavesKept => "Up to %@ backups are kept. Backups made after playing go first.",
             Extra::SavesReasonManual => "Manual",
             Extra::SavesReasonUnlock => "Before unlocking again",
@@ -647,6 +654,9 @@ impl Extra {
                 "Henüz yedek yok. Şimdi Yedekle, kayıtlarının ve kupalarının bir kopyasını saklar."
             }
             Extra::SavesCaption => "Yedekler",
+            Extra::GroupScreen => "Ekran",
+            Extra::GroupPlay => "Oyun",
+            Extra::GroupMaintenance => "Bakım",
             Extra::SavesKept => {
                 "En fazla %@ yedek saklanır. Oynadıktan sonra alınanlar önce silinir."
             }
@@ -690,7 +700,7 @@ impl Extra {
         substitute(self.text(language), args)
     }
 
-    pub const ALL: [Extra; 153] = [
+    pub const ALL: [Extra; 156] = [
         Extra::Toolkit,
         Extra::UpdateCheck,
         Extra::UpdateCheckDetail,
@@ -825,6 +835,9 @@ impl Extra {
         Extra::SavesNothing,
         Extra::SavesEmpty,
         Extra::SavesCaption,
+        Extra::GroupScreen,
+        Extra::GroupPlay,
+        Extra::GroupMaintenance,
         Extra::SavesKept,
         Extra::SavesReasonManual,
         Extra::SavesReasonUnlock,

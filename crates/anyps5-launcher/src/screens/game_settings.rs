@@ -9,7 +9,7 @@ use egui::{Color32, Context};
 use crate::screens::rows::{self, Change, Row, RowId};
 use crate::screens::saves;
 use crate::screens::share_strings::Share;
-use crate::screens::side::{self, Output, SideState, SideView};
+use crate::screens::side::{self, Frame, Leave, Output, SideState, SideView};
 use crate::screens::strings::Extra;
 use crate::screens::toolkit_pin::PinChoices;
 use crate::ui::Shell;
@@ -123,62 +123,41 @@ impl GameSettingsPanel {
         data: &mut GameSettingsData<'_>,
     ) -> Output<GameSettingsAction> {
         let mut out = Output::default();
-        if !self.side.is_active() {
-            return out;
-        }
-        if self.side.is_open() {
-            let rows = build_rows(data);
-            let driven = rows::drive(shell, &mut self.side.nav, &rows, &side::commands(events));
-            for change in &driven.changes {
-                self.apply(data, change, &mut out);
-            }
-            if driven.close {
-                self.side.close();
-                out.actions.push(GameSettingsAction::Close);
-            }
-        }
-        let mut rows = build_rows(data);
-        let language = data.language;
         let title = data.title;
-        let subtitle = language.text(Key::GameSettings);
-        let view = SideView {
+        let frame = Frame {
             title,
-            subtitle: Some(subtitle),
-            question: false,
+            subtitle: Some(data.language.text(Key::GameSettings)),
             list_id: "game-settings-rows",
-            nav: &self.side.nav,
             accent: data.accent,
-            language,
-            force: None,
+            language: data.language,
         };
-        match side::draw(ctx, self.side.is_open(), &view, &mut rows) {
-            Some(drawn) if self.side.is_open() => {
-                let (changes, _) =
-                    rows::apply_mouse(shell, &mut self.side.nav, &rows, drawn.events);
-                for change in &changes {
-                    self.apply(data, change, &mut out);
-                }
-                if drawn.back_clicked {
-                    shell.play(crate::ui::sound::Cue::Close);
-                    self.side.close();
-                    out.actions.push(GameSettingsAction::Close);
-                }
-            }
-            Some(_) => {}
-            None => self.side.finished(),
-        }
+        let mut changed = false;
+        self.side.show_rows(
+            shell,
+            ctx,
+            events,
+            data,
+            &frame,
+            Leave::Slide,
+            |data| build_rows(data),
+            |side, _, data, change, actions| {
+                changed |= Self::apply(side, data, change, actions);
+            },
+            GameSettingsAction::Close,
+            &mut out.actions,
+        );
+        out.changed = changed;
         out
     }
 
+    /// Writes one change and queues the action of a row that ran. Returns whether a value changed.
     fn apply(
-        &mut self,
+        side: &mut SideState,
         data: &mut GameSettingsData<'_>,
         change: &Change,
-        out: &mut Output<GameSettingsAction>,
-    ) {
-        if apply_change(data.settings, change, data.resolutions) {
-            out.changed = true;
-        }
+        actions: &mut Vec<GameSettingsAction>,
+    ) -> bool {
+        let mut changed = apply_change(data.settings, change, data.resolutions);
         if let Change::Choice {
             row: "toolkit",
             index,
@@ -189,7 +168,7 @@ impl GameSettingsPanel {
                 .pin_at(data.settings.toolkit.as_deref(), *index, data.language);
             if pin != data.settings.toolkit {
                 data.settings.toolkit = pin;
-                out.changed = true;
+                changed = true;
             }
         }
         let action = match change.row() {
@@ -207,10 +186,11 @@ impl GameSettingsPanel {
         };
         if let (Change::Run { .. }, Some(action)) = (change, action) {
             if action == GameSettingsAction::Reinstall {
-                self.side.close();
+                side.close();
             }
-            out.actions.push(action);
+            actions.push(action);
         }
+        changed
     }
 }
 
@@ -218,7 +198,8 @@ impl GameSettingsPanel {
 pub fn build_rows(data: &GameSettingsData<'_>) -> Vec<Row> {
     let t = |key: Key| data.language.text(key).to_owned();
     let s = &*data.settings;
-    let mut rows = Vec::new();
+    let caption = |id, key: Extra| Row::caption(id, key.text(data.language));
+    let mut rows = vec![caption("screenCaption", Extra::GroupScreen)];
     if !data.resolutions.is_empty() {
         let mut options = vec![t(Key::ResolutionDefault)];
         options.extend(data.resolutions.iter().cloned());
@@ -256,8 +237,9 @@ pub fn build_rows(data: &GameSettingsData<'_>) -> Vec<Row> {
         );
     }
     rows.push(Row::toggle("vsync", t(Key::Vsync), s.vsync).icon(Icon::WAVE_SINE));
-    // Groups: display, then play (recommended to language), then maintenance, then removal.
-    let mut first_of_play = true;
+    // Groups, each under a caption: screen, play (recommended to toolkit), maintenance; the
+    // removal stands alone at the foot.
+    rows.push(caption("playCaption", Extra::GroupPlay).group_start());
     if let Some(r) = data.recommended {
         let detail = if r.needed {
             Extra::RecNeeded.text(data.language).to_owned()
@@ -271,14 +253,10 @@ pub fn build_rows(data: &GameSettingsData<'_>) -> Vec<Row> {
         rows.push(
             Row::action("recommended", Extra::RecTitle.text(data.language))
                 .detail(detail)
-                .icon(Icon::SPARKLE)
-                .group_start(),
+                .icon(Icon::SPARKLE),
         );
-        first_of_play = false;
     }
-    let mut controls = Row::action("controls", t(Key::Controls)).icon(Icon::KEYBOARD);
-    controls.group_start = first_of_play;
-    rows.push(controls);
+    rows.push(Row::action("controls", t(Key::Controls)).icon(Icon::KEYBOARD));
     if let Some(count) = data.saves {
         rows.push(
             Row::action("saves", Extra::SavesTitle.text(data.language))
@@ -328,7 +306,7 @@ pub fn build_rows(data: &GameSettingsData<'_>) -> Vec<Row> {
     );
     // Which toolkit the game is made and started with: the global one, or a release of its own.
     rows.extend(data.pin.row(s.toolkit.as_deref(), data.language));
-    let maintenance = rows.len();
+    rows.push(caption("maintenanceCaption", Extra::GroupMaintenance).group_start());
     if data.installed {
         let mut reinstall =
             Row::command("reinstall", t(Key::Reinstall)).icon(Icon::ARROWS_CLOCKWISE);
@@ -344,8 +322,7 @@ pub fn build_rows(data: &GameSettingsData<'_>) -> Vec<Row> {
             .detail(Share::ReportDetail.text(data.language))
             .icon(Icon::STETHOSCOPE),
     );
-    rows.push(Row::command("cache", t(Key::ClearShaderCache)).icon(Icon::SPARKLE));
-    rows[maintenance].group_start = true;
+    rows.push(Row::command("cache", t(Key::ClearShaderCache)).icon(Icon::BROOM));
     if data.installed {
         rows.push(
             Row::command("uninstall", t(Key::Uninstall))
@@ -547,13 +524,16 @@ mod tests {
         assert_eq!(
             ids(&rows),
             [
+                "screenCaption",
                 "display",
                 "size",
                 "vsync",
+                "playCaption",
                 "controls",
                 "advanced",
                 "overlay",
                 "language",
+                "maintenanceCaption",
                 "reinstall",
                 "finder",
                 "log",
@@ -595,11 +575,11 @@ mod tests {
         let ids = ids(&rows);
         let recommended = ids.iter().position(|i| *i == "recommended").unwrap();
         assert_eq!(
-            ids[recommended + 1],
-            "controls",
+            ids[recommended - 1],
+            "playCaption",
             "the play group starts with it"
         );
-        assert!(rows[recommended].group_start && !rows[recommended + 1].group_start);
+        assert!(rows[recommended - 1].group_start && !rows[recommended].group_start);
         assert_eq!(rows[recommended].detail.as_deref(), Some("2 changes"));
         let reinstall = rows.iter().find(|r| r.id == "reinstall").unwrap();
         assert_eq!(
@@ -619,7 +599,7 @@ mod tests {
         assert!(rows.iter().all(|r| r.id != "recommended"));
         assert!(
             rows.iter()
-                .find(|r| r.id == "controls")
+                .find(|r| r.id == "playCaption")
                 .unwrap()
                 .group_start
         );
@@ -640,7 +620,7 @@ mod tests {
         d.resolutions = &resolutions;
         d.installed = false;
         let rows = build_rows(&d);
-        assert_eq!(rows[0].id, "resolution");
+        assert_eq!(rows[1].id, "resolution", "under the first caption");
         assert!(
             rows.iter().all(|r| r.id != "trophies"),
             "the trophy count lives beside Play, not here"

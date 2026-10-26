@@ -16,7 +16,7 @@ github-logo floppy-disk clock-counter-clockwise users user-plus user-minus envel
 paper-plane-right cloud sign-in sign-out prohibit flag key
 microphone microphone-slash speaker-slash headphones
 arrow-bend-up-left push-pin bell-slash pencil-simple
-device-mobile wifi-high plug steam-logo`.split(/\s+/);
+device-mobile wifi-high plug steam-logo broom`.split(/\s+/);
 
 const BS = String.fromCharCode(92);
 const lines = [];
