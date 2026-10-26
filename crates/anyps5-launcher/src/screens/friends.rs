@@ -14,6 +14,7 @@ mod paint;
 use anyps5_core::online::api::AccountId;
 use egui::{Align, Context, Layout, Rect, UiBuilder, pos2, vec2};
 
+use crate::screens::footer_hints;
 use crate::screens::friends_strings::FriendsText as FX;
 use crate::screens::online::{
     OnlineAction, OnlineData, OnlinePanel, Page, Section, monogram_colour, status_line,
@@ -21,10 +22,9 @@ use crate::screens::online::{
 use crate::screens::online_feed_strings::FeedText as F;
 use crate::screens::online_social_strings::SocialText as S;
 use crate::screens::online_strings::OnlineText as T;
-use crate::screens::right_aligned_hints;
 use crate::ui::Shell;
 use crate::ui::chrome::{RowAvatar, fullscreen_panel};
-use crate::ui::components::{ConsoleButton, ControlSize};
+use crate::ui::components::{ConsoleButton, ControlSize, HintSet};
 use crate::ui::glass::GlassStyle;
 use crate::ui::i18n::{Arg, Key, Language};
 use crate::ui::icons::Icon;
@@ -238,11 +238,9 @@ impl FriendsScreen {
             |ui, _| {
                 let screen = ui.max_rect();
                 let area = screen.shrink2(vec2(pad::TROPHIES.0, pad::TROPHIES.1));
-                right_aligned_hints(
-                    ui,
-                    Rect::from_min_size(area.min, vec2(area.width(), 26.0)),
-                    language,
-                );
+                // The bar stands bottom right like on Home; the Back button is on screen, so the
+                // bar leaves "Back" out.
+                footer_hints(ui, screen, language, HintSet::BASIC.without_back());
                 let mut back = ui.new_child(
                     UiBuilder::new()
                         .max_rect(Rect::from_min_size(area.min, vec2(200.0, 32.0)))

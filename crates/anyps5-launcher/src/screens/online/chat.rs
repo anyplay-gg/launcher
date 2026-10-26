@@ -19,43 +19,73 @@ use crate::screens::online_social_strings::SocialText as S;
 use crate::screens::online_strings::OnlineText as T;
 use crate::screens::scroll::Follow;
 use crate::ui::anim::{AnimExt, Motion};
-use crate::ui::components::{self, corner, paint_capsule};
+use crate::ui::components::{self, ConsoleButton, ControlSize, corner, paint_capsule};
 use crate::ui::i18n::{Arg, Language};
 use crate::ui::icons::Icon;
 use crate::ui::input::{self, Command};
 use crate::ui::text;
-use crate::ui::theme::{TextStyle, Weight, color, fade, mix, radius, size, ty, white};
+use crate::ui::theme::{TextStyle, color, fade, radius, size, space, ty};
 
-/// The widest the thread is drawn: a line of a message stays readable on a wide screen.
+/// The widest the thread is drawn: a line of a message stays readable on a wide screen. The
+/// header, the bubbles and the composer stand on the two edges of this column.
 const COLUMN: f32 = 940.0;
 /// A bubble takes at most this share of the column.
 const BUBBLE_SHARE: f32 = 0.66;
-const BUBBLE_PAD_X: f32 = 16.0;
-const BUBBLE_PAD_Y: f32 = 10.0;
-const BUBBLE_RADIUS: f32 = 20.0;
-/// The corner next to the sender's edge flattens inside a run of one sender's messages.
-const BUBBLE_JOIN: f32 = 6.0;
+const BUBBLE_PAD_X: f32 = space::L;
+const BUBBLE_PAD_Y: f32 = space::S;
+const BUBBLE_MIN: f32 = 56.0;
+const BUBBLE_RADIUS: f32 = radius::CARD;
+/// The corner on the sender's side is the small one: it joins the bubbles of a group and ends it.
+const BUBBLE_JOIN: f32 = radius::KEYCAP;
 const FACE: f32 = 32.0;
-const FACE_GAP: f32 = 10.0;
-const RUN_GAP: f32 = 14.0;
-const LINE_GAP: f32 = 3.0;
-/// Messages written within this many seconds of each other by one sender form a run.
+const FACE_GAP: f32 = space::S;
+/// Between two groups, and between two messages of one group.
+const RUN_GAP: f32 = space::BUBBLE_BETWEEN;
+const LINE_GAP: f32 = space::BUBBLE_IN_GROUP;
+/// Messages written within this many seconds of each other by one sender form a group.
 const RUN_SECONDS: u64 = 5 * 60;
+/// Leading of the words of a message.
+const BODY_LEADING: f32 = 1.45;
+/// The name over a group, the time under it.
+const NAME_HEIGHT: f32 = 20.0;
+const META_HEIGHT: f32 = 20.0;
+/// What a quote in a bubble keeps: its bar and the room between the bar and its words.
+const QUOTE_BAR: f32 = 2.0;
+const QUOTE_INSET: f32 = space::M;
+/// The three dots of somebody typing: their size and the row they stand in.
+const DOT: f32 = 3.0;
+/// Items fade out over this length before they pass under the header (see `top_fade`).
+const FADE_START: f32 = 56.0;
+const FADE_LENGTH: f32 = 36.0;
+/// The count badge: its height and its two widths.
+const BADGE_ONE: f32 = 22.0;
+const BADGE_MANY: f32 = 30.0;
+const TYPING_HEIGHT: f32 = 24.0;
 
-const BODY: TextStyle = TextStyle::new(17.0, Weight::Regular);
-const NAME: TextStyle = TextStyle::new(13.0, Weight::SemiBold);
+const BODY: TextStyle = ty::BODY;
+const NAME: TextStyle = ty::BADGE;
 const META: TextStyle = ty::DETAIL;
-const QUOTE: TextStyle = TextStyle::new(14.0, Weight::Regular);
-const DAY: TextStyle = TextStyle::new(13.0, Weight::SemiBold);
+const QUOTE_NAME: TextStyle = ty::BADGE;
+const QUOTE: TextStyle = ty::NOTE;
+const DAY: TextStyle = ty::BADGE;
 
-/// A row of the list of conversations.
-const ENTRY_HEIGHT: f32 = 78.0;
-const ENTRY_FACE: f32 = 52.0;
-const ENTRY_PAD_X: f32 = 16.0;
+/// A row of the list of conversations: no box at rest, the avatar on the edge the title starts on.
+const ENTRY_HEIGHT: f32 = 72.0;
+const ENTRY_FACE: f32 = 48.0;
+/// The size of the marks (pinned, muted) and of the count.
+const MARK: f32 = 14.0;
+const BADGE_HEIGHT: f32 = 22.0;
 
-/// The size of the composer bar and its buttons.
-const COMPOSER_HEIGHT: f32 = 56.0;
+/// The size of the composer bar (a Medium control) and its buttons; the note over it (a reply, an
+/// edit).
+const COMPOSER_HEIGHT: f32 = 44.0;
 const COMPOSER_BUTTON: f32 = 44.0;
+const SEND_BUTTON: f32 = ControlSize::Small.height();
+const NOTE_BAR: f32 = 36.0;
+/// The room of the two answers (Accept, Decline) or of Block in the request bar.
+const ANSWER_SLOT: f32 = 260.0;
+/// The header of the thread.
+const HEAD_HEIGHT: f32 = 72.0;
 
 // ---------------------------------------------------------------------------------------------
 // What the list says
@@ -85,6 +115,8 @@ pub struct Entry {
     pub muted: bool,
     /// Somebody types: the preview says so.
     pub typing: bool,
+    /// The conversation holds no message at all (not: its newest one is not fetched yet).
+    pub empty: bool,
     /// The people the picture shows: the other for a direct chat, up to two for a group.
     pub faces: Vec<Face>,
 }
@@ -173,6 +205,7 @@ pub fn entries(data: &OnlineData<'_>, local: &Local) -> Vec<Entry> {
             pinned: c.pinned,
             muted: c.muted,
             typing: !typers.is_empty(),
+            empty: c.last == 0,
             faces,
         }
     };
@@ -193,16 +226,18 @@ pub struct Bubble {
     pub seq: u64,
     pub mine: bool,
     pub sender: String,
-    /// The name above the first bubble of a run, in a crowd.
+    /// The name above the first bubble of a group, in a crowd.
     pub name: Option<String>,
-    /// The picture beside the last bubble of a run, in a crowd.
+    /// The picture beside the first bubble of a group, in a crowd.
     pub face: Option<Face>,
     pub text: String,
     pub removed: bool,
     /// Who and what the message answers.
     pub quote: Option<(String, String)>,
-    /// Under the last bubble of a run: the time, Edited, Delivered or Seen.
+    /// Under the last bubble of a group: the time, Edited, Delivered or Seen.
     pub meta: Option<String>,
+    /// What a screen reader says of the bubble: who, the words, the time and what became of it.
+    pub reader: String,
     pub first: bool,
     pub last: bool,
     /// More than two people write here: others' bubbles carry a name and a picture.
@@ -287,21 +322,19 @@ pub fn thread(data: &OnlineData<'_>, local: &Local, id: &str, shown: usize) -> O
             items.push(Item::Day(format::day_label(created, now, offset, language)));
         }
         let mine = message.sender.id == me;
-        let same_run = |other: &Message| {
-            other.sender.id == message.sender.id
-                && other.deleted == message.deleted
-                && format::day_number(i64::try_from(other.created).unwrap_or(0), offset) == this_day
-                && other.created.abs_diff(message.created) <= RUN_SECONDS
+        // One sender's messages within five minutes form a group, an answer among them: its quote
+        // is inside its own bubble, so the bubbles can stand close.
+        let same_group = |earlier: &Message, later: &Message| {
+            earlier.sender.id == later.sender.id
+                && earlier.deleted == later.deleted
+                && !day_changed(earlier, later, offset)
+                && later.created.abs_diff(earlier.created) <= RUN_SECONDS
         };
-        let first = index == 0
-            || day_changed(&messages[index - 1], message, offset)
-            || !same_run(&messages[index - 1]);
-        let last = index + 1 == messages.len()
-            || day_changed(&messages[index + 1], message, offset)
-            || !same_run(&messages[index + 1]);
+        let first = index == 0 || !same_group(&messages[index - 1], message);
+        let last = index + 1 == messages.len() || !same_group(message, &messages[index + 1]);
         let crowd = !direct;
         let name = (crowd && !mine && first).then(|| message.sender.handle.clone());
-        let face = (crowd && !mine && last).then(|| {
+        let face = (crowd && !mine && first).then(|| {
             face(
                 data,
                 local,
@@ -324,25 +357,42 @@ pub fn thread(data: &OnlineData<'_>, local: &Local, id: &str, shown: usize) -> O
             };
             (who, text)
         });
-        let meta = last.then(|| {
-            let mut parts = vec![format::clock_text(created, offset)];
-            if message.edited.is_some() && !message.deleted {
-                parts.push(S::Edited.text(language).to_owned());
-            }
-            if mine && Some(message.seq) == last_own && !message.deleted {
-                if read.is_some_and(|r| r >= message.seq) {
-                    parts.push(S::Seen.text(language).to_owned());
-                } else if delivered.is_some_and(|d| d >= message.seq) {
-                    parts.push(S::Delivered.text(language).to_owned());
-                } else if !direct {
-                    let seen = seen_by(conversation, me, message.seq);
-                    if seen > 0 {
-                        parts.push(S::SeenBy.format(language, &[Arg::Int(seen as i64)]));
-                    }
+        // The time and what became of the message, said once under a group and for every
+        // message to the screen reader.
+        let mut parts = vec![format::clock_text(created, offset)];
+        if message.edited.is_some() && !message.deleted {
+            parts.push(S::Edited.text(language).to_owned());
+        }
+        if mine && Some(message.seq) == last_own && !message.deleted {
+            if read.is_some_and(|r| r >= message.seq) {
+                parts.push(S::Seen.text(language).to_owned());
+            } else if delivered.is_some_and(|d| d >= message.seq) {
+                parts.push(S::Delivered.text(language).to_owned());
+            } else if !direct {
+                let seen = seen_by(conversation, me, message.seq);
+                if seen > 0 {
+                    parts.push(S::SeenBy.format(language, &[Arg::Int(seen as i64)]));
                 }
             }
-            parts.join(" · ")
+        }
+        let meta = (last && !message.deleted).then(|| parts.join(" · "));
+        let text = if message.deleted {
+            S::Removed.text(language).to_owned()
+        } else {
+            plain(&message.text)
+        };
+        let sender_name = if mine {
+            T::You.text(language).to_owned()
+        } else {
+            message.sender.handle.clone()
+        };
+        let answers = quote.as_ref().map_or(String::new(), |(who, line)| {
+            format!(
+                "{}, ",
+                S::InReplyTo.format(language, &[Arg::Str(who), Arg::Str(line)])
+            )
         });
+        let reader = format!("{sender_name}, {answers}{text}, {}", parts.join(", "));
         items.push(Item::Bubble(Box::new(Bubble {
             index,
             seq: message.seq,
@@ -350,14 +400,11 @@ pub fn thread(data: &OnlineData<'_>, local: &Local, id: &str, shown: usize) -> O
             sender: message.sender.handle.clone(),
             name,
             face,
-            text: if message.deleted {
-                S::Removed.text(language).to_owned()
-            } else {
-                plain(&message.text)
-            },
+            text,
             removed: message.deleted,
             quote,
             meta,
+            reader,
             first,
             last,
             crowd,
@@ -1074,13 +1121,13 @@ struct Header {
 fn paint_faces(painter: &egui::Painter, rect: Rect, faces: &[Face], kind: ConversationKind) {
     match faces {
         [] => {
-            painter.circle_filled(rect.center(), rect.width() * 0.5, white(0.14));
+            painter.circle_filled(rect.center(), rect.width() * 0.5, color::surface_hover());
             painter.text(
                 rect.center(),
                 Align2::CENTER_CENTER,
                 Icon::USERS.glyph(),
                 Icon::USERS.font(rect.width() * 0.46, false),
-                white(0.8),
+                color::text_detail(),
             );
         }
         [one] if kind == ConversationKind::Direct => {
@@ -1158,6 +1205,14 @@ fn list(ui: &mut Ui, entries: &[Entry], focus: Option<usize>, language: Language
     events
 }
 
+/// Items fade out over the 36 dp before they pass under the header, so a bubble the scroll cuts
+/// does not leave a stray line behind.
+fn top_fade(ui: &Ui, top: f32) -> f32 {
+    ((ui.cursor().min.y - top + FADE_START) / FADE_LENGTH).clamp(0.0, 1.0)
+}
+
+/// The section label of the list ("Message Requests", "Conversations"): the caption of every
+/// other list of the area, on the edge the avatars start on.
 fn caption(ui: &mut Ui, text: &str) {
     let painter = ui.painter().clone();
     let galley = text::layout(
@@ -1167,14 +1222,18 @@ fn caption(ui: &mut Ui, text: &str) {
         Color32::PLACEHOLDER,
         f32::INFINITY,
     );
-    let (rect, _) = ui.allocate_exact_size(
-        vec2(ui.available_width(), galley.size().y + 14.0),
+    let (rect, response) = ui.allocate_exact_size(
+        vec2(ui.available_width(), galley.size().y + space::L),
         Sense::hover(),
     );
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Heading, true, text));
     painter.galley(
-        pos2(rect.min.x + ENTRY_PAD_X, rect.max.y - galley.size().y - 2.0),
+        pos2(
+            rect.min.x + size::ROW_PADDING_X,
+            rect.max.y - galley.size().y,
+        ),
         galley,
-        color::text_row_detail(),
+        color::text_caption(),
     );
 }
 
@@ -1182,7 +1241,7 @@ fn caption(ui: &mut Ui, text: &str) {
 fn entry_name(entry: &Entry, language: Language) -> String {
     let mut parts = vec![entry.title.clone()];
     if entry.request {
-        parts.push(S::WantsToMessage.text(language).to_owned());
+        parts.push(S::RequestTag.text(language).to_owned());
     }
     if entry.pinned {
         parts.push(S::Pinned.text(language).to_owned());
@@ -1190,8 +1249,9 @@ fn entry_name(entry: &Entry, language: Language) -> String {
     if entry.muted {
         parts.push(S::Muted.text(language).to_owned());
     }
-    if !entry.preview.is_empty() {
-        parts.push(entry.preview.clone());
+    let preview = entry_preview(entry, language);
+    if !preview.is_empty() {
+        parts.push(preview);
     }
     if !entry.when.is_empty() {
         parts.push(entry.when.clone());
@@ -1202,6 +1262,23 @@ fn entry_name(entry: &Entry, language: Language) -> String {
     parts.join(", ")
 }
 
+/// The line under a conversation's name: its newest message, else what is to say instead.
+fn entry_preview(entry: &Entry, language: Language) -> String {
+    if !entry.preview.is_empty() {
+        entry.preview.clone()
+    } else if entry.request {
+        S::WantsToMessage.text(language).to_owned()
+    } else if entry.empty {
+        S::NoPreview.text(language).to_owned()
+    } else {
+        // The newest message is on its way: the line stays empty rather than say something wrong.
+        String::new()
+    }
+}
+
+/// One conversation: the picture, the name with its tag, the newest message in one line, the time
+/// and the marks at the trailing end of the first line and the count at the end of the second. No
+/// box at rest; the focus and the pointer lift the row.
 fn entry_row(
     ui: &mut Ui,
     entry: &Entry,
@@ -1234,140 +1311,158 @@ fn entry_row(
         &painter,
         rect,
         radius::ROW,
-        color::surface_row(),
+        Color32::TRANSPARENT,
         hover_t,
         t,
         0.0,
         size::FOCUS_RING,
     );
     let face = Rect::from_min_size(
-        pos2(rect.min.x + ENTRY_PAD_X, rect.center().y - ENTRY_FACE * 0.5),
+        pos2(
+            rect.min.x + size::ROW_PADDING_X,
+            rect.center().y - ENTRY_FACE * 0.5,
+        ),
         vec2(ENTRY_FACE, ENTRY_FACE),
     );
-    if entry.request {
-        painter.circle_filled(face.center(), ENTRY_FACE * 0.5, white(0.14));
-        painter.text(
-            face.center(),
-            Align2::CENTER_CENTER,
-            Icon::ENVELOPE_SIMPLE.glyph(),
-            Icon::ENVELOPE_SIMPLE.font(ENTRY_FACE * 0.46, false),
-            white(0.85),
-        );
-    } else {
-        paint_faces(&painter, face, &entry.faces, entry.kind);
-    }
-    let text_x = face.max.x + 16.0;
-    let right = rect.max.x - ENTRY_PAD_X;
+    paint_faces(&painter, face, &entry.faces, entry.kind);
+    let text_x = face.max.x + space::L;
+    let right = rect.max.x - size::ROW_PADDING_X;
     let unread = entry.unread > 0 && !entry.muted;
-    // The time and the marks on the right of the first line.
-    let when = text::layout(
-        &painter,
-        META,
-        &entry.when,
-        Color32::PLACEHOLDER,
-        f32::INFINITY,
-    );
+
+    // The first line: the time at the end, the marks before it, the name in the room left.
+    let title_style = if unread {
+        ty::INFO_VALUE
+    } else {
+        ty::ROW_TITLE
+    };
+    let first_h = title_style.line_height();
+    let preview_style = ty::SENTENCE;
+    let second_h = preview_style.line_height();
+    let top = rect.center().y - (first_h + space::XS + second_h) * 0.5;
+    let first_y = top + first_h * 0.5;
     let mut x = right;
-    let top = rect.center().y - 22.0;
     if !entry.when.is_empty() {
-        x -= when.size().x;
-        painter.galley(
-            pos2(x, top + 3.0),
-            when,
-            fade(Color32::WHITE, if unread { 0.9 } else { 0.55 }),
+        let when = text::layout(
+            &painter,
+            META,
+            &entry.when,
+            Color32::PLACEHOLDER,
+            f32::INFINITY,
         );
-        x -= 10.0;
+        x -= when.size().x;
+        let ink = if unread {
+            color::text_label()
+        } else {
+            color::text_note()
+        };
+        painter.galley(pos2(x, first_y - when.size().y * 0.5), when, ink);
+        x -= space::S;
     }
     for (on, icon) in [
         (entry.muted, Icon::BELL_SLASH),
         (entry.pinned, Icon::PUSH_PIN),
     ] {
         if on {
-            x -= 14.0;
+            x -= MARK;
             painter.text(
-                pos2(x + 7.0, top + 11.0),
+                pos2(x + MARK * 0.5, first_y),
                 Align2::CENTER_CENTER,
                 icon.glyph(),
-                icon.font(14.0, false),
-                fade(Color32::WHITE, 0.55),
+                icon.font(MARK, false),
+                color::text_note(),
             );
-            x -= 6.0;
+            x -= space::XS;
         }
     }
-    // The title, in the room left.
-    let title_style = if unread {
-        TextStyle::new(ty::ROW_TITLE.size, Weight::SemiBold)
-    } else {
-        ty::ROW_TITLE
-    };
-    let title = one_line(
-        &painter,
-        title_style,
-        &entry.title,
-        (x - text_x - 8.0).max(40.0),
+    let tag = entry.request.then(|| {
+        text::layout(
+            &painter,
+            ty::MICRO,
+            S::RequestTag.text(language),
+            Color32::PLACEHOLDER,
+            f32::INFINITY,
+        )
+    });
+    // The Request tag keeps its room: a long name is cut, never the tag.
+    let tag_room = tag.as_ref().map_or(0.0, |t| t.size().x + 3.0 * space::S);
+    let title_room = (x - text_x - space::S - tag_room).max(40.0);
+    let title = one_line(&painter, title_style, &entry.title, title_room);
+    let title_w = title.size().x;
+    painter.galley(
+        pos2(text_x, first_y - title.size().y * 0.5),
+        title,
+        color::text(),
     );
-    let preview_text = if entry.request && entry.preview.is_empty() {
-        S::WantsToMessage.text(language).to_owned()
+    if let Some(tag) = tag {
+        let chip = Rect::from_center_size(
+            pos2(
+                text_x + title_w + space::S + (tag.size().x + 2.0 * space::S) * 0.5,
+                first_y,
+            ),
+            vec2(tag.size().x + 2.0 * space::S, tag.size().y + space::XS),
+        );
+        paint_capsule(&painter, chip, color::surface_hover());
+        painter.galley(
+            pos2(
+                chip.center().x - tag.size().x * 0.5,
+                chip.center().y - tag.size().y * 0.5,
+            ),
+            tag,
+            color::text_detail(),
+        );
+    }
+
+    // The second line: the newest message, and the count at its end.
+    let second_y = top + first_h + space::XS + second_h * 0.5;
+    let badge_w = if unread && !entry.request {
+        if entry.unread > 9 {
+            BADGE_MANY
+        } else {
+            BADGE_ONE
+        }
     } else {
-        entry.preview.clone()
+        0.0
     };
-    let title_y = if preview_text.is_empty() {
-        rect.center().y - title.size().y * 0.5
-    } else {
-        top
-    };
-    painter.galley(pos2(text_x, title_y), title, Color32::WHITE);
-    // The preview and the count.
-    let badge_width = if unread { 30.0 } else { 0.0 };
-    let preview_width = (right - text_x - badge_width - 8.0).max(40.0);
+    let preview_room = (right - text_x - badge_w - space::S).max(40.0);
     let ink = if entry.typing {
-        fade(Color32::WHITE, 0.9)
+        color::text()
     } else if unread {
-        fade(Color32::WHITE, 0.82)
+        color::text_label()
+    } else if entry.empty && !entry.request {
+        color::text_note()
     } else {
-        fade(Color32::WHITE, 0.58)
+        color::text_detail()
     };
     let preview = one_line(
         &painter,
-        TextStyle::new(ty::ROW_INFO.size, Weight::Regular),
-        &preview_text,
-        preview_width,
+        preview_style,
+        &entry_preview(entry, language),
+        preview_room,
     );
-    painter.galley(pos2(text_x, top + 27.0), preview, ink);
-    if unread {
-        let count = if entry.request {
-            None
+    painter.galley(
+        pos2(text_x, second_y - preview.size().y * 0.5),
+        preview,
+        ink,
+    );
+    if badge_w > 0.0 {
+        let count = if entry.unread > 99 {
+            "99+".to_owned()
         } else {
-            Some(if entry.unread > 99 {
-                "99+".to_owned()
-            } else {
-                entry.unread.to_string()
-            })
+            entry.unread.to_string()
         };
-        let size = vec2(
-            if count.as_ref().is_some_and(|c| c.len() > 1) {
-                30.0
-            } else {
-                22.0
-            },
-            22.0,
+        let badge = Rect::from_center_size(
+            pos2(right - badge_w * 0.5, second_y),
+            vec2(badge_w, BADGE_HEIGHT),
         );
-        let badge = Rect::from_min_size(pos2(right - size.x, top + 26.0), size);
-        match count {
-            Some(count) => {
-                paint_capsule(&painter, badge, color::primary());
-                painter.text(
-                    badge.center(),
-                    Align2::CENTER_CENTER,
-                    count,
-                    TextStyle::new(13.0, Weight::SemiBold).font(),
-                    color::on_primary(),
-                );
-            }
-            None => {
-                painter.circle_filled(badge.center(), 6.0, color::primary());
-            }
-        }
+        paint_capsule(&painter, badge, color::primary());
+        text::paint_tabular_aligned(
+            &painter,
+            badge,
+            Align::Center,
+            ty::BADGE,
+            &count,
+            color::on_primary(),
+        );
     }
     rect
 }
@@ -1387,11 +1482,27 @@ fn one_line(
     painter.layout_job(job)
 }
 
+/// Text wrapped at `width` with room between the lines; a word longer than the line breaks.
+fn wrapped(
+    painter: &egui::Painter,
+    style: TextStyle,
+    leading: f32,
+    text: &str,
+    width: f32,
+) -> std::sync::Arc<egui::Galley> {
+    let mut job =
+        egui::text::LayoutJob::simple(text.to_owned(), style.font(), Color32::PLACEHOLDER, width);
+    job.wrap.break_anywhere = true;
+    job.sections[0].format.line_height = Some(style.size * leading);
+    painter.layout_job(job)
+}
+
 // ---------------------------------------------------------------------------------------------
 // Drawing: the thread
 // ---------------------------------------------------------------------------------------------
 
-/// The thread: a header, the bubbles that scroll, and the composer that does not.
+/// The thread: a header, the bubbles that scroll, and the composer that does not. The header, the
+/// bubbles and the composer stand on the same two edges.
 #[allow(clippy::too_many_arguments)]
 fn thread_view(
     ui: &mut Ui,
@@ -1415,31 +1526,33 @@ fn thread_view(
     let ui = &mut child;
     let painter = ui.painter().clone();
 
-    // The header: the picture, the name and the line under it.
-    let head = Rect::from_min_size(column.min, vec2(width, 64.0));
+    // The header: the picture, the name and the line under it, and the options at the end.
+    let head = Rect::from_min_size(column.min, vec2(width, HEAD_HEIGHT));
     let face_box = Rect::from_min_size(
-        pos2(head.min.x + 4.0, head.center().y - 22.0),
-        vec2(44.0, 44.0),
+        pos2(head.min.x, head.center().y - ENTRY_FACE * 0.5),
+        vec2(ENTRY_FACE, ENTRY_FACE),
     );
     paint_faces(&painter, face_box, &header.faces, header.kind);
-    let name_x = face_box.max.x + 14.0;
-    let name = one_line(&painter, ty::TOP_BAR_TITLE, &header.title, width - 80.0);
+    let name_x = face_box.max.x + space::L;
+    let room = width - ENTRY_FACE - space::L - COMPOSER_BUTTON - space::L;
+    let name = one_line(&painter, ty::ITEM_TITLE, &header.title, room);
     let name_h = name.size().y;
-    let status_h = if header.status.is_some() { 20.0 } else { 0.0 };
+    let status = header
+        .status
+        .as_ref()
+        .map(|status| one_line(&painter, ty::NOTE, status, room));
+    let status_h = status.as_ref().map_or(0.0, |s| s.size().y + space::XS);
     let name_y = head.center().y - (name_h + status_h) * 0.5;
-    painter.galley(pos2(name_x, name_y), name, Color32::WHITE);
-    if let Some(status) = &header.status {
-        let line = one_line(&painter, ty::DETAIL_LARGE, status, width - 80.0);
+    painter.galley(pos2(name_x, name_y), name, color::text());
+    if let Some(status) = status {
         painter.galley(
-            pos2(name_x, name_y + name_h + 1.0),
-            line,
-            fade(Color32::WHITE, 0.6),
+            pos2(name_x, name_y + name_h + space::XS),
+            status,
+            color::text_detail(),
         );
     }
-
-    // The conversation's options, at the trailing end of the header.
     let more = Rect::from_center_size(
-        pos2(head.max.x - 4.0 - COMPOSER_BUTTON * 0.5, head.center().y),
+        pos2(head.max.x - COMPOSER_BUTTON * 0.5, head.center().y),
         vec2(COMPOSER_BUTTON, COMPOSER_BUTTON),
     );
     icon_button(
@@ -1456,11 +1569,11 @@ fn thread_view(
 
     // The composer sits at the bottom; the thread takes the room between.
     let note_h = match composer {
-        Composer::Write { note: Some(_), .. } => 40.0,
+        Composer::Write { note: Some(_), .. } => NOTE_BAR + space::S,
         Composer::Request => 44.0,
         _ => 0.0,
     };
-    let bar_h = COMPOSER_HEIGHT + note_h + 16.0;
+    let bar_h = COMPOSER_HEIGHT + note_h + space::L;
     let body = Rect::from_min_max(
         pos2(column.min.x, head.max.y),
         pos2(column.max.x, column.max.y - bar_h),
@@ -1512,7 +1625,7 @@ fn thread_view(
         let spare = (body.height() - last_height).max(0.0);
         ui.add_space(spare);
         let origin = ui.cursor().min.y;
-        ui.add_space(8.0);
+        ui.add_space(space::L);
         for item in &thread.items {
             match item {
                 Item::Earlier => {
@@ -1542,7 +1655,7 @@ fn thread_view(
                 Item::State(icon, title, note) => state_view(ui, *icon, title, note.as_deref()),
             }
         }
-        ui.add_space(8.0);
+        ui.add_space(space::S);
     });
     let max_offset = (output.content_size.y - output.inner_rect.height()).max(0.0);
     ctx.data_mut(|d| d.insert_temp(end_id, max_offset));
@@ -1563,130 +1676,124 @@ fn thread_view(
     );
 
     // The composer.
-    composer_view(
-        ui,
-        bar,
-        note_h,
-        composer,
-        focus,
-        type_now,
-        language,
-        &mut events,
-    );
+    composer_view(ui, bar, composer, focus, type_now, language, &mut events);
     events
 }
 
-/// Items fade out over the 36 dp before they pass under the header, so a bubble the scroll cuts
-/// does not leave a stray line behind.
-fn top_fade(ui: &Ui, top: f32) -> f32 {
-    ((ui.cursor().min.y - top + 56.0) / 36.0).clamp(0.0, 1.0)
-}
-
+/// "Show Earlier Messages": a small button in the middle of the column.
 fn earlier_button(ui: &mut Ui, focused: bool, language: Language, events: &mut Vec<Mouse>) -> Rect {
     let ctx = ui.ctx().clone();
-    let painter = ui.painter().clone();
     let label = S::ShowEarlier.text(language);
-    let w = text::width(&painter, ty::BUTTON_MEDIUM, label) + 40.0;
-    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 56.0), Sense::hover());
-    let rect = Rect::from_center_size(row.center(), vec2(w, 36.0));
-    let response = ui.interact(rect, ui.make_persistent_id("earlier"), Sense::click());
+    let (row, _) = ui.allocate_exact_size(
+        vec2(
+            ui.available_width(),
+            ControlSize::Small.height() + 2.0 * space::M,
+        ),
+        Sense::hover(),
+    );
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(row)
+            .layout(egui::Layout::top_down(Align::Center)),
+    );
+    child.add_space(space::M);
+    let response = ConsoleButton::new(label)
+        .size(ControlSize::Small)
+        .focused(focused)
+        .show(&mut child);
     crate::ui::a11y::follow(&ctx, response.id, focused);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
     if response.clicked() {
         events.push(Mouse::Press(ThreadFocus::Earlier));
     }
-    let t = ctx.focus_t((response.id, "earlier"), focused);
-    let hovered = input::hovered(&ctx, &response);
-    paint_capsule(&painter, rect, white(if hovered { 0.16 } else { 0.10 }));
-    components::paint_focus_ring(&painter, rect, 18.0, t);
-    text::paint(
-        &painter,
-        rect.center(),
-        Align2::CENTER_CENTER,
-        ty::BUTTON_MEDIUM,
-        label,
-        fade(Color32::WHITE, 0.9),
-    );
     row
 }
 
+/// The label over the messages of a day, in the middle: quiet words, no box.
 fn day_separator(ui: &mut Ui, label: &str) {
     let painter = ui.painter().clone();
     let galley = text::layout(&painter, DAY, label, Color32::PLACEHOLDER, f32::INFINITY);
-    let (rect, _) = ui.allocate_exact_size(
-        vec2(ui.available_width(), galley.size().y + 26.0),
+    let (rect, response) = ui.allocate_exact_size(
+        vec2(
+            ui.available_width(),
+            galley.size().y + space::BUBBLE_DAY + space::M,
+        ),
         Sense::hover(),
     );
-    let w = galley.size().x + 28.0;
-    let pill = Rect::from_center_size(rect.center(), vec2(w, galley.size().y + 8.0));
-    paint_capsule(&painter, pill, white(0.08));
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Heading, true, label));
     painter.galley(
         pos2(
-            pill.center().x - galley.size().x * 0.5,
-            pill.center().y - galley.size().y * 0.5,
+            rect.center().x - galley.size().x * 0.5,
+            rect.max.y - space::M - galley.size().y,
         ),
         galley,
-        fade(Color32::WHITE, 0.7),
+        color::text_note(),
     );
 }
 
+/// Somebody types: three quiet dots in the column the bubbles stand in. The words are for the
+/// screen reader and the list.
 fn typing_view(ui: &mut Ui, who: Option<&Face>, line: &str) {
     let painter = ui.painter().clone();
     let width = ui.available_width();
-    let galley = text::layout(&painter, QUOTE, line, Color32::PLACEHOLDER, width * 0.6);
-    let h = galley.size().y + 2.0 * BUBBLE_PAD_Y;
-    let (row, _) = ui.allocate_exact_size(vec2(width, h + 12.0), Sense::hover());
-    let mut left = row.min.x + 4.0;
+    let (row, response) =
+        ui.allocate_exact_size(vec2(width, TYPING_HEIGHT + RUN_GAP), Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Status, true, line));
+    let mut left = row.min.x;
     if let Some(who) = who {
-        let face = Rect::from_min_size(pos2(left, row.max.y - FACE - 6.0), vec2(FACE, FACE));
+        let face = Rect::from_min_size(pos2(left, row.max.y - FACE), vec2(FACE, FACE));
         paint_avatar(&painter, face, who.avatar, who.account, &who.handle);
         left = face.max.x + FACE_GAP;
     }
-    let bubble = Rect::from_min_size(
-        pos2(left, row.min.y + 6.0),
-        vec2(galley.size().x + 2.0 * BUBBLE_PAD_X, h),
-    );
-    paint_capsule(&painter, bubble, white(0.08));
-    painter.galley(
-        pos2(bubble.min.x + BUBBLE_PAD_X, bubble.min.y + BUBBLE_PAD_Y),
-        galley,
-        fade(Color32::WHITE, 0.72),
-    );
-}
-
-fn state_view(ui: &mut Ui, icon: Icon, title: &str, note: Option<&str>) {
-    let painter = ui.painter().clone();
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 160.0), Sense::hover());
-    painter.text(
-        pos2(rect.center().x, rect.center().y - 24.0),
-        Align2::CENTER_CENTER,
-        icon.glyph(),
-        icon.font(34.0, false),
-        fade(Color32::WHITE, 0.5),
-    );
-    text::paint(
-        &painter,
-        pos2(rect.center().x, rect.center().y + 14.0),
-        Align2::CENTER_CENTER,
-        ty::ROW_INFO,
-        title,
-        fade(Color32::WHITE, 0.7),
-    );
-    if let Some(note) = note {
-        text::paint(
-            &painter,
-            pos2(rect.center().x, rect.center().y + 38.0),
-            Align2::CENTER_CENTER,
-            ty::DETAIL,
-            note,
-            fade(Color32::WHITE, 0.5),
+    // On the avatar's centre line when there is one, from the edge the words of a bubble start on.
+    let y = if who.is_some() {
+        row.max.y - FACE * 0.5
+    } else {
+        row.max.y - TYPING_HEIGHT * 0.5
+    };
+    for (n, alpha) in [1.0, 0.7, 0.4].into_iter().enumerate() {
+        painter.circle_filled(
+            pos2(left + BUBBLE_PAD_X + n as f32 * space::M, y),
+            DOT,
+            fade(color::text_note(), alpha),
         );
     }
 }
 
-/// One bubble with what stands around it: the name above, the quote in it, the
-/// time under it, the picture beside it.
-fn bubble_view(
+fn state_view(ui: &mut Ui, icon: Icon, title: &str, note: Option<&str>) {
+    let painter = ui.painter().clone();
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(ui.available_width(), 160.0), Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, title));
+    painter.text(
+        pos2(rect.center().x, rect.center().y - space::XL),
+        Align2::CENTER_CENTER,
+        icon.glyph(),
+        icon.font(36.0, false),
+        color::text_note(),
+    );
+    text::paint(
+        &painter,
+        pos2(rect.center().x, rect.center().y + space::M),
+        Align2::CENTER_CENTER,
+        ty::LABEL,
+        title,
+        color::text_detail(),
+    );
+    if let Some(note) = note {
+        text::paint(
+            &painter,
+            pos2(rect.center().x, rect.center().y + space::XL + space::S),
+            Align2::CENTER_CENTER,
+            ty::DETAIL,
+            note,
+            color::text_note(),
+        );
+    }
+}
+
+/// A message that was taken back: a small line of words in the middle, not a bubble. It stays a
+/// stop of the focus, since it opens the message like any other.
+fn removed_view(
     ui: &mut Ui,
     b: &Bubble,
     row_width: f32,
@@ -1695,49 +1802,104 @@ fn bubble_view(
 ) -> Rect {
     let ctx = ui.ctx().clone();
     let painter = ui.painter().clone();
-    let crowd_gutter = FACE + FACE_GAP;
+    let gap = space::L;
+    let galley = text::layout(&painter, ty::NOTE, &b.text, Color32::PLACEHOLDER, row_width);
+    let height = (galley.size().y + space::S).max(ControlSize::Small.height());
+    let (row, _) = ui.allocate_exact_size(vec2(row_width, gap + height), Sense::hover());
+    let pill = Rect::from_center_size(
+        pos2(row.center().x, row.max.y - height * 0.5),
+        vec2(galley.size().x + 2.0 * space::M, height),
+    );
+    let response = ui.interact(
+        pill,
+        ui.make_persistent_id(("bubble", b.seq)),
+        Sense::click(),
+    );
+    crate::ui::a11y::follow(&ctx, response.id, focused);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, b.reader.as_str()));
+    if response.clicked() {
+        events.push(Mouse::Press(ThreadFocus::Message(b.index)));
+    }
+    let hovered = input::hovered(&ctx, &response);
+    if hovered {
+        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+    if ui.is_rect_visible(row) {
+        let t = ctx.focus_t((response.id, "bubble"), focused);
+        if hovered {
+            paint_capsule(&painter, pill, color::surface_row());
+        }
+        components::paint_focus_ring(&painter, pill, pill.height() * 0.5, t);
+        painter.galley(
+            pos2(
+                pill.center().x - galley.size().x * 0.5,
+                pill.center().y - galley.size().y * 0.5,
+            ),
+            galley,
+            color::text_note(),
+        );
+    }
+    row
+}
+
+/// The fill of a bubble: the others' resting surface, the player's one step lighter.
+fn bubble_fill(mine: bool) -> Color32 {
+    if mine {
+        color::bubble_own()
+    } else {
+        color::bubble_other()
+    }
+}
+
+/// One bubble with what stands around it: the name above the first of a group, the picture beside
+/// it, the quote in it, and the time under the last.
+fn bubble_view(
+    ui: &mut Ui,
+    b: &Bubble,
+    row_width: f32,
+    focused: bool,
+    events: &mut Vec<Mouse>,
+) -> Rect {
+    if b.removed {
+        return removed_view(ui, b, row_width, focused, events);
+    }
+    let ctx = ui.ctx().clone();
+    let painter = ui.painter().clone();
+    let gutter = if b.crowd && !b.mine {
+        FACE + FACE_GAP
+    } else {
+        0.0
+    };
     let max_bubble = (row_width * BUBBLE_SHARE).max(160.0);
     let text_width = max_bubble - 2.0 * BUBBLE_PAD_X;
 
     // Measure: the quote, the text.
     let quote = b.quote.as_ref().map(|(who, text)| {
-        let who_g = one_line(&painter, NAME, who, text_width - 14.0);
-        let text_g = one_line(&painter, QUOTE, text, text_width - 14.0);
-        (who_g, text_g)
+        let room = text_width - QUOTE_INSET;
+        let who = one_line(&painter, QUOTE_NAME, who, room);
+        let text = crate::screens::clamped(&painter, QUOTE, text, Color32::PLACEHOLDER, room, 2);
+        (who, text)
     });
-    let body = text::layout_font(
-        &painter,
-        BODY.font(),
-        1.4 * BODY.size,
-        0.0,
-        &b.text,
-        Color32::PLACEHOLDER,
-        text_width,
-    );
+    let body = wrapped(&painter, BODY, BODY_LEADING, &b.text, text_width);
     let quote_h = quote
         .as_ref()
-        .map_or(0.0, |(w, t)| w.size().y + t.size().y + 8.0 + 8.0);
+        .map_or(0.0, |(w, t)| w.size().y + t.size().y + space::S);
     let mut inner_w = body.size().x;
     if let Some((w, t)) = &quote {
-        inner_w = inner_w.max(w.size().x.max(t.size().x) + 14.0);
+        inner_w = inner_w.max(w.size().x.max(t.size().x) + QUOTE_INSET);
     }
-    let bubble_w = (inner_w + 2.0 * BUBBLE_PAD_X).max(54.0);
+    let bubble_w = (inner_w + 2.0 * BUBBLE_PAD_X).max(BUBBLE_MIN);
     let bubble_h = body.size().y + 2.0 * BUBBLE_PAD_Y + quote_h;
-    let name_h = if b.name.is_some() { 18.0 } else { 0.0 };
-    let meta_h = if b.meta.is_some() { 20.0 } else { 0.0 };
+    let name_h = if b.name.is_some() { NAME_HEIGHT } else { 0.0 };
+    let meta_h = if b.meta.is_some() { META_HEIGHT } else { 0.0 };
     let gap = if b.first { RUN_GAP } else { LINE_GAP };
     let total_h = gap + name_h + bubble_h + meta_h;
 
     let (row, _) = ui.allocate_exact_size(vec2(row_width, total_h), Sense::hover());
-    let left_gutter = if b.crowd && !b.mine {
-        crowd_gutter
-    } else {
-        0.0
-    };
     let bubble_x = if b.mine {
-        row.max.x - 4.0 - bubble_w
+        row.max.x - bubble_w
     } else {
-        row.min.x + 4.0 + left_gutter
+        row.min.x + gutter
     };
     let bubble = Rect::from_min_size(
         pos2(bubble_x, row.min.y + gap + name_h),
@@ -1749,13 +1911,7 @@ fn bubble_view(
         Sense::click(),
     );
     crate::ui::a11y::follow(&ctx, response.id, focused);
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(
-            egui::Role::Button,
-            true,
-            format!("{}, {}", b.sender, b.text),
-        )
-    });
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, b.reader.as_str()));
     if response.clicked() {
         events.push(Mouse::Press(ThreadFocus::Message(b.index)));
     }
@@ -1768,51 +1924,38 @@ fn bubble_view(
     }
     let t = ctx.focus_t((response.id, "bubble"), focused);
 
-    // The name above the first bubble of another's run.
+    // The name above the first bubble of another's group.
     if let Some(name) = &b.name {
         let g = one_line(&painter, NAME, name, bubble_w.max(120.0));
         painter.galley(
-            pos2(bubble.min.x + 6.0, row.min.y + gap),
+            pos2(
+                bubble.min.x + BUBBLE_PAD_X,
+                bubble.min.y - g.size().y - space::XS,
+            ),
             g,
-            fade(Color32::WHITE, 0.62),
+            color::text_detail(),
         );
     }
-    // The picture beside the last bubble of another's run.
+    // The picture beside the first bubble of another's group.
     if let Some(face) = &b.face {
-        let rect =
-            Rect::from_min_size(pos2(row.min.x + 4.0, bubble.max.y - FACE), vec2(FACE, FACE));
+        let rect = Rect::from_min_size(pos2(row.min.x, bubble.min.y), vec2(FACE, FACE));
         paint_avatar(&painter, rect, face.avatar, face.account, &face.handle);
     }
-    // The bubble: the player's own is the light one, others' are dark glass.
-    let (fill, ink) = if b.removed {
-        (white(0.0), fade(Color32::WHITE, 0.55))
-    } else if b.mine {
-        (color::primary(), color::on_primary())
-    } else {
-        (white(0.11), Color32::WHITE)
-    };
-    let fill = if hovered && !b.removed {
-        mix(fill, white(0.9), 0.06)
+    // The player's own words are one step lighter than the others', never white.
+    let fill = bubble_fill(b.mine);
+    let fill = if hovered {
+        components::lighten(fill, components::LIFT_HOVER)
     } else {
         fill
     };
     let r = BUBBLE_RADIUS;
     let tight = BUBBLE_JOIN;
-    // A run keeps its inner corners small on the sender's side.
+    // The corners on the sender's side are small inside a group; the first bubble keeps its top
+    // one round, the last ends with the small one at the bottom like the tail of a line.
     let (tl, tr, bl, br) = if b.mine {
-        (
-            r,
-            if b.first { r } else { tight },
-            r,
-            if b.last { r } else { tight },
-        )
+        (r, if b.first { r } else { tight }, r, tight)
     } else {
-        (
-            if b.first { r } else { tight },
-            r,
-            if b.last { r } else { tight },
-            r,
-        )
+        (if b.first { r } else { tight }, r, tight, r)
     };
     let corners = egui::CornerRadius {
         nw: tl as u8,
@@ -1821,57 +1964,33 @@ fn bubble_view(
         se: br as u8,
     };
     painter.rect_filled(bubble, corners, fill);
-    if b.removed {
-        painter.rect_stroke(
-            bubble,
-            corners,
-            egui::Stroke::new(1.0, white(0.22)),
-            egui::StrokeKind::Inside,
-        );
-    }
-    // Inside a run the inner corners are flatter, so the ring is too.
-    let ring = if b.first && b.last {
-        r
-    } else {
-        (r + tight) * 0.5
-    };
+    // The small corners make the ring flatter there too.
+    let ring = (r + tight) * 0.5;
     components::paint_focus_ring(&painter, bubble, ring, t);
     let mut y = bubble.min.y + BUBBLE_PAD_Y;
     if let Some((who, text)) = quote {
-        let quote_box = Rect::from_min_size(
+        let bar = Rect::from_min_size(
             pos2(bubble.min.x + BUBBLE_PAD_X, y),
-            vec2(bubble_w - 2.0 * BUBBLE_PAD_X, quote_h - 8.0),
+            vec2(QUOTE_BAR, quote_h - space::S),
         );
-        painter.rect_filled(
-            Rect::from_min_size(quote_box.min, vec2(3.0, quote_box.height())),
-            corner(2.0),
-            fade(ink, 0.5),
-        );
-        let (wh, th) = (who.size().y, text.size().y);
-        painter.galley(
-            pos2(quote_box.min.x + 12.0, quote_box.min.y),
-            who,
-            fade(ink, 0.75),
-        );
-        painter.galley(
-            pos2(quote_box.min.x + 12.0, quote_box.min.y + wh + 2.0),
-            text,
-            fade(ink, 0.65),
-        );
-        let _ = th;
+        painter.rect_filled(bar, corner(QUOTE_BAR * 0.5), color::text_note());
+        let x = bubble.min.x + BUBBLE_PAD_X + QUOTE_INSET;
+        let who_h = who.size().y;
+        painter.galley(pos2(x, y), who, color::text_label());
+        painter.galley(pos2(x, y + who_h), text, color::text_detail());
         y += quote_h;
     }
-    painter.galley(pos2(bubble.min.x + BUBBLE_PAD_X, y), body, ink);
+    painter.galley(pos2(bubble.min.x + BUBBLE_PAD_X, y), body, color::text());
 
-    let below = bubble.max.y;
+    // The time (and what became of the message) under the last bubble of a group.
     if let Some(meta) = &b.meta {
         let g = text::layout(&painter, META, meta, Color32::PLACEHOLDER, f32::INFINITY);
         let x = if b.mine {
-            bubble.max.x - g.size().x - 4.0
+            bubble.max.x - g.size().x - BUBBLE_PAD_X
         } else {
-            bubble.min.x + 6.0
+            bubble.min.x + BUBBLE_PAD_X
         };
-        painter.galley(pos2(x, below + 4.0), g, fade(Color32::WHITE, 0.5));
+        painter.galley(pos2(x, bubble.max.y + space::XS), g, color::text_note());
     }
     row
 }
@@ -1880,11 +1999,11 @@ fn bubble_view(
 // Drawing: the composer
 // ---------------------------------------------------------------------------------------------
 
+/// The bar under the thread. Its parts stand on the thread's two edges.
 #[allow(clippy::too_many_arguments)]
 fn composer_view(
     ui: &mut Ui,
     bar: Rect,
-    note_h: f32,
     composer: &Composer,
     focus: Option<ThreadFocus>,
     type_now: bool,
@@ -1894,13 +2013,13 @@ fn composer_view(
     let ctx = ui.ctx().clone();
     let painter = ui.painter().clone();
     let inner = Rect::from_min_max(
-        pos2(bar.min.x, bar.min.y + 8.0),
-        pos2(bar.max.x, bar.max.y - 8.0),
+        pos2(bar.min.x, bar.min.y + space::S),
+        pos2(bar.max.x, bar.max.y - space::S),
     );
     match composer {
         Composer::Write { draft, note } => {
             if let Some(note) = note {
-                let rect = Rect::from_min_size(inner.min, vec2(inner.width(), note_h - 4.0));
+                let rect = Rect::from_min_size(inner.min, vec2(inner.width(), NOTE_BAR));
                 let response = ui.interact(rect, ui.make_persistent_id("note"), Sense::click());
                 let focused = focus == Some(ThreadFocus::Note);
                 crate::ui::a11y::follow(&ctx, response.id, focused);
@@ -1911,34 +2030,49 @@ fn composer_view(
                     events.push(Mouse::Press(ThreadFocus::Note));
                 }
                 let t = ctx.focus_t((response.id, "note"), focused);
-                paint_capsule(&painter, rect, white(0.10));
+                paint_capsule(&painter, rect, color::surface());
                 components::paint_focus_ring(&painter, rect, rect.height() * 0.5, t);
-                let line = one_line(&painter, ty::ROW_INFO, &note.text, rect.width() - 64.0);
+                let line = one_line(
+                    &painter,
+                    ty::LABEL,
+                    &note.text,
+                    rect.width() - 2.0 * space::XXL,
+                );
                 painter.galley(
-                    pos2(rect.min.x + 18.0, rect.center().y - line.size().y * 0.5),
+                    pos2(
+                        rect.min.x + space::XL,
+                        rect.center().y - line.size().y * 0.5,
+                    ),
                     line,
-                    fade(Color32::WHITE, 0.85),
+                    color::text_detail(),
                 );
                 painter.text(
-                    pos2(rect.max.x - 24.0, rect.center().y),
+                    pos2(rect.max.x - space::XL, rect.center().y),
                     Align2::CENTER_CENTER,
                     Icon::X.glyph(),
-                    Icon::X.font(16.0, false),
-                    fade(Color32::WHITE, 0.8),
+                    Icon::X.font(14.0, false),
+                    color::text_detail(),
                 );
             }
             let pill =
                 Rect::from_min_max(pos2(inner.min.x, inner.max.y - COMPOSER_HEIGHT), inner.max);
-            paint_capsule(&painter, pill, white(0.07));
+            // A filled field with a hairline: the ring is only for the focus.
+            paint_capsule(&painter, pill, color::composer());
+            components::paint_hairline(
+                &painter,
+                pill,
+                pill.height() * 0.5,
+                color::hairline_control(),
+            );
             // Send sits in the field's trailing end: quiet until there is something to send.
             let ready = anyps5_core::online::api::is_message_text(draft);
             let send = Rect::from_center_size(
-                pos2(pill.max.x - 8.0 - COMPOSER_BUTTON * 0.5, pill.center().y),
-                vec2(COMPOSER_BUTTON, COMPOSER_BUTTON),
+                pos2(pill.max.x - space::XS - SEND_BUTTON * 0.5, pill.center().y),
+                vec2(SEND_BUTTON, SEND_BUTTON),
             );
             let field = Rect::from_min_max(
-                pos2(pill.min.x + 14.0, pill.min.y + 6.0),
-                pos2(send.min.x - 8.0, pill.max.y - 6.0),
+                pos2(pill.min.x + BUBBLE_PAD_X, pill.min.y),
+                pos2(send.min.x - space::S, pill.max.y),
             );
             icon_button(
                 ui,
@@ -1954,14 +2088,14 @@ fn composer_view(
             if draft.chars().count() > anyps5_core::online::api::MAX_MESSAGE_CHARS {
                 text::paint(
                     &painter,
-                    pos2(pill.max.x - 70.0, pill.min.y - 12.0),
+                    pos2(pill.max.x - 2.0 * COMPOSER_BUTTON, pill.min.y - space::M),
                     Align2::RIGHT_CENTER,
                     ty::DETAIL,
                     S::TooLong.text(language),
-                    fade(Color32::WHITE, 0.7),
+                    color::text_detail(),
                 );
             }
-            // The field.
+            // The field, as large as the words it holds.
             let focused = focus == Some(ThreadFocus::Composer(Slot::Field));
             let field_id = ui.make_persistent_id("compose-field");
             let ring = ctx.focus_t((field_id, "ring"), focused);
@@ -1972,6 +2106,7 @@ fn composer_view(
                     .max_rect(field)
                     .layout(egui::Layout::left_to_right(Align::Center)),
             );
+            field_ui.visuals_mut().weak_text_color = Some(color::text_note());
             let hint = if note.as_ref().is_some_and(|n| n.editing) {
                 S::EditingMessage.text(language)
             } else {
@@ -1979,11 +2114,12 @@ fn composer_view(
             };
             let edit = egui::TextEdit::singleline(&mut text)
                 .id(field_id)
-                .hint_text(hint)
+                .hint_text(egui::RichText::new(hint).font(BODY.font()))
                 .desired_width(field.width())
                 .frame(egui::Frame::NONE)
                 .font(BODY.font())
-                .margin(Margin::symmetric(8, 0));
+                .text_color(color::text())
+                .margin(Margin::ZERO);
             let response = field_ui.add(edit);
             response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, true, hint));
             if type_now {
@@ -2012,61 +2148,69 @@ fn composer_view(
                 events.push(Mouse::Press(ThreadFocus::Bar));
             }
             let t = ctx.focus_t((response.id, "bar"), focused);
-            paint_capsule(&painter, rect, white(0.10));
+            paint_capsule(&painter, rect, color::surface());
             components::paint_focus_ring(&painter, rect, rect.height() * 0.5, t);
             painter.text(
-                pos2(rect.min.x + 30.0, rect.center().y),
+                pos2(rect.min.x + space::XXL, rect.center().y),
                 Align2::CENTER_CENTER,
                 Icon::LOCK.glyph(),
                 Icon::LOCK.font(20.0, false),
-                fade(Color32::WHITE, 0.8),
+                color::text_detail(),
             );
-            let line = one_line(&painter, ty::ROW_TITLE, title, rect.width() - 100.0);
+            let room = rect.width() - 3.0 * space::XXL;
+            let line = one_line(&painter, ty::ROW_TITLE, title, room);
             let sub = detail
                 .as_ref()
-                .map(|d| one_line(&painter, ty::DETAIL, d, rect.width() - 100.0));
+                .map(|d| one_line(&painter, ty::DETAIL, d, room));
             let h = line.size().y + sub.as_ref().map_or(0.0, |s| s.size().y + 2.0);
             let y = rect.center().y - h * 0.5;
             let lh = line.size().y;
-            painter.galley(pos2(rect.min.x + 56.0, y), line, Color32::WHITE);
+            let x = rect.min.x + space::XXL + space::XL;
+            painter.galley(pos2(x, y), line, color::text());
             if let Some(sub) = sub {
-                painter.galley(
-                    pos2(rect.min.x + 56.0, y + lh + 2.0),
-                    sub,
-                    fade(Color32::WHITE, 0.6),
-                );
+                painter.galley(pos2(x, y + lh + 2.0), sub, color::text_detail());
             }
         }
         Composer::Blocked { who } => {
             let rect = inner;
             let focused = focus == Some(ThreadFocus::Bar);
             let label = T::Unblock.text(language);
-            let button_w = text::width(&painter, ty::BUTTON_MEDIUM, label) + 40.0;
-            let button = Rect::from_center_size(
-                pos2(rect.max.x - 12.0 - button_w * 0.5, rect.center().y),
-                vec2(button_w, 38.0),
+            paint_capsule(&painter, rect, color::surface());
+            let button_h = ControlSize::Small.height();
+            let slot = Rect::from_min_size(
+                pos2(
+                    rect.max.x - space::S - 160.0,
+                    rect.center().y - button_h * 0.5,
+                ),
+                vec2(160.0, button_h),
             );
-            paint_capsule(&painter, rect, white(0.10));
+            let mut child = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(slot)
+                    .layout(egui::Layout::right_to_left(Align::Center)),
+            );
+            let response = ConsoleButton::new(label)
+                .size(ControlSize::Small)
+                .focused(focused)
+                .show(&mut child);
+            crate::ui::a11y::follow(&ctx, response.id, focused);
+            if response.clicked() {
+                events.push(Mouse::Press(ThreadFocus::Bar));
+            }
             let note = S::BlockedNote.format(language, &[Arg::Str(who)]);
             let line = one_line(
                 &painter,
-                ty::ROW_INFO,
+                ty::LABEL,
                 &note,
-                rect.width() - button_w - 60.0,
+                rect.width() - response.rect.width() - 3.0 * space::XL,
             );
             painter.galley(
-                pos2(rect.min.x + 22.0, rect.center().y - line.size().y * 0.5),
+                pos2(
+                    rect.min.x + space::XL,
+                    rect.center().y - line.size().y * 0.5,
+                ),
                 line,
-                fade(Color32::WHITE, 0.8),
-            );
-            icon_text_button(
-                ui,
-                button,
-                label,
-                Tone::Quiet,
-                focused,
-                ThreadFocus::Bar,
-                events,
+                color::text_detail(),
             );
         }
         Composer::Request => {
@@ -2075,42 +2219,54 @@ fn composer_view(
             let note = S::RequestNote.text(language);
             text::paint(
                 &painter,
-                pos2(inner.center().x, rect.min.y - 22.0),
+                pos2(inner.center().x, rect.min.y - space::XL * 0.75),
                 Align2::CENTER_CENTER,
-                ty::DETAIL_LARGE,
+                ty::NOTE,
                 note,
-                fade(Color32::WHITE, 0.55),
+                color::text_note(),
             );
-            paint_capsule(&painter, rect, white(0.06));
-            let labels = [
-                (Answer::Accept, T::Accept.text(language), Tone::Primary),
-                (Answer::Decline, T::Decline.text(language), Tone::Quiet),
-                (Answer::Block, T::Block.text(language), Tone::Danger),
+            // Accept and Decline lead, Block stands alone at the other end; the buttons stand on
+            // the page, a box behind them would only hide Decline.
+            let answers = [
+                (Answer::Accept, T::Accept.text(language), true, false),
+                (Answer::Decline, T::Decline.text(language), false, false),
+                (Answer::Block, T::Block.text(language), false, true),
             ];
-            let widths: Vec<f32> = labels
-                .iter()
-                .map(|(_, l, _)| text::width(&painter, ty::BUTTON_MEDIUM, l) + 44.0)
-                .collect();
-            // Block stands apart from Decline: it also ends what the other can write.
-            let total = widths.iter().sum::<f32>() + 12.0 + 40.0;
-            let mut x = rect.center().x - total * 0.5;
-            for ((answer, label, tone), w) in labels.iter().zip(&widths) {
-                let button = Rect::from_min_size(pos2(x, rect.center().y - 19.0), vec2(*w, 38.0));
-                let focused = focus == Some(ThreadFocus::Answer(*answer));
-                icon_text_button(
-                    ui,
-                    button,
-                    label,
-                    *tone,
-                    focused,
-                    ThreadFocus::Answer(*answer),
-                    events,
-                );
-                x += w + if *answer == Answer::Decline {
-                    40.0
+            let button_h = ControlSize::Medium.height();
+            let slot = |from_start: bool| {
+                let w = ANSWER_SLOT;
+                // On the column's two edges, like the header and the bubbles.
+                let x = if from_start {
+                    rect.min.x
                 } else {
-                    12.0
+                    rect.max.x - w
                 };
+                Rect::from_min_size(pos2(x, rect.center().y - button_h * 0.5), vec2(w, button_h))
+            };
+            let mut lead = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(slot(true))
+                    .layout(egui::Layout::left_to_right(Align::Center)),
+            );
+            lead.spacing_mut().item_spacing.x = size::CONTROL_GAP;
+            let mut tail = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(slot(false))
+                    .layout(egui::Layout::right_to_left(Align::Center)),
+            );
+            for (answer, label, primary, danger) in answers {
+                let focused = focus == Some(ThreadFocus::Answer(answer));
+                let host = if danger { &mut tail } else { &mut lead };
+                let response = ConsoleButton::new(label)
+                    .size(ControlSize::Medium)
+                    .prominent(primary)
+                    .destructive(danger)
+                    .focused(focused)
+                    .show(host);
+                crate::ui::a11y::follow(&ctx, response.id, focused);
+                if response.clicked() {
+                    events.push(Mouse::Press(ThreadFocus::Answer(answer)));
+                }
             }
         }
     }
@@ -2145,10 +2301,17 @@ fn icon_button(
         ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
     }
     let t = ctx.focus_t((response.id, "icon"), focused);
+    // A control at rest has a surface, in the bar and in the header alike.
+    let in_field = matches!(target, ThreadFocus::Composer(_));
     let fill = if primary {
         color::primary()
+    } else if hovered || focused {
+        color::surface_hover()
+    } else if in_field {
+        // Inside the field there is a surface already.
+        Color32::TRANSPARENT
     } else {
-        white(if hovered || focused { 0.2 } else { 0.0 })
+        color::surface()
     };
     paint_capsule(&painter, rect, fill);
     components::paint_focus_ring(&painter, rect, rect.height() * 0.5, t);
@@ -2160,69 +2323,10 @@ fn icon_button(
         if primary {
             color::on_primary()
         } else if enabled {
-            fade(Color32::WHITE, 0.9)
+            color::text()
         } else {
-            fade(Color32::WHITE, 0.4)
+            color::text_inactive()
         },
-    );
-}
-
-/// How a button of the composer bar reads at rest.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Tone {
-    Quiet,
-    /// The answer to give: lit at rest.
-    Primary,
-    /// Ends the conversation: red text.
-    Danger,
-}
-
-fn icon_text_button(
-    ui: &mut Ui,
-    rect: Rect,
-    label: &str,
-    tone: Tone,
-    focused: bool,
-    target: ThreadFocus,
-    events: &mut Vec<Mouse>,
-) {
-    let ctx = ui.ctx().clone();
-    let painter = ui.painter().clone();
-    let response = ui.interact(
-        rect,
-        ui.make_persistent_id(("text-button", label)),
-        Sense::click(),
-    );
-    crate::ui::a11y::follow(&ctx, response.id, focused);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
-    if response.clicked() {
-        events.push(Mouse::Press(target));
-    }
-    let hovered = input::hovered(&ctx, &response);
-    if hovered {
-        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-    let t = ctx.focus_t((response.id, "text-button"), focused);
-    let rest = if tone == Tone::Primary {
-        color::primary()
-    } else {
-        white(if hovered { 0.22 } else { 0.14 })
-    };
-    let fill = mix(rest, color::primary(), t);
-    paint_capsule(&painter, rect, fill);
-    components::paint_focus_ring(&painter, rect, rect.height() * 0.5, t);
-    let ink = match tone {
-        Tone::Primary => color::on_primary(),
-        Tone::Danger => mix(color::destructive_text(), color::on_primary(), t),
-        Tone::Quiet => mix(Color32::WHITE, color::on_primary(), t),
-    };
-    text::paint(
-        &painter,
-        rect.center(),
-        Align2::CENTER_CENTER,
-        ty::BUTTON_MEDIUM,
-        label,
-        ink,
     );
 }
 
@@ -2512,10 +2616,11 @@ mod tests {
         let b = bubbles(&t);
         assert_eq!(b.len(), 6);
         assert_eq!(t.messages, 6);
-        // Lumen's two lines after the day change form a run: the name once above it, the picture
-        // and the time under its last bubble.
+        // Lumen's two lines after the day change form a group: the name once above it, the
+        // picture beside its first bubble, the time under its last.
         assert!(b[1].first && !b[1].last && b[1].name.as_deref() == Some("Lumen"));
-        assert!(!b[2].first && b[2].last && b[2].name.is_none() && b[2].face.is_some());
+        assert!(b[1].face.is_some());
+        assert!(!b[2].first && b[2].last && b[2].name.is_none() && b[2].face.is_none());
         assert!(b[2].meta.as_deref().is_some_and(|m| m.starts_with("11:50")));
         assert!(b[1].meta.is_none());
         // Juno's single message is a run of one; the player's own carry no name or picture.
@@ -2524,6 +2629,45 @@ mod tests {
         assert!(!b[4].last && b[5].last);
         // A run is broken by a pause of more than five minutes.
         assert!(b[0].first && b[0].last, "the day before stands alone");
+    }
+
+    #[test]
+    fn an_answer_stays_in_its_group_and_every_bubble_reads_with_its_time() {
+        let mut online = online();
+        put(
+            &mut online,
+            vec![chat("d", ConversationKind::Direct, &[(2, "Lumen")], 3)],
+            vec![],
+        );
+        let n = NOW as u64;
+        let mut answer = said("d", 3, 2, "Lumen", "an answer", n - 540);
+        answer.reply = Some(anyps5_core::online::api::Quote {
+            seq: 1,
+            sender: Account {
+                id: AccountId(1),
+                handle: "Mira".into(),
+            },
+            text: "first".into(),
+            deleted: false,
+        });
+        load(
+            &mut online,
+            "d",
+            vec![
+                said("d", 1, 2, "Lumen", "one", n - 600),
+                said("d", 2, 2, "Lumen", "two", n - 590),
+                answer,
+            ],
+        );
+        let t = thread(&data(&online), &Local::default(), "d", 40).unwrap();
+        let b = bubbles(&t);
+        // The answer joins the plain lines before it: one group, the time once at its end.
+        assert!(b[0].first && !b[0].last && !b[1].first && !b[1].last);
+        assert!(!b[2].first && b[2].last && b[2].quote.is_some());
+        // The screen reader gets who, the words and the time for each, not only the last.
+        assert!(b[0].reader.starts_with("Lumen, one, "));
+        assert!(b[0].reader.contains(':'), "{}", b[0].reader);
+        assert!(b[0].meta.is_none() && b[1].meta.is_none() && b[2].meta.is_some());
     }
 
     #[test]
@@ -2768,12 +2912,40 @@ mod tests {
             pinned: true,
             muted: true,
             typing: false,
+            empty: false,
             faces: Vec::new(),
         };
         let name = entry_name(&entry, Language::English);
         assert_eq!(
             name, "Mira, Pinned, Muted, 09:41",
             "a muted row speaks no count"
+        );
+    }
+
+    #[test]
+    fn a_line_says_there_is_no_message_only_when_there_is_none() {
+        let mut entry = Entry {
+            id: "c".into(),
+            kind: ConversationKind::Direct,
+            request: false,
+            title: "Mira".into(),
+            preview: String::new(),
+            when: String::new(),
+            unread: 2,
+            pinned: false,
+            muted: false,
+            typing: false,
+            empty: false,
+            faces: Vec::new(),
+        };
+        // The newest message has not been fetched yet: the line stays empty, it does not lie.
+        assert_eq!(entry_preview(&entry, Language::English), "");
+        entry.empty = true;
+        assert_eq!(entry_preview(&entry, Language::English), "No messages yet");
+        entry.request = true;
+        assert_eq!(
+            entry_preview(&entry, Language::English),
+            "Wants to message you"
         );
     }
 

@@ -490,6 +490,8 @@ pub struct PanelRow<'a> {
     pub destructive: bool,
     /// Caution: a note or row that says something may not work (the amber ink). Never danger.
     pub warning: bool,
+    /// A text block that is what the page is about (a message in full): body size and ink.
+    pub body: bool,
     /// A note that says what the player has to do: the detail ink instead of the quiet note ink.
     pub step: bool,
     /// A controller face glyph painted before the title (`✕ Cross`).
@@ -545,6 +547,7 @@ impl<'a> PanelRow<'a> {
             focused: false,
             destructive: false,
             warning: false,
+            body: false,
             step: false,
             pad_glyph: None,
             force: None,
@@ -602,6 +605,10 @@ impl<'a> PanelRow<'a> {
     }
     pub fn warning(mut self, warning: bool) -> Self {
         self.warning = warning;
+        self
+    }
+    pub fn body(mut self, body: bool) -> Self {
+        self.body = body;
         self
     }
     pub fn step(mut self, step: bool) -> Self {
@@ -663,6 +670,8 @@ impl<'a> PanelRow<'a> {
         let inner = width - 2.0 * size::ROW_PADDING_X;
         let (style, quiet, space) = if caption {
             (ty::SECTION_CAPTION, color::text_caption(), (14.0, 6.0))
+        } else if self.body {
+            (ty::BODY, color::text(), (8.0, 8.0))
         } else {
             (
                 ty::NOTE,
@@ -678,7 +687,20 @@ impl<'a> PanelRow<'a> {
         } else {
             quiet
         };
-        let galley = text::layout(&painter, style, self.title, ink, inner);
+        let galley = if self.body {
+            // What the page is about reads with room between the lines.
+            text::layout_font(
+                &painter,
+                style.font(),
+                style.size * 1.45,
+                style.tracking,
+                self.title,
+                ink,
+                inner,
+            )
+        } else {
+            text::layout(&painter, style, self.title, ink, inner)
+        };
         let height = space.0 + galley.size().y + space.1;
         let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
         response.widget_info(|| self.widget_info());

@@ -1459,8 +1459,8 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
         "c-party",
         ConversationKind::Party,
         &[(2, "Lumen"), (4, "Kit")],
-        5,
-        5,
+        0,
+        0,
         now - 3_000,
     );
     party_chat.party = Some("p1".into());
@@ -1507,7 +1507,6 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
             rev: 0,
         };
     let mut lumen_messages = vec![
-        said("c-lumen", 1, 2, "Lumen", "Are you around tonight?", 59_000),
         said(
             "c-lumen",
             2,
@@ -1544,15 +1543,15 @@ fn sample_social(state: &mut anyps5_core::online::Online) {
         said("c-lumen", 7, 2, "Lumen", "Ready when you are.", 720),
     ];
     // The things a thread can show: an edit, an answer, reactions, a message taken back.
-    lumen_messages[2].edited = Some(now - 58_000);
-    lumen_messages[5].reply = Some(Quote {
+    lumen_messages[1].edited = Some(now - 58_000);
+    lumen_messages[4].reply = Some(Quote {
         seq: 4,
         sender: account(1, "Mira"),
         text: "Bringing Juno too.".into(),
         deleted: false,
     });
-    lumen_messages[1].deleted = true;
-    lumen_messages[1].text.clear();
+    lumen_messages[0].deleted = true;
+    lumen_messages[0].text.clear();
     state.social.ingest(
         "c-lumen",
         Fetch::Newest,
