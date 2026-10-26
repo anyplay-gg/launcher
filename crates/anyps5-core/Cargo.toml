@@ -17,6 +17,7 @@ tracing.workspace = true
 notify.workspace = true
 regex.workspace = true
 sha2.workspace = true
+crc32fast = "1"
 # Cisco's OpenH264 comes as a bzip2 archive (MIT or Apache-2.0; its pure Rust libbz2 is
 # under the bzip2-1.0.6 licence).
 bzip2 = "0.6"

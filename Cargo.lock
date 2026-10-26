@@ -307,6 +307,7 @@ dependencies = [
  "bzip2",
  "core-foundation",
  "core-graphics",
+ "crc32fast",
  "ed25519-dalek",
  "flate2",
  "getrandom 0.4.3",
@@ -338,6 +339,7 @@ dependencies = [
 name = "anyps5-launcher"
 version = "0.2.5"
 dependencies = [
+ "ab_glyph",
  "anyps5-core",
  "base64 0.22.1",
  "bytemuck",

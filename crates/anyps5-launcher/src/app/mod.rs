@@ -38,6 +38,8 @@ pub mod profile;
 pub mod run_question;
 pub mod selfupdate;
 pub mod services;
+pub mod steam;
+pub mod steam_art;
 pub mod textures;
 pub mod together;
 pub mod toolkit;

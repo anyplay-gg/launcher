@@ -258,6 +258,12 @@ _Avoid_: Default app, association
 Only one launcher runs per user. A second launch hands its link to the running launcher, which comes to the front, and exits.
 _Avoid_: Lock, mutex (how it is done)
 
+### Steam
+
+**Steam entry**:
+A non-Steam shortcut the launcher writes into the player's own Steam library, for itself or for one game, so that it shows in Big Picture and on the Steam Deck. It starts the launcher; for a game it starts it on that game. Only written while Steam is closed.
+_Avoid_: Steam game, Steam version
+
 ### Online
 
 The network's own words (account, handle, friend, presence, session, invitation, join intent, version guard, cloud, party, party leader, conversation, message, message number, read mark, message request) are defined in [anyplaynet/network](https://github.com/anyplaynet/network/blob/main/CONTEXT.md). The launcher adds these:

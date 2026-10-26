@@ -28,6 +28,7 @@ use crate::screens::phone::{self, PhoneAction};
 use crate::screens::phone_strings::PhoneText;
 use crate::screens::rows::{self, Change, ListOptions, Row};
 use crate::screens::side::{Output, commands};
+use crate::screens::steam_strings::SteamText;
 use crate::screens::strings::Extra;
 use crate::screens::toolkit_pin::{self, REMOVE_ROWS};
 use crate::ui::Shell;
@@ -266,6 +267,10 @@ pub enum SettingsAction {
     OpenPage(&'static str),
     /// "Open AnyPlay Links with This Launcher" was switched: write or remove the registration.
     SetLinks(bool),
+    /// "Add to Steam": put the launcher into the Steam library.
+    AddToSteam,
+    /// "Add My Games to Steam": one entry for each game.
+    AddGamesToSteam,
     /// A row of the Phone as Controller page asks for something.
     Phone(PhoneAction),
     Quit,
@@ -558,6 +563,21 @@ pub fn build_categories(
             .detail(detail.text(language))
             .icon(Icon::LINK),
         );
+    }
+    // Steam keeps its shortcuts in files of the user folder; the rows write them (DESIGN.md 9.8).
+    if cfg!(any(windows, target_os = "linux")) {
+        behaviour.push(
+            Row::command("addToSteam", SteamText::Add.text(language))
+                .detail(SteamText::AddDetail.text(language))
+                .icon(Icon::STEAM_LOGO),
+        );
+        if env.games_found > 0 {
+            behaviour.push(
+                Row::command("addGamesToSteam", SteamText::AddGames.text(language))
+                    .detail(SteamText::AddGamesDetail.text(language))
+                    .icon(Icon::STEAM_LOGO),
+            );
+        }
     }
 
     // Phone as Controller
@@ -1446,6 +1466,10 @@ impl SettingsPanel {
                 row: "showScreenshots",
             } => out.actions.push(SettingsAction::ShowScreenshots),
             Change::Run { row: "showClips" } => out.actions.push(SettingsAction::ShowClips),
+            Change::Run { row: "addToSteam" } => out.actions.push(SettingsAction::AddToSteam),
+            Change::Run {
+                row: "addGamesToSteam",
+            } => out.actions.push(SettingsAction::AddGamesToSteam),
             Change::Capture { row: "clipsKey" } => {
                 self.clip_capture = true;
                 shell.input.capture_keys = true;

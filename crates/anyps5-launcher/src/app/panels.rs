@@ -40,6 +40,7 @@ use anyps5_core::recommended::{self, Catalog, Kind, Plan};
 use anyps5_core::report::{self, ReportInput, SystemInfo};
 use anyps5_core::saves::{self, Backup, Reason, SaveData, SavesError};
 use anyps5_core::settings::{GameSettings, ToolkitChannel};
+use anyps5_core::steam_shortcuts;
 use anyps5_core::toolkit::{self, GameToolkit};
 use anyps5_core::unlock;
 use egui::{Context, Ui, ViewportCommand};
@@ -50,6 +51,7 @@ use crate::app::model::UpdateRequest;
 use crate::app::model::{Effect, GameState, Model};
 use crate::app::overlay::{Overlay, OverlayCx, OverlayHost};
 use crate::app::selfupdate::{Restart, SelfUpdateService};
+use crate::app::steam;
 use crate::app::toolkit::{EngineFailure, NotesState, ToolkitEvent, ToolkitService};
 use crate::screens::advanced::{AdvancedAction, AdvancedData, AdvancedPanel};
 use crate::screens::banner::{BannerHost, BannerTrophy};
@@ -69,6 +71,7 @@ use crate::screens::saves::{
 };
 use crate::screens::settings::{Category, SettingsAction, SettingsEnv, SettingsPanel};
 use crate::screens::share_strings::Share;
+use crate::screens::steam_strings::SteamText;
 use crate::screens::strings::Extra;
 use crate::screens::toolkit_pin::{MissingAction, MissingData, MissingPanel, Pin, PinChoices};
 use crate::screens::trophies::{TrophyAction, TrophyData, TrophyListPanel};
@@ -110,6 +113,12 @@ enum Work {
     BackedUp(Result<Backup, SavesError>),
     /// A backup was put back; the backup of what it replaced comes with it.
     Restored(Result<Option<Backup>, SavesError>),
+    /// Add to Steam finished. `games` is how many game entries were asked for (none for the
+    /// launcher's own).
+    Steam {
+        games: Option<usize>,
+        result: Result<steam_shortcuts::Outcome, steam_shortcuts::Error>,
+    },
 }
 
 /// What the game sheet and the save panels know of the selected game's backups, read when one of
@@ -514,6 +523,11 @@ impl PanelHost {
             SettingsAction::CheckLauncherUpdate => self.launcher.check_now(),
             SettingsAction::OpenLauncherNotes => self.open_launcher_notes(model),
             SettingsAction::SetLinks(on) => self.set_links(model, on),
+            SettingsAction::AddToSteam => self.add_to_steam(model, steam::Request::Launcher),
+            SettingsAction::AddGamesToSteam => {
+                let games = model.games.clone();
+                self.add_to_steam(model, steam::Request::Games(games));
+            }
             SettingsAction::OpenPage(page) => open_known_url(page),
             SettingsAction::Phone(crate::screens::phone::PhoneAction::OpenDriverPage) => {
                 open_known_url(crate::screens::phone::driver_page());
@@ -521,6 +535,34 @@ impl PanelHost {
             SettingsAction::Phone(action) => model.phone.commands.push(action),
             SettingsAction::Quit => cx.ctx.send_viewport_cmd(ViewportCommand::Close),
         }
+    }
+
+    /// "Add to Steam" and "Add My Games to Steam": the work (pictures, files) runs on a thread and
+    /// the answer comes back as a toast. The demo and the tests write nothing.
+    fn add_to_steam(&mut self, model: &mut Model, request: steam::Request) {
+        let language = model.language();
+        let games = match &request {
+            steam::Request::Launcher => None,
+            steam::Request::Games(games) => Some(games.len()),
+        };
+        if games == Some(0) {
+            model.toast(SteamText::NoGames.text(language), Icon::INFO);
+            return;
+        }
+        if self.simulated {
+            let done = match games {
+                Some(n) => SteamText::GamesAdded.format(language, &[Arg::Int(n as i64)]),
+                None => SteamText::Added.text(language).to_owned(),
+            };
+            model.toast(done, Icon::CHECK_CIRCLE);
+            return;
+        }
+        let (tx, ctx) = (self.work_tx.clone(), self.ctx.clone());
+        spawn("steam", move || {
+            let result = steam::run(request);
+            let _ = tx.send(Work::Steam { games, result });
+            ctx.request_repaint();
+        });
     }
 
     /// Reads who answers the links from the registry.
@@ -1696,6 +1738,10 @@ impl PanelHost {
                     self.community.insert(title_id, layouts);
                 }
                 Work::Catalog(catalog) => self.catalog = *catalog,
+                Work::Steam { games, result } => {
+                    let (text, icon) = steam_message(games, result, language);
+                    model.toast(text, icon);
+                }
                 Work::BackedUp(result) => {
                     model.saves_busy = None;
                     self.saves_stale = true;
@@ -2069,6 +2115,48 @@ fn open_upstream(ctx: &Context, model: &mut Model, prepared: &issue::Prepared) {
             tracing::warn!("cannot open the browser: {error}");
             ctx.copy_text(prepared.url.clone());
             model.toast(Share::ReportOpenFailed.text(language), Icon::WARNING);
+        }
+    }
+}
+
+/// What the player is told after Add to Steam.
+fn steam_message(
+    games: Option<usize>,
+    result: Result<steam_shortcuts::Outcome, steam_shortcuts::Error>,
+    language: Language,
+) -> (String, Icon) {
+    use steam_shortcuts::Error;
+    let said = |text: SteamText| text.text(language).to_owned();
+    match result {
+        Ok(outcome) => {
+            let text = match games {
+                Some(1) => said(SteamText::GameAdded),
+                Some(n) => SteamText::GamesAdded.format(language, &[Arg::Int(n as i64)]),
+                None if outcome.added == 0 => said(SteamText::Updated),
+                None => said(SteamText::Added),
+            };
+            (text, Icon::CHECK_CIRCLE)
+        }
+        Err(error) => {
+            let text = match error {
+                Error::SteamRunning => SteamText::Running,
+                Error::NoSteam => SteamText::NoSteam,
+                Error::NoUsers => SteamText::NoUsers,
+                Error::Unreadable(path) => {
+                    tracing::warn!("Steam shortcut list in an unknown form: {}", path.display());
+                    SteamText::Unreadable
+                }
+                Error::Io(error) => {
+                    tracing::warn!("cannot write to Steam: {error}");
+                    SteamText::Failed
+                }
+            };
+            let icon = if matches!(text, SteamText::Running | SteamText::NoUsers) {
+                Icon::INFO
+            } else {
+                Icon::WARNING
+            };
+            (said(text), icon)
         }
     }
 }

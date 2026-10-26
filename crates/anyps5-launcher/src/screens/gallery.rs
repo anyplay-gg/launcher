@@ -4,7 +4,7 @@
 //! ```text
 //! anyplay-launcher --gallery=settings|settings1..6|game-settings|confirm|controls|controls-capture|
 //!                           controls-end|advanced|trophies|trophies-hidden|trophies-revealed|banner|start|unlocking|log|report|library|
-//!                           about-update|behavior-links|settings-codec|settings-codec-off|behavior-clips-off|behavior-clips|behavior-clips-key|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|toolkit-engine|toolkit-engine-update|
+//!                           about-update|behavior-links|settings-codec|settings-codec-off|behavior-clips-off|behavior-clips|behavior-clips-key|behavior-steam|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|toolkit-engine|toolkit-engine-update|
 //!                           toolkit-unused|game-toolkit|
 //!                           recommended|recommended-warning|whats-new|whats-new-loading|
 //!                           update-required|update-required-downloading|update-required-failed|
@@ -122,6 +122,8 @@ pub enum ScreenPage {
     BehaviourClipsOff,
     BehaviourClips,
     BehaviourClipsKey,
+    /// Behavior scrolled to the Add to Steam rows.
+    BehaviourSteam,
     Recommended,
     RecommendedWarning,
     WhatsNew,
@@ -523,6 +525,7 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "behavior-clips-off" => ScreenPage::BehaviourClipsOff,
         "behavior-clips" => ScreenPage::BehaviourClips,
         "behavior-clips-key" => ScreenPage::BehaviourClipsKey,
+        "behavior-steam" => ScreenPage::BehaviourSteam,
         "phone-off" => ScreenPage::Phone(PhoneLook::Off),
         "phone-waiting" => ScreenPage::Phone(PhoneLook::Waiting),
         "phone-pairing" => ScreenPage::Phone(PhoneLook::Pairing),
@@ -2381,6 +2384,10 @@ impl ScreenGallery {
                     } else {
                         8
                     });
+            }
+            ScreenPage::BehaviourSteam => {
+                self.settings.open_at(3, true);
+                self.settings.focus_row(11);
             }
             ScreenPage::Phone(look) => {
                 self.settings.open_at(4, true);

@@ -73,6 +73,7 @@ pub mod settings;
 pub mod share_strings;
 mod shared;
 pub mod side;
+pub mod steam_strings;
 pub mod start;
 pub mod strings;
 pub mod together;
