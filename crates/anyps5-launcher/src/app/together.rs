@@ -26,7 +26,7 @@ use crate::app::online::build;
 pub struct Together {
     /// Why the last press did not go ahead. The card shows it until it is closed.
     pub blocked: Option<Blocker>,
-    /// Offers the player said "not now" to: an invitation's or a session's ID.
+    /// Offers the player said "decline" to: an invitation's or a session's ID.
     dismissed: BTreeSet<String>,
     /// Play Together was pressed: the next start of this game opens a session.
     pub host: Option<(GameId, Host)>,
@@ -41,7 +41,7 @@ pub struct Together {
 pub enum Card {
     /// "Mira is playing Minecraft. Join?"
     Offer {
-        /// What "not now" remembers.
+        /// What "decline" remembers.
         key: String,
         offer: Offer,
         /// The invitation behind it, if one.
@@ -64,7 +64,7 @@ pub enum Action {
     Close,
     /// The blocker's remedy.
     Fix(Fix),
-    /// "Try anyway" on a version blocker: join the last offer although the versions do not fit.
+    /// "Try Anyway" on a version blocker: join the last offer although the versions do not fit.
     TryAnyway,
 }
 
@@ -86,7 +86,7 @@ impl Fix {
     }
 }
 
-/// Does the blocker offer "Try anyway" beside its primary action?
+/// Does the blocker offer "Try Anyway" beside its primary action?
 pub fn can_try_anyway(blocker: &Blocker) -> bool {
     matches!(blocker, Blocker::WrongVersion { .. })
 }
@@ -96,7 +96,7 @@ impl Together {
         self.blocked = Some(blocker);
     }
 
-    /// The player is joining or said "not now": the offer stays off the card.
+    /// The player is joining or said "decline": the offer stays off the card.
     pub fn dismiss(&mut self, key: &str) {
         self.dismissed.insert(key.to_owned());
     }

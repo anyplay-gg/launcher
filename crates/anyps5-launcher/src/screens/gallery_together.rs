@@ -86,7 +86,7 @@ pub fn parse(name: &str) -> Option<TogetherLook> {
     match rest {
         "offer" => Some(TogetherLook::Offer),
         "offer-invitation" => Some(TogetherLook::OfferInvitation),
-        // The pad's focus on the version blocker's quiet button ("Try Anyway").
+        // The pad's focus on the version blocker's secondary button ("Try Anyway").
         "wrong-version-pad" => Some(TogetherLook::Focused(4, 0)),
         other => BLOCKERS
             .iter()

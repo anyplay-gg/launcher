@@ -24,7 +24,7 @@ pub enum TogetherText {
     Join,
     Decline,
     Close,
-    /// The quiet answer on a version blocker: join although the versions do not fit.
+    /// The secondary answer on a version blocker: join although the versions do not fit.
     TryAnyway,
     SignIn,
     SwitchOn,
@@ -43,7 +43,7 @@ pub enum TogetherText {
     WrongVersionLine,
     /// `%@` = the game, `%@` = the version. You are ahead of the session.
     WrongVersionLineAhead,
-    /// Said under the version blocker's line, where "Try anyway" is offered.
+    /// Said under the version blocker's line, where "Try Anyway" is offered.
     TryAnywayNote,
     /// `%@` = the toolkit needed, the toolkit the player has.
     WrongBuildHeadline,
@@ -242,7 +242,7 @@ pub fn blocker_text(blocker: &Blocker, language: Language) -> (String, String) {
             (
                 T::WrongVersionHeadline
                     .format(language, &[Arg::Str(title), Arg::Str(need), Arg::Str(have)]),
-                // The note belongs to the "Try anyway" button that sits under this line.
+                // The note belongs to the "Try Anyway" button that sits under this line.
                 format!(
                     "{} {}",
                     line.format(language, &[Arg::Str(title), Arg::Str(need)]),
