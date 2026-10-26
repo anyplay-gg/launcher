@@ -14,7 +14,7 @@ use crate::ui::chrome::{RowAvatar, paint_row_avatar};
 use crate::ui::components::{self, corner, paint_capsule};
 use crate::ui::icons::Icon;
 use crate::ui::text;
-use crate::ui::theme::{TextStyle, color, fade, radius, size, ty};
+use crate::ui::theme::{TextStyle, color, fade, radius, size, space, ty};
 
 /// The width of the rail (dp).
 pub const RAIL_WIDTH: f32 = 248.0;
@@ -27,7 +27,7 @@ const ITEM_GAP: f32 = 8.0;
 /// The extra air above the entries that are not sections.
 const ACTION_GAP: f32 = 16.0;
 const AVATAR: f32 = 64.0;
-const AVATAR_GAP: f32 = 20.0;
+const AVATAR_GAP: f32 = space::L;
 
 const HANDLE: TextStyle = ty::TITLE;
 const PAGE_TITLE: TextStyle = ty::PANEL_TITLE;
@@ -237,7 +237,7 @@ pub fn page_title(
     .widget_info(|| WidgetInfo::labeled(Role::Heading, true, title.text()));
     painter.galley(at, title, color::text());
     if let Some(note) = note {
-        height += 6.0;
+        height += space::S;
         let note = if question {
             // Body size with room between the lines: three lines or more need 1.4 and over.
             text::layout_font_pretty(

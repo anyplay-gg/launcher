@@ -49,6 +49,9 @@ const TILE_HEIGHT: f32 = 214.0;
 const AVATAR_TOP: f32 = 36.0;
 const TILE_GAP: f32 = size::CONTROL_GAP;
 const AVATAR: f32 = 88.0;
+/// The dark disc and the glyph of a mark (muted, deafened) on an avatar.
+const MARK_DISC: f32 = 14.0;
+const MARK_GLYPH: f32 = 14.0;
 const CARD_HEIGHT: f32 = 76.0;
 /// The air between two groups of the page: at least twice the gap inside one.
 const GROUP_GAP: f32 = space::XL;
@@ -1061,13 +1064,17 @@ fn tile(
     );
     if let Some(mark) = tile.mark {
         let at = centre + vec2(AVATAR * 0.35, AVATAR * 0.35);
-        painter.circle_filled(at, 15.0, black(0.72));
-        painter.circle_stroke(at, 15.0, egui::Stroke::new(1.0, color::hairline_control()));
+        painter.circle_filled(at, MARK_DISC, black(0.72));
+        painter.circle_stroke(
+            at,
+            MARK_DISC,
+            egui::Stroke::new(1.0, color::hairline_control()),
+        );
         painter.text(
             at,
             Align2::CENTER_CENTER,
             mark.icon().glyph(),
-            mark.icon().font(16.0, false),
+            mark.icon().font(MARK_GLYPH, false),
             color::text(),
         );
     }
@@ -1075,7 +1082,7 @@ fn tile(
         let label = S::Leader.text(data.language);
         let galley = text::layout(&painter, CHIP, label, color::text(), f32::INFINITY);
         let chip = Rect::from_min_size(
-            rect.min + vec2(12.0, 12.0),
+            rect.min + vec2(space::M, space::M),
             vec2(galley.size().x + 16.0, 20.0),
         );
         paint_capsule(&painter, chip, color::surface_hover());
@@ -1157,7 +1164,7 @@ fn seat_tile(ui: &mut Ui, width: f32, focused: bool, language: Language) -> bool
         centre,
         Align2::CENTER_CENTER,
         Icon::PLUS.glyph(),
-        Icon::PLUS.font(28.0, false),
+        Icon::PLUS.font(24.0, false),
         color::text_detail(),
     );
     let name = clamped(

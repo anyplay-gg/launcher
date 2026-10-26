@@ -107,7 +107,7 @@ impl CallText {
             CallText::AddToCall => "Add to Call",
             CallText::CallNeedsLeader => "Only the one who started the call can add people.",
             CallText::CallFriendBusy => "In a party already",
-            CallText::VoiceOn => "Voice On",
+            CallText::VoiceOn => "Voice Service",
             CallText::ProviderAnyPlay => "AnyPlay",
             CallText::ProviderDiscord => "Discord",
             CallText::ProviderDiscordNote => {
@@ -166,7 +166,7 @@ impl CallText {
             CallText::AddToCall => "Aramaya Ekle",
             CallText::CallNeedsLeader => "Yalnızca aramayı başlatan kişi ekleyebilir.",
             CallText::CallFriendBusy => "Zaten bir partide",
-            CallText::VoiceOn => "Ses",
+            CallText::VoiceOn => "Ses Hizmeti",
             CallText::ProviderAnyPlay => "AnyPlay",
             CallText::ProviderDiscord => "Discord",
             CallText::ProviderDiscordNote => {
