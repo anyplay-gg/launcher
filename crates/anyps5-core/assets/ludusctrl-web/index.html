@@ -1277,10 +1277,10 @@ if (!navigator.getGamepads) {
   hintOverride = "This browser has no Gamepad API. On iOS use Safari; on Android use Chrome.";
   el("toggle").disabled = true;
 } else if (!window.isSecureContext) {
-  // Worth saying plainly: on plain HTTP getGamepads() returns an empty array
-  // and the page would look broken for no visible reason.
+  // Over plain HTTP the link's token would travel in the clear: say so and
+  // do not start.
   hintOverride =
-    "Not a secure context. The Gamepad API is disabled over plain HTTP. Open this page with https:// and accept the certificate warning.";
+    "Not a secure context. This page needs https:// to keep its link private. Open it with https:// and accept the certificate warning.";
   el("toggle").disabled = true;
 } else if (!token) {
   hintOverride = HINT_NO_TOKEN;
