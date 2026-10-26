@@ -30,7 +30,7 @@ Two toolchains are used:
 
 ## Linux
 
-Install the development packages first (Debian and Ubuntu names: `pkg-config libasound2-dev libudev-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev`). `tools/linux/package.sh <version> <binary> <folder>` makes the AppImage and the tarball.
+Install the development packages first (Debian and Ubuntu names: `pkg-config libasound2-dev libudev-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev`). `tools/linux/package.sh <version> <binary> <folder>` makes the AppImage and the tarball, and `tools/linux/flatpak.sh` makes the Flatpak bundle ([packaging/flatpak](../packaging/flatpak/README.md)).
 
 ## macOS
 
@@ -55,7 +55,7 @@ The Mac package does not yet embed `anyplay-net`, so online integration needs a 
 
 ## Releases
 
-A release is made by pushing a tag `v<version>` that matches the version in `Cargo.toml`. The [release workflow](../.github/workflows/release.yml) builds the net service from [anyplaynet/network](https://github.com/anyplaynet/network) at the commit in `network.ref` and embeds it, then builds the portable exe and the installer (`tools/installer/anyplay-launcher.iss`, Inno Setup), the Linux AppImage and tarball, the Apple silicon macOS app zip, and a licence file for every third-party crate. It publishes all of them with their checksums in `SHA256SUMS.txt`. Started by hand it only builds them and keeps them as workflow artifacts. A pushed tag is published only when the `ci` run of that commit on main has succeeded: the job `gate` checks it next to the builds (it waits for a run that is still going) and `sign` and `release` need it; if a flaky test made it red, re-run the failed jobs of that `ci` run, then the `gate` job. Pull requests build the release profile and the packages only on integration branches and on main, and run the macOS jobs there and when a pull request touches macOS files (`ci.yml`, job `changes`). Release notes live in [docs/releases](releases). Before the tag, refresh the README screenshots in `docs/media` from the release build, taken with a separate profile and no personal data.
+A release is made by pushing a tag `v<version>` that matches the version in `Cargo.toml`. The [release workflow](../.github/workflows/release.yml) builds the net service from [anyplaynet/network](https://github.com/anyplaynet/network) at the commit in `network.ref` and embeds it, then builds the portable exe and the installer (`tools/installer/anyplay-launcher.iss`, Inno Setup), the Linux AppImage, tarball and Flatpak, the Apple silicon macOS app zip, and a licence file for every third-party crate. It publishes all of them with their checksums in `SHA256SUMS.txt`. Started by hand it only builds them and keeps them as workflow artifacts. A pushed tag is published only when the `ci` run of that commit on main has succeeded: the job `gate` checks it next to the builds (it waits for a run that is still going) and `sign` and `release` need it; if a flaky test made it red, re-run the failed jobs of that `ci` run, then the `gate` job. Pull requests build the release profile and the packages only on integration branches and on main, and run the macOS jobs there and when a pull request touches macOS files (`ci.yml`, job `changes`). Release notes live in [docs/releases](releases). Before the tag, refresh the README screenshots in `docs/media` from the release build, taken with a separate profile and no personal data.
 
 ## More
 

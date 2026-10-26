@@ -3,7 +3,7 @@
 Source of truth for the core port of the macOS launcher to Windows. It specifies what the Rust crates `anyps5-core` (no UI) and `anyps5-launcher` (egui app) must do, derived from the code, not from memory.
 
 - Terms are defined in [CONTEXT.md](../CONTEXT.md). This file uses them exactly.
-- Design and look are not covered here; see `docs/DESIGN.md`.
+- Status: written 2026-10-22 as the specification of the first port, and kept current since. Where the code and this file disagree, the code is the truth for behaviour; say so in an issue. Section 11 lists the assumptions about the engine that were checked against real games only in part.
 - Status: specification, written 2026-10-22. Nothing here has been run against a real game: the development machine must not start AnyPS5 binaries. Everything that depends on observing the engine on Windows is listed in section 11 as an assumption to verify.
 
 ## 0. Sources

@@ -1461,7 +1461,7 @@ fn sample_calls(state: &mut anyps5_core::online::Online, look: OnlineLook) {
         OnlineLook::PartyDiscord => {
             if let Some(mut party) = state.social.party.as_ref().cloned() {
                 party.revision += 1;
-                party.discord = Some("https://discord.gg/nSHbHBRdS".into());
+                party.discord = Some("https://discord.gg/9zYqf8fEsh".into());
                 state.social.apply_party(Some(party));
             }
         }

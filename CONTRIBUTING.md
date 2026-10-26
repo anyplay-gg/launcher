@@ -57,14 +57,14 @@ cargo run --release -p anyps5-launcher -- --gallery=home --screenshot=home.png -
 ```
 
 - `--gallery=<scene>` picks the scene. The scenes are listed in the module comment of `crates/anyps5-launcher/src/app/preview.rs`. `components`, `panels` and `themes` show the building blocks.
-- `--screenshot=<file>` writes a PNG and exits. `--size=WxH` sets the window size, `--tr` renders in Turkish and `--pad` shows gamepad buttons in the hint bars.
+- `--screenshot=<file>` writes a PNG and exits. `--size=WxH` sets the window size, `--tr` renders in Turkish, `--de` in German and `--pad` shows gamepad buttons in the hint bars.
 - On Linux without a display, CI runs the release binary in a virtual X server with a software Vulkan driver: `xvfb-run -a target/release/anyplay-launcher --gallery=home --screenshot=home.png` (packages `xvfb mesa-vulkan-drivers libvulkan1`).
 
-For a visible change, attach the screenshots of every scene you changed, before and after, and in Turkish too when text changes. A new state gets its own scene.
+For a visible change, attach the screenshots of every scene you changed, before and after, and in Turkish and German too when text changes. A new state gets its own scene.
 
 ## Texts
 
-Every text a player can read exists in English and Turkish. A new string goes into the strings file of its screen (`crates/anyps5-launcher/src/screens/*_strings.rs`, or `ui/i18n_table.rs` for the shared ones) with both languages. If you do not speak Turkish, write the English text and say so in the pull request; a maintainer will help with the translation.
+Every text a player can read exists in English, Turkish and German. A new string goes into the strings file of its screen (`crates/anyps5-launcher/src/screens/*_strings.rs`, or `ui/i18n_table.rs` for the shared ones) with all three languages. If you do not speak one of them, write the English text and say so in the pull request; a maintainer will help with the translation.
 
 ## Where things are specified
 

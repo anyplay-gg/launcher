@@ -33,8 +33,14 @@ Online play runs in a program of its own, `anyplay-net` from [anyplaynet/network
 
 ## Self-update
 
-At start, in the background, the launcher asks GitHub for the latest release of this repository. If it is newer, the launcher downloads the portable exe and compares it with its line in the release's `SHA256SUMS.txt`. A missing or wrong checksum refuses the update and leaves nothing behind. Windows can rename a running exe but not overwrite it, so the swap moves the running exe to `<name>.old` and puts the new one in its place; if the second step fails, the old one moves back. The next start removes the `.old` file. The swap happens when you close the launcher. It works for the installed exe and for the portable exe in any folder you can write to.
+The launcher asks GitHub for the latest release of this repository at start, then every 6 hours. An update is installed only when the release carries a signed manifest (`latest.json` and `latest.json.sig`) that a key in `data/update-keys.txt` signed (the key "anyplay 2026" since v0.2.0). The manifest has to be unexpired and newer than the running version, and the download has to match its hash and size. If anything is wrong, the update is skipped and the installed launcher stays as it is. The rules, the key ceremony and how a version is retired are in [UPDATES.md](UPDATES.md).
 
-The checksum list comes from the same release as the exe. That guards against a damaged or substituted download, not against a compromised release. The launcher therefore trusts a signed manifest instead ([UPDATES.md](UPDATES.md)). Since v0.2.0 the launcher carries the key "anyplay 2026" in `data/update-keys.txt`, and an update is installed only if it is signed by a key on that list, has not expired, is newer than the version you run, and matches the signed hash and size. If anything is wrong, the update is skipped and the installed launcher stays as it is. Older launchers (up to v0.1.3) check only the checksum file and take v0.2.0 that way once. Releases are not code-signed yet. Self-update exists on Windows only.
+What gets replaced depends on the platform:
 
-More on what is pinned and how to verify a release: [supply-chain.md](supply-chain.md).
+- **Windows:** the running exe is renamed to `<name>.old` and the new one takes its place (Windows can rename a running exe but not overwrite it). If the second step fails, the old one moves back. The swap happens when you close the launcher, or at once with *Restart Now* in Settings, About.
+- **Linux AppImage:** the new image replaces the old one in a single atomic rename.
+- **macOS:** the whole app bundle is exchanged atomically.
+- **Linux tar.gz:** the launcher cannot replace itself. About shows that a new version is out and links to the download.
+- **Flatpak and AUR:** a marker file written by the package says which package manager owns the files. The launcher then never replaces them; About shows the new version and names the package manager that updates it.
+
+Launchers up to v0.1.3 check only the release's `SHA256SUMS.txt` and take v0.2.0 that way once. Releases are not code-signed. More on what is pinned and how to verify a release: [supply-chain.md](supply-chain.md).

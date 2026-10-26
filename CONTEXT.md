@@ -1,6 +1,6 @@
 # AnyPlay Launcher
 
-A launcher for Windows and Linux that finds a player's own PS5 game dumps, unlocks them for AnyPS5 and starts them. This file is the glossary; the specification of the logic is in [docs/PORT.md](docs/PORT.md).
+A launcher for Windows, Linux and macOS that finds a player's own PS5 game dumps, unlocks them for AnyPS5, starts them and connects the player with friends. This file is the glossary; the specification of the logic is in [docs/PORT.md](docs/PORT.md).
 
 ## Language
 

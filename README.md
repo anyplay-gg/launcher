@@ -4,21 +4,38 @@
   <img src="docs/media/home-screen.jpg" width="800" alt="The launcher's home screen: a row of game tiles, the selected game's artwork, its name, a Play button and its details">
 </p>
 
-The home of your games on PC. The launcher finds the games you dumped from your own console, unlocks them for [AnyPS5](https://github.com/boykopovar/AnyPS5) and starts them from a console-style home screen. It also connects you with friends for parties, calls and joining each other's games. For Windows, Linux and macOS.
+The home of your games on PC. The launcher finds the games you dumped from your own console, unlocks them for [AnyPS5](https://github.com/anyplaynet/AnyPS5) and starts them from a console-style home screen. It also connects you with friends for parties, voice and sharing your captures. It runs on Windows, Linux and macOS (Apple silicon), in English, Turkish and German.
 
-## Get it
+The latest release is [0.3.2](docs/releases/v0.3.2.md). [Download](#get-it) · [Discord](https://discord.gg/9zYqf8fEsh) · [anyplaynet.com](https://anyplaynet.com) · [Compatibility list](https://anyplaynet.com/compatibility)
 
-Download the [latest release](https://github.com/anyplaynet/launcher/releases/latest).
+## What it does
 
-- **Windows 10 or 11:** `AnyPlay-Launcher-<version>-Setup.exe` (installer, no administrator rights) or `-x64.exe` (one file).
-- **macOS, Apple silicon:** `AnyPlay-Launcher-<version>-macos-arm64.zip`. Unzip and move the app to Applications. If macOS says the developer cannot be verified, open **System Settings → Privacy & Security → Open Anyway**. It may ask again after an update.
-- **Linux, 64-bit:** `AnyPlay-Launcher-<version>-x86_64.AppImage` or the `.tar.gz`.
+**Your library**
+- Finds your dumps in one folder and reads title, artwork and music from them. A dump is never changed.
+- Shows how each game runs for other players (runs well, runs with issues, doesn't start), with sort, filter and search.
+- Unlocks a dump into a copy AnyPS5 can run, starts it, and says why it stopped if it fails.
+- Shows the space each unlocked copy uses and removes it; saves are backed up first.
+- A Game Hub per game: trophies, play time, captures, friends playing and how it runs.
 
-You need your own decrypted game dumps. On first start the launcher asks for your games folder and downloads the AnyPS5 toolkit. Requirements, SmartScreen, checksums and data folders: [docs/INSTALL.md](docs/INSTALL.md).
+**Play together**
+- Friends with presence, messages, parties with voice and push to talk (also while a game is in front), and a Notification Center.
+- Find Players for a game, and join codes for people who are not your friends.
+- Captures and clips, which you can send to friends.
+- Share your screen with a party, or broadcast to Twitch, YouTube or an RTMP server (Windows).
+
+**Make it yours**
+- Controller Center: battery, button tests, vibration, dead zones, and remapping the launcher's buttons.
+- Your phone as a controller, through [LudusCtrl](https://github.com/parl0v/ludusctrl).
+- Per-game settings and controls, with recommended settings you apply in one click.
+- Themes, larger text, high contrast, sounds and volumes.
+
+**Everywhere you play**
+- Steam Deck Gaming Mode, and Add to Steam on Windows, Linux and the Mac.
+- Self-updating and signed, except where a package manager owns the files.
+
+The online area needs an AnyPlay account on [anyplaynet.com](https://anyplaynet.com). No game plays together over the internet yet; that is the next big step of the [network](https://github.com/anyplaynet/network). What works and what does not: [docs/ONLINE.md](docs/ONLINE.md).
 
 ## Screens
-
-Screenshots of the launcher, taken from a release build with a real library.
 
 <table>
   <tr>
@@ -31,23 +48,25 @@ Screenshots of the launcher, taken from a release build with a real library.
   </tr>
 </table>
 
-## What's inside
+## Get it
 
-- **Library:** finds dumps in one folder, reads title, artwork and media from them, and never changes a dump.
-- **Unlock and play:** turns a dump into a copy AnyPS5 can run, starts it, and tells you why it stopped if it fails.
-- **Controls:** reads a game's controls from its own files, with ready-made keyboard and mouse layouts and tuning.
-- **Trophies, saves, playtime:** trophies pop up while you play, saves are backed up before anything risky.
-- **Per-game settings:** window, sync, overlay, language and shader cache, plus recommended settings you apply with one click.
-- **Online:** friends, parties with voice, calls, profiles, a feed and join codes, with an AnyPlay account. See [docs/ONLINE.md](docs/ONLINE.md).
-- **Updates:** signed self-update on Windows, Linux AppImage and the Apple silicon Mac app.
+Download the [latest release](https://github.com/anyplaynet/launcher/releases/latest).
 
-## Status
+| System | File |
+|---|---|
+| Windows 10 or 11 | `AnyPlay-Launcher-<version>-Setup.exe` (installer, no administrator rights) or `-x64.exe` (one file) |
+| Linux, 64-bit | `AnyPlay-Launcher-<version>-x86_64.AppImage`, `-linux-x86_64.tar.gz` or `-x86_64.flatpak` |
+| macOS 11 or newer, Apple silicon | `AnyPlay-Launcher-<version>-macos-arm64.zip` |
 
-Released. The library, unlocking, controls and the online area work. No real game plays online yet: the bridge that connects a game to the network is still under review in AnyPS5. Linux has no self-update yet, and starting a game with the bridge is untested there. What is missing is listed in the [known gaps](https://github.com/anyplaynet/network/blob/main/docs/gaps.md).
+You need your own decrypted game dumps. On first start the launcher asks for your games folder and downloads the AnyPS5 toolkit. Requirements, SmartScreen and Gatekeeper prompts, Flatpak, checksums and data folders: [docs/INSTALL.md](docs/INSTALL.md).
+
+### Updates
+
+The launcher checks for a new release when it starts and every 6 hours after. On Windows, in the AppImage and in the Mac app it downloads the update, checks the signature, hash and size, and installs it when you close the launcher. Turn this off in Settings, *Check for Updates*. A Flatpak (and soon an AUR package) leaves updates to the package manager and only tells you when a new version is out. The tar.gz does not update itself. How the signing works: [docs/UPDATES.md](docs/UPDATES.md).
 
 ## Build and contribute
 
-You need Rust 1.95 and a checkout of [anyplaynet/network](https://github.com/anyplaynet/network) at the commit in `network.ref`:
+Issues and pull requests are welcome; start with [CONTRIBUTING.md](CONTRIBUTING.md). You need Rust 1.95 and a checkout of [anyplaynet/network](https://github.com/anyplaynet/network) at the commit in `network.ref`:
 
 ```sh
 cargo fmt --all -- --check
@@ -55,16 +74,26 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-The details for each system and for releases are in [docs/BUILDING.md](docs/BUILDING.md); how the code fits together is in [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md). Words are defined in [CONTEXT.md](CONTEXT.md). Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
+| Read | For |
+|---|---|
+| [docs/BUILDING.md](docs/BUILDING.md) | Building on each system, and releases |
+| [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md) | How the crates fit together |
+| [docs/PORT.md](docs/PORT.md) | The logic step by step |
+| [docs/DESIGN.md](docs/DESIGN.md) | Every screen, size, colour and animation |
+| [CONTEXT.md](CONTEXT.md) | The words the code and docs use |
+| [docs/releases](docs/releases) | Release notes |
 
 ## Community
 
-Questions, bug reports and other players: the [AnyPlay Discord](https://discord.gg/9zYqf8fEsh). More about AnyPlay at [anyplaynet.com](https://anyplaynet.com).
+Questions, bug reports and other players: the [AnyPlay Discord](https://discord.gg/9zYqf8fEsh). The Code of Conduct and security policy are in the [organisation's repository](https://github.com/anyplaynet/.github).
 
-## Credits, license and ground rules
+## Credits and licence
 
-GPL-2.0, see [LICENSE](LICENSE). The launcher began as a port of the macOS launcher by [utkuhalis](https://github.com/utkuhalis) in [AnyPS5-ARM](https://github.com/utkuhalis/AnyPS5-ARM) (GPL-2.0). Since then it has its own implementation, Windows and Linux integration and the online area. AnyPS5 is by [boykopovar](https://github.com/boykopovar). LudusCtrl protocol and app by Josip Parlov (@parl0v), see [parl0v/ludusctrl](https://github.com/parl0v/ludusctrl). Bundled fonts and icons are listed in [docs/supply-chain.md](docs/supply-chain.md#fonts-and-icons).
+The launcher is GPL-2.0-only, see [LICENSE](LICENSE).
 
-Ported files: the Rust files that began as ports of Swift files in AnyPS5-ARM name their source in their first line. They are `unwrap`, `library`, `unlock`, `toolkit`, `settings`, `controls`, `trophies`, `diagnosis` and `discord` in `anyps5-core`, and `app/model`, `ui/i18n`, `ui/i18n_table` and `ui/background` in `anyps5-launcher`. The mapping is in [docs/PORT.md](docs/PORT.md).
+- It began as a port of the macOS launcher by [utkuhalis](https://github.com/utkuhalis) in [AnyPS5-ARM](https://github.com/utkuhalis/AnyPS5-ARM) (GPL-2.0). Since then it has its own implementation, Windows, Linux and online parts. The Rust files that began as ports name their Swift source in their first line; the mapping is in [docs/PORT.md](docs/PORT.md).
+- AnyPS5, the compatibility layer the launcher runs games on, is by [boykopovar](https://github.com/boykopovar/AnyPS5). [anyplaynet/AnyPS5](https://github.com/anyplaynet/AnyPS5) is AnyPlay's fork that carries the network bridge.
+- The LudusCtrl protocol and phone app are by Josip Parlov ([@parl0v](https://github.com/parl0v)), see [parl0v/ludusctrl](https://github.com/parl0v/ludusctrl).
+- Bundled fonts and icons are listed in [docs/supply-chain.md](docs/supply-chain.md#fonts-and-icons).
 
-AnyPlay is a community project, not affiliated with the AnyPS5 maintainers or any platform holder. Only games you own: no game files, keys or firmware are included here, and none will be. AnyPS5 is a compatibility layer, not an emulator.
+AnyPlay is a community project, not affiliated with the AnyPS5 maintainers or any platform holder. It works with games you own: no game files, keys or firmware are included here, and none will be. AnyPS5 is a compatibility layer, not an emulator.

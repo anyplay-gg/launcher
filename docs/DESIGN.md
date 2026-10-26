@@ -1,6 +1,6 @@
 # AnyPlay Launcher: UI design specification
 
-Source of truth for the UI of the Windows port. It specifies the macOS launcher of
+Source of truth for the launcher's interface on Windows, Linux and macOS. It began as a specification of the macOS launcher of
 [utkuhalis/AnyPS5-ARM](https://github.com/utkuhalis/AnyPS5-ARM) (GPL-2.0, commit `cb20fd80c9f7a044c62d51da3cdd0475100b5554`,
 `tools/macos/launcher/Sources/AnyPS5`) so that it can be rebuilt pixel-close without reading the Swift source.
 
@@ -830,7 +830,7 @@ works on; the rest follow the global choice (Stable, Pinned, Local Build, 3.7).
 
 ### 3.9 One control family and one focus (2026-10-25, replaces the white focus of 1.2, 1.4 and 5.x)
 
-The audit is `docs/ui-audit-2026-10-25.md`. The owner's findings were: the focused profile pill turns white and
+The audit that led here (2026-10-25, since removed; git history keeps it) listed every interactive element type. The owner's findings were: the focused profile pill turns white and
 covers its neighbours, the buttons are three families, hover is missing, the clock looks odd. The rules:
 
 **Controls are capsules, containers are rounded rectangles.** Every button, pill and icon button is a capsule (a glyph alone

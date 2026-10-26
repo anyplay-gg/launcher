@@ -26,7 +26,16 @@ Releases up to v0.1.3 were made under the old name and call their files `AnyPS5-
 
 - `AnyPlay-Launcher-<version>-linux-x86_64.tar.gz` holds the executable, a `.desktop` file and the icon. Unpack it anywhere; copy the `.desktop` file to `~/.local/share/applications` and the icon to `~/.local/share/icons` for a menu entry. Coming from AnyPS5 Launcher: replace `anyps5-launcher.desktop` and `anyps5-launcher.png` with the new files and pin the launcher again.
 
-The Linux build does not update itself yet: download a new version from the releases page. Starting a game with the network bridge is untested on Linux.
+- `AnyPlay-Launcher-<version>-x86_64.flatpak`: a Flatpak bundle (app ID `net.anyplay.Launcher`). Install and start it with:
+
+  ```sh
+  flatpak install --user AnyPlay-Launcher-*-x86_64.flatpak
+  flatpak run net.anyplay.Launcher
+  ```
+
+  It needs the Freedesktop runtime 26.08 from Flathub. The permissions it asks for, and why, are in [packaging/flatpak/README.md](../packaging/flatpak/README.md). Flatpak updates the launcher; see [Updates](#updates).
+
+The AppImage updates itself. The tar.gz does not: download a new version from the releases page. Starting a game with the network bridge is untested on Linux.
 
 The engine's libraries can ask for a newer glibc than the launcher does. When your system is older, Settings, Toolkit says which one they need and names releases that have it, and the line under Play says so too. Games may not start until you move to such a release. The oldest glibc each release ships: Ubuntu 22.04 2.35, Debian 12 2.36, Fedora 39 2.38, Ubuntu 24.04 2.39, Debian 13 2.41.
 
@@ -54,14 +63,18 @@ The Mac toolkit currently comes from AnyPS5-ARM. Playing a game through AnyPlay'
 
 ## First start
 
-1. Choose a language and a look.
+1. Choose a language (English, Turkish or German; the launcher picks German or Turkish by itself when your system uses it) and a look.
 2. Pick your games folder, the one that holds your decrypted dumps. The launcher lists what it finds there.
 3. The launcher downloads the AnyPS5 toolkit and tells you when it is ready. Without internet, open Settings later and choose *Download the Toolkit*.
 4. Select a game, unlock it and press Play.
 
 ## Updates
 
-On Windows, in a Linux AppImage and in the Apple silicon Mac app, the launcher looks for a new release when it starts, downloads and checks it in the background, and installs it when you close the launcher (or at once with *Restart Now* in Settings, About). Turn *Check for Updates* off in Settings to stop that. How updates are signed and checked is in [How it works](HOW-IT-WORKS.md#self-update).
+On Windows, in a Linux AppImage and in the Apple silicon Mac app, the launcher looks for a new release when it starts and every 6 hours after, downloads and checks it in the background, and installs it when you close the launcher (or at once with *Restart Now* in Settings, About). Updates are signed, and the launcher installs one only if the signature, the hash and the size match. Turn *Check for Updates* off in Settings to stop that.
+
+A launcher from the tar.gz cannot replace itself. A launcher installed by a package manager (Flatpak, and soon the AUR) leaves its files to that package manager. In both cases About shows when a new version is out, and for a package it names the package manager that installs it.
+
+How updates are signed and checked: [How it works](HOW-IT-WORKS.md#self-update) and [UPDATES.md](UPDATES.md).
 
 ## Where your data lives
 

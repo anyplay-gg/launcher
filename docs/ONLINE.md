@@ -8,7 +8,9 @@ Select your profile at the top of the home screen to open **Online**.
 
 - **Account.** Sign in or create an account: both open the cloud's page in your browser, where you can use a passkey or an e-mail code, and the launcher takes you in when you are done.
 - **Friends.** Add friends by their name, see what they play, accept requests and invitations, and join a friend's game when it is open to friends.
-- **Parties and calls.** Start a party, invite friends, send messages and talk with party voice. Call an online friend from their page. Voice runs on AnyPlay or on Discord; on Discord the launcher never opens your microphone. On Windows you can share your screen with the party.
+- **Parties and calls.** Start a party, invite friends, send messages and talk with party voice. Call an online friend from their page. Voice runs on AnyPlay or on Discord; on Discord the launcher never opens your microphone. On Windows you can share your screen with the party or broadcast to Twitch, YouTube or an RTMP server. Push to talk works while a game is in front.
+- **Find Players and captures.** Find Players, in a game's options, lists short posts from players who look for a group for that game, and lets you post your own for an hour. You can send a capture to a friend from the Captures page.
+- **Notifications.** The bell in the top bar collects friend requests, invitations, messages, trophies and updates in one list.
 - **Profile and feed.** Your profile shows your picture, a line about you, up to three favourite games, trophies, most played and linked accounts. The feed lists what you and your friends did lately, and you answer with Nice, GG, Wow or Same. There are no comments.
 - **Join codes and Discord.** A join code lets someone who is not your friend ask to join your game. With *Show Game on Discord* on, Discord friends get a **Join on AnyPlay** button; it only asks you and never joins by itself.
 - **Trophies.** They go to the cloud as records: number, grade and time of each, while names and pictures stay on your PC. *Who Sees Your Trophies* on the Account page decides who sees them (friends by default).
@@ -20,7 +22,7 @@ The launcher, the net service and the cloud are tested together, including two n
 
 ## What does not work yet
 
-- No real game plays online yet. The bridge that connects a game to the network lives in an AnyPS5 build, and it is still under review. Until a toolkit carries it, games start as before, offline. The [known gaps](https://github.com/anyplaynet/network/blob/main/docs/gaps.md) list what is missing.
+- No game plays together over the internet yet. The bridge that connects a game to the network lives in [AnyPlay's AnyPS5 fork](https://github.com/anyplaynet/AnyPS5) and is not finished: sign-in, identity, NAT and the permission check are merged there, and the first game played together is still open. Until a toolkit carries the bridge, games start as before, offline. The [known gaps](https://github.com/anyplaynet/network/blob/main/docs/gaps.md) list what is missing.
 - Starting a game with the bridge is untested on Linux.
 
 ## Use another cloud
@@ -29,7 +31,7 @@ Under **Online → Cloud** you can use a cloud of your own or of friends instead
 
 ## What to expect later
 
-A game plays online only with a build that carries the bridge: choose **Settings → Toolkit → Channel → AnyPlay Engine**, which downloads the nightly build of [anyplaynet/AnyPS5](https://github.com/anyplaynet/AnyPS5), checks it against the release's checksum list and offers a newer build when there is one. It changes often and may break games; go back to Stable at any time. A game then plays online only when its online part uses the platform's own services. A game whose online play runs on a publisher's live servers stays offline: the network never stands in for a service that still runs. The [network's design](https://github.com/anyplaynet/network/blob/main/docs/DESIGN.md) has the details and the roadmap.
+A game can use the bridge only with a build that carries it: choose **Settings → Toolkit → Channel → AnyPlay Engine**, which downloads the nightly build of [anyplaynet/AnyPS5](https://github.com/anyplaynet/AnyPS5), checks it against the release's checksum list and offers a newer build when there is one. It changes often and may break games; go back to Stable at any time. A game then plays online only when its online part uses the platform's own services. A game whose online play runs on a publisher's live servers stays offline: the network never stands in for a service that still runs. The [network's design](https://github.com/anyplaynet/network/blob/main/docs/DESIGN.md) has the details and the roadmap.
 
 ## Privacy
 
