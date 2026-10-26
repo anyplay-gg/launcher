@@ -198,6 +198,8 @@ mod imp {
         menu: Option<Retained<MenuTarget>>,
         reduce_transparency: bool,
         polled: Option<Instant>,
+        /// What the log last said: window dressed, system asks for less transparency, glass on.
+        logged: Option<(bool, bool, bool)>,
     }
 
     /// The window and the blur view behind its content.
@@ -233,6 +235,17 @@ mod imp {
             let glass = self.dress.is_some() && glass_active(want, self.reduce_transparency);
             if let Some(dress) = self.dress.as_mut() {
                 dress.apply(glass);
+            }
+            let state = (self.dress.is_some(), self.reduce_transparency, glass);
+            if self.logged != Some(state) {
+                self.logged = Some(state);
+                tracing::info!(
+                    "mac style: dressed {}, reduce transparency {}, glass {} (wanted {:?})",
+                    state.0,
+                    state.1,
+                    state.2,
+                    want
+                );
             }
             // The setting is read again soon, so a change in System Settings shows without input.
             if want.glass_setting && !want.game_running && !want.fullscreen {

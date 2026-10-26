@@ -116,6 +116,13 @@ jobs:
             done
           done
           ls -l shots
+      - name: Launcher log
+        if: always()
+        run: |
+          for f in "$HOME"/Library/Logs/AnyPS5/launcher.log "$HOME"/Library/Application Support/AnyPS5/Logs/launcher.log; do
+            [ -f "$f" ] && { echo "== $f"; grep -h "mac style" "$f" | tail -20; }
+          done
+          find "$HOME" -name launcher.log -not -path "*/node_modules/*" 2>/dev/null | head
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mac-style-${{ matrix.os }}
