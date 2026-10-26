@@ -729,9 +729,7 @@ impl Key {
             Key::OpenLog => "Open Log",
             Key::Uninstall => "Remove Installation",
             Key::ClearShaderCache => "Clear Shader Cache",
-            Key::UninstallConfirm => {
-                "Remove the installation? Your game files stay; the game shows as locked again."
-            }
+            Key::UninstallConfirm => "Your game files stay and the game shows as locked again.",
             Key::UninstallDone => "Installation removed",
             Key::CacheCleared => "Shader cache cleared",
             Key::Appearance => "Appearance",
@@ -974,9 +972,7 @@ impl Key {
             Key::OpenLog => "Günlüğü Aç",
             Key::Uninstall => "Kurulumu Kaldır",
             Key::ClearShaderCache => "Shader Önbelleğini Temizle",
-            Key::UninstallConfirm => {
-                "Kurulum kaldırılsın mı? Oyun dosyaların silinmez, oyun tekrar kilitli görünür."
-            }
+            Key::UninstallConfirm => "Oyun dosyaların silinmez, oyun tekrar kilitli görünür.",
             Key::UninstallDone => "Kurulum kaldırıldı",
             Key::CacheCleared => "Shader önbelleği temizlendi",
             Key::Appearance => "Görünüm",

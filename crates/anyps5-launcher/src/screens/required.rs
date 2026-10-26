@@ -31,6 +31,10 @@ const COLUMN: f32 = 440.0;
 const NOTE_LINES: usize = 3;
 /// Between two bordered controls (docs/DESIGN.md 3.9).
 const BUTTON_GAP: f32 = 12.0;
+/// The progress line: its width (the buttons'), its height, and the gap above it.
+const BUTTON_WIDTH: f32 = 320.0;
+const BAR_HEIGHT: f32 = 4.0;
+const BAR_GAP: f32 = 14.0;
 
 /// Why the screen is up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -383,14 +387,15 @@ fn draw(
     let button_h = ControlSize::Large.height();
     let buttons_h = button_h * 2.0 + BUTTON_GAP;
     // The bar's room is kept in every state, so the buttons do not move when the state changes.
-    let status_h = status.size().y + 14.0 + 4.0;
+    let status_h = status.size().y + BAR_GAP + BAR_HEIGHT;
     let head_h = ICON + 24.0 + title.size().y + 12.0 + reason.size().y;
     let core_h = head_h + 28.0 + status_h + 32.0 + buttons_h;
 
     // The notes are a nice thing to have, not a reason to push the buttons off a short window:
     // they are left out when they do not fit.
     let note_style = ty::NOTE;
-    let notes_w = width.min(340.0);
+    // The notes share the buttons' edges.
+    let notes_w = width.min(BUTTON_WIDTH);
     let note_galleys: Vec<_> = data
         .notes
         .iter()
@@ -454,16 +459,19 @@ fn draw(
     .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Status, true, &status_text));
     painter.galley(pos2(cx, y), status.clone(), color::text_detail());
     y += status.size().y;
+    // The bar's room is taken in every state, with or without the bar, so the buttons stay where
+    // they are while the update goes from downloading to ready.
+    y += BAR_GAP;
     if let Some(fraction) = progress {
-        y += 14.0;
-        let bar = Rect::from_center_size(pos2(cx, y + 2.0), vec2(width.min(320.0), 4.0));
+        let bar =
+            Rect::from_center_size(pos2(cx, y + 2.0), vec2(width.min(BUTTON_WIDTH), BAR_HEIGHT));
         let mut child = ui.new_child(UiBuilder::new().max_rect(bar));
         ProgressLine::new(fraction, white(0.9))
             .width(bar.width())
             .label(status_text.clone())
             .show(&mut child);
-        y += 4.0;
     }
+    y += BAR_HEIGHT;
     y += 32.0;
 
     // The two buttons, one under the other, the primary above.
@@ -478,7 +486,7 @@ fn draw(
         Primary::Download => Icon::DOWNLOAD_SIMPLE,
     };
     // One width for both, wide enough for the longest label ("Download from GitHub").
-    let button_w = 320.0f32.min(width);
+    let button_w = BUTTON_WIDTH.min(width);
     let column = Rect::from_min_size(pos2(cx - button_w * 0.5, y), vec2(button_w, buttons_h));
     let mut buttons = ui.new_child(
         UiBuilder::new()
