@@ -337,7 +337,7 @@ impl LudusServer {
     }
 
     fn web(&self) -> std::sync::MutexGuard<'_, Option<web::Bridge>> {
-        self.web.lock().expect("ludusctrl browser")
+        self.web.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     pub fn stop(&self) {
@@ -360,8 +360,10 @@ impl Drop for LudusServer {
 }
 
 impl Shared {
+    /// The state, also after a panic of a thread that held it: the caller (the launcher's UI
+    /// thread on `status`) degrades instead of panicking too.
     fn core(&self) -> std::sync::MutexGuard<'_, Core> {
-        self.core.lock().expect("ludusctrl state")
+        self.core.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     fn publish_status(&self, core: &mut Core) {
@@ -387,7 +389,7 @@ impl Shared {
                         device: self
                             .browsers
                             .lock()
-                            .expect("browser devices")
+                            .unwrap_or_else(|e| e.into_inner())
                             .get(&connection)
                             .cloned(),
                     },

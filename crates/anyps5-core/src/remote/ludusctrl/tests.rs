@@ -446,3 +446,17 @@ fn the_test_phone_finds_the_server_conformant() {
     assert!(report.skipped.is_empty(), "skipped: {:?}", report.skipped);
     assert_eq!(report.passed.len(), 32, "{:?}", report.passed);
 }
+
+#[test]
+fn a_panic_that_held_the_state_does_not_take_the_caller_down() {
+    let rig = rig();
+    let shared = rig.server.shared.clone();
+    let panicked = std::thread::spawn(move || {
+        let _core = shared.core.lock().unwrap();
+        panic!("a receive thread that panics while it holds the state");
+    })
+    .join();
+    assert!(panicked.is_err() && rig.server.shared.core.is_poisoned());
+    let _ = rig.server.status();
+    assert!(rig.server.paired().is_empty());
+}

@@ -141,7 +141,7 @@ pub(super) struct Context {
 
 impl Context {
     fn token(&self) -> (String, u64) {
-        self.token.lock().expect("browser token").clone()
+        self.token.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     fn stopping(&self) -> bool {
@@ -149,12 +149,12 @@ impl Context {
     }
 
     fn devices(&self) -> MutexGuard<'_, HashMap<u64, String>> {
-        self.devices.lock().expect("browser devices")
+        self.devices.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// A pad switch at `now` is allowed (and counted) when the last one is 2 s old.
     fn may_switch(&self, now: Instant) -> bool {
-        let mut last = self.last_switch.lock().expect("pad switch");
+        let mut last = self.last_switch.lock().unwrap_or_else(|e| e.into_inner());
         if last.is_some_and(|at| now.saturating_duration_since(at) < session::SWITCH_EVERY) {
             return false;
         }
@@ -250,7 +250,7 @@ impl Bridge {
     /// A new token: every open page is closed with `denied`.
     pub fn new_link(&mut self) -> BrowserInfo {
         {
-            let mut token = self.ctx.token.lock().expect("browser token");
+            let mut token = self.ctx.token.lock().unwrap_or_else(|e| e.into_inner());
             *token = (new_token(), token.1 + 1);
         }
         self.info.urls = self.urls(&addresses(self.bind));
