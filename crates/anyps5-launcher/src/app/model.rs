@@ -1262,6 +1262,7 @@ impl Model {
             HomeIntent::OpenTrophies => self.open(Overlay::Trophies),
             HomeIntent::OpenGameSettings => self.open(Overlay::GameSettings),
             HomeIntent::OpenLibrary => self.open(Overlay::Library),
+            HomeIntent::OpenCaptures => self.open(Overlay::Captures),
             HomeIntent::OpenSettings => self.open(Overlay::Settings),
             // The online panel opens on the friends list once signed in, else on sign-in.
             HomeIntent::OpenFriends => self.open(Overlay::Friends),

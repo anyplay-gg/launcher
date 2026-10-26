@@ -332,6 +332,22 @@ pub fn reveal(path: &Path) -> io::Result<()> {
     }
 }
 
+/// Opens a file with the program the system has for it, as a double click would.
+pub fn open_file(path: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        shell_open(&path.to_string_lossy())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        desktop_open(&[path.as_os_str()])
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        xdg_open(path)
+    }
+}
+
 /// Opens a web address in the default browser.
 pub fn open_url(url: &str) -> io::Result<()> {
     #[cfg(windows)]

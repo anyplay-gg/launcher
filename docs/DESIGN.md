@@ -668,7 +668,7 @@ The launcher keeps the port's structure but trims what read as noise next to the
 - **Hint bar.** Follows the device in use (`input::device`): keycaps `Enter`, `Esc`, `O` on a
   keyboard, ✕ ○ △ in circles on a gamepad. No combined labels, no Move hint. 26 dp keys, 15 dp
   labels, 28 dp between hints.
-- **Top bar.** Outline icons at 20 dp (`squares-four` for the library, `users` for friends, `gear-six`
+- **Top bar.** Outline icons at 20 dp (`squares-four` for the library, `images` for the captures, `users` for friends, `gear-six`
   for settings), 12 dp between the buttons of the strip, 32 dp between the groups (the strip, the
   profile, the clock). The profile and the friends button are pills on the icon buttons' own
   surface, hover and focus, so the whole corner reads as one family of controls. The avatar's
@@ -830,7 +830,7 @@ makes a circle); rows, cards, cells and tiles keep their radii (12, 16, 20, 12 %
 | Size | Height | Text | Glyph | Used for |
 |---|---|---|---|---|
 | Large | 54 | 19 semibold, 30 padding | 17 (22 alone) | the action row of the game page, dialogs |
-| Medium | 44 | 16 semibold, 20 padding | 18 (20 alone) | the top bar: library, friends, settings, profile |
+| Medium | 44 | 16 semibold, 20 padding | 18 (20 alone) | the top bar: library, captures, friends, settings, profile; the chips and actions of the Captures area |
 | Small | 32 | 14 medium, 14 padding | 14 | an answer inside a line of text ("How did it run?") |
 
 Neighbouring controls are always 12 apart (`size::CONTROL_GAP`), in the top bar and the action row alike. The profile pill is a
@@ -1057,7 +1057,7 @@ inset by `tile * 0.035`, anchored bottom-trailing. Installing line: height `max(
 Vertical stack, spacing 0: **TopBar**, **TileRow** (or **EmptyLibrary**), flexible space, **HeroInfo**, **HintBar**.
 
 **Top bar** (padding h 64, top 34): left "Games" (24 semibold), a small spinner while scanning; right-aligned, left to right:
-library button (glyph: 3x3 grid), friends button (glyph: two people; see below), settings button (glyph: gear), 12 dp apart; then 32 dp
+library button (glyph: 3x3 grid), captures button (glyph: two pictures), friends button (glyph: two people; see below), settings button (glyph: gear), 12 dp apart; then 32 dp
 on, the profile (12 dp, the same gap), then 28 dp on, the clock (HH:mm, local time, 17 medium white 0.78, colon fixed; 3.9). Icon buttons: 44
 circle, a secondary control of the family in 3.9. The profile and the friends button are pills of the same
 height on the same surface, hover and focus (3.9: a ring and a lighter fill, never white). Everything sits on
@@ -1728,7 +1728,7 @@ function is the state machine and carries the tests. The UI takes two flags once
 and opens or closes the panel.
 
 **The quick panel** is a side panel (`Overlay::InGame`, `screens::ingame`) in the family of 3.9 and 5.9: the game's name, the line
-"The game keeps running behind the launcher.", and the rows *Back to Game* (the focused row on open), *Trophies*, *Game
+"The game keeps running behind the launcher.", and the rows *Back to Game* (the focused row on open), *Trophies*, *Captures*, *Game
 Settings* (the game's own sheet), *Friends and Party* (only when signed in) and *Close Game* (destructive). *Close Game* opens the
 question `Overlay::ConfirmCloseGame` on *Keep Playing*, so Enter never ends a game. The panel selects the running game first, so
 trophies and settings are that game's. Back on the panel, a click beside it and *Back to Game* all return to the game. Back on the
@@ -2501,6 +2501,23 @@ Players who live in Steam (Big Picture, the Steam Deck) can put AnyPlay there as
 - **Gallery.** `--gallery=behavior-steam` shows the two rows.
 
 ---
+
+### 9.10 Captures
+
+Screenshots and clips have a place of their own: a full-screen gallery, like a console's. The module is `anyps5_core::captures` (reading the folder: the list, the owner of a file, the length of a clip, delete); the screen is `screens/captures.rs` (layout in `captures/layout.rs`, drawing in `captures/paint.rs`); the data and the pictures are `app/captures.rs` and `app/captures/images.rs`; the glue is `app/panels/captures.rs`. The overlay is `Overlay::Captures`, a full-screen panel with the library's glass.
+
+- **Reached from.** The captures button in the top bar (`images`, between the library and friends; `HomeIntent::OpenCaptures`) and the row **Captures** in the quick panel the Home button opens in front of a running game. Back leaves, to where it was opened from.
+- **Where the files are.** The screenshots folder (Settings > Advanced; `Pictures/AnyPS5` by default), top level only; links are not followed. A screenshot is `<TITLEID>-<yyyymmdd>-<hhmmss>[-<n>].png` (the engine's), a clip `<game name> <yyyy-mm-dd> <hh-mm-ss>[ (<n>)].mp4` (9.8). `.png`, `.jpg`, `.jpeg` and `.mp4` of any other name count too, as captures of no known game. The folder is read when the area opens, on a thread of its own, and again on **Try Again** or when the folder in the settings changes.
+- **Grouped by game.** Each group has the game's own icon and name from the library; a screenshot is matched by the title ID in its name, a clip by the game name in its name (the same safe-file-name rule the recorder uses). A game the library does not know is a group under the name the file gives it, files of no game are **Other Captures**. Groups are ordered by their newest capture, captures inside a group newest first. Nothing in this is specific to one title.
+- **The grid.** 16:9 tiles that fill the width (as many as fit at about 300 dp, at least two), 20 dp between them, the time under each (`14:32` today, `Oct 25, 14:32` before). A clip carries a play disc and its length in the corner. The first row of a group has the group's header above it. Filters **All**, **Screenshots** and **Clips** are chips under the title (the chosen one is the filled button); select on a chip chooses it.
+- **Focus.** One 2D grid across the groups: left and right step one place and cross from a group to the next, up and down keep the column (into a shorter row the last tile), up from the first row reaches the chips, down from the chips the first tile. Every step plays `move`, an end `bump`, opening `open`, leaving `close`. Tab walks like the library. A click on a tile opens it.
+- **One capture.** A screenshot fills the space between the title and the buttons (the small picture shows at once and the big one, at most 2560 px on the longer side, replaces it). A clip shows its picture and its length, and plays in the system's player (**Open in Player**); the launcher has no video decoder. The picture of a clip is the system's own thumbnail (Windows: the shell's thumbnail of the file, asked on a worker thread; Linux: none), and when there is none the tile is plain with the play disc. Left and right step through the captures in the order of the grid; down reaches the buttons: **Open in Player** (clips, the one filled button) or **Copy Image** (screenshots, to the clipboard), **Show in Folder** (Windows and macOS select the file, Linux opens the folder) and **Delete**. Select on a clip's picture plays it; on a screenshot it moves to the buttons. Back returns to the grid on the capture last seen.
+- **Delete** asks first, with the file's name in the question, and opens on **Cancel**: "Delete this screenshot?" / "Delete this clip?", "<name> is removed from your PC. This cannot be undone.", **Cancel** and **Delete Screenshot** / **Delete Clip**. Back and a click beside the card are Cancel. The file is removed for good (no recycle bin) and only if its name is one of a capture's; the view stays at the place and shows the next capture, or the grid when it was the last.
+- **States.** *Loading* (a spinner and the words), *empty* ("No captures yet", how to take a screenshot, F12, and on Windows how to turn Clips on, with **Open Clips Settings**), a filter that hides everything ("No screenshots yet" / "No clips yet", **Show All Captures**), *folder missing* (the folder's path, **Open Folder Settings**) and *unreadable* (**Try Again**). Each has the chips above it and at most one button.
+- **Thousands of files.** Only the rows on screen and one more are laid out and drawn; the scroll follows the focus as in the library. Pictures are decoded by three workers off the interface thread; what a frame asks for is the queue (what was scrolled past leaves it); the texture cache holds at most 160 MiB and gives up the ones drawn longest ago; a file that does not decode is asked for once and shows as a plain tile; a picture of more than 120 million pixels is not opened. Closing the area frees the textures.
+- **Never.** Nothing is uploaded or shared, nothing is moved or edited, no game dump is touched; the only write is the delete the player confirmed.
+- **Gallery.** `--gallery=captures-empty|captures-few|captures-many|captures-clips|captures-screenshot|captures-clip|captures-clip-plain|captures-confirm|captures-missing|captures-loading`. All names, times and pictures are invented.
+- **Not yet.** Video playback inside the launcher, a picture for a clip on Linux, a recycle bin, sharing.
 
 ## 10. Asset list
 
