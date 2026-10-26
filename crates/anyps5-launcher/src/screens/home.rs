@@ -27,8 +27,8 @@ use crate::screens::{
 use crate::ui::anim::{AnimExt, Motion, lerp};
 use crate::ui::chrome::{self, TileImage, TileOverlay, TileStyle};
 use crate::ui::components::{
-    self as components, ConsoleButton, ControlSize, IconButton, IndeterminateLine, ProgressLine,
-    Variant, hint_bar, hint_bar_size,
+    self as components, ConsoleButton, ControlSize, HintSet, IconButton, IndeterminateLine,
+    ProgressLine, Variant, hint_bar_set, hint_bar_set_size, hint_bar_size,
 };
 use crate::ui::focus::HomeFocus;
 use crate::ui::i18n::{Arg, Key, Language, byte_text, substitute};
@@ -97,8 +97,12 @@ pub fn show(ui: &mut Ui, cx: &mut ScreenCx<'_>) {
             hero(ui, cx, screen, &mut presses);
         });
         let language = cx.language();
+        let set = HintSet {
+            back: back_does_something(cx.model),
+            options: true,
+        };
         staged(ui, &ctx, intro::HINTS, screen, |ui, screen| {
-            hints(ui, language, screen);
+            hints(ui, language, set, screen);
         });
     }
     for press in presses {
@@ -1006,9 +1010,19 @@ fn tile_row(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<
 // Hero
 // ---------------------------------------------------------------------------------------------
 
-fn hints(ui: &mut Ui, language: Language, screen: Rect) {
+/// Back does something on the home screen in three cases: the launcher is in front because of the
+/// Home button (it goes back to the game), a Play Together card is up (it closes it), or the focus
+/// is off the tile row (it returns there). On the tile row itself there is nothing to go back to,
+/// so the hint bar does not offer it.
+fn back_does_something(model: &Model) -> bool {
+    (model.summoned && model.running.is_some())
+        || crate::app::together::card(model).is_some()
+        || model.focus != HomeFocus::Tiles
+}
+
+fn hints(ui: &mut Ui, language: Language, set: HintSet, screen: Rect) {
     let painter = ui.painter().clone();
-    let (width, height) = hint_bar_size(&painter, language, true);
+    let (width, height) = hint_bar_set_size(&painter, language, set);
     let rect = Rect::from_min_size(
         pos2(
             screen.max.x - pad::HOME_X - width,
@@ -1016,7 +1030,7 @@ fn hints(ui: &mut Ui, language: Language, screen: Rect) {
         ),
         vec2(width, height),
     );
-    place(ui, rect, |ui| hint_bar(ui, language, true));
+    place(ui, rect, |ui| hint_bar_set(ui, language, set));
 }
 
 fn hero(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<Press>) {
