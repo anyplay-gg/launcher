@@ -535,6 +535,38 @@ fn the_csp_pins_the_inline_script_and_style_of_the_served_page() {
     assert_eq!(page::inline_blocks(tiny, "style"), ["a{}"]);
 }
 
+#[test]
+fn a_host_that_is_not_plain_stays_out_of_the_policy() {
+    let sources = ("'sha256-a'".to_string(), "'sha256-b'".to_string());
+    for host in [
+        "192.168.1.2:45991",
+        "[fe80::1]:45991",
+        "pc-name.local:45991",
+        "localhost",
+    ] {
+        let csp = page::csp(&sources, host);
+        assert!(
+            csp.contains(&format!("connect-src 'self' wss://{host};")),
+            "{host}"
+        );
+    }
+    for host in [
+        "",
+        "evil.example; script-src *",
+        "a b",
+        "x'",
+        "x,y",
+        "x/y",
+        "x*",
+        "\u{e9}t\u{e9}.local",
+    ] {
+        let csp = page::csp(&sources, host);
+        assert!(csp.contains("connect-src 'self'; base-uri"), "{host:?}");
+        assert!(!csp.contains("wss://"), "{host:?}");
+        assert_eq!(csp.matches("script-src").count(), 1, "{host:?}");
+    }
+}
+
 fn verifier(cert: &[u8]) -> Arc<WebPkiServerVerifier> {
     let mut roots = RootCertStore::empty();
     roots

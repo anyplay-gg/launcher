@@ -57,11 +57,26 @@ pub fn sources() -> (String, String) {
     (hashes(&html, "script"), hashes(&html, "style"))
 }
 
-/// The page's Content-Security-Policy for a request to `host`.
+/// Whether a `Host` header can go into the policy as it is: a name or an address with a port,
+/// IPv6 in brackets (`[A-Za-z0-9.:\[\]-]+`), so nothing that could end a source or a directive.
+pub fn is_plain_host(host: &str) -> bool {
+    !host.is_empty()
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b':' | b'[' | b']' | b'-'))
+}
+
+/// The page's Content-Security-Policy for a request to `host`. A host that is not plain leaves
+/// `connect-src` at `'self'` alone.
 pub fn csp(sources: &(String, String), host: &str) -> String {
     let (script, style) = sources;
+    let connect = if is_plain_host(host) {
+        format!("'self' wss://{host}")
+    } else {
+        "'self'".to_string()
+    };
     format!(
-        "default-src 'none'; script-src {script}; style-src {style}; img-src data:; connect-src 'self' wss://{host}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        "default-src 'none'; script-src {script}; style-src {style}; img-src data:; connect-src {connect}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
     )
 }
 

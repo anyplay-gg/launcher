@@ -139,7 +139,8 @@ Content-Security-Policy: default-src 'none'; script-src 'sha256-<script>'; style
   connect-src 'self' wss://<Host>; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 ```
 
-The hashes are computed at start from the embedded bytes (one per inline block; blocks with `src=` are skipped) and written
+`<Host>` is the request's `Host` header, and only when it matches `[A-Za-z0-9.:\[\]-]+`; any other host leaves
+`connect-src 'self'` alone. The hashes are computed at start from the embedded bytes (one per inline block; blocks with `src=` are skipped) and written
 down nowhere, so a new page needs no server change. There is no `'unsafe-inline'`. A test compares the served CSP with hashes of
 the served body. For the page: no `on...=` or `style="..."` attributes (the CSP blocks them); `__LUDUSCTRL_VERSION__` stays
 as it is.
