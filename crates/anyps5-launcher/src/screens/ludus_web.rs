@@ -1,7 +1,7 @@
 //! LudusCtrl's browser client on the "Phone as Controller" page (docs/DESIGN.md 18, "LudusCtrl
-//! browser client"), in the LudusCtrl group ([`crate::screens::ludus::rows`]): who holds the pad,
-//! the QR code and the link, the links of the other addresses, a new link, and the notes that
-//! explain what the phone will say. It has no switch: it runs with LudusCtrl.
+//! browser client"), in the LudusCtrl group ([`crate::screens::ludus::rows`]): the QR code and the
+//! link, who holds the pad, the notes that explain what the phone will say, the links of the
+//! other addresses and a new link. It has no switch: it runs with LudusCtrl.
 
 use crate::app::ludus_web::{BrowserState, Certificate, LUDUS_WEB_PORT};
 use crate::screens::ludus::LudusAction;
@@ -30,18 +30,37 @@ pub fn host_of(url: &str) -> &str {
     host.rsplit_once(':').map_or(host, |(host, _)| host)
 }
 
-/// The browser client's status row, under the app's in the LudusCtrl group: who holds the pad,
-/// or the note that it could not start. None while it does not run (LudusCtrl is off).
-pub fn status_row(browser: &BrowserState, language: Language) -> Option<Row> {
+/// The QR code, the link it encodes and the row that copies it: the first rows under the LudusCtrl
+/// switch. While the client starts they stand in place with an empty card, so nothing moves when
+/// the link comes. Nothing when it could not start, a note when this PC has no address.
+pub fn code_rows(browser: &BrowserState, language: Language) -> Vec<Row> {
     let t = |text: BrowserText| text.text(language).to_owned();
     if browser.failed {
-        return Some(Row::info(
-            "browserFailed",
-            t(BrowserText::StartFailed),
-            None,
-        ));
+        return Vec::new();
     }
-    browser.info.as_ref()?;
+    let url = match &browser.info {
+        None => Some(String::new()),
+        Some(info) => info.urls.first().cloned(),
+    };
+    let Some(url) = url else {
+        return vec![Row::info("browserNoAddress", t(BrowserText::NoAddress), None).warning()];
+    };
+    vec![
+        Row::qr("browserQr", t(BrowserText::QrLabel), url.clone()).detail(t(BrowserText::QrHint)),
+        Row::link("browserLink", t(BrowserText::Link), url),
+        Row::command("browserCopy", t(BrowserText::Copy))
+            .detail(t(BrowserText::CopyDetail))
+            .icon(Icon::LINK),
+    ]
+}
+
+/// The browser client's status row, under the app's in the LudusCtrl group: who holds the pad,
+/// or the note that it could not start.
+pub fn status_row(browser: &BrowserState, language: Language) -> Row {
+    let t = |text: BrowserText| text.text(language).to_owned();
+    if browser.failed {
+        return Row::info("browserFailed", t(BrowserText::StartFailed), None);
+    }
     let status = match (&browser.peer, &browser.device) {
         (Some(peer), Some(device)) => {
             BrowserText::ConnectedDevice.format(language, &[Arg::Str(device), Arg::Str(peer)])
@@ -49,32 +68,28 @@ pub fn status_row(browser: &BrowserState, language: Language) -> Option<Row> {
         (Some(peer), None) => BrowserText::ConnectedTo.format(language, &[Arg::Str(peer)]),
         (None, _) => t(BrowserText::Waiting),
     };
-    Some(Row::info("browserStatus", t(BrowserText::Status), Some(status)).icon(Icon::GLOBE))
+    Row::info("browserStatus", t(BrowserText::Status), Some(status)).icon(Icon::GLOBE)
 }
 
-/// The browser client's own rows while it runs: the QR code, the link and its notes, the other
-/// addresses and New Link. `windows`: the firewall note applies.
-pub fn link_rows(browser: &BrowserState, windows: bool, language: Language) -> Vec<Row> {
+/// The browser client's notes under the status rows: what the phone will say about the
+/// certificate, a busy port, the links of the other addresses and New Link. `windows`: the
+/// firewall note applies.
+pub fn note_rows(browser: &BrowserState, windows: bool, language: Language) -> Vec<Row> {
     let t = |text: BrowserText| text.text(language).to_owned();
     let mut rows = Vec::new();
-    let Some(info) = &browser.info else {
+    if browser.failed {
         return rows;
-    };
+    }
+    let urls = browser
+        .info
+        .as_ref()
+        .map_or(&[][..], |info| info.urls.as_slice());
 
-    // The QR code, the link it encodes and the row that copies it.
-    if let Some(url) = info.urls.first() {
-        rows.push(
-            Row::qr("browserQr", t(BrowserText::QrLabel), url.clone())
-                .detail(t(BrowserText::QrHint))
-                .group_start(),
-        );
-        rows.push(Row::link("browserLink", t(BrowserText::Link), url.clone()));
-        rows.push(
-            Row::command("browserCopy", t(BrowserText::Copy))
-                .detail(t(BrowserText::CopyDetail))
-                .icon(Icon::LINK),
-        );
+    // The certificate and the port, once there is a link (or while it comes).
+    if browser.info.is_none() || !urls.is_empty() {
         rows.push(Row::info("browserCertNote", t(BrowserText::CertNote), None));
+    }
+    if let Some(info) = browser.info.as_ref().filter(|info| !info.urls.is_empty()) {
         if info.certificate == Certificate::Reissued {
             rows.push(
                 Row::info("browserReissued", t(BrowserText::Reissued), None)
@@ -94,18 +109,12 @@ pub fn link_rows(browser: &BrowserState, windows: bool, language: Language) -> V
         }
     }
 
-    // No address to put in a link: say what to do.
-    if info.urls.is_empty() {
-        rows.push(Row::info("browserNoAddress", t(BrowserText::NoAddress), None).warning());
-    }
-
     // The other addresses of this PC, each a link to copy.
-    let others = info.urls.iter().skip(1).zip(OTHER_ROWS);
-    if info.urls.len() > 1 {
+    if urls.len() > 1 {
         rows.push(Row::caption("browserOther", t(BrowserText::Other)).group_start());
         rows.push(Row::info("browserOtherNote", t(BrowserText::OtherNote), None).attached());
     }
-    for (url, id) in others {
+    for (url, id) in urls.iter().skip(1).zip(OTHER_ROWS) {
         rows.push(
             Row::command(id, host_of(url))
                 .detail(url.clone())
@@ -150,10 +159,11 @@ mod tests {
 
     const LINK: &str = "https://192.168.178.20:45991/#t=q8Zk3VtW0bHn5sLc2pRj1A";
 
-    /// The status row, then the rest, as the LudusCtrl group lays them out.
+    /// The code, the status row, then the notes, as the LudusCtrl group lays them out.
     fn rows(browser: &BrowserState, windows: bool, language: Language) -> Vec<Row> {
-        let mut rows: Vec<Row> = status_row(browser, language).into_iter().collect();
-        rows.extend(link_rows(browser, windows, language));
+        let mut rows = code_rows(browser, language);
+        rows.push(status_row(browser, language));
+        rows.extend(note_rows(browser, windows, language));
         rows
     }
 
@@ -175,9 +185,28 @@ mod tests {
     }
 
     #[test]
-    fn nothing_while_it_does_not_run() {
+    fn while_it_starts_the_code_holds_its_place() {
         let rows = rows(&BrowserState::default(), true, Language::English);
-        assert!(rows.is_empty());
+        assert_eq!(
+            ids(&rows),
+            [
+                "browserQr",
+                "browserLink",
+                "browserCopy",
+                "browserStatus",
+                "browserCertNote",
+                "browserNewLink",
+                "browserFirewall",
+            ]
+        );
+        assert_eq!(rows[0].control, Control::Qr(String::new()), "an empty card");
+        assert_eq!(
+            action(
+                &BrowserState::default(),
+                &Change::Run { row: "browserCopy" }
+            ),
+            None
+        );
     }
 
     #[test]
@@ -200,10 +229,10 @@ mod tests {
         assert_eq!(
             ids(&rows),
             [
-                "browserStatus",
                 "browserQr",
                 "browserLink",
                 "browserCopy",
+                "browserStatus",
                 "browserCertNote",
                 "browserNewLink",
                 "browserFirewall",

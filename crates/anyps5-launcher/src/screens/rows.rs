@@ -90,6 +90,8 @@ pub struct Row {
     pub avatar: Option<RowAvatar>,
     /// The buttons of a buttons row come up with the focus or the pointer.
     pub reveal: bool,
+    /// A row below that belongs to this one: with the focus here, the list keeps both in view.
+    pub keeps_in_view: Option<RowId>,
 }
 
 impl Row {
@@ -108,6 +110,7 @@ impl Row {
             wide: false,
             avatar: None,
             reveal: false,
+            keeps_in_view: None,
         }
     }
 
@@ -120,6 +123,12 @@ impl Row {
     /// The buttons rest hidden and come up with the focus or the pointer.
     pub fn reveal(mut self) -> Row {
         self.reveal = true;
+        self
+    }
+
+    /// With the focus on this row, the list scrolls so the row `id` is in view too.
+    pub fn keeps_in_view(mut self, id: RowId) -> Row {
+        self.keeps_in_view = Some(id);
         self
     }
 
@@ -562,7 +571,12 @@ pub fn list_with_header(
 ) -> Vec<ListEvent> {
     let ctx = ui.ctx().clone();
     let id = ui.make_persistent_id(id_salt);
-    let (follow, scroll_to) = Follow::begin(&ctx, id, options.focus);
+    let with = options
+        .focus
+        .and_then(|focus| rows.get(focus))
+        .and_then(|row| row.keeps_in_view)
+        .and_then(|with| rows.iter().position(|row| row.id == with));
+    let (follow, scroll_to) = Follow::begin_with(&ctx, id, options.focus, with);
 
     let mut events = Vec::new();
     let mut geometry: Vec<(f32, f32)> = Vec::with_capacity(rows.len());
@@ -682,6 +696,7 @@ fn show_row(
         wide,
         avatar,
         reveal,
+        keeps_in_view: _,
     } = row;
     let caps;
     let none_label = language.text(Key::NoKey);

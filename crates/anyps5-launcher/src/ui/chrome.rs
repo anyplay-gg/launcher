@@ -1423,9 +1423,13 @@ fn qr_modules(ctx: &Context, data: &str) -> Option<std::sync::Arc<(usize, Vec<bo
 
 /// A QR code of `data` filling `card`: the white card (radius 12), then the dark modules as one
 /// mesh without feathering, each module a whole number of physical pixels and the code centred,
-/// so no module blurs into its neighbour and the quiet zone is at least four modules.
+/// so no module blurs into its neighbour and the quiet zone is at least four modules. Empty `data`
+/// is the card alone, in the place of a code that is not there yet.
 pub fn paint_qr(painter: &Painter, card: Rect, data: &str) {
     painter.rect_filled(card, corner(radius::QR_CARD), color::qr_card());
+    if data.is_empty() {
+        return;
+    }
     let Some(code) = qr_modules(painter.ctx(), data) else {
         return;
     };

@@ -2864,10 +2864,11 @@ impl ScreenGallery {
                     self.settings.focus_row(4);
                 }
                 // LudusCtrl's question lands on its first answer; a connected LudusCtrl phone
-                // shows the end of the page, where the app comes from. LudusCtrl waiting and the
-                // browser client's scenes land on the QR code's group, so it is in view.
+                // shows the end of the page, where the app comes from. LudusCtrl waiting is the
+                // switch just turned on, which keeps the QR code in view; the browser client's
+                // scenes land on the QR code's group.
                 let focus = match look {
-                    PhoneLook::LudusWaiting => Some("browserCopy"),
+                    PhoneLook::LudusWaiting => Some("ludusctrl"),
                     PhoneLook::LudusPairing => Some("ludusAllow"),
                     PhoneLook::LudusConnected => Some("ludusApp"),
                     PhoneLook::BrowserWaiting => Some("browserCopy"),

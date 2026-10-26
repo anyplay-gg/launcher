@@ -1,7 +1,8 @@
 //! LudusCtrl on the "Phone as Controller" page (docs/DESIGN.md 18, "LudusCtrl"): the switch, the
-//! status of the app and of the browser client, the pairing question, the browser client's rows
-//! ([`crate::screens::ludus_web`]), the paired LudusCtrl phones and where the app comes from. The
-//! virtual controller's rows are the page's own ([`crate::screens::phone::page`]).
+//! browser client's QR code ([`crate::screens::ludus_web`]), the status of the app and of the
+//! browser client with the browser's notes, the pairing question, the paired LudusCtrl phones and
+//! where the app comes from. The virtual controller's rows are the page's own
+//! ([`crate::screens::phone::page`]).
 
 use anyps5_core::settings::Preferences;
 
@@ -43,12 +44,13 @@ pub enum LudusAction {
 }
 
 /// The LudusCtrl group, an option of Phone as Controller: the page shows it only while the phone
-/// server's switch is on. With the switch on, the app and the browser client both run: their
-/// status rows, then the browser's QR code and link (the first thing a new player needs, as the
-/// app is not in the store yet), then the app's address, paired phones and where it comes from.
-/// A pairing question goes right under the status, as the phone server's does: it waits a minute
-/// for an answer. `address` is this PC's address with the server's port, for typing into the
-/// app; `windows`: the firewall note applies.
+/// server's switch is on. With the switch on, the app and the browser client both run. The QR
+/// code comes first, right under the switch (the first thing a new player needs, as the app is
+/// not in the store yet), and the switch keeps it in view; then the status of the app and of the
+/// browser with the browser's notes, then the app's address, paired phones and where it comes
+/// from. A pairing question goes above the code, as it waits only a minute for an answer.
+/// `address` is this PC's address with the server's port, for typing into the app; `windows`:
+/// the firewall note applies.
 pub fn rows(
     prefs: &Preferences,
     ludus: &LudusState,
@@ -58,17 +60,27 @@ pub fn rows(
 ) -> Vec<Row> {
     let t = |text: LudusText| text.text(language).to_owned();
     let p = |text: PhoneText| text.text(language).to_owned();
-    let mut rows = vec![
-        Row::toggle("ludusctrl", t(LudusText::Title), prefs.phone_ludusctrl)
-            .detail(t(LudusText::SwitchDetail))
-            .icon(Icon::GAME_CONTROLLER)
-            .group_start(),
-    ];
+    let switch = Row::toggle("ludusctrl", t(LudusText::Title), prefs.phone_ludusctrl)
+        .detail(t(LudusText::SwitchDetail))
+        .icon(Icon::GAME_CONTROLLER)
+        .group_start();
     if !prefs.phone_ludusctrl {
-        return rows;
+        return vec![switch];
+    }
+    let mut rows = vec![switch.keeps_in_view("browserQr")];
+
+    // The pairing question, as the phone server asks it.
+    if let Some(request) = ludus.pairing.as_ref().filter(|_| !ludus.failed) {
+        rows.extend(pairing_rows(
+            PAIR_ROWS,
+            &request.phone_name,
+            &request.code,
+            language,
+        ));
     }
 
-    // The app's status, then the browser's, in one group.
+    // The browser client's code, then the app's status and the browser's, in one group.
+    let code = ludus_web::code_rows(&ludus.browser, language);
     let app = if ludus.failed {
         Row::info("ludusFailed", t(LudusText::StartFailed), None)
     } else {
@@ -81,21 +93,14 @@ pub fn rows(
         };
         Row::info("ludusStatus", t(LudusText::AppStatus), Some(status)).icon(Icon::DEVICE_MOBILE)
     };
-    rows.push(app.group_start());
-    rows.extend(ludus_web::status_row(&ludus.browser, language));
+    let first = rows.len();
+    rows.extend(code);
+    rows.push(app);
+    rows.push(ludus_web::status_row(&ludus.browser, language));
+    rows[first].group_start = true;
 
-    // The pairing question, as the phone server asks it.
-    if let Some(request) = ludus.pairing.as_ref().filter(|_| !ludus.failed) {
-        rows.extend(pairing_rows(
-            PAIR_ROWS,
-            &request.phone_name,
-            &request.code,
-            language,
-        ));
-    }
-
-    // The browser client: the QR code, the link, the other addresses, New Link.
-    rows.extend(ludus_web::link_rows(&ludus.browser, windows, language));
+    // The browser client's notes: the certificate, the other addresses, New Link.
+    rows.extend(ludus_web::note_rows(&ludus.browser, windows, language));
 
     if !ludus.failed {
         // The address for typing it in.
@@ -233,9 +238,22 @@ mod tests {
             ..LudusState::default()
         };
         let address = Some("192.168.178.20:45989".into());
+        let state = LudusState {
+            browser: BrowserState {
+                failed: true,
+                ..BrowserState::default()
+            },
+            ..state
+        };
         assert_eq!(
             ids(&rows(&on(), &state, address, true, Language::English)),
-            ["ludusctrl", "ludusFailed", "ludusAppNote", "ludusApp"]
+            [
+                "ludusctrl",
+                "ludusFailed",
+                "browserFailed",
+                "ludusAppNote",
+                "ludusApp"
+            ]
         );
     }
 
@@ -249,11 +267,18 @@ mod tests {
         let rows = rows(&on(), &state, None, false, Language::English);
         let list = ids(&rows);
         assert_eq!(
-            &list[..4],
-            ["ludusctrl", "ludusFailed", "browserStatus", "browserQr"]
+            &list[..6],
+            [
+                "ludusctrl",
+                "browserQr",
+                "browserLink",
+                "browserCopy",
+                "ludusFailed",
+                "browserStatus"
+            ]
         );
         assert!(
-            rows[1].title.contains("LudusCtrl app"),
+            rows[4].title.contains("LudusCtrl app"),
             "the note says which part failed"
         );
         assert!(!list.contains(&"ludusPaired") && !list.contains(&"ludusStatus"));
@@ -270,11 +295,12 @@ mod tests {
         };
         let list = ids(&rows(&on(), &state, None, true, Language::English));
         assert_eq!(&list[..3], ["ludusctrl", "ludusStatus", "browserFailed"]);
+        assert!(rows(&on(), &state, None, true, Language::English)[1].group_start);
         assert!(list.contains(&"ludusPaired") && !list.contains(&"browserQr"));
     }
 
     #[test]
-    fn the_group_reads_status_code_then_the_app() {
+    fn the_group_reads_code_status_then_the_app() {
         let state = LudusState {
             pairing: Some(LudusPairing {
                 id: 5,
@@ -291,8 +317,6 @@ mod tests {
             ids(&rows),
             [
                 "ludusctrl",
-                "ludusStatus",
-                "browserStatus",
                 "ludusAsk",
                 "ludusNote",
                 "ludusAllow",
@@ -300,6 +324,8 @@ mod tests {
                 "browserQr",
                 "browserLink",
                 "browserCopy",
+                "ludusStatus",
+                "browserStatus",
                 "browserCertNote",
                 "browserOther",
                 "browserOtherNote",
@@ -318,10 +344,11 @@ mod tests {
         assert_eq!(at("ludusStatus").title, "App");
         assert_eq!(at("browserStatus").title, "Browser");
         assert!(
-            !at("browserStatus").group_start,
-            "one group with the app's status"
+            !at("ludusStatus").group_start && !at("browserStatus").group_start,
+            "one group with the code"
         );
-        assert!(at("ludusStatus").group_start && at("browserQr").group_start);
+        assert!(at("browserQr").group_start);
+        assert_eq!(at("ludusctrl").keeps_in_view, Some("browserQr"));
         assert_eq!(
             at("browserStatus").control,
             Control::Info(Some("Waiting for a browser".into()))
@@ -329,20 +356,32 @@ mod tests {
     }
 
     #[test]
-    fn waiting_shows_the_status_the_empty_list_and_the_app() {
+    fn waiting_shows_the_code_the_status_the_empty_list_and_the_app() {
         let rows = rows(&on(), &LudusState::default(), None, true, Language::English);
         assert_eq!(
             ids(&rows),
             [
                 "ludusctrl",
+                "browserQr",
+                "browserLink",
+                "browserCopy",
                 "ludusStatus",
+                "browserStatus",
+                "browserCertNote",
+                "browserNewLink",
+                "browserFirewall",
                 "ludusPaired",
                 "ludusPairedNone",
                 "ludusAppNote",
                 "ludusApp"
             ]
         );
-        let status = &rows[1];
+        assert_eq!(
+            rows[1].control,
+            Control::Qr(String::new()),
+            "the code's place, from the first frame"
+        );
+        let status = &rows[4];
         assert_eq!(
             status.control,
             Control::Info(Some("Waiting for a phone".into()))
@@ -372,7 +411,7 @@ mod tests {
         assert_eq!(ask.control, Control::Info(Some("260 329".into())));
         let list = ids(&rows);
         let at = |id: &str| list.iter().position(|r| *r == id).unwrap();
-        assert!(at("ludusStatus") < at("ludusAsk"));
+        assert!(at("ludusctrl") < at("ludusAsk") && at("ludusDeny") < at("browserQr"));
         assert!(at("ludusAsk") < at("ludusNote") && at("ludusNote") < at("ludusAllow"));
         assert!(at("ludusAllow") < at("ludusDeny"));
         assert_eq!(
