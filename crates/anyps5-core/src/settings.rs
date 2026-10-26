@@ -590,6 +590,10 @@ pub struct Preferences {
     /// (docs/DESIGN.md 18). Off until the player turns it on.
     #[serde(default)]
     pub phone_remote: bool,
+    /// LudusCtrl, an option of the phone server: a controller connected to an Android phone plays
+    /// on this PC through the LudusCtrl app. Off until the player turns it on.
+    #[serde(default)]
+    pub phone_ludusctrl: bool,
     /// Clips: how many seconds of the running game the launcher keeps for a clip (one of
     /// [`crate::clips::LENGTHS`]); 0 is Off, and nothing is recorded.
     #[serde(default)]
@@ -653,6 +657,7 @@ impl Default for Preferences {
             voice: crate::online::VoicePrefs::default(),
             record_network: false,
             phone_remote: false,
+            phone_ludusctrl: false,
             clips_seconds: 0,
             clips_hotkey: None,
             run_asked: BTreeSet::new(),
@@ -1274,6 +1279,7 @@ mod tests {
             !prefs.phone_remote,
             "the phone server is off until the player turns it on"
         );
+        assert!(!prefs.phone_ludusctrl);
         assert!(prefs.check_for_updates);
         assert_eq!(prefs.profile_name, "Player");
         assert_eq!(prefs.toolkit_repository, crate::toolkit::DEFAULT_REPOSITORY);

@@ -225,6 +225,32 @@ pub enum PhoneLook {
     NoAccess,
     /// The server could not start.
     Failed,
+    /// The LudusCtrl option on, no phone yet (the phone server waits too).
+    LudusWaiting,
+    /// A LudusCtrl phone asks to be paired.
+    LudusPairing,
+    /// A LudusCtrl phone's controller is live; two phones are paired.
+    LudusConnected,
+    /// A phone of the phone server and a LudusCtrl phone both connected: the whole page.
+    Both,
+}
+
+impl PhoneLook {
+    /// Whether the phone server's switch is on in this look.
+    fn phone_on(self) -> bool {
+        self != PhoneLook::Off
+    }
+
+    /// Whether the LudusCtrl option is on in this look.
+    fn ludus_on(self) -> bool {
+        matches!(
+            self,
+            PhoneLook::LudusWaiting
+                | PhoneLook::LudusPairing
+                | PhoneLook::LudusConnected
+                | PhoneLook::Both
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -442,6 +468,47 @@ fn sample_phone(look: PhoneLook) -> crate::app::phone::PhoneState {
             state.info = None;
             state.failed = true;
         }
+        PhoneLook::LudusWaiting | PhoneLook::LudusPairing | PhoneLook::LudusConnected => {}
+        PhoneLook::Both => {
+            state.connected = Some("Pixel 8".into());
+            state.latency_ms = Some(4.0);
+            state.paired = vec![device("a1", "Pixel 8", "2026-10-24T18:14:03Z")];
+        }
+    }
+    state
+}
+
+/// Invented LudusCtrl phones for the same page.
+fn sample_ludus(look: PhoneLook) -> crate::app::ludus::LudusState {
+    use crate::app::ludus::{LudusPairing, LudusPhone, LudusState};
+    use anyps5_core::remote::VirtualPadStatus;
+    let phone = |id: &str, name: &str, added: &str| LudusPhone {
+        id: id.into(),
+        name: name.into(),
+        added: added.into(),
+    };
+    let mut state = LudusState {
+        port: Some(45989),
+        pad: Some(VirtualPadStatus::Ready),
+        ..LudusState::default()
+    };
+    match look {
+        PhoneLook::LudusPairing => {
+            state.pairing = Some(LudusPairing {
+                id: 1,
+                phone_name: "Galaxy Tab S9".into(),
+                code: "260329".into(),
+            });
+        }
+        PhoneLook::LudusConnected | PhoneLook::Both => {
+            state.connected = Some("Galaxy Tab S9".into());
+            state.controller = true;
+            state.paired = vec![
+                phone("c3", "Galaxy Tab S9", "2026-10-25T20:41:07Z"),
+                phone("d4", "Redmi Note 13 Pro", "2026-10-26T08:15:52Z"),
+            ];
+        }
+        _ => {}
     }
     state
 }
@@ -489,6 +556,10 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "phone-driver" => ScreenPage::Phone(PhoneLook::DriverMissing),
         "phone-access" => ScreenPage::Phone(PhoneLook::NoAccess),
         "phone-failed" => ScreenPage::Phone(PhoneLook::Failed),
+        "phone-ludus" => ScreenPage::Phone(PhoneLook::LudusWaiting),
+        "phone-ludus-pairing" => ScreenPage::Phone(PhoneLook::LudusPairing),
+        "phone-ludus-connected" => ScreenPage::Phone(PhoneLook::LudusConnected),
+        "phone-both" => ScreenPage::Phone(PhoneLook::Both),
         "toolkit" => ScreenPage::Toolkit(ToolkitLook::Stable),
         "toolkit-update" => ScreenPage::Toolkit(ToolkitLook::Update),
         "toolkit-newer" => ScreenPage::Toolkit(ToolkitLook::Newer),
@@ -1533,6 +1604,7 @@ pub struct ScreenGallery {
     update: UpdateState,
     toolkit_version: String,
     phone: crate::app::phone::PhoneState,
+    ludus: crate::app::ludus::LudusState,
     controls: ControlsPanel,
     /// A game whose files name its controls, for the controls page.
     game_input: GameInput,
@@ -1590,10 +1662,11 @@ impl ScreenGallery {
                 ToolkitLook::Unused | ToolkitLook::Glibc => {}
             }
         }
-        let phone = match page {
+        let (phone, ludus) = match page {
             ScreenPage::Phone(look) => {
-                prefs.phone_remote = look != PhoneLook::Off;
-                sample_phone(look)
+                prefs.phone_remote = look.phone_on();
+                prefs.phone_ludusctrl = look.ludus_on();
+                (sample_phone(look), sample_ludus(look))
             }
             _ => Default::default(),
         };
@@ -1617,6 +1690,7 @@ impl ScreenGallery {
             update,
             toolkit_version,
             phone,
+            ludus,
             page,
             covers: Vec::new(),
             avatars: Vec::new(),
@@ -1931,6 +2005,7 @@ impl ScreenGallery {
             },
             cjk_fonts: anyps5_core::fonts::CjkState::Missing,
             phone: &self.phone,
+            ludus: &self.ludus,
             openh264: matches!(self.page, ScreenPage::SettingsCodec(_)).then(|| {
                 crate::screens::settings::Openh264Env {
                     state: anyps5_core::openh264::CodecState::Ready,
@@ -2328,6 +2403,24 @@ impl ScreenGallery {
                 // The question lands on its first answer.
                 if look == PhoneLook::Pairing {
                     self.settings.focus_row(4);
+                }
+                // LudusCtrl's question lands on its first answer; a connected LudusCtrl phone
+                // shows the end of the page, where the app comes from.
+                let focus = match look {
+                    PhoneLook::LudusPairing => Some("ludusAllow"),
+                    PhoneLook::LudusConnected => Some("ludusApp"),
+                    _ => None,
+                };
+                if let Some(focus) = focus {
+                    let rows = crate::screens::phone::page(
+                        &self.prefs,
+                        &self.phone,
+                        &self.ludus,
+                        shell.language,
+                    );
+                    if let Some(at) = rows.iter().position(|r| r.id == focus) {
+                        self.settings.focus_row(at);
+                    }
                 }
             }
             ScreenPage::Recommended | ScreenPage::RecommendedWarning => {
