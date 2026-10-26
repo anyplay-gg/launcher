@@ -80,6 +80,8 @@ pub struct Row {
     pub destructive: bool,
     /// Caution: an info row that says something may not work. Never danger.
     pub warning: bool,
+    /// A note that says what the player has to do: detail ink, not the quiet note ink.
+    pub step: bool,
     /// Starts a new group: the list leaves a double gap above it.
     pub group_start: bool,
     /// Starts a section (an option with rows of its own): a group with `space::XL` more above
@@ -109,6 +111,7 @@ impl Row {
             control,
             destructive: false,
             warning: false,
+            step: false,
             group_start: false,
             section_start: false,
             attached: false,
@@ -147,6 +150,12 @@ impl Row {
     }
 
     /// Starts a new group (a double gap above the row).
+    /// A note the player has to act on: drawn in the detail ink.
+    pub fn step(mut self) -> Row {
+        self.step = true;
+        self
+    }
+
     pub fn group_start(mut self) -> Row {
         self.group_start = true;
         self
@@ -707,6 +716,7 @@ fn show_row(
         control,
         destructive,
         warning,
+        step,
         group_start: _,
         section_start: _,
         attached,
@@ -778,6 +788,7 @@ fn show_row(
         .focused(focused)
         .destructive(*destructive)
         .warning(*warning)
+        .step(*step)
         .attached(*attached)
         .wide(*wide)
         .avatar(*avatar)

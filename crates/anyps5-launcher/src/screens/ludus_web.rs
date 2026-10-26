@@ -86,7 +86,7 @@ pub fn note_rows(browser: &BrowserState, language: Language) -> Vec<Row> {
 
     // The certificate and the port, once there is a link (or while it comes).
     if browser.info.is_none() || !urls.is_empty() {
-        rows.push(Row::info("browserCertNote", t(BrowserText::CertNote), None));
+        rows.push(Row::info("browserCertNote", t(BrowserText::CertNote), None).step());
     }
     if let Some(info) = browser.info.as_ref().filter(|info| !info.urls.is_empty()) {
         if info.certificate == Certificate::Reissued {
@@ -128,6 +128,7 @@ pub fn note_rows(browser: &BrowserState, language: Language) -> Vec<Row> {
             .icon(Icon::ARROWS_CLOCKWISE)
             .group_start(),
     );
+    rows.push(Row::info("browserShareNote", t(BrowserText::ShareNote), None).attached());
     rows
 }
 
@@ -192,6 +193,7 @@ mod tests {
                 "browserStatus",
                 "browserCertNote",
                 "browserNewLink",
+                "browserShareNote",
             ]
         );
         assert_eq!(rows[0].control, Control::Qr(String::new()), "an empty card");
@@ -230,6 +232,7 @@ mod tests {
                 "browserStatus",
                 "browserCertNote",
                 "browserNewLink",
+                "browserShareNote",
             ]
         );
         let at = |id: &str| rows.iter().find(|r| r.id == id).unwrap();
@@ -401,5 +404,34 @@ mod tests {
         assert_eq!(host_of(LINK), "192.168.178.20");
         assert_eq!(host_of("https://[fe80::1]:45991/#t=x"), "fe80::1");
         assert_eq!(host_of("https://localhost/#t=x"), "localhost");
+    }
+
+    #[test]
+    fn the_phone_steps_and_the_shared_screen_are_said() {
+        let rows = rows(&running(&[LINK]), Language::English);
+        let at = |id: &str| rows.iter().find(|r| r.id == id).unwrap();
+        let cert = at("browserCertNote");
+        assert!(cert.step, "the one thing to do on the phone: detail ink");
+        for words in ["Show Details", "visit this website", "Advanced", "Proceed"] {
+            assert!(cert.title.contains(words), "{words}");
+        }
+        let share = at("browserShareNote");
+        assert!(share.attached && share.title.contains("New Link"));
+        let list = ids(&rows);
+        let pos = |id: &str| list.iter().position(|r| *r == id).unwrap();
+        assert_eq!(pos("browserShareNote"), pos("browserNewLink") + 1);
+        let turkish = rows_tr();
+        assert!(
+            turkish
+                .iter()
+                .find(|r| r.id == "browserShareNote")
+                .unwrap()
+                .title
+                .contains("Yeni Bağlantı")
+        );
+    }
+
+    fn rows_tr() -> Vec<Row> {
+        rows(&running(&[LINK]), Language::Turkish)
     }
 }

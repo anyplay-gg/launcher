@@ -34,6 +34,8 @@ pub enum BrowserText {
     /// A new token.
     NewLink,
     NewLinkDetail,
+    /// Under New Link: the link is a key, so a shared screen calls for a new one.
+    ShareNote,
     /// This PC has no address a phone could open.
     NoAddress,
     /// Toasts.
@@ -45,7 +47,7 @@ pub enum BrowserText {
 }
 
 impl BrowserText {
-    pub const ALL: [BrowserText; 22] = [
+    pub const ALL: [BrowserText; 23] = [
         BrowserText::Status,
         BrowserText::StartFailed,
         BrowserText::Waiting,
@@ -63,6 +65,7 @@ impl BrowserText {
         BrowserText::PortBusy,
         BrowserText::NewLink,
         BrowserText::NewLinkDetail,
+        BrowserText::ShareNote,
         BrowserText::NoAddress,
         BrowserText::ToastConnected,
         BrowserText::ToastCopied,
@@ -91,7 +94,7 @@ impl BrowserText {
                 "If the phone is on another network of this PC, open the link of that network."
             }
             BrowserText::CertNote => {
-                "The phone warns once that the connection is not private, because this PC signs its own certificate. Open the details and visit the page anyway."
+                "The phone warns once that the connection is not private, because this PC signs its own certificate. On iPhone choose Show Details, then visit this website; in Chrome on Android choose Advanced, then Proceed."
             }
             BrowserText::Reissued => "This PC's address changed, so the phone will warn once more.",
             BrowserText::PortBusy => {
@@ -100,6 +103,9 @@ impl BrowserText {
             BrowserText::NewLink => "New Link",
             BrowserText::NewLinkDetail => {
                 "Makes a new link and disconnects the browser. The old QR code stops working."
+            }
+            BrowserText::ShareNote => {
+                "The link opens the page for anyone who has it. Choose New Link after you share this screen."
             }
             BrowserText::NoAddress => {
                 "This PC is not on a network a phone can reach. Connect it to your home network, then choose New Link."
@@ -130,7 +136,7 @@ impl BrowserText {
                 "Telefon bu bilgisayarın başka bir ağındaysa o ağın bağlantısını aç."
             }
             BrowserText::CertNote => {
-                "Bu bilgisayar sertifikasını kendisi imzaladığı için telefon bir kez bağlantının gizli olmadığı uyarısını gösterir. Ayrıntıları açıp yine de sayfaya git."
+                "Bu bilgisayar sertifikasını kendisi imzaladığı için telefon bir kez bağlantının gizli olmadığı uyarısını gösterir. iPhone'da ayrıntıları açıp siteyi yine de ziyaret et; Android'deki Chrome'da gelişmiş seçenekleri açıp siteye devam et."
             }
             BrowserText::Reissued => {
                 "Bu bilgisayarın adresi değişti, bu yüzden telefon bir kez daha uyaracak."
@@ -141,6 +147,9 @@ impl BrowserText {
             BrowserText::NewLink => "Yeni Bağlantı",
             BrowserText::NewLinkDetail => {
                 "Yeni bir bağlantı oluşturur ve tarayıcının bağlantısını keser. Eski QR kodu artık çalışmaz."
+            }
+            BrowserText::ShareNote => {
+                "Bağlantıya sahip olan herkes sayfayı açabilir. Bu ekranı paylaştıktan sonra Yeni Bağlantı'yı seç."
             }
             BrowserText::NoAddress => {
                 "Bu bilgisayar bir telefonun ulaşabileceği bir ağda değil. Ev ağına bağla, sonra Yeni Bağlantı'yı seç."

@@ -490,6 +490,8 @@ pub struct PanelRow<'a> {
     pub destructive: bool,
     /// Caution: a note or row that says something may not work (the amber ink). Never danger.
     pub warning: bool,
+    /// A note that says what the player has to do: the detail ink instead of the quiet note ink.
+    pub step: bool,
     /// A controller face glyph painted before the title (`✕ Cross`).
     pub pad_glyph: Option<components::PadGlyph>,
     pub force: Option<Force>,
@@ -543,6 +545,7 @@ impl<'a> PanelRow<'a> {
             focused: false,
             destructive: false,
             warning: false,
+            step: false,
             pad_glyph: None,
             force: None,
             attached: false,
@@ -599,6 +602,10 @@ impl<'a> PanelRow<'a> {
     }
     pub fn warning(mut self, warning: bool) -> Self {
         self.warning = warning;
+        self
+    }
+    pub fn step(mut self, step: bool) -> Self {
+        self.step = step;
         self
     }
 
@@ -666,6 +673,8 @@ impl<'a> PanelRow<'a> {
         // A warning note has the ink of the warning line under Play on the home screen.
         let ink = if self.warning && !caption {
             color::warning_text()
+        } else if self.step && !caption {
+            color::text_detail()
         } else {
             quiet
         };
