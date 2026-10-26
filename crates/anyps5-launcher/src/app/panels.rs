@@ -1529,6 +1529,7 @@ impl PanelHost {
                         icon: label.icon,
                         text: label.text,
                         tint: label.tint,
+                        quiet: crate::screens::is_plain_ready(&state),
                     },
                 }
             })

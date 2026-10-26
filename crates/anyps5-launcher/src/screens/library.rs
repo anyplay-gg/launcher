@@ -37,6 +37,8 @@ pub struct StateText {
     pub icon: Icon,
     pub text: String,
     pub tint: Color32,
+    /// The plain "Ready": kept for the accessible name, not drawn under the tile.
+    pub quiet: bool,
 }
 
 /// One game of the grid.
@@ -213,6 +215,29 @@ fn draw(
     let header = Rect::from_min_size(area.min, vec2(area.width(), title_h));
     crate::screens::right_aligned_hints(ui, header, language);
 
+    // No games: the same words as the empty home, in the middle under the header.
+    if data.entries.is_empty() {
+        let middle = pos2(area.center().x, area.center().y);
+        text::paint(
+            &painter,
+            middle,
+            Align2::CENTER_BOTTOM,
+            ty::EMPTY_TITLE,
+            language.text(Key::EmptyLibraryTitle),
+            color::text(),
+        );
+        let body = crate::screens::wrapped_centered(
+            &painter,
+            ty::BODY,
+            language.text(Key::EmptyLibraryText),
+            color::text_empty(),
+            area.width().min(720.0),
+            3,
+        );
+        painter.galley(pos2(middle.x, middle.y + 16.0), body, color::text_empty());
+        return;
+    }
+
     // The grid.
     // The first column stands on the title's edge; the padding is room for the focus ring.
     let list = Rect::from_min_max(
@@ -308,6 +333,9 @@ fn draw(
             let name_g = clamped(&painter, ns, &entry.name, ink, tile, 1);
             let ny = cell.min.y + tile + 10.0;
             painter.galley(pos2(cell.min.x, ny), name_g, ink);
+            if entry.state.quiet {
+                continue;
+            }
             let sy = ny + 15.0 * 1.2 + 10.0;
             painter.text(
                 pos2(

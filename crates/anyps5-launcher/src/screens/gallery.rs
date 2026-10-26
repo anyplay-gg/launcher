@@ -110,6 +110,8 @@ pub enum ScreenPage {
     /// The review of a report to AnyPS5.
     Report,
     Library,
+    /// The library grid with no games.
+    LibraryEmpty,
     /// The Captures area, in one of its states.
     Captures(crate::screens::captures::sample::CapturesLook),
     /// The Toolkit category, in its rows: stable, an update waiting, pinned, a local build.
@@ -537,6 +539,7 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "log" => ScreenPage::Log,
         "report" => ScreenPage::Report,
         "library" => ScreenPage::Library,
+        "library-empty" => ScreenPage::LibraryEmpty,
         "captures-empty" => ScreenPage::Captures(CapturesLook::Empty),
         "captures-few" => ScreenPage::Captures(CapturesLook::Few),
         "captures-many" => ScreenPage::Captures(CapturesLook::Many),
@@ -2147,7 +2150,12 @@ impl ScreenGallery {
                 .get_or_insert_with(|| HomeStand::new(&ctx, self.prefs.clone(), scene, !unlocking))
                 .paint(ui, shell);
         }
-        let entries: Vec<LibraryEntry> = (0..NAMES.len())
+        let shown = if matches!(self.page, ScreenPage::LibraryEmpty) {
+            0
+        } else {
+            NAMES.len()
+        };
+        let entries: Vec<LibraryEntry> = (0..shown)
             .map(|i| LibraryEntry {
                 name: NAMES[i].to_owned(),
                 icon: Some(self.tile(i)),
@@ -2161,12 +2169,14 @@ impl ScreenGallery {
                         icon: Icon::PLAY_CIRCLE,
                         text: language.text(Key::Running).into(),
                         tint: crate::ui::theme::color::text_active(),
+                        quiet: false,
                     }
                 } else {
                     StateText {
                         icon: Icon::CHECK_CIRCLE,
                         text: language.text(Key::Ready).into(),
                         tint: white(0.75),
+                        quiet: true,
                     }
                 },
             })
@@ -2626,6 +2636,7 @@ impl ScreenGallery {
                 self.trophies.reveal(SECRET_TROPHY);
             }
             ScreenPage::Library => self.library.open(1),
+            ScreenPage::LibraryEmpty => self.library.open(0),
             ScreenPage::Captures(look) => self.open_captures(ctx, look),
             ScreenPage::ControlsEnd => self.controls.open_row(30),
             ScreenPage::Toolkit(look) => {
