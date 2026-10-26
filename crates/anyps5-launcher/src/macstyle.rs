@@ -56,6 +56,12 @@ pub fn glass_active(want: Want, reduce_transparency: bool) -> bool {
         && (!reduce_transparency || want.ignore_system)
 }
 
+/// Diagnostics: with `ANYPLAY_GLASS_PROBE` set, a see-through window paints no backdrop at all, so a
+/// screenshot shows the system's blur alone. Only the Mac has it.
+pub fn probe() -> bool {
+    AVAILABLE && std::env::var_os("ANYPLAY_GLASS_PROBE").is_some()
+}
+
 /// The window's Mac dress. Hold one per window and call [`frame`](Self::frame) every frame.
 #[derive(Default)]
 pub struct MacStyle {

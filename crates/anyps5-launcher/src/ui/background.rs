@@ -169,6 +169,9 @@ impl Backdrop {
     pub fn paint(&mut self, ctx: &Context, painter: &Painter, rect: Rect) {
         crate::ui::glass::begin_frame();
         crate::ui::glass::set_window_glass(self.window_glass);
+        if self.window_glass && crate::macstyle::probe() {
+            return;
+        }
         let (time, veil) = if self.window_glass {
             painter.rect_filled(rect, 0.0, crate::ui::theme::black(GLASS_PLATE));
             (STILL_TIME_FULL, GLASS_VEIL)

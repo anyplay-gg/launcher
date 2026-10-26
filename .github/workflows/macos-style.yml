@@ -124,6 +124,19 @@ jobs:
             done
           done
           ls -l shots
+      # The system's blur alone (no plate, no theme), and the backdrop alone, against the same
+      # wallpaper: what the glass is made of.
+      - name: Layers
+        run: |
+          for kind in blur backdrop; do
+            if [ "$kind" = blur ]; then export ANYPLAY_GLASS_PROBE=1; else unset ANYPLAY_GLASS_PROBE; fi
+            target/release/anyplay-launcher --gallery=bg0 --glass-anyway --frames=100000 --size=760x520               --screenshot="shots/unused.png" &
+            pid=$!
+            sleep 14
+            screencapture -x "shots/layer-$kind-screen.png" || echo "screencapture failed"
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          done
       - name: Launcher log
         if: always()
         run: |
