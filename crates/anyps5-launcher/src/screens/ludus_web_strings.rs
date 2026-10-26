@@ -34,8 +34,6 @@ pub enum BrowserText {
     /// A new token.
     NewLink,
     NewLinkDetail,
-    /// Windows: the firewall may hold the page back.
-    Firewall,
     /// This PC has no address a phone could open.
     NoAddress,
     /// Toasts.
@@ -47,7 +45,7 @@ pub enum BrowserText {
 }
 
 impl BrowserText {
-    pub const ALL: [BrowserText; 23] = [
+    pub const ALL: [BrowserText; 22] = [
         BrowserText::Status,
         BrowserText::StartFailed,
         BrowserText::Waiting,
@@ -65,7 +63,6 @@ impl BrowserText {
         BrowserText::PortBusy,
         BrowserText::NewLink,
         BrowserText::NewLinkDetail,
-        BrowserText::Firewall,
         BrowserText::NoAddress,
         BrowserText::ToastConnected,
         BrowserText::ToastCopied,
@@ -103,9 +100,6 @@ impl BrowserText {
             BrowserText::NewLink => "New Link",
             BrowserText::NewLinkDetail => {
                 "Makes a new link and disconnects the browser. The old QR code stops working."
-            }
-            BrowserText::Firewall => {
-                "If the phone cannot open the page, allow AnyPlay Launcher on private networks in the firewall."
             }
             BrowserText::NoAddress => {
                 "This PC is not on a network a phone can reach. Connect it to your home network, then choose New Link."
@@ -147,9 +141,6 @@ impl BrowserText {
             BrowserText::NewLink => "Yeni Bağlantı",
             BrowserText::NewLinkDetail => {
                 "Yeni bir bağlantı oluşturur ve tarayıcının bağlantısını keser. Eski QR kodu artık çalışmaz."
-            }
-            BrowserText::Firewall => {
-                "Telefon sayfayı açamıyorsa güvenlik duvarında AnyPlay Launcher'a özel ağlarda izin ver."
             }
             BrowserText::NoAddress => {
                 "Bu bilgisayar bir telefonun ulaşabileceği bir ağda değil. Ev ağına bağla, sonra Yeni Bağlantı'yı seç."

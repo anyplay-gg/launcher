@@ -72,9 +72,8 @@ pub fn status_row(browser: &BrowserState, language: Language) -> Row {
 }
 
 /// The browser client's notes under the status rows: what the phone will say about the
-/// certificate, a busy port, the links of the other addresses and New Link. `windows`: the
-/// firewall note applies.
-pub fn note_rows(browser: &BrowserState, windows: bool, language: Language) -> Vec<Row> {
+/// certificate, a busy port, the links of the other addresses and New Link.
+pub fn note_rows(browser: &BrowserState, language: Language) -> Vec<Row> {
     let t = |text: BrowserText| text.text(language).to_owned();
     let mut rows = Vec::new();
     if browser.failed {
@@ -122,16 +121,13 @@ pub fn note_rows(browser: &BrowserState, windows: bool, language: Language) -> V
         );
     }
 
-    // A new token, and what may stand in the way.
+    // A new token.
     rows.push(
         Row::command("browserNewLink", t(BrowserText::NewLink))
             .detail(t(BrowserText::NewLinkDetail))
             .icon(Icon::ARROWS_CLOCKWISE)
             .group_start(),
     );
-    if windows {
-        rows.push(Row::info("browserFirewall", t(BrowserText::Firewall), None));
-    }
     rows
 }
 
@@ -160,10 +156,10 @@ mod tests {
     const LINK: &str = "https://192.168.178.20:45991/#t=q8Zk3VtW0bHn5sLc2pRj1A";
 
     /// The code, the status row, then the notes, as the LudusCtrl group lays them out.
-    fn rows(browser: &BrowserState, windows: bool, language: Language) -> Vec<Row> {
+    fn rows(browser: &BrowserState, language: Language) -> Vec<Row> {
         let mut rows = code_rows(browser, language);
         rows.push(status_row(browser, language));
-        rows.extend(note_rows(browser, windows, language));
+        rows.extend(note_rows(browser, language));
         rows
     }
 
@@ -186,7 +182,7 @@ mod tests {
 
     #[test]
     fn while_it_starts_the_code_holds_its_place() {
-        let rows = rows(&BrowserState::default(), true, Language::English);
+        let rows = rows(&BrowserState::default(), Language::English);
         assert_eq!(
             ids(&rows),
             [
@@ -196,7 +192,6 @@ mod tests {
                 "browserStatus",
                 "browserCertNote",
                 "browserNewLink",
-                "browserFirewall",
             ]
         );
         assert_eq!(rows[0].control, Control::Qr(String::new()), "an empty card");
@@ -215,7 +210,7 @@ mod tests {
             failed: true,
             ..BrowserState::default()
         };
-        let rows = rows(&state, true, Language::English);
+        let rows = rows(&state, Language::English);
         assert_eq!(ids(&rows), ["browserFailed"]);
         assert_eq!(
             rows[0].title,
@@ -225,7 +220,7 @@ mod tests {
 
     #[test]
     fn waiting_shows_the_code_the_link_and_the_notes() {
-        let rows = rows(&running(&[LINK]), true, Language::English);
+        let rows = rows(&running(&[LINK]), Language::English);
         assert_eq!(
             ids(&rows),
             [
@@ -235,7 +230,6 @@ mod tests {
                 "browserStatus",
                 "browserCertNote",
                 "browserNewLink",
-                "browserFirewall",
             ]
         );
         let at = |id: &str| rows.iter().find(|r| r.id == id).unwrap();
@@ -263,12 +257,6 @@ mod tests {
     }
 
     #[test]
-    fn the_firewall_note_is_for_windows() {
-        let rows = rows(&running(&[LINK]), false, Language::English);
-        assert!(!ids(&rows).contains(&"browserFirewall"));
-    }
-
-    #[test]
     fn a_browser_that_holds_the_pad_is_named_by_its_address() {
         let mut state = running(&[LINK]);
         state.peer = Some("192.168.178.41".into());
@@ -282,7 +270,7 @@ mod tests {
                 "192.168.178.41 adresindeki tarayıcı bağlı",
             ),
         ] {
-            let rows = rows(&state, true, language);
+            let rows = rows(&state, language);
             let status = rows.iter().find(|r| r.id == "browserStatus").unwrap();
             assert_eq!(status.control, Control::Info(Some(text.into())));
         }
@@ -303,7 +291,7 @@ mod tests {
                 "iPhone üzerindeki tarayıcı bağlı (192.168.178.41)",
             ),
         ] {
-            let rows = rows(&state, true, language);
+            let rows = rows(&state, language);
             let status = rows.iter().find(|r| r.id == "browserStatus").unwrap();
             assert_eq!(status.control, Control::Info(Some(text.into())));
         }
@@ -311,7 +299,7 @@ mod tests {
 
     #[test]
     fn a_pc_without_an_address_says_what_to_do() {
-        let rows = rows(&running(&[]), true, Language::English);
+        let rows = rows(&running(&[]), Language::English);
         let list = ids(&rows);
         assert!(list.contains(&"browserNoAddress"));
         assert!(!list.contains(&"browserQr") && !list.contains(&"browserCopy"));
@@ -327,7 +315,7 @@ mod tests {
         if let Some(info) = &mut state.info {
             info.certificate = Certificate::New;
         }
-        let rows = rows(&state, true, Language::English);
+        let rows = rows(&state, Language::English);
         assert!(!ids(&rows).contains(&"browserReissued"));
         assert!(ids(&rows).contains(&"browserCertNote"));
     }
@@ -340,7 +328,7 @@ mod tests {
             info.preferred_port = false;
             info.port = 51234;
         }
-        let rows = rows(&state, true, Language::English);
+        let rows = rows(&state, Language::English);
         let reissued = rows.iter().find(|r| r.id == "browserReissued").unwrap();
         assert!(reissued.warning && reissued.attached);
         let busy = rows.iter().find(|r| r.id == "browserPortBusy").unwrap();
@@ -352,7 +340,7 @@ mod tests {
         let second = "https://10.0.0.7:45991/#t=q8Zk3VtW0bHn5sLc2pRj1A";
         let third = "https://[fe80::1]:45991/#t=q8Zk3VtW0bHn5sLc2pRj1A";
         let state = running(&[LINK, second, third]);
-        let rows = rows(&state, true, Language::Turkish);
+        let rows = rows(&state, Language::Turkish);
         let caption = rows.iter().find(|r| r.id == "browserOther").unwrap();
         assert_eq!(caption.title, "Diğer Adresler");
         let first = rows.iter().find(|r| r.id == "browserAddr0").unwrap();
@@ -390,7 +378,7 @@ mod tests {
 
     #[test]
     fn the_rows_read_in_turkish() {
-        let rows = rows(&running(&[LINK]), true, Language::Turkish);
+        let rows = rows(&running(&[LINK]), Language::Turkish);
         let title = |id: &str| rows.iter().find(|r| r.id == id).unwrap().title.clone();
         assert_eq!(title("browserStatus"), "Tarayıcı");
         assert_eq!(title("browserCopy"), "Bağlantıyı Kopyala");

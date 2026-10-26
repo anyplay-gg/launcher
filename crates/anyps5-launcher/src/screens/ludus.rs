@@ -100,7 +100,11 @@ pub fn rows(
     rows[first].group_start = true;
 
     // The browser client's notes: the certificate, the other addresses, New Link.
-    rows.extend(ludus_web::note_rows(&ludus.browser, windows, language));
+    rows.extend(ludus_web::note_rows(&ludus.browser, language));
+    // Once for the app and the page: Windows asks on the first start.
+    if windows {
+        rows.push(Row::info("ludusFirewall", t(LudusText::Firewall), None));
+    }
 
     if !ludus.failed {
         // The address for typing it in.
@@ -251,6 +255,7 @@ mod tests {
                 "ludusctrl",
                 "ludusFailed",
                 "browserFailed",
+                "ludusFirewall",
                 "ludusAppNote",
                 "ludusApp"
             ]
@@ -331,7 +336,7 @@ mod tests {
                 "browserOtherNote",
                 "browserAddr0",
                 "browserNewLink",
-                "browserFirewall",
+                "ludusFirewall",
                 "ludusAddress",
                 "ludusAddressNote",
                 "ludusPaired",
@@ -369,7 +374,7 @@ mod tests {
                 "browserStatus",
                 "browserCertNote",
                 "browserNewLink",
-                "browserFirewall",
+                "ludusFirewall",
                 "ludusPaired",
                 "ludusPairedNone",
                 "ludusAppNote",
@@ -514,5 +519,35 @@ mod tests {
         ] {
             assert_ne!(a, b);
         }
+    }
+
+    #[test]
+    fn windows_asks_once_for_the_app_and_the_page() {
+        let state = LudusState {
+            browser: browser(&[LINK]),
+            ..LudusState::default()
+        };
+        for language in [Language::English, Language::Turkish] {
+            let rows = rows(&on(), &state, None, true, language);
+            let notes: Vec<_> = rows.iter().filter(|r| r.id.contains("Firewall")).collect();
+            assert_eq!(notes.len(), 1, "one note");
+            assert_eq!(notes[0].id, "ludusFirewall");
+            assert!(notes[0].title.contains("Windows"));
+        }
+        let english = rows(&on(), &state, None, true, Language::English);
+        let note = english.iter().find(|r| r.id == "ludusFirewall").unwrap();
+        assert!(note.title.contains("private networks") && note.title.contains("first time"));
+        // The app alone, when the browser client failed: the note stays.
+        let failed = LudusState {
+            browser: BrowserState {
+                failed: true,
+                ..BrowserState::default()
+            },
+            ..LudusState::default()
+        };
+        let list = ids(&rows(&on(), &failed, None, true, Language::English));
+        assert!(list.contains(&"ludusFirewall"));
+        let list = ids(&rows(&on(), &state, None, false, Language::English));
+        assert!(!list.contains(&"ludusFirewall"), "only on Windows");
     }
 }

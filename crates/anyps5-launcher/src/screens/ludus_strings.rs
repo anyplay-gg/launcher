@@ -30,10 +30,12 @@ pub enum LudusText {
     AppOpen,
     /// Top bar: the accessible name of the status, `%@` = the phone's name.
     BarLabel,
+    /// Windows: the firewall question on the first start, for the app and the page alike.
+    Firewall,
 }
 
 impl LudusText {
-    pub const ALL: [LudusText; 10] = [
+    pub const ALL: [LudusText; 11] = [
         LudusText::Title,
         LudusText::SwitchDetail,
         LudusText::StartFailed,
@@ -44,6 +46,7 @@ impl LudusText {
         LudusText::AppNote,
         LudusText::AppOpen,
         LudusText::BarLabel,
+        LudusText::Firewall,
     ];
 
     pub const fn english(self) -> &'static str {
@@ -66,6 +69,9 @@ impl LudusText {
             }
             LudusText::AppOpen => "Open the LudusCtrl Page",
             LudusText::BarLabel => "LudusCtrl connected: %@",
+            LudusText::Firewall => {
+                "The first time LudusCtrl runs, Windows asks whether AnyPlay Launcher may use the network. Allow it on private networks, or neither the app nor the page can reach this PC."
+            }
         }
     }
 
@@ -89,6 +95,9 @@ impl LudusText {
             }
             LudusText::AppOpen => "LudusCtrl Sayfasını Aç",
             LudusText::BarLabel => "LudusCtrl bağlı: %@",
+            LudusText::Firewall => {
+                "LudusCtrl ilk kez çalıştığında Windows, AnyPlay Launcher'ın ağı kullanmasına izin verip vermeyeceğini sorar. Özel ağlarda izin ver; yoksa ne uygulama ne de sayfa bu bilgisayara ulaşabilir."
+            }
         }
     }
 
