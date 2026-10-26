@@ -310,6 +310,12 @@ pub enum OnlineLook {
     FriendsOffline,
     /// The cloud has not answered yet.
     FriendsConnecting,
+    /// A friend's page while offline: no join, invitation or call is offered.
+    FriendOffline,
+    /// A thread while offline: the bar says so in the composer's place.
+    ConversationOffline,
+    /// The party room while offline: nobody can be invited.
+    PartyOffline,
     /// A friend's row has the focus: the quick actions come up.
     FriendsFocus,
     /// The focus stands on the rail.
@@ -781,6 +787,9 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "friends-empty" => ScreenPage::Online(OnlineLook::FriendsEmpty),
         "friends-offline" => ScreenPage::Online(OnlineLook::FriendsOffline),
         "friends-connecting" => ScreenPage::Online(OnlineLook::FriendsConnecting),
+        "friends-friend-offline" => ScreenPage::Online(OnlineLook::FriendOffline),
+        "friends-conversation-offline" => ScreenPage::Online(OnlineLook::ConversationOffline),
+        "friends-party-offline" => ScreenPage::Online(OnlineLook::PartyOffline),
         "friends-focus" => ScreenPage::Online(OnlineLook::FriendsFocus),
         "friends-rail" => ScreenPage::Online(OnlineLook::FriendsRail),
         "friends-party-none" => ScreenPage::Online(OnlineLook::PartyNone),
@@ -1039,7 +1048,10 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         sample_social(&mut state);
     }
     match look {
-        OnlineLook::FriendsOffline => state.cloud = Some(Cloud::Offline),
+        OnlineLook::FriendsOffline
+        | OnlineLook::FriendOffline
+        | OnlineLook::ConversationOffline
+        | OnlineLook::PartyOffline => state.cloud = Some(Cloud::Offline),
         OnlineLook::FriendsConnecting => state.cloud = None,
         OnlineLook::PartyNone => {
             state.social.apply_party(None);
@@ -2674,7 +2686,15 @@ impl ScreenGallery {
                         self.friends.focus_row("friendRow", 1, &data);
                     }
                     OnlineLook::FriendsRail => self.friends.focus_rail(),
-                    OnlineLook::PartyNone => self.friends.show_page(Page::Party, &data),
+                    OnlineLook::PartyNone | OnlineLook::PartyOffline => {
+                        self.friends.show_page(Page::Party, &data)
+                    }
+                    OnlineLook::FriendOffline => self
+                        .friends
+                        .show_page(Page::Friend(anyps5_core::online::api::AccountId(2)), &data),
+                    OnlineLook::ConversationOffline => self
+                        .friends
+                        .show_page(Page::Conversation("c-lumen".into()), &data),
                     OnlineLook::MissedCall => self.friends.show_page(Page::Home, &data),
                     OnlineLook::PartyDiscord => self.friends.show_page(Page::Party, &data),
                     OnlineLook::Friend => self

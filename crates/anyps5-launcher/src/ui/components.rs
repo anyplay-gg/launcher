@@ -1251,11 +1251,13 @@ impl HintSet {
     }
 }
 
-fn hint_list(language: Language, set: HintSet) -> Vec<Hint<'static>> {
+/// `enter` is what Enter does where the focus makes it say more than "Select" (a field edits, a
+/// composer sends).
+fn hint_list(language: Language, set: HintSet, enter: Option<&'static str>) -> Vec<Hint<'static>> {
     let options = set.options;
     let mut hints = vec![Hint {
         action: HintAction::Select,
-        label: language.text(Key::HintSelect),
+        label: enter.unwrap_or_else(|| language.text(Key::HintSelect)),
     }];
     if set.back {
         hints.push(Hint {
@@ -1287,9 +1289,14 @@ pub fn hint_bar(ui: &mut Ui, language: Language, options: bool) {
 
 /// [`hint_bar`] for a [`HintSet`].
 pub fn hint_bar_set(ui: &mut Ui, language: Language, set: HintSet) {
+    hint_bar_enter(ui, language, set, None);
+}
+
+/// [`hint_bar_set`] with what Enter does on the focused thing (`None`: "Select").
+pub fn hint_bar_enter(ui: &mut Ui, language: Language, set: HintSet, enter: Option<&'static str>) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = size::HINT_BAR_GAP;
-        for hint in hint_list(language, set) {
+        for hint in hint_list(language, set, enter) {
             hint.show(ui);
         }
     });
@@ -1309,8 +1316,18 @@ pub fn hint_bar_size(painter: &Painter, language: Language, options: bool) -> (f
 
 /// Width and height of [`hint_bar_set`].
 pub fn hint_bar_set_size(painter: &Painter, language: Language, set: HintSet) -> (f32, f32) {
+    hint_bar_enter_size(painter, language, set, None)
+}
+
+/// Width and height of [`hint_bar_enter`].
+pub fn hint_bar_enter_size(
+    painter: &Painter,
+    language: Language,
+    set: HintSet,
+    enter: Option<&'static str>,
+) -> (f32, f32) {
     let device = input::device(painter.ctx());
-    let hints = hint_list(language, set);
+    let hints = hint_list(language, set, enter);
     let width = hints.iter().map(|h| h.width(painter, device)).sum::<f32>()
         + size::HINT_BAR_GAP * hints.len().saturating_sub(1) as f32;
     (width, size::HINT_CAP.max(ty::HINT_LABEL.line_height()))

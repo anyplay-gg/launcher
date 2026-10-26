@@ -154,11 +154,23 @@ pub fn footer_hints(
     language: crate::ui::i18n::Language,
     set: crate::ui::components::HintSet,
 ) {
-    use crate::ui::components::{hint_bar_set, hint_bar_set_size};
+    footer_hints_enter(ui, screen, language, set, None);
+}
+
+/// [`footer_hints`] where Enter says what it does on the focused thing: "Send" in a composer,
+/// "Edit" on a field (`None`: "Select"). A hint never promises what the key does not do.
+pub fn footer_hints_enter(
+    ui: &mut egui::Ui,
+    screen: egui::Rect,
+    language: crate::ui::i18n::Language,
+    set: crate::ui::components::HintSet,
+    enter: Option<&'static str>,
+) {
+    use crate::ui::components::{hint_bar_enter, hint_bar_enter_size};
     use crate::ui::theme::pad;
     use egui::{Align, Layout, Rect, UiBuilder, pos2, vec2};
     let painter = ui.painter().clone();
-    let (width, height) = hint_bar_set_size(&painter, language, set);
+    let (width, height) = hint_bar_enter_size(&painter, language, set, enter);
     let rect = Rect::from_min_size(
         pos2(
             screen.max.x - pad::HOME_X - width,
@@ -171,7 +183,7 @@ pub fn footer_hints(
             .max_rect(rect)
             .layout(Layout::left_to_right(Align::Center)),
     );
-    hint_bar_set(&mut bar, language, set);
+    hint_bar_enter(&mut bar, language, set, enter);
 }
 
 /// The room the top row of a full-screen area takes: the Back button and, level with it, the hint

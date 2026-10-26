@@ -81,6 +81,10 @@ pub(super) fn party_candidates(online: &Online) -> Vec<&Friend> {
 
 /// How many more members the party takes; seven for a party that does not exist yet.
 pub(super) fn free_places(online: &Online) -> usize {
+    // Offline nobody can be invited: the invitation goes through the cloud.
+    if !online.is_online() {
+        return 0;
+    }
     let (max, members) = online
         .social
         .party

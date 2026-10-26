@@ -471,6 +471,24 @@ impl OnlinePanel {
         }
     }
 
+    /// What Enter does on the focused thing when "Select" would be wrong: a field edits, a
+    /// composer sends. `None` is "Select". The hint bar of the screen says it.
+    pub fn enter_hint(&self, ctx: &Context, data: &OnlineData<'_>) -> Option<&'static str> {
+        if self.chat_is_thread(data) {
+            return self.chat_enter_hint(ctx, data);
+        }
+        if self.room_is_page() || self.chat_is_list(data) || self.feed_is_list(data) {
+            return None;
+        }
+        let rows = self.rows(data).2;
+        match rows.get(self.side.nav.row).map(rows::Row::kind) {
+            Some(RowKind::Text | RowKind::Keys) => {
+                Some(crate::screens::online_social_strings::SocialText::Edit.text(data.language))
+            }
+            _ => None,
+        }
+    }
+
     /// The talk key row waits for a key.
     pub fn capturing(&self) -> bool {
         self.capturing
@@ -1212,7 +1230,8 @@ impl OnlinePanel {
                     .and_then(|f| f.presence.activity.as_ref())
                     .and_then(|a| a.session.as_ref())
                     .filter(|s| s.joinable);
-                if let Some(session) = joinable {
+                // Joining and inviting go through the cloud: offline they are not offered.
+                if let Some(session) = joinable.filter(|_| online.is_online()) {
                     rows.push(
                         Row::command("join", t(T::JoinGame))
                             .icon(Icon::GAME_CONTROLLER)
@@ -1239,7 +1258,7 @@ impl OnlinePanel {
                     .session
                     .as_ref()
                     .is_some_and(|s| !s.members.iter().any(|m| m.account.id == *id));
-                if in_session {
+                if in_session && online.is_online() {
                     rows.push(
                         Row::command("invite", t(T::InviteToSession)).icon(Icon::PAPER_PLANE_RIGHT),
                     );
@@ -1516,7 +1535,17 @@ impl OnlinePanel {
             rows.push(caption);
         }
         let answers = vec![t(T::Accept).to_owned(), t(T::Decline).to_owned()];
+        // Offline the answers cannot go out: the row says so instead of offering them.
+        let online_now = data.online.is_online();
         for request in incoming.iter().take(limit.unwrap_or(usize::MAX)) {
+            if !online_now {
+                rows.push(
+                    Row::info("requestWaiting", request.account.handle.clone(), None)
+                        .avatar(self.avatar_of(data, &request.account, None))
+                        .detail(FX::RequestOffline.text(language)),
+                );
+                continue;
+            }
             rows.push(
                 Row::buttons(
                     "requestRow",
@@ -1619,9 +1648,13 @@ impl OnlinePanel {
         if friends.is_empty() {
             rows.push(Row::info("noFriends", t(T::NoFriends), None).group_start());
         }
-        let mut add = Row::command("addFriend", t(T::AddFriend)).icon(Icon::USER_PLUS);
-        add.group_start = !rows.is_empty() && !friends.is_empty();
-        rows.push(add);
+        // Adding a friend sends a request: offline there is nothing to press (the note above says
+        // why, and Try Again is the way out).
+        if online.is_online() {
+            let mut add = Row::command("addFriend", t(T::AddFriend)).icon(Icon::USER_PLUS);
+            add.group_start = !rows.is_empty() && !friends.is_empty();
+            rows.push(add);
+        }
         let mut group = None;
         for friend in friends {
             let rank = friend_group(friend);
@@ -1741,10 +1774,15 @@ pub(super) fn friend_actions(
         .as_ref()
         .and_then(|a| a.session.as_ref())
         .is_some_and(|s| s.joinable);
-    if joinable {
+    // Joining, inviting and a first message go through the cloud; a thread that is held can still
+    // be read offline.
+    let here = online.is_online();
+    if joinable && here {
         acts.push(FriendAct::Join);
     }
-    acts.push(FriendAct::Message);
+    if here || social.direct_with(friend.account.id).is_some() {
+        acts.push(FriendAct::Message);
+    }
     let me = online.account.as_ref().map(|a| a.id);
     let may_invite = social.party.is_none() || me.is_some_and(|me| social.leads(me));
     if may_invite && !social.in_party(friend.account.id) && social::free_places(online) > 0 {
@@ -1867,7 +1905,7 @@ fn trophy_row(count: Option<&Count>, language: Language) -> Row {
 fn call_row(data: &OnlineData<'_>, id: AccountId) -> Option<Row> {
     let online = data.online;
     let friend = online.friend(id).filter(|f| f.presence.online)?;
-    if online.calls.ringing.is_some() {
+    if !online.is_online() || online.calls.ringing.is_some() {
         return None;
     }
     let me = online.account.as_ref()?.id;
@@ -2293,6 +2331,71 @@ mod tests {
         assert_eq!(ids(&panel.rows(&data(&online)).2)[0], "connecting");
         online.cloud = Some(Cloud::Online);
         assert_ne!(ids(&panel.rows(&data(&online)).2)[0], "connecting");
+    }
+
+    #[test]
+    fn offline_a_friend_request_says_why_it_cannot_be_answered() {
+        let mut online = signed_in();
+        let mut panel = OnlinePanel::default();
+        panel.open(&data(&online));
+        assert!(ids(&panel.rows(&data(&online)).2).contains(&"requestRow"));
+        online.cloud = Some(Cloud::Offline);
+        let rows = panel.rows(&data(&online)).2;
+        let ids = ids(&rows);
+        assert!(!ids.contains(&"requestRow"), "no Accept or Decline offline");
+        assert!(!ids.contains(&"addFriend"), "no request can go out offline");
+        let waiting = rows.iter().find(|r| r.id == "requestWaiting").unwrap();
+        assert_eq!(waiting.title, "Kit");
+        assert_eq!(
+            waiting.detail.as_deref(),
+            Some("Wants to be your friend. Answer when you are online.")
+        );
+        assert!(!waiting.kind().focusable(), "the row is a note, not a stop");
+    }
+
+    #[test]
+    fn offline_a_friend_offers_no_join_invitation_or_call() {
+        let mut online = signed_in();
+        let friend = online.friends.friends[0].clone();
+        let acts = friend_actions(&data(&online), &friend);
+        assert!(acts.contains(&FriendAct::Join) && acts.contains(&FriendAct::Message));
+        online.cloud = Some(Cloud::Offline);
+        let acts = friend_actions(&data(&online), &friend);
+        assert!(!acts.contains(&FriendAct::Join), "{acts:?}");
+        assert!(!acts.contains(&FriendAct::Invite), "{acts:?}");
+        // Without a conversation held there is nothing to read: no Message either.
+        assert!(!acts.contains(&FriendAct::Message), "{acts:?}");
+        assert!(call_row(&data(&online), friend.account.id).is_none());
+        assert_eq!(social::free_places(&online), 0);
+        // The friend's page offers no join and no invitation either.
+        let mut panel = OnlinePanel::default();
+        panel.open(&data(&online));
+        panel.go(Page::Friend(friend.account.id), &data(&online));
+        let page = panel.rows(&data(&online)).2;
+        for gone in ["join", "invite", "call", "inviteToParty"] {
+            assert!(!ids(&page).contains(&gone), "{gone}");
+        }
+        assert!(ids(&page).contains(&"viewProfile"));
+    }
+
+    #[test]
+    fn enter_says_what_it_does_on_a_field() {
+        let online = signed_in();
+        let ctx = Context::default();
+        let mut panel = OnlinePanel::default();
+        panel.open(&data(&online));
+        panel.go(Page::AddFriend, &data(&online));
+        let rows = panel.rows(&data(&online)).2;
+        let field = rows.iter().position(|r| r.kind() == RowKind::Text).unwrap();
+        panel.side.nav.row = field;
+        assert_eq!(panel.enter_hint(&ctx, &data(&online)), Some("Edit"));
+        panel.go(Page::Home, &data(&online));
+        panel.side.nav.row = 0;
+        assert_eq!(
+            panel.enter_hint(&ctx, &data(&online)),
+            None,
+            "an action selects"
+        );
     }
 
     #[test]

@@ -785,10 +785,11 @@ impl<'a> PanelRow<'a> {
     pub fn show(mut self, ui: &mut Ui) -> RowOutput {
         let painter = ui.painter().clone();
         let ctx = ui.ctx().clone();
-        if matches!(
-            self.control,
-            RowControl::Caption | RowControl::Info { value: None }
-        ) {
+        // A note is a block of text; a note with a picture or a second line is a quiet row.
+        let plain = self.avatar.is_none() && self.detail.is_none();
+        if matches!(self.control, RowControl::Caption)
+            || (plain && matches!(self.control, RowControl::Info { value: None }))
+        {
             return self.show_text_block(ui);
         }
         if let RowControl::Qr { data } = self.control {

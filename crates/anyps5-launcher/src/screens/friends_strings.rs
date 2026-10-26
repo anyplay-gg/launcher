@@ -28,6 +28,10 @@ pub enum FriendsText {
     ConnectingNote,
     OfflineNote,
     TryAgain,
+    /// A friend request while offline: it cannot be answered yet.
+    RequestOffline,
+    /// The bar where the composer would be, while offline.
+    ComposerOffline,
     NotInParty,
     NotInPartyNote,
     /// The rail's name for an item with something waiting: `%@` = the item, `%@` = how many.
@@ -54,6 +58,10 @@ impl FriendsText {
                 "You are offline. Friends and messages update when the connection is back."
             }
             FriendsText::TryAgain => "Try Again",
+            FriendsText::RequestOffline => "Wants to be your friend. Answer when you are online.",
+            FriendsText::ComposerOffline => {
+                "You are offline. You can write again when the connection is back."
+            }
             FriendsText::NotInParty => "You are not in a party",
             FriendsText::NotInPartyNote => {
                 "A party keeps you together across games, with chat and voice."
@@ -81,6 +89,8 @@ impl FriendsText {
                 "Çevrimdışısın. Arkadaşlar ve mesajlar bağlantı gelince güncellenir."
             }
             FriendsText::TryAgain => "Tekrar Dene",
+            FriendsText::RequestOffline => "Arkadaşın olmak istiyor. Çevrimiçi olunca yanıtla.",
+            FriendsText::ComposerOffline => "Çevrimdışısın. Bağlantı gelince yine yazabilirsin.",
             FriendsText::NotInParty => "Bir partide değilsin",
             FriendsText::NotInPartyNote => {
                 "Parti, sohbet ve sesle oyunlar arasında seni arkadaşlarınla bir arada tutar."
