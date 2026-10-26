@@ -27,7 +27,7 @@ use crate::ui::i18n::{Arg, Language};
 use crate::ui::icons::Icon;
 use crate::ui::sound::Cue;
 use crate::ui::text;
-use crate::ui::theme::{self, Weight, fade, radius, shadows, size, ty, white};
+use crate::ui::theme::{self, fade, radius, shadows, size, ty, white};
 
 /// Where the surfaces hang: below the toast, which owns the top 28 dp.
 const TOP: f32 = size::TOAST_TOP + 72.0;
@@ -365,9 +365,12 @@ pub(crate) fn incoming_card(
                 &painter,
                 centre,
                 Align2::CENTER_CENTER,
-                theme::TextStyle::new(24.0, Weight::Bold),
+                ty::ITEM_TITLE,
                 &initial,
-                fade(Color32::WHITE, a),
+                fade(
+                    theme::readable_ink(crate::screens::home::avatar_middle(accent)),
+                    a,
+                ),
             );
             let text_x = inner.min.x + AVATAR + 16.0;
             let max_width = inner.max.x - text_x;

@@ -130,6 +130,9 @@ impl Bezier {
     pub const EASE_IN: Bezier = Bezier(0.42, 0.0, 1.0, 1.0);
     /// SwiftUI `easeOut`.
     pub const EASE_OUT: Bezier = Bezier(0.0, 0.0, 0.58, 1.0);
+    /// A stronger ease-out for the short motions of the interface (hover, press, progress):
+    /// fast at the start, so the answer to a touch is seen at once (DESIGN.md 3.12).
+    pub const STRONG_OUT: Bezier = Bezier(0.23, 1.0, 0.32, 1.0);
     /// SwiftUI `easeInOut`.
     pub const EASE_IN_OUT: Bezier = Bezier(0.42, 0.0, 0.58, 1.0);
     pub const LINEAR: Bezier = Bezier(0.0, 0.0, 1.0, 1.0);
@@ -237,7 +240,7 @@ impl Motion {
     /// The curve for this motion, honouring "Animations: Reduced".
     pub fn curve(self, reduced: bool) -> Curve {
         let ease_out = |duration| Curve::Ease {
-            bezier: Bezier::EASE_OUT,
+            bezier: Bezier::STRONG_OUT,
             duration,
         };
         match (self, reduced) {
@@ -245,7 +248,11 @@ impl Motion {
             (Motion::Focus, true) => ease_out(0.12),
             (Motion::Hover, _) => ease_out(0.12),
             (Motion::Press, _) => ease_out(0.10),
-            (Motion::Exit, _) => ease_out(0.18),
+            // Tuned against the arriving spring (the hero pair test): the softer curve.
+            (Motion::Exit, _) => Curve::Ease {
+                bezier: Bezier::EASE_OUT,
+                duration: 0.18,
+            },
             (Motion::Layout, false) => Curve::Spring(Self::LAYOUT),
             (Motion::Layout, true) => ease_out(0.15),
             (Motion::Overlay, false) => Curve::Spring(Self::OVERLAY),
@@ -723,6 +730,7 @@ mod tests {
         for b in [
             Bezier::EASE_IN,
             Bezier::EASE_OUT,
+            Bezier::STRONG_OUT,
             Bezier::EASE_IN_OUT,
             Bezier::LINEAR,
         ] {
@@ -759,7 +767,7 @@ mod tests {
         assert_eq!(
             Motion::Focus.curve(true),
             Curve::Ease {
-                bezier: Bezier::EASE_OUT,
+                bezier: Bezier::STRONG_OUT,
                 duration: 0.12
             }
         );

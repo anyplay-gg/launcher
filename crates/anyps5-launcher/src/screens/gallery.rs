@@ -4,6 +4,8 @@
 //! ```text
 //! anyplay-launcher --gallery=settings|settings1..6|game-settings|confirm|controls|controls-capture|
 //!                           controls-end|advanced|trophies|trophies-hidden|trophies-revealed|banner|start|unlocking|log|report|library|
+//!                           captures-empty|captures-few|captures-many|captures-clips|captures-screenshot|captures-clip|
+//!                           captures-clip-plain|captures-confirm|captures-missing|captures-loading|
 //!                           about-update|behavior-links|settings-codec|settings-codec-off|settings-location|settings-location-custom|settings-location-network|settings-location-missing|settings-location-moving|settings-location-left|behavior-clips-off|behavior-clips|behavior-clips-key|behavior-steam|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|toolkit-engine|toolkit-engine-update|
 //!                           toolkit-unused|game-toolkit|
 //!                           recommended|recommended-warning|whats-new|whats-new-loading|
@@ -16,7 +18,8 @@
 //!                           online-party|online-party-picker|online-messages|online-conversation|
 //!                           online-message|online-request|
 //!                           friends-message-own|friends-quick-replies|friends-keyboard|
-//!                           friends-chat-options|
+//!                           friends-chat-options|friends-confirm|friends-confirm-unsend|
+//!                           friends-confirm-party|
 //!                           online-party-voice|online-party-member|online-voice|online-voice-key|
 //!                           online-voice-devices|online-voice-denied|
 //!                           online-screen-ready|online-screen-hosting|online-screen-offer|
@@ -56,6 +59,7 @@ use egui::{Color32, ColorImage, Context, Rect, TextureHandle, TextureOptions, Ui
 use crate::app::preview::{HomeStand, Scene};
 use crate::screens::advanced::{AdvancedData, AdvancedPanel};
 use crate::screens::banner::{self, BannerLook, BannerTrophy};
+use crate::screens::captures::sample::CapturesLook;
 use crate::screens::controls::{ControlsData, ControlsPanel};
 use crate::screens::game_settings::{
     GameSettingsData, GameSettingsPanel, RecommendedRow, UninstallPanel,
@@ -78,7 +82,6 @@ use crate::ui::chrome::{TileImage, TileOverlay};
 use crate::ui::i18n::Key;
 use crate::ui::icons::Icon;
 use crate::ui::input::InputEvent;
-use crate::ui::theme::white;
 use anyps5_core::gamefiles::{GameInput, parse_input_ini};
 
 /// The page to show.
@@ -107,6 +110,10 @@ pub enum ScreenPage {
     /// The review of a report to AnyPS5.
     Report,
     Library,
+    /// The library grid with no games.
+    LibraryEmpty,
+    /// The Captures area, in one of its states.
+    Captures(crate::screens::captures::sample::CapturesLook),
     /// The Toolkit category, in its rows: stable, an update waiting, pinned, a local build.
     Toolkit(ToolkitLook),
     /// The About page with a downloaded launcher update waiting ("Restart Now").
@@ -235,6 +242,32 @@ pub enum PhoneLook {
     NoAccess,
     /// The server could not start.
     Failed,
+    /// The LudusCtrl option on, no phone yet (the phone server waits too).
+    LudusWaiting,
+    /// A LudusCtrl phone asks to be paired.
+    LudusPairing,
+    /// A LudusCtrl phone's controller is live; two phones are paired.
+    LudusConnected,
+    /// A phone of the phone server and a LudusCtrl phone both connected: the whole page.
+    Both,
+}
+
+impl PhoneLook {
+    /// Whether the phone server's switch is on in this look.
+    fn phone_on(self) -> bool {
+        self != PhoneLook::Off
+    }
+
+    /// Whether the LudusCtrl option is on in this look.
+    fn ludus_on(self) -> bool {
+        matches!(
+            self,
+            PhoneLook::LudusWaiting
+                | PhoneLook::LudusPairing
+                | PhoneLook::LudusConnected
+                | PhoneLook::Both
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -298,6 +331,10 @@ pub enum OnlineLook {
     Keyboard,
     /// Mute, pin, report, block.
     ChatOptions,
+    /// The question before a block, an unsend and leaving the party.
+    Confirm,
+    ConfirmUnsend,
+    ConfirmParty,
     /// A stranger's first messages, waiting for an answer.
     Request,
     /// The party with voice on: Lumen speaks, Kit is muted for the player.
@@ -508,6 +545,47 @@ fn sample_phone(look: PhoneLook) -> crate::app::phone::PhoneState {
             state.info = None;
             state.failed = true;
         }
+        PhoneLook::LudusWaiting | PhoneLook::LudusPairing | PhoneLook::LudusConnected => {}
+        PhoneLook::Both => {
+            state.connected = Some("Pixel 8".into());
+            state.latency_ms = Some(4.0);
+            state.paired = vec![device("a1", "Pixel 8", "2026-10-24T18:14:03Z")];
+        }
+    }
+    state
+}
+
+/// Invented LudusCtrl phones for the same page.
+fn sample_ludus(look: PhoneLook) -> crate::app::ludus::LudusState {
+    use crate::app::ludus::{LudusPairing, LudusPhone, LudusState};
+    use anyps5_core::remote::VirtualPadStatus;
+    let phone = |id: &str, name: &str, added: &str| LudusPhone {
+        id: id.into(),
+        name: name.into(),
+        added: added.into(),
+    };
+    let mut state = LudusState {
+        port: Some(45989),
+        pad: Some(VirtualPadStatus::Ready),
+        ..LudusState::default()
+    };
+    match look {
+        PhoneLook::LudusPairing => {
+            state.pairing = Some(LudusPairing {
+                id: 1,
+                phone_name: "Galaxy Tab S9".into(),
+                code: "260329".into(),
+            });
+        }
+        PhoneLook::LudusConnected | PhoneLook::Both => {
+            state.connected = Some("Galaxy Tab S9".into());
+            state.controller = true;
+            state.paired = vec![
+                phone("c3", "Galaxy Tab S9", "2026-10-25T20:41:07Z"),
+                phone("d4", "Redmi Note 13 Pro", "2026-10-26T08:15:52Z"),
+            ];
+        }
+        _ => {}
     }
     state
 }
@@ -532,6 +610,17 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "log" => ScreenPage::Log,
         "report" => ScreenPage::Report,
         "library" => ScreenPage::Library,
+        "library-empty" => ScreenPage::LibraryEmpty,
+        "captures-empty" => ScreenPage::Captures(CapturesLook::Empty),
+        "captures-few" => ScreenPage::Captures(CapturesLook::Few),
+        "captures-many" => ScreenPage::Captures(CapturesLook::Many),
+        "captures-clips" => ScreenPage::Captures(CapturesLook::Clips),
+        "captures-screenshot" => ScreenPage::Captures(CapturesLook::Screenshot),
+        "captures-clip" => ScreenPage::Captures(CapturesLook::Clip),
+        "captures-clip-plain" => ScreenPage::Captures(CapturesLook::ClipPlain),
+        "captures-confirm" => ScreenPage::Captures(CapturesLook::Confirm),
+        "captures-missing" => ScreenPage::Captures(CapturesLook::Missing),
+        "captures-loading" => ScreenPage::Captures(CapturesLook::Loading),
         "about-update" => ScreenPage::AboutUpdate(UpdateLook::Ready),
         "about-update-checking" => ScreenPage::AboutUpdate(UpdateLook::Checking),
         "about-update-current" => ScreenPage::AboutUpdate(UpdateLook::UpToDate),
@@ -567,6 +656,10 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "phone-driver" => ScreenPage::Phone(PhoneLook::DriverMissing),
         "phone-access" => ScreenPage::Phone(PhoneLook::NoAccess),
         "phone-failed" => ScreenPage::Phone(PhoneLook::Failed),
+        "phone-ludus" => ScreenPage::Phone(PhoneLook::LudusWaiting),
+        "phone-ludus-pairing" => ScreenPage::Phone(PhoneLook::LudusPairing),
+        "phone-ludus-connected" => ScreenPage::Phone(PhoneLook::LudusConnected),
+        "phone-both" => ScreenPage::Phone(PhoneLook::Both),
         "toolkit" => ScreenPage::Toolkit(ToolkitLook::Stable),
         "toolkit-update" => ScreenPage::Toolkit(ToolkitLook::Update),
         "toolkit-newer" => ScreenPage::Toolkit(ToolkitLook::Newer),
@@ -615,6 +708,9 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "friends-quick-replies" => ScreenPage::Online(OnlineLook::QuickReplies),
         "friends-keyboard" => ScreenPage::Online(OnlineLook::Keyboard),
         "friends-chat-options" => ScreenPage::Online(OnlineLook::ChatOptions),
+        "friends-confirm" => ScreenPage::Online(OnlineLook::Confirm),
+        "friends-confirm-unsend" => ScreenPage::Online(OnlineLook::ConfirmUnsend),
+        "friends-confirm-party" => ScreenPage::Online(OnlineLook::ConfirmParty),
         "friends-request" => ScreenPage::Online(OnlineLook::Request),
         "friends-party-voice" => ScreenPage::Online(OnlineLook::PartyVoice),
         "friends-party-member" => ScreenPage::Online(OnlineLook::PartyMember),
@@ -1721,6 +1817,7 @@ pub struct ScreenGallery {
     update: UpdateState,
     toolkit_version: String,
     phone: crate::app::phone::PhoneState,
+    ludus: crate::app::ludus::LudusState,
     controls: ControlsPanel,
     /// A game whose files name its controls, for the controls page.
     game_input: GameInput,
@@ -1729,6 +1826,8 @@ pub struct ScreenGallery {
     advanced: AdvancedPanel,
     trophies: TrophyListPanel,
     library: LibraryGrid,
+    captures: crate::screens::captures::CapturesScreen,
+    captures_sample: Option<crate::screens::captures::sample::Sample>,
     log: LogView,
     start: StartScreen,
     banner_icons: IconCache,
@@ -1778,10 +1877,11 @@ impl ScreenGallery {
                 ToolkitLook::Unused | ToolkitLook::Glibc => {}
             }
         }
-        let phone = match page {
+        let (phone, ludus) = match page {
             ScreenPage::Phone(look) => {
-                prefs.phone_remote = look != PhoneLook::Off;
-                sample_phone(look)
+                prefs.phone_remote = look.phone_on();
+                prefs.phone_ludusctrl = look.ludus_on();
+                (sample_phone(look), sample_ludus(look))
             }
             _ => Default::default(),
         };
@@ -1806,6 +1906,7 @@ impl ScreenGallery {
             update,
             toolkit_version,
             phone,
+            ludus,
             page,
             covers: Vec::new(),
             avatars: Vec::new(),
@@ -1842,6 +1943,8 @@ impl ScreenGallery {
             advanced: AdvancedPanel::default(),
             trophies: TrophyListPanel::default(),
             library: LibraryGrid::default(),
+            captures: crate::screens::captures::CapturesScreen::default(),
+            captures_sample: None,
             log: LogView::default(),
             start: StartScreen::default(),
             banner_icons: IconCache::default(),
@@ -1876,6 +1979,89 @@ impl ScreenGallery {
         ) && let Some(strip) = calls::strip_data(&self.online)
         {
             calls::call_strip(ctx, &strip, language, 1.0, true);
+        }
+    }
+
+    /// The Captures area over the invented folder.
+    fn captures_screen(&mut self, shell: &mut Shell, ctx: &Context, look: CapturesLook) {
+        use crate::screens::captures::{CapturesData, sample};
+        let games: Vec<Game> = (0..NAMES.len()).map(fake_game).collect();
+        let language = shell.language;
+        let accent = shell.accent_color();
+        let covers: Vec<TileImage> = (0..NAMES.len()).map(|i| self.tile(i)).collect();
+        let sample = self
+            .captures_sample
+            .get_or_insert_with(|| sample::Sample::new(ctx, look, &games));
+        let grouped =
+            crate::app::captures::group_by_game(&games, &sample.captures, self.captures.filter());
+        let secs = crate::app::captures::sections(
+            &games,
+            &grouped,
+            crate::screens::captures_strings::CapturesText::OtherGame.text(language),
+            |game| {
+                games
+                    .iter()
+                    .position(|g| g.title_id == game.title_id)
+                    .map(|i| covers[i])
+            },
+        );
+        let list = sample.captures.clone();
+        let mut data = CapturesData {
+            load: look.load(),
+            folder: "~/Pictures/AnyPS5",
+            captures: &list,
+            sections: &secs,
+            any: !list.is_empty(),
+            clips_available: true,
+            language,
+            accent,
+            now: sample::NOW,
+            utc_offset: 0,
+            media: sample.media(),
+        };
+        self.captures.show(shell, ctx, &[], &mut data);
+    }
+
+    /// Opens the Captures area the way the page wants it.
+    fn open_captures(&mut self, ctx: &Context, look: CapturesLook) {
+        use anyps5_core::captures::Kind;
+        let games: Vec<Game> = (0..NAMES.len()).map(fake_game).collect();
+        let sample = crate::screens::captures::sample::Sample::new(ctx, look, &games);
+        let grouped = crate::app::captures::group_by_game(
+            &games,
+            &sample.captures,
+            anyps5_core::captures::Filter::All,
+        );
+        let secs = crate::app::captures::sections(&games, &grouped, "", |_| None);
+        match look {
+            CapturesLook::Many => {
+                self.captures.open();
+                self.captures.focus_place(9);
+            }
+            CapturesLook::Few => {
+                self.captures.open();
+                self.captures.focus_place(1);
+            }
+            CapturesLook::Clips => {
+                self.captures.open();
+                self.captures
+                    .set_filter(anyps5_core::captures::Filter::Clips);
+            }
+            CapturesLook::Screenshot => {
+                self.captures
+                    .open_view(sample.first(Kind::Screenshot, &secs), None);
+            }
+            CapturesLook::Clip | CapturesLook::ClipPlain => {
+                self.captures
+                    .open_view(sample.first(Kind::Clip, &secs), None);
+            }
+            CapturesLook::Confirm => {
+                self.captures
+                    .open_confirm(sample.first(Kind::Screenshot, &secs));
+            }
+            CapturesLook::Empty | CapturesLook::Missing | CapturesLook::Loading => {
+                self.captures.open();
+            }
         }
     }
 
@@ -2045,7 +2231,12 @@ impl ScreenGallery {
                 .get_or_insert_with(|| HomeStand::new(&ctx, self.prefs.clone(), scene, !unlocking))
                 .paint(ui, shell);
         }
-        let entries: Vec<LibraryEntry> = (0..NAMES.len())
+        let shown = if matches!(self.page, ScreenPage::LibraryEmpty) {
+            0
+        } else {
+            NAMES.len()
+        };
+        let entries: Vec<LibraryEntry> = (0..shown)
             .map(|i| LibraryEntry {
                 name: NAMES[i].to_owned(),
                 icon: Some(self.tile(i)),
@@ -2059,12 +2250,14 @@ impl ScreenGallery {
                         icon: Icon::PLAY_CIRCLE,
                         text: language.text(Key::Running).into(),
                         tint: crate::ui::theme::color::text_active(),
+                        quiet: false,
                     }
                 } else {
                     StateText {
                         icon: Icon::CHECK_CIRCLE,
                         text: language.text(Key::Ready).into(),
-                        tint: white(0.75),
+                        tint: crate::ui::theme::color::text_detail(),
+                        quiet: true,
                     }
                 },
             })
@@ -2120,12 +2313,14 @@ impl ScreenGallery {
             },
             cjk_fonts: anyps5_core::fonts::CjkState::Missing,
             phone: &self.phone,
+            ludus: &self.ludus,
             openh264: matches!(self.page, ScreenPage::SettingsCodec(_)).then(|| {
                 crate::screens::settings::Openh264Env {
                     state: anyps5_core::openh264::CodecState::Ready,
                     worker: Some(("ready".into(), None)),
                 }
             }),
+            windows_rows: true,
             clips: crate::screens::settings::ClipsEnv {
                 count: if self.prefs.clips_seconds > 0 { 3 } else { 0 },
                 capturing: matches!(self.page, ScreenPage::BehaviourClipsKey),
@@ -2294,6 +2489,9 @@ impl ScreenGallery {
         if let ScreenPage::Compare(look) = self.page {
             self.compare_screen(shell, &ctx, look);
         }
+        if let ScreenPage::Captures(look) = self.page {
+            self.captures_screen(shell, &ctx, look);
+        }
         self.library.show(
             shell,
             &ctx,
@@ -2302,6 +2500,8 @@ impl ScreenGallery {
                 entries: &entries,
                 language,
                 accent,
+                folder_set: false,
+                scanning: false,
             },
         );
         let diagnosis =
@@ -2347,7 +2547,7 @@ impl ScreenGallery {
             ScreenPage::Saves | ScreenPage::SavesEmpty => self.saves.open(),
             ScreenPage::Restore => self.restore.open(),
             ScreenPage::Online(look) => {
-                use crate::screens::online::Page;
+                use crate::screens::online::{Ask, Page};
                 let language = shell.language;
                 let data = online_data(
                     &self.online,
@@ -2456,6 +2656,26 @@ impl ScreenGallery {
                     OnlineLook::Request => self
                         .friends
                         .show_page(Page::MessageRequest("c-nyx".into()), &data),
+                    OnlineLook::Confirm => {
+                        let lumen = anyps5_core::online::api::AccountId(2);
+                        self.friends.show_page(
+                            Page::Confirm(Ask::Block(lumen), Box::new(Page::Friend(lumen))),
+                            &data,
+                        );
+                    }
+                    OnlineLook::ConfirmUnsend => self.friends.show_page(
+                        Page::Confirm(
+                            Ask::Unsend {
+                                conversation: "c-lumen".into(),
+                                seq: 4,
+                            },
+                            Box::new(Page::Message("c-lumen".into(), 4)),
+                        ),
+                        &data,
+                    ),
+                    OnlineLook::ConfirmParty => self
+                        .friends
+                        .show_page(Page::Confirm(Ask::LeaveParty, Box::new(Page::Party)), &data),
                     OnlineLook::Muted => self.friends.show_page(Page::Home, &data),
                     OnlineLook::Restriction => self
                         .friends
@@ -2521,6 +2741,8 @@ impl ScreenGallery {
                 self.trophies.reveal(SECRET_TROPHY);
             }
             ScreenPage::Library => self.library.open(1),
+            ScreenPage::LibraryEmpty => self.library.open(0),
+            ScreenPage::Captures(look) => self.open_captures(ctx, look),
             ScreenPage::ControlsEnd => self.controls.open_row(30),
             ScreenPage::Toolkit(look) => {
                 self.settings.open_at(5, true);
@@ -2549,7 +2771,10 @@ impl ScreenGallery {
                 self.whats_new
                     .open_launcher(&self.launcher_notes.notes, shell.language);
             }
-            ScreenPage::BehaviourLinks => self.settings.open_at(3, true),
+            ScreenPage::BehaviourLinks => {
+                self.settings.open_at(3, true);
+                self.settings.focus_row_id("links");
+            }
             ScreenPage::SettingsCodec(on) => {
                 self.prefs.online_openh264 = on;
                 self.settings.open_at(6, true);
@@ -2567,27 +2792,45 @@ impl ScreenGallery {
             ScreenPage::BehaviourClipsOff => {
                 self.prefs.clips_seconds = 0;
                 self.settings.open_at(3, true);
-                self.settings.focus_row(8);
+                self.settings.focus_row_id("clips");
             }
             ScreenPage::BehaviourClips | ScreenPage::BehaviourClipsKey => {
                 self.prefs.clips_seconds = 30;
                 self.settings.open_at(3, true);
                 self.settings
-                    .focus_row(if self.page == ScreenPage::BehaviourClipsKey {
-                        9
+                    .focus_row_id(if self.page == ScreenPage::BehaviourClipsKey {
+                        "clipsKey"
                     } else {
-                        8
+                        "clips"
                     });
             }
             ScreenPage::BehaviourSteam => {
                 self.settings.open_at(3, true);
-                self.settings.focus_row(12);
+                self.settings.focus_row_id("addToSteam");
             }
             ScreenPage::Phone(look) => {
                 self.settings.open_at(4, true);
                 // The question lands on its first answer.
                 if look == PhoneLook::Pairing {
-                    self.settings.focus_row(4);
+                    self.settings.focus_row_id("pairAllow");
+                }
+                // LudusCtrl's question lands on its first answer; a connected LudusCtrl phone
+                // shows the end of the page, where the app comes from.
+                let focus = match look {
+                    PhoneLook::LudusPairing => Some("ludusAllow"),
+                    PhoneLook::LudusConnected => Some("ludusApp"),
+                    _ => None,
+                };
+                if let Some(focus) = focus {
+                    let rows = crate::screens::phone::page(
+                        &self.prefs,
+                        &self.phone,
+                        &self.ludus,
+                        shell.language,
+                    );
+                    if let Some(at) = rows.iter().position(|r| r.id == focus) {
+                        self.settings.focus_row(at);
+                    }
                 }
             }
             ScreenPage::Recommended | ScreenPage::RecommendedWarning => {

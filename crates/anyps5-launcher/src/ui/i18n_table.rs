@@ -732,9 +732,7 @@ impl Key {
             Key::OpenLog => "Open Log",
             Key::Uninstall => "Remove Installation",
             Key::ClearShaderCache => "Clear Shader Cache",
-            Key::UninstallConfirm => {
-                "Remove the installation? Your game files stay; the game shows as locked again."
-            }
+            Key::UninstallConfirm => "Your game files stay and the game shows as locked again.",
             Key::UninstallDone => "Installation removed",
             Key::CacheCleared => "Shader cache cleared",
             Key::Appearance => "Appearance",
@@ -842,7 +840,7 @@ impl Key {
             Key::FontsNone => "None",
             Key::FontsReset => "Remove the Fonts Folder",
             Key::FontsHint => {
-                "F12 in a game saves a screenshot. Games that ask for the console's system fonts use the files in the fonts folder."
+                "Games that ask for the console's system fonts use the files in this folder."
             }
             Key::SectionSticks => "Controller Sticks",
             Key::LeftDeadzone => "Left Stick Deadzone",
@@ -978,9 +976,7 @@ impl Key {
             Key::OpenLog => "Günlüğü Aç",
             Key::Uninstall => "Kurulumu Kaldır",
             Key::ClearShaderCache => "Shader Önbelleğini Temizle",
-            Key::UninstallConfirm => {
-                "Kurulum kaldırılsın mı? Oyun dosyaların silinmez, oyun tekrar kilitli görünür."
-            }
+            Key::UninstallConfirm => "Oyun dosyaların silinmez, oyun tekrar kilitli görünür.",
             Key::UninstallDone => "Kurulum kaldırıldı",
             Key::CacheCleared => "Shader önbelleği temizlendi",
             Key::Appearance => "Görünüm",
@@ -1090,7 +1086,7 @@ impl Key {
             Key::FontsNone => "Seçilmedi",
             Key::FontsReset => "Font Klasörünü Kaldır",
             Key::FontsHint => {
-                "Oyunda F12 bir ekran görüntüsü kaydeder. Konsolun sistem fontlarını isteyen oyunlar, font klasöründeki dosyaları kullanır."
+                "Konsolun sistem fontlarını isteyen oyunlar bu klasördeki dosyaları kullanır."
             }
             Key::SectionSticks => "Kumanda Çubukları",
             Key::LeftDeadzone => "Sol Çubuk Ölü Bölge",

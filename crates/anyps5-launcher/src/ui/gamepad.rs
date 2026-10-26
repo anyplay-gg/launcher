@@ -103,6 +103,40 @@ impl Directions {
     }
 }
 
+/// What a pad button does to the launcher.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PressEffect {
+    /// The Home / Guide / PS button: switches between the game and the launcher.
+    Home,
+    /// Create, Share, View: saves a clip, which is only ever wanted while a game is in front.
+    Create,
+    /// A command for the UI.
+    Command(Command),
+    /// A D-pad direction, held until its release.
+    Dpad(Command),
+    /// Dropped.
+    Nothing,
+}
+
+/// `mine`: the launcher has the pad (no game in front). Otherwise it hears the Home button and
+/// Create and nothing else, so a game's buttons never move the focus of the launcher behind it.
+fn press_effect(button: Button, mine: bool) -> PressEffect {
+    match button {
+        Button::Mode => PressEffect::Home,
+        // Create on a DualSense, Share on a DualShock, View or Back on an Xbox pad.
+        Button::Select => PressEffect::Create,
+        _ if !mine => PressEffect::Nothing,
+        Button::South => PressEffect::Command(Command::Select),
+        Button::East => PressEffect::Command(Command::Back),
+        Button::North | Button::Start => PressEffect::Command(Command::Options),
+        Button::DPadUp => PressEffect::Dpad(Command::Up),
+        Button::DPadDown => PressEffect::Dpad(Command::Down),
+        Button::DPadLeft => PressEffect::Dpad(Command::Left),
+        Button::DPadRight => PressEffect::Dpad(Command::Right),
+        _ => PressEffect::Nothing,
+    }
+}
+
 /// Starts the poll loop and returns the receiving end. A missing gamepad backend is logged once
 /// and is not fatal (the receiver then simply stays silent).
 pub fn spawn(ctx: egui::Context, home: Arc<HomeButton>) -> Receiver<PadMessage> {
@@ -355,22 +389,17 @@ fn session(ctx: &egui::Context, tx: &Sender<PadMessage>, home: &HomeButton, atte
             // directions are kept up to date but not passed on.
             let mine = home.accepts_pad();
             match event.event {
-                EventType::ButtonPressed(Button::Mode, _) => {
-                    home.press();
-                }
-                // Create on a DualSense, Share on a DualShock, View or Back on an Xbox pad: it
-                // saves a clip, which is only ever wanted while a game is in front.
-                EventType::ButtonPressed(Button::Select, _) => send(PadMessage::Create),
-                EventType::ButtonPressed(..) if !mine => {}
-                EventType::ButtonPressed(button, _) => match button {
-                    Button::South => send(PadMessage::Button(Command::Select)),
-                    Button::East => send(PadMessage::Button(Command::Back)),
-                    Button::North | Button::Start => send(PadMessage::Button(Command::Options)),
-                    Button::DPadUp => dirs.dpad.1 = 1.0,
-                    Button::DPadDown => dirs.dpad.1 = -1.0,
-                    Button::DPadLeft => dirs.dpad.0 = -1.0,
-                    Button::DPadRight => dirs.dpad.0 = 1.0,
-                    _ => {}
+                EventType::ButtonPressed(button, _) => match press_effect(button, mine) {
+                    PressEffect::Home => {
+                        home.press();
+                    }
+                    PressEffect::Create => send(PadMessage::Create),
+                    PressEffect::Command(command) => send(PadMessage::Button(command)),
+                    PressEffect::Dpad(Command::Up) => dirs.dpad.1 = 1.0,
+                    PressEffect::Dpad(Command::Down) => dirs.dpad.1 = -1.0,
+                    PressEffect::Dpad(Command::Left) => dirs.dpad.0 = -1.0,
+                    PressEffect::Dpad(_) => dirs.dpad.0 = 1.0,
+                    PressEffect::Nothing => {}
                 },
                 EventType::ButtonReleased(button, _) => match button {
                     Button::DPadUp | Button::DPadDown => dirs.dpad.1 = 0.0,
@@ -432,6 +461,71 @@ fn session(ctx: &egui::Context, tx: &Sender<PadMessage>, home: &HomeButton, atte
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn with_a_game_in_front_only_home_and_create_reach_the_launcher() {
+        let all = [
+            Button::South,
+            Button::East,
+            Button::North,
+            Button::West,
+            Button::C,
+            Button::Z,
+            Button::LeftTrigger,
+            Button::LeftTrigger2,
+            Button::RightTrigger,
+            Button::RightTrigger2,
+            Button::Start,
+            Button::LeftThumb,
+            Button::RightThumb,
+            Button::DPadUp,
+            Button::DPadDown,
+            Button::DPadLeft,
+            Button::DPadRight,
+            Button::Unknown,
+        ];
+        for button in all {
+            assert_eq!(
+                press_effect(button, false),
+                PressEffect::Nothing,
+                "{button:?}"
+            );
+        }
+        assert_eq!(press_effect(Button::Mode, false), PressEffect::Home);
+        assert_eq!(press_effect(Button::Select, false), PressEffect::Create);
+    }
+
+    #[test]
+    fn with_the_launcher_in_front_buttons_work_and_home_still_switches() {
+        assert_eq!(
+            press_effect(Button::South, true),
+            PressEffect::Command(Command::Select)
+        );
+        assert_eq!(
+            press_effect(Button::East, true),
+            PressEffect::Command(Command::Back)
+        );
+        assert_eq!(
+            press_effect(Button::DPadLeft, true),
+            PressEffect::Dpad(Command::Left)
+        );
+        assert_eq!(press_effect(Button::Mode, true), PressEffect::Home);
+    }
+
+    /// The flag the loop reads for `mine`: false while a game runs and the launcher is behind it.
+    #[cfg(not(windows))]
+    #[test]
+    fn the_launcher_gives_up_the_pad_while_the_game_is_in_front() {
+        let home = HomeButton::default();
+        home.set_focused(true);
+        assert!(home.accepts_pad(), "no game");
+        home.set_game(true, None);
+        assert!(home.accepts_pad(), "the launcher is in front of the game");
+        home.set_focused(false);
+        assert!(!home.accepts_pad(), "the game is in front");
+        home.set_enabled(false);
+        assert!(!home.accepts_pad(), "also with the preference off");
+    }
 
     #[test]
     fn a_second_pad_echoing_the_first_is_dropped() {

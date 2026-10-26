@@ -100,6 +100,8 @@ theme's default accent).
 
 #### UI colours (all sRGB, straight alpha)
 
+*The text, surface and hairline values in this table are the first round; 3.10 and 3.12 hold the values in use.*
+
 | Role | Value |
 |---|---|
 | Primary text / icons | white 1.0 (title text), white 0.9 (secondary labels), white 0.85 (values), white 0.72 (hints) |
@@ -136,6 +138,8 @@ theme's default accent).
 Percent = `unlocked points * 100 / total points` (integer division, 0 when total is 0).
 
 ### 1.3 Radii
+
+*3.12 reduces these to five values; the table is the first round.*
 
 SwiftUI uses `.continuous` (superellipse "squircle") corners everywhere. egui only has circular corners; use them (difference
 is invisible at these radii). An optional refinement is Figma "corner smoothing 60 %", which matches Apple's continuous curve.
@@ -270,6 +274,8 @@ Bundling in egui:
   include Japanese, Korean, Chinese and Arabic names: load Windows' own fonts as egui fallbacks at runtime if present (Yu Gothic UI /
   Malgun Gothic / Microsoft YaHei UI / Segoe UI) instead of bundling large CJK fonts; trophy texts in game languages need the same.
 - Icons: SF Symbols cannot be redistributed. Use **Phosphor Icons** (MIT; `egui-phosphor` crate or the font file), mapping in 5.16.
+
+*The scale in use is in 3.12 (twelve sizes); the table below is the first round.*
 
 Type scale (size dp / weight; weight numbers: light 300, regular 400, medium 500, semibold 600, bold 700):
 
@@ -671,7 +677,7 @@ The launcher keeps the port's structure but trims what read as noise next to the
 - **Hint bar.** Follows the device in use (`input::device`): keycaps `Enter`, `Esc`, `O` on a
   keyboard, ✕ ○ △ in circles on a gamepad. No combined labels, no Move hint. 26 dp keys, 15 dp
   labels, 28 dp between hints.
-- **Top bar.** Outline icons at 20 dp (`squares-four` for the library, `users` for friends, `gear-six`
+- **Top bar.** Outline icons at 20 dp (`squares-four` for the library, `images` for the captures, `users` for friends, `gear-six`
   for settings), 12 dp between the buttons of the strip, 32 dp between the groups (the strip, the
   profile, the clock). The profile and the friends button are pills on the icon buttons' own
   surface, hover and focus, so the whole corner reads as one family of controls. The avatar's
@@ -833,7 +839,7 @@ makes a circle); rows, cards, cells and tiles keep their radii (12, 16, 20, 12 %
 | Size | Height | Text | Glyph | Used for |
 |---|---|---|---|---|
 | Large | 54 | 19 semibold, 30 padding | 17 (22 alone) | the action row of the game page, dialogs |
-| Medium | 44 | 16 semibold, 20 padding | 18 (20 alone) | the top bar: library, friends, settings, profile |
+| Medium | 44 | 16 semibold, 20 padding | 18 (20 alone) | the top bar: library, captures, friends, settings, profile; the chips and actions of the Captures area |
 | Small | 32 | 14 medium, 14 padding | 14 | an answer inside a line of text ("How did it run?") |
 
 Neighbouring controls are always 12 apart (`size::CONTROL_GAP`), in the top bar and the action row alike. The profile pill is a
@@ -989,6 +995,70 @@ The white ring was loud, and it stayed after a click. Now it behaves like `:focu
 - The pointer resting on a tile or a primary button still draws the hover ring at 45 % of this ring (3.9): that is the hover, not a lingering focus.
 - Gallery: `--noring` renders any scene as it looks after a click.
 
+### 3.12 Round 6 (0.2.8): the system, fewer values (2026-10-26, replaces the value tables of 1.2, 1.3 and 1.6)
+
+The audit is `polish028/audit/system.md`. The tokens were many and close together: eleven white alphas for text, nineteen font
+sizes, eight radii, and 14 different text alphas as literals in the screens. The rule of this round is that a value is chosen
+from a short list, and a page holds no literal that has a token. Where 1.2, 1.3 and 1.6 differ, this section wins.
+
+**Text ink: four levels** (`ui::theme::color`). The contrast test keeps every one of them above its ratio.
+
+| Level | White | Tokens |
+|---|---|---|
+| Text | 1.00 | `text` |
+| Label | 0.90 | `text_label`, `text_value`, `text_clock`, `text_active` |
+| Detail | 0.78 | `text_detail`, `text_subtitle`, `text_empty`, `text_overline`, `text_row_detail`, `text_inert`, `text_hint`, `state_neutral` |
+| Note | 0.55 | `text_note`, `text_caption`, `text_count`, `text_path` |
+| Inactive (exempt) | 0.40 | `text_inactive` |
+
+**Surfaces and hairlines.** Fills: 0.07 row (`surface_row`, `surface_trophy_row`, `surface_tile_placeholder`), 0.10 control, 0.16
+hover (also track, keycap, switch track off), 0.20 focus, 0.26 pressed. Hairlines: 0.08 panel and glass edge, 0.12 control and
+card, 0.32 under the pointer. Removed (unused): `hairline`, `selected_category`, `surface_prominent`, `panel_fullscreen`,
+`panel_log`, `splash_overlay`.
+
+**Type scale: twelve sizes.** 12, 13, 14, 15, 16, 17, 19, 22, 28, 34, 40, 56. Light only from 28 up; no Bold. A page takes a
+`ty::` token by role, it does not build a style.
+
+| Token | Size / weight | Was |
+|---|---|---|
+| `DISPLAY` (`HERO_TITLE`, `ONBOARDING_TITLE`) | 56 light | 58 and 54 |
+| `TITLE` (`SCREEN_TITLE`) | 40 light | |
+| `HEADING` (`EMPTY_TITLE`, `SPLASH_TITLE`, `TROPHY_LIST_TITLE`) | 34 light | trophy list 36 |
+| `PANEL_TITLE` (`SIDE_PANEL_TITLE`, `LOG_TITLE`) | 28 light | 30 |
+| `LANGUAGE_NAME` | 28 medium | |
+| `ITEM_TITLE` (`TOP_BAR_TITLE`, `TILE_NAME`, `PERCENT`) | 22 semibold | top bar 24 |
+| `STATE_TITLE` (`LIBRARY_COUNT`) | 22 medium | |
+| `BUTTON`, `CATEGORY`, `CATEGORY_SELECTED`, `BANNER_NAME` | 19 | |
+| `BUTTON_MEDIUM`, `TOAST` (`PROFILE`, `DIAGNOSIS_LOG`), `CHOICE_VALUE` | 16 | |
+| `BODY` (`QUESTION`), `ROW_TITLE` (`CLOCK`, `ONBOARDING_STATUS`), `INFO_VALUE` (`TROPHY_NAME`) | 17 regular, medium, semibold | trophy name and onboarding status 18 |
+| `LABEL` (`ROW_INFO`, `HINT_LABEL`, `PROGRESS_LABEL`), `FACT` (`PROGRESS_PERCENT`), `SENTENCE` | 15 medium, semibold, regular | |
+| `NOTE` (`DETAIL_LARGE`), `CHIP` (`STATE_LABEL`), `SECTION_CAPTION` | 14 regular, medium, semibold | |
+| `DETAIL`, `BADGE` (`HINT_KEY`, `KEY_CAP`, `BANNER_LABEL`), `OVERLINE` (tracking 0.8 for all three overlines) | 13 regular, semibold | key cap 13.5; info overline tracking 0.6; onboarding overline 14 |
+| `MICRO` (`STATE_LABEL_SMALL`) | 12 medium | |
+
+**Radius: five values.** Keycap 7, row 12, card 16, large 20, capsule (and the toast, 28). `TROPHY_ROW` and `BOX` are 16 (the box was 14),
+`LANGUAGE_CARD`, `THEME_CARD` (was 18) and `BANNER` are 20. Removed: `CONSOLE_BUTTON`, `ICON_BUTTON`, `KEYCAP_HINT` (now 7, was 6).
+
+**Spacing: `ui::theme::space`.** 4, 8, 12 (the control gap), 16, 24, 32, 48. Gaps of 6, 10, 14, 18, 20, 26 and 28 are off the grid and
+move to the nearest step when a page is touched.
+
+**Rules for the rest** (one source for the area work: `polish028/SYSTEM.md`): one primary button per view and destructive is a
+secondary with the danger ink; icons are 14, 17, 18, 20, 24 or 36 dp; the only motion is `Motion::*`; one action has one cue; a
+page draws no focus ring of its own; the case rule of 3.10 stands, and the verbs are Cancel, Back, Close, Done, Continue, Try
+Again, Remove, Delete, Sign In, Later.
+
+**The hint bar has one place (PR 2 of the round).** Every full-screen area shows it at the bottom right, where Home has it: the right edge
+`pad::HOME_X` in, the baseline `pad::HINT_Y` up (`screens::footer_hints`), never in a header. A screen with a Back button on screen
+leaves the "Back" hint out (`HintSet::without_back`): the bar never repeats a control the player can see.
+
+**Messages** (tokens for the social area): `color::bubble_other` white 0.10, `bubble_own` 0.16, `composer` 0.10 with the control hairline;
+gaps `space::BUBBLE_IN_GROUP` 4, `BUBBLE_BETWEEN` 16, `BUBBLE_DAY` 24. A system row is centred 14 regular in `text_note` with no bubble.
+
+**Motion and avatars (PR 3 of the round).** Hover, press, progress and every reduced-motion ease (focus, layout, overlay, banner slide) use `Bezier::STRONG_OUT` (0.23, 1, 0.32, 1)
+at the same durations (120, 100, 350, 120 ms): the answer to a touch is seen at once. The exit of the old hero keeps the softer ease-out it was
+tuned with. The initial in the call card and the Play Together card (24 bold before) is `ty::ITEM_TITLE` (22 semibold) in `readable_ink` of the gradient's middle
+(`home::avatar_middle`), not white: white on Mint, Gold or White was 1.2 to 2.2:1.
+
 ## 4. Materials and blur on the GPU
 
 SwiftUI `.ultraThinMaterial` is a backdrop blur with a light tint and some saturation; it is used under every panel. egui has no
@@ -1038,8 +1108,10 @@ container), `locked`.
 | installing | black 0.30 + progress line at the bottom | down-arrow-circle, accent, current step title | x, `cancel` |
 | failed | black 0.42 + warning badge | warning, `#FF998C`, `failed` | refresh, `retry` |
 | installed | none | check-circle, white 0.75, `ready` (outdated: refresh-arrows, `#FFD166`, `updateAvailable`) | play, `play` |
-| starting | black 0.42 + small spinner | hourglass, accent, `starting` | hourglass, `starting` (inactive) |
-| running | accent dot (0.09 size) top-right with glow | play-circle, accent, `running` | play-circle, `running` (press re-activates the game window) |
+| starting | black 0.42 + small spinner | hourglass, accent, `starting` | hourglass, `starting` (inactive, so not prominent: it only reports) |
+| running | accent dot (0.09 size) top-right with glow | play-circle, accent, `running` | play-circle, "Back to Game" (the verb of what a press does: it re-activates the game window; the state line above the title says "Playing") |
+
+While a game runs or starts the hero has no prominent button: nothing there is a call to action. On the home hero the state line is left out for the plain `installed` state ("Ready"): the Play button says it, and every game would repeat it.
 
 Badge (locked/unreadable/failed): glyph size `tile * 0.13` semibold white, padding `tile * 0.08`, behind it a circle black 0.55
 inset by `tile * 0.035`, anchored bottom-trailing. Installing line: height `max(3, tile * 0.03)`, padding `tile * 0.07`.
@@ -1060,7 +1132,7 @@ inset by `tile * 0.035`, anchored bottom-trailing. Installing line: height `max(
 Vertical stack, spacing 0: **TopBar**, **TileRow** (or **EmptyLibrary**), flexible space, **HeroInfo**, **HintBar**.
 
 **Top bar** (padding h 64, top 34): left "Games" (24 semibold), a small spinner while scanning; right-aligned, left to right:
-library button (glyph: 3x3 grid), friends button (glyph: two people; see below), settings button (glyph: gear), 12 dp apart; then 32 dp
+library button (glyph: 3x3 grid), captures button (glyph: two pictures), friends button (glyph: two people; see below), settings button (glyph: gear), 12 dp apart; then 32 dp
 on, the profile (12 dp, the same gap), then 28 dp on, the clock (HH:mm, local time, 17 medium white 0.78, colon fixed; 3.9). Icon buttons: 44
 circle, a secondary control of the family in 3.9. The profile and the friends button are pills of the same
 height on the same surface, hover and focus (3.9: a ring and a lighter fill, never white). Everything sits on
@@ -1141,7 +1213,7 @@ Row sketch (S-home):
 
 **Hint bar** (right aligned, padding h 64 v 28, item gap 22): `← → ↑ ↓` "Move", `↩ / ✕` "Select", `esc / ○` "Back", `O / △` "Options"
 (keys in a keycap: 12 bold, padding 7 x 3, white 0.16 fill, radius 5; label 13 medium; all white 0.72; gap 8). Library, trophies and
-onboarding show it without "Options". The glyphs are the fixed text above (PlayStation face names), not adapted to the pad in use.
+onboarding show it without "Options". A hint names only a key that does something: on the home screen "Back" is shown only while the launcher is in front because of the Home button (Back returns to the game) or a Play Together card is up (Back closes it), or the focus is off the tile row (Back returns to it); otherwise the bar is "Select" and "Options". The glyphs are the fixed text above (PlayStation face names), not adapted to the pad in use.
 
 **Empty library** (no games): centred column, gap 18: icon 54 thin (magnifier while scanning, otherwise a stack-slash icon, white
 0.8), title (`scanning` or `emptyLibraryTitle`, 34 light), text `emptyLibraryText` (17, white 0.65), the games folder path if set
@@ -1199,7 +1271,7 @@ splash is up **all other input is swallowed** except back.
 Layout: full-window overlay (blurred backdrop + black 0.55); centred column, gap 26: tile 200 (radius 24, same placeholder rules),
 breathing glow (animation 26); game name (34 light, centred, 2 lines); a 380-wide block (gap 14): row `starting` (16 medium, white
 0.88) and the elapsed `m:ss` (16 semibold tabular, counting from 0:00, tick 1 s), the indeterminate sweep (accent), and
-`startingText` (14, white 0.6, centred, wraps). At the bottom, 40 above the edge, a hint `esc / ○` "Cancel". After the window shows,
+`startingText` (14, white 0.6, centred, wraps). At the bottom, 40 above the edge, a secondary 44 dp button "Cancel" (X glyph, 240 wide): the pointer's way to the same stop as Esc or the pad's back, which stay. After the window shows,
 the splash leaves (overlay spring), the launcher optionally hides ("Hide Launcher While Playing"). (S-starting.)
 
 ### 5.6 Toast
@@ -1211,13 +1283,27 @@ invalid, "game: diagnosis".
 
 ### 5.7 Settings (global)
 
-Two columns on a black 0.74 blurred panel (S-settings). Left (330 wide + 36): title `settings` (40 light) with 26 below, then
-six category rows (height 52, gap 6, radius 12, glyph 18 medium in 26 box + 14 gap + title 19). Selected category: white 0.12 fill,
-text semibold; **focused** (keyboard focus in the category list): white fill, black text. Unselected text white 0.7. Right: the
+Two columns on a black 0.74 blurred panel (S-settings). Left (`size::SETTINGS_CATEGORY_WIDTH` 330, then `space::XXL` before the rows): title `settings` (40 light) with `space::XXL` below, then
+eight category rows (height 52, gap `space::S`, radius 12, glyph `size::ROW_ICON` in a `size::ROW_ICON_BOX` box, `space::M` gap, title 19). Selected category: `color::surface` fill, text
+semibold; **focused** (keyboard focus in the category list): the focus ring. Unselected text `color::text_detail`, selected `color::text`. Right: the
 category's rows (5.8).
 
-| Category (key) | Glyph | Rows (id, kind, key, notes) |
+**One designed place (0.2.8).** A page is a few *groups* of rows. The first group has no heading: it is the page. Every later group
+starts with a caption (`Row::caption`, 14 semibold, quiet ink; not focusable, the pad skips it) after a double row gap, so the gap
+between groups is at least twice the gap inside one. A group is a subject, not a release: sound, the pad, the programs the launcher
+talks to. Rules for rows:
+
+- Anatomy is always icon, title, optional detail, control. A result (what the last check found) is the **detail** of its command, never
+  a gray note under it. Notes (`attached`) stay for a sentence that belongs to the row above (a warning about a folder, Cisco's licence).
+- A toggle is named for what happens when it is **on** ("Home Button Opens the Launcher", "Video for Share Screen"). The detail says
+  what happens, in one sentence.
+- Red (danger ink) is for something that loses data. Quit and removing a toolkit release are ink; the game's
+  "Remove Installation" confirmation is the red one.
+- The Windows-only rows (clips, links from websites) are built from `SettingsEnv::windows_rows`; the gallery shows them on every system.
+
+| Category (key) | Glyph | Groups and rows (id, kind, key, notes) |
 |---|---|---|
+<<<<<<< HEAD
 | Appearance (`appearance`) | brush | `theme` choice (Cosmic/Aurora/Sunset), `accent` choice (six), `backdrop` choice (`backgroundTheme` / `backgroundImage` / `backgroundVideo`; picking image/video opens a file dialog when no file is set or the kind changed), `file` action `chooseFile` (only when backdrop is not theme; detail = file name), `artwork` toggle `gameArtwork`, `glass` toggle `glassWindow` (macOS only, 19), `motion` choice (`motionFull` / `motionReduced`) |
 | Library (`storage`) | 2x2 grid | `folder` action `folder` (detail = path or an em dash; opens the folder dialog), `rescan` action `rescan` (detail `gamesFound` with count; sound `select`), then the rows of the unlocked games location ("Unlocked Games Location" below): `unlockedLocation` with its note (`installedSize` by default), `unlockedDefault`, and while copies move `moveCancel`, `moveContinue`, `moveLeave` |
 | Language (`language`) | globe | `language` choice (Türkçe, English; shown in their own language) |
@@ -1225,10 +1311,20 @@ category's rows (5.8).
 | Phone as Controller (`phone`) | phone | Windows and Linux addition, section 18. Sits between Behaviour and Toolkit. |
 | Advanced (`advanced`) | wrench+screwdriver | `screenshots` action `screenshotsFolder` (detail = path, `~` abbreviated), `showScreenshots` action, `fonts` action `fontsFolder` (detail = the picked path, else the built-in Noto set and whether Japanese, Chinese and Korean are included, not downloaded or downloading), `fontsReset` action (only when a fonts folder is set), `fontsCjk` command (download the Japanese, Chinese and Korean fonts; only without a picked folder and while they are missing), info `fontsHint`, `recordNetwork` toggle, and on Linux while share screen is on `openh264` toggle `Share Screen Video Codec` (detail: off, downloading, downloaded, not downloaded yet, the download failed, or what the share worker made of the file) with the info row `openh264Notice` attached under it, Cisco's text unchanged in every language |
 | About (`about`) | info circle | info `aboutText`, info `version` (app version), info `toolkitVersion`, (platform row), `quit` action `quit` (destructive) |
+=======
+| Appearance (`appearance`) | brush | `theme` choice (Cosmic/Aurora/Sunset), `accent` choice (six), `backdrop` choice (`backgroundTheme` / `backgroundImage` / `backgroundVideo`; picking image/video opens a file dialog when no file is set or the kind changed), `file` action `chooseFile` (only when backdrop is not theme; detail = file name), `artwork` toggle `gameArtwork`, on the Mac `glass` toggle (19), `motion` choice (`motionFull` / `motionReduced`) |
+| Library (`storage`) | 2x2 grid | `folder` action (detail = path or an em dash; opens the folder dialog), `rescan` action (detail `gamesFound`; sound `select`), then the rows of the unlocked games location ("Unlocked Games Location" below): `unlockedLocation` with its note, `unlockedDefault`, and while copies move `moveCancel`, `moveContinue`, `moveLeave` |
+| Language (`language`) | globe | `language` choice (Türkçe, English; shown in their own language). Caption **Fonts**: `fonts` action `fontsFolder` (detail = the picked path, else the built-in Noto set and whether Japanese, Chinese and Korean are included, not downloaded or downloading), `fontsReset` (only when a fonts folder is set), `fontsCjk` command (download the Japanese, Chinese and Korean fonts; only without a picked folder and while they are missing), info `fontsHint` |
+| Behavior (`behaviour`) | sliders | *(no heading)* `name` text field `profileName` (live edit), `prepare` toggle (Prepare New Games Automatically), `hide` toggle `hideWhilePlaying`, `hiddenTrophies` toggle (the trophy list's only option, 5.11). **Sound**: `sounds`, `music` (Home Screen Music, 7.3), `gameMusic` (Game Music, 7.3). **Controller**: `vibration` choice (6.8), `homeButton` toggle (6.6), info `controllerHelp` (what to do when the pad does not react). Windows, after the pad: caption **Captures** with the Clips rows (9.8). **Connected Apps**: `discord` toggle (7.4) and its `discordJoin` toggle while the status is on, Windows `links` toggle (9.6), `addToSteam` and `addGamesToSteam` (9.9) |
+| Phone as Controller (`phone`) | phone | Windows and Linux addition, section 18. Sits between Behavior and Toolkit. `phone` toggle `phoneRemote` with the phone server's rows, then, while it is on, `ludusctrl` toggle `phoneLudusctrl` (game controller glyph) with the LudusCtrl rows (18, "LudusCtrl"). |
+| Toolkit (`toolkit`) | drive | info *Installed Toolkit* (version), notes for a toolkit newer or older than this launcher was tested with and for a glibc that is too old (Linux), `channel` choice (Stable, AnyPlay Engine, Pinned, Local Build) with its detail, `pinned` choice or `toolkitFolder` action for the last two, `whatsNew` action, `install` command while the toolkit is missing or an update waits. Caption **Updates** (Stable and AnyPlay Engine only): `updateCheck` toggle, `checkNow` command whose detail is what the last look found ("Up to date · Last checked 2026-10-22 09:30"). `cpu` choice (CPU Conversion). Caption **Not Used by Any Game** and one `Remove v0.1.2` command (detail: size) for each installed release nothing uses |
+| Advanced (`advanced`) | wrench+screwdriver | *(no heading)* `screenshots` action `screenshotsFolder` (detail = path, `~` abbreviated), `showScreenshots` command, info `screenshotHint` (F12). **Diagnostics**: `recordNetwork` toggle. **Share Screen** (Linux, share screen on): `openh264` toggle *Video for Share Screen* (detail: off and what turning it on does, downloading, downloaded, not downloaded yet, the download failed, or what the share worker made of the file) with the info row `openh264Notice` attached under it, Cisco's text unchanged in every language |
+| About (`about`) | info circle | info `aboutText`, info `version` (app version), the launcher update rows (9.5), then `aboutWebsite`, `aboutDiscord`; `aboutPrivacy`, `aboutTerms`; info `credits`, info `creditsLudus` attached under it ("LudusCtrl protocol and app by Josip Parlov (@parl0v)"); `quit` command (ink) |
+>>>>>>> origin/main
 
 Settings are persisted per user (`Preferences`): `onboarded`, `language` (system default: Turkish if the OS UI language starts with
 `tr`, else English), `theme` (Cosmic), `accent` (nil = theme default), `backdrop` (theme), `backdropFile`, `gameArtwork` (true),
-`reducedMotion` (false), `showHiddenTrophies` (false), `sounds` (true), `music` (true), `discordPresence` (true), `hideWhilePlaying` (false), `prepareGames` (true), `profileName` (first word of the user's full name, fallback
+`reducedMotion` (false), `showHiddenTrophies` (false), `sounds` (true), `music` (true), `discordPresence` (false, 2026-10-26: a new profile shows no game on Discord until the player turns it on), `hideWhilePlaying` (false), `prepareGames` (true), `profileName` (first word of the user's full name, fallback
 "Player"), `gamesFolder`, `unlockedFolder` (nil = next to the games), `unlockedMovingFrom` (the store copies are moved out of, while any are left there), `screenshotsFolder` (nil = `Pictures/AnyPS5`), `fontsFolder`, per-game settings, `lastPlayed`.
 Every change saves immediately and re-applies language, motion and sound flags.
 
@@ -1322,8 +1418,8 @@ Per-game settings (defaults): resolution nil, fullscreen false, windowSize 75, v
 and window size are the launcher's own window logic, the resolution is a patch. `core::compat` knows from which toolkit release each
 variable and input line is read; what an older toolkit lacks is left out, and `ANYPS5_SCREENSHOTS` needs a build newer than v0.1.3.
 
-**Confirm uninstall panel**: title `uninstall`, subtitle `uninstallConfirm`; two rows: `uninstall` (destructive, trash glyph) and
-`cancel`. Opens in rows focus on the first row.
+**Confirm uninstall panel**: title `uninstall`, subtitle `uninstallConfirm`; two rows: `uninstall` (destructive, trash glyph; its label repeats the title, "Remove Installation") and
+`cancel`, which holds the focus when the panel opens. The line under the title is `uninstallConfirm` followed by `uninstallBacksUp`.
 
 **Controls panel** (S-controls): subtitle `controls`; first row is an info hint (`controlsHint`, not focusable), then one `keys` row
 per pad action in this order with titles: `✕ Cross`, `○ Circle`, `□ Square`, `△ Triangle`, `L1`, `R1`, `L2`, `R2`, `L3`, `R3`,
@@ -1353,7 +1449,7 @@ Full-screen overlay over the home (black 0.74 blurred): header `library` (40 lig
 without options; below, a scrolling grid of **196** tiles (gap 26 x 30) with as many columns as fit the width, at least three (`columns_for`; up and down move by that row). Each cell: tile with focus ring on the
 keyboard-selected one, name (15; semibold white when focused, else regular 0.75; 1 line, truncated), state label (12). Click =
 select that game and close. Keys: arrows move (up/down jump a row of 6), select picks, back/options close. The focused tile scrolls
-to the centre (animation 31). (S-library. The tile shown "Playing" uses the coral accent.)
+to the centre (animation 31). The plain "Ready" is not drawn under a tile (it stays in the accessible name): every game would repeat it, and it would hide the one that differs ("Playing", "Update available"). With no games the grid says what the empty home says ("No games yet" and the line about the games folder, no count) and offers the same one button (Pick or Change Folder; Select does the same; scene `library-empty`). (S-library. The tile shown "Playing" uses the coral accent.)
 
 ### 5.11 Trophy list and trophy button
 
@@ -1411,6 +1507,12 @@ If the game never opened a window and no diagnosis was found: toast `startFailed
 | engine error | `diagnosisEngineError` (message, cut at 200 chars + ellipsis) | any other uncaught engine exception |
 | crashed | `diagnosisCrashed` (exception) | the OS crash report, e.g. `EXC_BAD_ACCESS (SIGSEGV)` |
 
+**Every sentence names a way out (0.2.8, `ui/i18n.rs` `ours`).** GPU lost: update the graphics driver, start again. Out of
+memory: close other programs, start again. Engine error and crash: start again, and if it repeats send a report from Options > Log
+(the part that varies in length, the function, the engine message or the exception, goes last so the step stays visible when the hero line clips at two lines). Unsupported function: send a
+report so it can be added. A CPU that lacks an instruction set is a fact about the PC and has no step. `reportFailed` says
+"Check that the disk has space, then try again." (a test in `screens/log.rs` checks that each sentence has a step).
+
 **Report**: "Make a Report" writes a text file (`<titleID>-yyyyMMdd-HHmmss.txt` in the Reports folder) with: title line + ISO date,
 Game (name, title ID, version), machine (model, CPU, RAM GB), OS version, launcher version, toolkit version, Reason (sentence or
 "none found"), Settings (pretty JSON), the crash exception line if any, and the log of the last start (<= 400 KB); then reveals it in
@@ -1457,7 +1559,7 @@ The **language and theme choices apply live** while moving the focus (left/right
 immediately, so the page re-renders in that language and the backdrop switches theme); select confirms and advances (sound
 `select`); Back (Esc/B/button) returns (sound `back`). Step 2 focus: 0 = the folder button, 1 = Start (only once a folder is set; focus
 jumps to Start after picking); select on Start goes on to the online step when there is a cloud, and otherwise finishes: sound `unlocked`, cross-fade
-(animation 19), focus on the tiles, rescan if empty. Step 3 focus: 0 Sign In, 1 Create Account, 2 Not Now. Every choice
+(animation 19), focus on the tiles, rescan if empty. Step 3 focus: 0 Sign In, 1 Create Account, 2 Not Now. Under the three buttons one line of 13 dp text (`screens::legal`): "By creating an account you agree to the Terms of Service and the Privacy Policy." The two names are links (2026-10-26; underlined, brighter on hover, pointing hand; `https://anyplaynet.com/terms` and `/privacy`, the About pages' addresses in `about_strings.rs`), wrapped at 800 dp, the "You can sign in any time" line under it. The sentence is a template with `{terms}` and `{privacy}` so a language can put the names where its grammar wants them. The links are for the pointer; the pad reaches the same two pages as rows on the Friends screen's Start page. Every choice
 finishes the first start; Sign In and Create Account also open the online area, where the browser sign-in starts as soon as
 the net service has said hello (a missing service drops it). Mouse: tapping a language card selects and confirms; tapping a theme card selects it (sound `move`).
 
@@ -1620,7 +1722,7 @@ leaves the link on the clipboard.
 
 The relinker and the `.prx` libraries are ELF files that link against glibc. Their `.gnu.version_r` sections list the symbol versions they need (`GLIBC_2.38`); the newest over all of them is the oldest glibc the toolkit runs on (`anyps5-core::glibc`, reads section headers only, every offset bounded, 32- and 64-bit little-endian; `GLIBC_PRIVATE` and other families such as `GLIBCXX` do not count). The launcher compares it with `gnu_get_libc_version()` once when the toolkit is located. The idea of such a check came from the macOS and desktop launchers of the AnyPS5 community; the design and code here are our own.
 
-When the system is older it says one sentence, the same in three places: "Games need glibc 2.38 or newer; this system has 2.35. Update to Fedora 39, Ubuntu 24.04 or newer." (the next step, and the install-guide row in Settings, are from round 3, 3.10) A note under the version row in Settings > Toolkit (like the "newer than tested" note, gallery scene `toolkit-glibc`), and a warning line under the primary button of the hero, in the states Locked, Queued, Installing, Failed and Installed (scenes `home-glibc`, `home-glibc-locked`; it takes the line the friends playing use, since it says why a start may fail). It is a notice and never a block: Unlock and Play work as before. Nothing is shown when the system is new enough, when a version cannot be read, on Windows and on macOS.
+When the system is older it says one sentence, the same in three places: "Games need glibc 2.38 or newer; this system has 2.35. Update to Fedora 39, Ubuntu 24.04 or newer." (the next step, and the install-guide row in Settings, are from round 3, 3.10) A note under the version row in Settings > Toolkit (like the "newer than tested" note, gallery scene `toolkit-glibc`), and a warning to the right of the buttons of the hero, in the status place a failure or a diagnosis uses (one status at a time: a failure, then this, then the last run's diagnosis), in the states where that place is free and a start is ahead: Locked, Queued and Installed (scenes `home-glibc`, `home-glibc-locked`); installing, preparing and failed show their own status there, and a failed unlock names its own cause. The friends line under the buttons keeps its place. It is a notice and never a block: Unlock and Play work as before. Nothing is shown when the system is new enough, when a version cannot be read, on Windows and on macOS.
 
 ## 6. Input
 
@@ -1634,6 +1736,7 @@ Original: `Input.swift`, `AppModel.handle`, `panelCommand`, `onboardingCommand`.
 | Left / Right / Up / Down arrows | left / right / up / down | `ArrowLeft` .. `ArrowDown` |
 | Return, keypad Enter, Space | select | `Enter`, `NumpadEnter`, `Space` |
 | Esc, Delete (backspace key) | back | `Escape`, `Backspace` |
+| mouse button 4 (the back button) | back | `PointerButton::Extra1`, 2026-10-26; not while a binding waits for a key or a text field has focus |
 | letter O (any layout, ignoring shift) | options | `O` |
 
 Rules: any key with the **Command** modifier is ignored (Windows: ignore when Ctrl, Alt or the Windows key is held, except the
@@ -1645,7 +1748,7 @@ and under a thumb. It ends when the key is up, when a dialog opens or when a bin
 
 ### 6.2 Mouse and wheel
 
-Everything also works with the mouse (clicks listed per component). Mouse wheel / horizontal scroll on the **home screen with no
+Everything also works with the mouse (clicks listed per component); the mouse's back button (button 4) is the Back command, like Esc. Every full-screen area has a Back button for the pointer at its top left (Friends, Profile, Trophy compare; `screens::back_row`, the hint bar level with it). Mouse wheel / horizontal scroll on the **home screen with no
 overlay**: moves the tile selection by one per step: wheel down / scroll right = next game, wheel up / scroll left = previous.
 Accumulate deltas and step at +-40 dp of accumulated scroll (reset the accumulator after each step, and when the gesture pauses);
 one notch of a classic wheel must produce exactly one step; trackpad pixel deltas are used as is. (The original's sign handling
@@ -1724,21 +1827,44 @@ Behaviour, "Home Button Opens the Launcher").
 | no game runs | nothing (the phone's button keeps its old job: close the panel, restore the window) | as usual |
 
 **Where it is read.** `ui::home_button::HomeButton` holds the state the input threads need (running, game window,
-preference, focus) as atomics; the UI fills it every frame (`LauncherApp::sync_home_button`). Three sources press it, each on its
+preference, focus) as atomics; the UI fills it every frame (`LauncherApp::sync_home_button`). Four sources press it, each on its
 own thread, because a minimised launcher draws no frames: the gilrs thread (`Button::Mode`), a thread polling `XInputGetStateEx`
 for the Guide bit (Windows; Windows.Gaming.Input, which gilrs uses, hands a pad to the focused window only and never shows
-Guide), and the phone server. Presses within 350 ms count once (gilrs and XInput can both see one press). The pure `route`
+Guide), the PS button reader (below), and the phone server. Presses within 350 ms count once (gilrs and XInput can both see one press). The pure `route`
 function is the state machine and carries the tests. The UI takes two flags once per frame, `take_summoned` and `take_returned`,
 and opens or closes the panel.
 
 **The quick panel** is a side panel (`Overlay::InGame`, `screens::ingame`) in the family of 3.9 and 5.9: the game's name, the line
-"The game keeps running behind the launcher.", and the rows *Back to Game* (the focused row on open), *Trophies*, *Game
+"The game keeps running behind the launcher.", and the rows *Back to Game* (the focused row on open), *Trophies*, *Captures*, *Game
 Settings* (the game's own sheet), *Friends and Party* (only when signed in) and *Close Game* (destructive). *Close Game* opens the
 question `Overlay::ConfirmCloseGame` on *Keep Playing*, so Enter never ends a game. The panel selects the running game first, so
 trophies and settings are that game's. Back on the panel, a click beside it and *Back to Game* all return to the game. Back on the
 home screen does the same while the launcher is there because of the Home button (`Model::summoned`); it is cleared when the
 launcher loses the focus, and when the game ends the panel closes.
 While the panel is up, the phone's navigation reaches the launcher and its virtual pad is detached from the game.
+
+**The PS button reader** (`ui::ps_button`, 2026-10-26). Windows.Gaming.Input and evdev deliver a PlayStation pad to the focused window, so
+with a game in front gilrs never hears its PS button. While a game runs and the preference is on, a thread opens every DualSense
+(054C:0CE6, Edge 0DF2) and DualShock 4 (05C4, 09CC, adapter 0BA0) through `hidapi` 2 (Windows: its HID backend; Linux: hidraw),
+shared and read only, and watches bit 0 of the third button byte of the input report. The reader never writes a report: rumble and
+light bar stay the game's. The layouts are generic device facts from the Linux kernel (`hid-playstation.c`) and SDL
+(`SDL_hidapi_ps5.c`, `SDL_hidapi_ps4.c`) and are written in the module's comment: DualSense USB (report 0x01, 64 bytes, byte 10) and
+Bluetooth (0x31, 78 bytes, byte 11), DualShock 4 USB (0x01, byte 7) and Bluetooth (0x11, byte 9), and the 10-byte short Bluetooth
+report both send before they are switched to the full one (byte 7). Bluetooth reports are accepted only with a valid CRC-32. A
+button already held when the pad is opened is not a press; an edge (up, then down) is one press and goes into the same `HomeButton::press` as the Guide button, so gilrs seeing the same press,
+or a second pad, counts once (350 ms). Pads are looked for again every 3 s while a game runs and none is open, every 10 s otherwise (a pad plugged in later is found), and
+every device is closed again when the game ends or the preference is off.
+
+*If a pad cannot be opened* the reader says so once per pad in `launcher.log` and leaves the button to the other sources (gilrs
+where the launcher has the focus, XInput for what shows itself as an Xbox pad); it keeps looking every 3 s without logging again.
+Linux needs read access to `/dev/hidraw*`: many desktops give it only to root, and `docs/INSTALL.md` has the udev rule (`TAG+="uaccess"`
+for the Sony ids). *Steam Input* (with the pad held in its own configuration) and *HidHide* hide the physical pad from every HID reader,
+this one too; what they show instead is a virtual Xbox pad, whose Guide button the XInput thread already reads. Nothing is
+done for a pad they hide, on purpose. macOS has no reader here (IOKit HID delivers the button to a background process).
+
+*Other buttons while a game is in front.* The gilrs thread asks `gamepad::press_effect` for every press: with a game in front only
+Home and Create (which saves a clip, 9.8) do anything; every other button and the D-pad and stick are dropped before they reach
+the UI, so the game's play never moves the focus of the launcher behind it (tested for all buttons).
 
 *Windows.* A background process may not simply take the foreground, and a gamepad press counts as no input event.
 `win::activate_window` restores the window if minimised, calls `SetForegroundWindow`, and when that does not take, attaches the input
@@ -1752,7 +1878,8 @@ game what is behind it.
 *The game's own use of the button.* The mapping of AnyPS5 v0.1.3 names no PS or Guide button, so nothing the game gets is taken
 away. If a later AnyPS5 maps it to the PS5 home button, both would react; the preference turns the launcher's side off.
 
-*Not verified with hardware:* that Windows delivers a physical pad's Guide button to the launcher behind a game, and the
+*Not verified with hardware:* that Windows delivers a physical pad's Guide button to the launcher behind a game, the PS button reader
+on a real DualSense and DualShock 4 (USB and Bluetooth, Windows and Linux; its parser is tested on synthetic reports), and the
 foreground switch against a real game window. The test hook is `--demo` with `ANYPS5_INSTANCE=<name>` and
 `ANYPS5_PS_TEST_WINDOW=<hwnd>`: that window becomes the running game, each line `ps` on stdin is a press, and the log prints
 the foreground window before and after (`ps-test: ...`).
@@ -1826,8 +1953,9 @@ while a window of the process has focus, which suits the launcher's own screens;
 - **Settings > Behaviour** has a note under Controller Vibration: what to try when the controller is not found (Steam Input,
   DS4Windows).
 
-Not done, on purpose: a direct HID reader for the DualSense and DualShock. WGI and evdev both see them; the cases that make a pad invisible
-(Steam Input holding it, HidHide hiding it) hide it from HID readers as well. The one gap a HID reader would close is the Home button of a PlayStation pad while a game is in front.
+A direct HID reader for the DualSense and DualShock reads the pad itself for nothing but the PS button, because that is the one gap WGI and evdev leave
+while a game is in front (6.6, "The PS button reader"). The cases that make a pad invisible (Steam Input holding it, HidHide hiding it) hide it from
+HID readers as well, so the pad is still not found for everything else by it.
 Not verified on hardware: a DualSense or DualShock over USB and Bluetooth through WGI, the battery reading of a Bluetooth DualSense through WGI, the A/B hints on a real Xbox pad.
 
 ## 7. Sounds and media
@@ -2091,7 +2219,7 @@ through the AnyPlay network also gets "on AnyPlay", the size of the party and a 
 - **When.** Set when the game's window appears (`PipelineEvent::WindowShown`), cleared when it
   exits or when the setting is turned off. Everything runs on a `discord` thread; the UI only
   sends messages. Previews and tests never connect.
-- **Settings.** Behaviour, "Show Game on Discord" (`discordPresence`, on by default), with the
+- **Settings.** Behaviour, "Show Game on Discord" (`discordPresence`, off by default since 2026-10-26; a saved choice is kept), with the
   detail "With Discord open, your profile shows the game and for how long." and the `discord-logo`
   icon. Right under it, only while it is on, "Show a Join Button on Discord" (`discordJoinButton`,
   on by default; row `discordJoin`, icon `user-plus`): "While you play online, people who see your
@@ -2176,7 +2304,7 @@ this table. Some keys exist in the table without being used by the current UI (f
 | `openLog` | Open Log | Günlüğü Aç |
 | `uninstall` | Remove Installation | Kurulumu Kaldır |
 | `clearShaderCache` | Clear Shader Cache | Shader Önbelleğini Temizle |
-| `uninstallConfirm` | Remove the installation? Your game files stay; the game shows as locked again. | Kurulum kaldırılsın mı? Oyun dosyaların silinmez, oyun tekrar kilitli görünür. |
+| `uninstallConfirm` | Your game files stay and the game shows as locked again. | Oyun dosyaların silinmez, oyun tekrar kilitli görünür. |
 | `uninstallDone` | Installation removed | Kurulum kaldırıldı |
 | `cacheCleared` | Shader cache cleared | Shader önbelleği temizlendi |
 | `appearance` | Appearance | Görünüm |
@@ -2404,13 +2532,13 @@ list still updates.
 
 ### 9.5 The launcher updates itself
 
-No counterpart in the macOS launcher (Sparkle there). Core module `anyps5_core::selfupdate`, host `app::selfupdate`. The Windows exe and the Linux AppImage update themselves; a Linux `.tar.gz` is replaced from the releases page.
+The old macOS launcher used Sparkle; this one has its own flow. Core module `anyps5_core::selfupdate`, host `app::selfupdate`. The Windows exe, the Linux AppImage and the Apple silicon Mac app update themselves; a Linux `.tar.gz` is replaced from the releases page.
 
 - **Check.** At the start and then every 6 hours while the launcher stays open (after a check that could not reach GitHub, every 30 minutes), in the background, when the *Check for Updates* preference is on. *Check Now* on the About page checks once whatever the preference says. The request is conditional: the release data of `anyplaynet/launcher` is asked for with the ETag of the last answer, so a check that finds nothing new costs one small reply that GitHub does not count against its rate limit. The last copy is never taken for an answer when the network fails: an offline launcher does not call itself up to date. A newer semver (pre-release tags sort below their release) is downloaded and verified at once; garbage tags are never newer. Previews, the demo, the gallery and the tests never check.
 - **Verify.** From the first trusted key on (`data/update-keys.txt` holds "anyplay 2026" since 0.2.0) the launcher takes updates only through the release's signed `latest.json` and `latest.json.sig`: an Ed25519 signature by a trusted key, an unexpired manifest, a version newer than the running one, a running version not below the manifest's `minimum_version`, and a download with exactly the manifest's SHA-256 and size. The portable `AnyPlay-Launcher-<v>-x64.exe` (or `AnyPS5-Launcher-<v>-x64.exe`, which every release also carries, 9.7) goes to `%LOCALAPPDATA%\AnyPS5\Updates` under its final name only after that. There is no fallback to the unsigned `SHA256SUMS.txt` flow. The format, the rules, the migration and the key ceremony are in [UPDATES.md](UPDATES.md).
 - **Swap.** Windows cannot overwrite a running exe but can rename it. The staged file is copied beside the running exe (`<name>.new`, it may be on another drive), hashed again, the running exe is renamed to `<name>.old`, the copy takes its place. A failure in the second step moves the old one back. The next start deletes `.old` files and stale downloads (one still in use stays until a later start). It works for the installed exe (`%LOCALAPPDATA%\Programs\AnyPlay Launcher`, or `...\AnyPS5 Launcher` for an install from v0.1.x) and for the portable exe in any writable folder. The swap keeps the exe's file name; nothing depends on it. A folder that refuses new files is reported before anything is downloaded.
 - **Where the player sees it.** An update is visible in two places, and never as a toast or a progress bar in the way.
-  - *About*, under *Version* (which always shows the version that runs): the row *Launcher Update* with one short value and, under it, one sentence and at most one row that acts. Checking: "Checking…". Nothing newer: "Up to date" and *Check Now*. Downloading: "Downloading 42%", then "Verifying"; this is the only place with progress. Ready: "0.2.5 ready", "Restart now, or it installs the next time you close the launcher.", *Restart Now* and *What's New in 0.2.5*. Held for a game: "Waiting for your game", *Cancel Restart*. A read-only folder, a release that was refused (signature, expiry, hash, size) or any other failure: "Not installed" or "0.2.5 available" with the one thing to do, *Download from GitHub*. Offline: "Not reachable" and *Check Now*; the launcher tries again by itself. A refusal is logged and says nothing anywhere else.
+  - *About*, under *Version* (which always shows the version that runs): the row *Launcher Update* with one short value and, under it, one sentence and at most one row that acts. Checking: "Checking…". Nothing newer: "Up to date" and *Check Now*. Downloading: "Downloading 42%", then "Verifying"; this is the only place with progress. Ready: "0.2.5 ready", "Restart now, or it installs the next time you close the launcher.", *Restart Now* and *What's New in 0.2.5*. Held for a game: "Waiting for your game", *Cancel Restart*. A read-only folder, a release that was refused (signature, expiry, hash, size) or any other failure: "Update failed" or "0.2.5 available" with the one thing to do, *Download from GitHub*. Offline: "Could not check" and *Check Now*; the launcher tries again by itself. A refusal is logged and says nothing anywhere else.
   - *The notice on the home screen*, after the title, only while a verified update waits and the player has not sent it away: "Launcher 0.2.5 is ready" with *Restart Now* (the one primary button) and *Later*. *Later* hides it until the next start; the About row stays. While a restart waits for a game, the notice says "Restarts when your game closes" with *Cancel Restart*. The pad reaches it from the library button (left of it), so every action has a key and a pad path. It is out of the way of the top bar and only appears where it fits.
 - **Restart Now.** Closes the launcher, swaps, starts the new exe with the same flags and **opens where the player was**: the link of the selected game (`anyps5://game/<TITLEID>`, which selects it again) or, from the settings, `anyps5://settings/about`. It never interrupts a running game: while a game runs or starts, the restart is held, the About row and the notice say so, and it goes ahead the moment no game runs. Closing the launcher by hand still installs the update, without starting it again.
 - **What's New.** The notes of the staged release are taken from the release data the check fetched anyway (display only; nothing is decided by them) and shown in the same full-screen panel as the toolkit's notes: every `###` heading of the release is a group, every bullet a line, all groups unfolded. *Back* returns to About.
@@ -2430,6 +2558,7 @@ An update is *optional* by default and stays so (9.5). It becomes *required* whe
 - Under it one status line and, while it downloads, a thin progress line: "Downloading 42%", "Verifying", "0.3.0 ready". The download is the ordinary one (9.5): it starts by itself, is checked against the signed hash and size, and the restart opens where the player was.
 - The release notes of the update when they are known: up to three lines under "What's New in 0.3.0". They are display text; the whole notes stay in the *What's New* panel. They are left out when the window is too short for them.
 - **Two buttons, one above the other, 12 apart.** The primary one follows the state of the update (`screens::required::plan`): *Update Now* when the update is ready (it restarts; held while a game runs, as everywhere); the same button waits, disabled, while it downloads (the status line says why); *Try Again* when GitHub could not be reached; *Download from GitHub* when this launcher cannot install itself (a Linux `.tar.gz`, a read-only folder, a launcher too old to update itself, a refused download). Below it, secondary and always there: **Play Offline**.
+- The two buttons keep their place in every state: the progress line's room is taken whether the bar shows or not, so Update Now does not move when the download ends. The notes under them share the buttons' width and edges.
 - Keys: Up and Down (Tab) move between the two, Enter presses, **Back is Play Offline**. The focus starts on the primary button, or on Play Offline while the primary one cannot be pressed, so Enter always does something. The hint bar names Back as *Play Offline*.
 
 **Offline play stays allowed (decided).** The retirement is about the network: the online services only speak to launchers they can still support, and nobody should lose their own games because a version was retired on a day the PC has no network. *Play Offline* closes the panel, the home screen is the player's as before, and nothing offline changes: library, unlocking, playing, saves, the trophies on this PC, settings.
@@ -2505,6 +2634,23 @@ Players who live in Steam (Big Picture, the Steam Deck) can put AnyPlay there as
 - **Gallery.** `--gallery=behavior-steam` shows the two rows.
 
 ---
+
+### 9.10 Captures
+
+Screenshots and clips have a place of their own: a full-screen gallery, like a console's. The module is `anyps5_core::captures` (reading the folder: the list, the owner of a file, the length of a clip, delete); the screen is `screens/captures.rs` (layout in `captures/layout.rs`, drawing in `captures/paint.rs`); the data and the pictures are `app/captures.rs` and `app/captures/images.rs`; the glue is `app/panels/captures.rs`. The overlay is `Overlay::Captures`, a full-screen panel with the library's glass.
+
+- **Reached from.** The captures button in the top bar (`images`, between the library and friends; `HomeIntent::OpenCaptures`) and the row **Captures** in the quick panel the Home button opens in front of a running game. Back leaves, to where it was opened from.
+- **Where the files are.** The screenshots folder (Settings > Advanced; `Pictures/AnyPS5` by default), top level only; links are not followed. A screenshot is `<TITLEID>-<yyyymmdd>-<hhmmss>[-<n>].png` (the engine's), a clip `<game name> <yyyy-mm-dd> <hh-mm-ss>[ (<n>)].mp4` (9.8). `.png`, `.jpg`, `.jpeg` and `.mp4` of any other name count too, as captures of no known game. The folder is read when the area opens, on a thread of its own, and again on **Try Again** or when the folder in the settings changes.
+- **Grouped by game.** Each group has the game's own icon and name from the library; a screenshot is matched by the title ID in its name, a clip by the game name in its name (the same safe-file-name rule the recorder uses). A game the library does not know is a group under the name the file gives it, files of no game are **Other Captures**. Groups are ordered by their newest capture, captures inside a group newest first. Nothing in this is specific to one title.
+- **The grid.** 16:9 tiles that fill the width (as many as fit at about 300 dp, at least two), 20 dp between them, the time under each (`14:32` today, `Oct 25, 14:32` before). A clip carries a play disc and its length in the corner. The first row of a group has the group's header above it. Filters **All**, **Screenshots** and **Clips** are chips under the title (the chosen one is the filled button); select on a chip chooses it.
+- **Focus.** One 2D grid across the groups: left and right step one place and cross from a group to the next, up and down keep the column (into a shorter row the last tile), up from the first row reaches the chips, down from the chips the first tile. Every step plays `move`, an end `bump`, opening `open`, leaving `close`. Tab walks like the library. A click on a tile opens it.
+- **One capture.** A screenshot fills the space between the title and the buttons (the small picture shows at once and the big one, at most 2560 px on the longer side, replaces it). A clip shows its picture and its length, and plays in the system's player (**Open in Player**); the launcher has no video decoder. The picture of a clip is the system's own thumbnail (Windows: the shell's thumbnail of the file, 512 px for the grid and 1024 px for the view, asked on a worker thread of its own so that a hung provider cannot hold up the screenshots; Linux: none), and when there is none the tile is plain with the play disc. The title names the game and "3 of 4" counts within it. Left and right step through the captures in the order of the grid, from one game to the next, and a picture that is already there appears at once (one that has to be waited for fades in); down reaches the buttons: **Open in Player** (clips, the one filled button) or **Copy Image** (screenshots, to the clipboard), **Show in Folder** (Windows and macOS select the file, Linux opens the folder) and **Delete**. Select on a clip's picture plays it; on a screenshot it moves to the buttons. Back returns to the grid on the capture last seen.
+- **Delete** asks first, with the file's name in the question, and opens on **Cancel**: "Delete this screenshot?" / "Delete this clip?", "<name> is removed from your PC. This cannot be undone.", **Cancel** and **Delete Screenshot** / **Delete Clip**. Back and a click beside the card are Cancel (back to the Delete button). The file is removed for good (no recycle bin). Only files the engine or the recorder named can be deleted: a picture or video of the player's own that merely sits in the folder (a screenshots folder pointed at a general Pictures folder) is listed under **Other Captures**, can be viewed, played and shown in its folder, and has no Delete button; `delete` refuses it too. After a delete the view stays at the place and shows the next capture, or the previous one when it was the last, or the grid when the list is empty.
+- **States.** *Loading* (a spinner and the words), *empty* ("No captures yet", how to take a screenshot, F12, and on Windows how to turn Clips on, with **Open Clips Settings**), a filter that hides everything ("No screenshots yet" / "No clips yet", **Show All Captures**), *folder missing* (the folder's path, **Open Folder Settings**) and *unreadable* (**Try Again**). Each has the chips above it and at most one button.
+- **Thousands of files.** Only the rows on screen and one more are laid out and drawn; the scroll follows the focus as in the library. Pictures are decoded by two workers (and the clip thumbnails by a third) off the interface thread; what a frame asks for is the queue (what was scrolled past leaves it); the texture cache holds at most 160 MiB and gives up the ones drawn longest ago; a file that does not decode is asked for once and shows as a plain tile; a picture of more than 64 million pixels is not opened. Closing the area frees the textures.
+- **Never.** Nothing is uploaded or shared, nothing is moved or edited, no game dump is touched; the only write is the delete the player confirmed.
+- **Gallery.** `--gallery=captures-empty|captures-few|captures-many|captures-clips|captures-screenshot|captures-clip|captures-clip-plain|captures-confirm|captures-missing|captures-loading`. All names, times and pictures are invented.
+- **Not yet.** Video playback inside the launcher, a picture for a clip on Linux, a recycle bin, sharing.
 
 ## 10. Asset list
 
@@ -2683,7 +2829,7 @@ The launcher's side of the AnyPlay network ([anyplaynet/network](https://github.
   - *Focus.* Two zones (`friends::nav::step`, pure and tested): the rail and the page. Up and down walk the rail and show the section they stop on; right or select crosses to the page; left on the page crosses back to the rail once the row under the focus has nothing left to step through (a row of buttons or a choice keeps left until it is on its first). Back from the rail or from the first page of a section leaves the screen. The pad, the keyboard and the pointer reach every entry and every row; the screen reader follows the ring (`ui/a11y.rs`) and reads the rail as buttons, the current section selected.
   - *Back.* Back returns to where the screen was opened from, like the profile screen: home for the friends button and the profile button before sign-in; the profile screen when it was opened from there (`Model::friends_back`). A friend's View Profile opens their profile screen; Back from it comes back to the Friends screen on the page and the row it left.
   - *Motion.* The screen comes in and goes out with the overlay spring of the other full-screen panels (opacity and a scale from 1.03); nothing else moves except the rows' own focus and hover, and the quick actions fade with the focus. Reduced motion swaps the springs for the short eases of every other overlay (`AnimExt`); no motion of this screen is the only carrier of a state.
-  - *States.* Signed out: the Start page (Sign In, Create Account, the cloud) in the middle. Offline and connecting: the note and Try Again. Loading and failed: the feed has its own block (3.x); the friends page shows what it has. No friends: above. A ban: the Start page keeps the first row. A mute: the banner row at the top of Home (Restrictions below).
+  - *States.* Signed out: the Start page (Sign In, Create Account, then the same sentence as a note with two rows, Terms of Service and Privacy Policy, which open the pages in the browser (2026-10-26), then the cloud) in the middle. Offline and connecting: the note and Try Again. Loading and failed: the feed has its own block (3.x); the friends page shows what it has. No friends: above. A ban: the Start page keeps the first row. A mute: the banner row at the top of Home (Restrictions below).
   - *Words.* Titles and captions in title case, notes in sentence case. English and Turkish in `friends_strings.rs`.
 
 **Pages.** One screen whose pages swap in place (no slide); Back leads up a page and leaves the screen at the first page of a section. Each page opens on its first focusable row.
@@ -2694,19 +2840,19 @@ The launcher's side of the AnyPlay network ([anyplaynet/network](https://github.
 | Cloud | "Cloud" / "The address of the cloud you sign in to" | Address (text), Use This Cloud (command; detail when the address is not https or loopback http), Use the AnyPlay Cloud (only with an own cloud), note |
 | Browser | "Online" / "Continue in your browser" | Open the Page Again, Cancel, note: the launcher signs in by itself when the browser is done |
 | Home | "Friends" / none (the header says who and how many) | The state of the connection when it is not up (a note; offline also Try Again), a limit, Friend Requests (up to five, each a row with the avatar, the handle, "Wants to be your friend" and Accept and Decline at its end; with more, See All Requests with "5 waiting" opens the Requests page), Invitations (a game's, then a party's), Playing Together (only once someone besides you is in the session; members with Direct, Through a relay or Connecting…), Add a Friend, Friends in the groups Playing Now (joinable first), Online and Offline (by name), each with its quick actions (above), Sent Requests |
-| Friend | the handle / what they play | Join Game (only when their session is open to friends; detail "2 of 4 players"), Send Message (detail "Opening…" or "2 new"), Invite to Party (when the player leads a party or has none, and the friend is not in it), Invite to Your Game (when you are in a session they are not), View Profile, Trophies (their gamer card: the total, the grades they have below it, highest first; "None yet" or "Hidden"), Remove Friend, Block (destructive), Report |
+| Friend | the handle / what they play | Join Game (only when their session is open to friends; detail "2 of 4 players"), Send Message (detail "Opening…" or "2 new"), Invite to Party (when the player leads a party or has none, and the friend is not in it), Invite to Your Game (when you are in a session they are not), View Profile, Trophies (their gamer card: the total, the grades they have below it, highest first; "None yet" or "Hidden"), then the trust actions in a group of their own: Report, and after a gap Remove Friend and Block (both destructive, both ask first, see Confirmations) |
 | Requests | "Friend Requests" / "5 waiting" | Every request as the same row, none capped; the page ends by itself with the last answer |
 | Request, Sent, Blocked, Invitation | the handle or "… invites you" | Accept / Decline / Block; Withdraw Request; Unblock; Join Game / Decline |
-| Party | "Party" / "3 of 8 members" | Party Chat (detail "2 new") and, for the leader, Invite Friends (not full) and Take the Party to My Game (detail the game; only in an open session and with company), in that order, except that a party of one starts with Invite Friends; the Voice group (Party Voice, and while it is on the microphone, the mode and their notes, then Voice Settings); the Members (each with "Speaking", "Muted" or "Not in voice" while voice is on, "Leader" and the friend's presence in words, "You" on your own row; the others open the member page); Leave Party (destructive, its own group) |
-| Party member | the handle / presence | Volume (stepper, 0 to 200 %, steps of 10) and Mute (toggle), for everyone; for the leader a group below with Make Leader (detail "Lumen will lead the party") and Remove from Party (destructive; detail "Lumen is taken out of the party") |
+| Party | "Party" / "3 of 8 members" | Party Chat (detail "2 new") and, for the leader, Invite Friends (not full) and Take the Party to My Game (detail the game; only in an open session and with company), in that order, except that a party of one starts with Invite Friends; the Voice group (Party Voice, and while it is on the microphone, the mode and their notes, then Voice Settings); the Members (each with "Speaking", "Muted" or "Not in voice" while voice is on, "Leader" and the friend's presence in words, "You" on your own row; the others open the member page); Leave Party (destructive, its own group, asks first) |
+| Party member | the handle / presence | Volume (stepper, 0 to 200 %, steps of 10) and Mute (toggle), for everyone; for the leader a group below with Make Leader (detail "Lumen will lead the party") and Remove from Party (destructive, asks first; detail "Lumen is taken out of the party") |
 | Voice | "Voice" / "Talk with your party" | Party Voice (toggle; detail the state), a note when the net service switched it off, Mode (Push to Talk, Voice Activity) with its note, Talk Key (keys row; only in push-to-talk mode), a group with Microphone and Speakers (actions; detail the device or "System Default"), Refresh Devices, a note when the PC has no microphone or sound at all |
 | Voice devices | "Microphone" or "Speakers" / "Choose the microphone" | System Default first, then every device by name; the chosen one says "In use", or "This device is not connected right now." when it is gone; a note that a change restarts voice for a moment. Choosing leads back to the voice page |
 | Invite Friends | "Invite Friends" / "Pick up to 5 friends" | one toggle per online friend not in the party, with their presence; a pick beyond the free places is refused; Send Invitations (detail "Pick a friend first" or "The party is full" while it cannot send), Cancel. The party exists once the cloud answers |
 | Party invitation | "… invites you" / "Party of 3" | Join Party, Decline; while the player has a party of their own Join Party is not offered, a note says to leave it first, and the page opens on Decline |
 | Messages | "Messages" / "5 unread" or "Talk to your friends" | Message Requests (a group of its own: the sender, "Wants to message you"), then Conversations: unread first, then the newest; a friend by name with "n new" or their presence, a group by name or members, the party's chat as "Party Chat"; with none, a note on how to start |
-| Conversation | the friend, the group, or "Party Chat" / presence, "n people", "3 of 8 members" | Show Earlier Messages (while there are more), the messages oldest first and the newest just above the field (title the text on one line, detail "Lumen · 11:41", "Oct 21, 19:36" for another day, "You · …" and "Seen" on your last one a friend read; in a group or the party's chat the sender comes first in the title, "Lumen: …", and the player's own words keep "You" in the detail), "Loading…" until the first fetch came back, the Message field (wide, Enter sends), Send; a group adds Leave Conversation. It opens on the field |
-| Message | the sender / the time | the whole text, Copy Text, Report (not on your own messages; Back leads here from the report) |
-| Message request | the sender / "Wants to message you" | their first messages (at most five), Accept, Decline, Block (destructive), a note: they cannot see that you read this, links do not open. It opens on the first message: read before answering |
+| Conversation | the friend, the group, or "Party Chat" / presence, "n people", "3 of 8 members" | Show Earlier Messages (while there are more), the messages oldest first and the newest just above the field (title the text on one line, detail "Lumen · 11:41", "Oct 21, 19:36" for another day, "You · …" and "Seen" on your last one a friend read; in a group or the party's chat the sender comes first in the title, "Lumen: …", and the player's own words keep "You" in the detail), "Loading…" until the first fetch came back, the Message field (wide, Enter sends), Send; a group adds Leave Conversation (asks first). It opens on the field |
+| Message | the sender / the time | the whole text, Reply, Edit (your own, for fifteen minutes), Unsend (your own, destructive, asks first), Copy Text, Report (not on your own messages; Back leads here from the report) |
+| Message request | the sender / "Wants to message you" | their first messages (at most five), Accept, Decline, Block (destructive, asks first), a note: they cannot see that you read this, links do not open. It opens on the first message: read before answering |
 | Restriction | the restriction's title ("Messages and Friend Requests Paused", "New Account Limits", "Account Banned") / "Until Oct 25, 2026 at 9:14 PM" or "Until further notice" | What This Means (one note), Reason (the rule, then "Note From the Moderator" and the moderator's words as plain text), Appeal. A mute with an appeal still open for filing: a note with the last day, the field "Why do you think this is a mistake?" (wide) and Send Appeal; an appeal that was sent, decided or out of time is one note instead. A ban: Appeal in Browser and its note. A new account's limit has no reason and no appeal. The page ends by itself when the restriction does (back to where the player came from) |
 | Add a Friend, Report, Account | | the name field and Send Request (while a restriction stops friend requests, one row "Friend Requests Paused" with the end in its detail stands in their place and opens the Restriction page); the reason choice and Send Report; Manage Account (opens the account web: e-mail, passkeys, devices, deleting the account), cloud, Hide Your IP Address (toggle) with its note, Who Sees Your Trophies (Friends, Everyone, Only You) with its note, the blocked, Sign Out. A **Restrictions** group opens Home and Account whenever one is in force: a row for each, with its end as the detail |
 | Invitation picker | "Invite to …" / "Pick up to … friends" | one toggle per online friend, Send Invitations, Cancel |
@@ -2718,8 +2864,10 @@ Rows keep their identity by their `RowId` and their place among rows of the same
 
 Hints that explain a text field or a toggle stand under it with the normal 8 dp row gap, not attached: the focused row grows 3 dp and would touch an attached note. A command waiting for the net service says "Sending…" in its detail line.
 
+**Confirmations** (`screens::online::confirm`, `Page::Confirm`). What cannot be taken back asks first: Block (a friend's page, a request, a conversation's options, the answer bar of a message request), Remove Friend, Unsend, Leave Party, Remove from Party and Leave Conversation. The question is a page like any other, on the section it was asked in (a thread's pages stand without the rail): the headline asks ("Block Lumen?", the page title), under it one sentence in body size and `text_label` ink at leading 1.45 says what it ends and whether it can be undone, then two rows, `Cancel` and the confirming row in the danger ink after a gap. `Cancel` is first so a page that opens on its first row holds the focus on the safe answer; Back leads to the page it was asked on like Cancel, with the focus on the row it was asked from. Confirming does the action and goes to the page that shows its result (Home, Messages, the conversation, the party). A question whose subject is gone meanwhile (the friend removed you, the message was unsent, the party ended) leads back by itself. Nothing in the launcher asks about what can be redone: ending a call, Decline, Mute, Pin. English and Turkish in `online_confirm_strings.rs`.
+
 **Profile screen** (`screens::profile`, its host `app::panels::profile`, the return path `app::profile`; network `spec/cloud-api.md` Profiles, ADR 0024). A full-screen overlay (`Overlay::Profile`) for a player's profile, the player's own or another's, on the frame of the trophy list: glass, 90 dp of side padding, the hint bar at the top right. It replaced the profile page of the side panel, whose banner is gone. `profile` answers a `ProfilePage`: the parts the player may see (`about`, `favourites`, `avatar`, `playtime`), the trophy counts (null when hidden) and the linked accounts. What is shown is decided in `screens::profile::view`, a function from what the launcher knows to plain data (`ProfileView`), and tested without a window; the painter decides nothing.
-  - *Entry and Back.* The profile button of the top bar (own, once signed in), Your Profile in the Friends screen's rail, View Profile on a friend's page, and a card of the feed (the account of the card). Back leaves for where the player came from (`app::profile::Back`): Home for the button; for the others the Friends screen opens again on the page it was left on, with the focus on the row it was on. Signed out, the button keeps its old meaning and opens sign-in. On the player's own profile the buttons under the name are Edit Profile (opens the account web, as before; the one prominent button), Friends and, while the cloud answers, **Appear Offline** (Appear Online while it is on; the same button both ways, `Press::AppearOffline`) (the Friends screen on its first page). On a friend's: Friend Options (their page in the panel: Join Game, Message, Invite, Remove, Block, Report). On someone who asked: Answer Request. On a stranger: Add Friend. Entering through a profile never closes the way back to anything the old page offered.
+  - *Entry and Back.* The profile button of the top bar (own, once signed in), Your Profile in the Friends screen's rail, View Profile on a friend's page, and a card of the feed (the account of the card). Back leaves for where the player came from (`app::profile::Back`): Home for the button; for the others the Friends screen opens again on the page it was left on, with the focus on the row it was on. Signed out, the button keeps its old meaning and opens sign-in. On the player's own profile the buttons under the name are Edit Profile (opens the account web, as before; the one prominent button), Friends and, while the cloud answers, **Appear Offline** (Appear Online while it is on; the same button both ways, `Press::AppearOffline`) (the Friends screen on its first page). On a friend's: Friend Options (their page in the panel: Join Game, Message, Invite, Remove, Block, Report). On someone who asked: Answer Request. On a stranger: Add Friend. Entering through a profile never closes the way back to anything the old page offered. **Back button** (2026-10-26): as on the Friends screen, at the top left; the page starts 60 dp under the top and scrolls out under that row.
   - *Header.* One column, no banner: the avatar (120 dp; the first letter of the handle on one of six calm colours without a picture), the handle as the title (40 light), under it a line with a chip for how you know each other ("Friend", "Request sent", "Wants to be friends"; nothing for a stranger or for yourself) and the status (their presence: Online, Playing a game, Offline, with a dot in the accent while they are online; for the own profile "This is what other players see", and "Appearing offline · This is what other players see" while appearing offline, without a dot), then the text about them (17, white 86 %, at most three lines, 640 dp wide; the status line above it is the small one: 15 medium, 70 %), then the buttons. On a friend's profile a quiet line under the text says what only a friend's page can: "You have 3 of their games" (their titles that are in the player's library; left out at none). "Playing Neon Orchard" says what they play and nothing about joining: the profile has no Join button (that is on their page in the panel, one press away through Friend Options). The only colour that is the player's own is a soft wash behind the top-left of the page: the avatar's colour (`banner_colour`, or the monogram's colour) at 22 % in the corner, to nothing 520 dp down and 70 % across; text keeps its contrast with the glass because the wash is never stronger than that. Behind the 120 dp avatar and the handle it is the one thing on the page that could only be this player's.
   - *Figures.* On the right of the header, plain, no boxes: games, hours (minutes below one hour), trophies, each a 34 light tabular figure over a small tracked label, the trophies with their grades as four coloured trophy glyphs and counts under the label (platinum first, a grade without trophies left out). After the trophies comes **Level**: the level (34 light) over its label, under it the points ("1,240 points", 14 medium tabular) and a 96 dp or text-wide track with the way to the next level in the accent. Level, points and the track are the cloud's (`ProfilePage.level`, network ADR 0029); the launcher only draws the fraction, and without the cloud's answer (hidden trophies, loading, offline) there is no Level. A figure whose part is hidden is left out and the others close ranks; with only one figure left there is no strip at all (one number alone only repeats the caption of its section).
   - *Sections.* Games, Recent Trophies and Recent Activity, in at most two columns, and a section with nothing to show for another player is not there at all, so no one sees that a part was hidden: three sections put the games on the left (45 % of the width) and the other two stacked on the right; two sections one column each; one stands on the left. The own profile keeps all three and says in one sentence what fills an empty one ("Earn a trophy in a game and it shows up here."). A section has a 20 semibold caption (with the count of games in 14 beside it), rows 8 dp apart and 40 dp between sections. Nothing sits in a box at rest: a row is text on the page; the pointer makes it a faint surface (white 7 %), the focus makes it the white card of every list (3 dp grow, dark ink, shadow).
@@ -2733,7 +2881,7 @@ Hints that explain a text field or a toggle stand under it with the normal 8 dp 
   - *Trophy names.* Never from the cloud. A sentence names a trophy only when the player has the game, its trophy file is read (`Effect::LoadTrophies`, off the UI thread, once per game) and the trophy is not hidden, or hidden and earned by the player.
   - *Words.* Sentence-style notes, title-case buttons and captions, no exclamation marks. English and Turkish in `profile_strings.rs` and `online_feed_strings.rs`.
 
-**Trophy compare** (`screens::compare`, view `screens::compare::view`, host `app::panels::compare`, state `app::compare`; network `spec/cloud-api.md` Comparing, ADR 0029; control command `compare`). A full-screen overlay (`Overlay::Compare`) on the frame of the trophy list: the game's art and name (36 light) with "Compare Trophies" over it and "With Lumen" under it; on the right two heads over two 236 dp columns, each with avatar and name ("You" or the handle), "Level 9 · 915 points" with the track to the next level, the game's trophies by grade, and "130 points in this game"; then one row per trophy (picture 52 dp, name, "Gold · what it asks for") with, in each column, a check and the day it was earned or "Not yet". Everything numeric is the cloud's. **Names, texts and pictures come only from the player's own trophy file**; for a game that is not in the library the rows read "Trophy 4", the grade, and one quiet line says why. A hidden trophy the player has not earned is a secret in both columns ("Hidden Trophy", a lock, the Show pill on the focused row; select or Show reveals it and sends `reveal_trophies`, as on the trophy list); "Always Show Hidden Trophies" shows it. The other column is what that player's profile shows the player, so their secrets are not in it. States, one block of words under the header: loading, offline ("You are offline"), failed (Try Again, the one focus stop), hidden ("Their trophies are hidden"), empty ("Nothing to compare yet"). Up and down walk the rows; a row at the top or bottom edge of the list fades out as the edge reaches it (opaque while it rests inside the margin, gone when the cut reaches its text), so no line is cut half way under the heads. Back and Options return to the profile on the row it was left from (the cue is "back", 7.6). English and Turkish in `compare_strings.rs`.
+**Trophy compare** (`screens::compare`, view `screens::compare::view`, host `app::panels::compare`, state `app::compare`; network `spec/cloud-api.md` Comparing, ADR 0029; control command `compare`). A full-screen overlay (`Overlay::Compare`) on the frame of the trophy list: the game's art and name (36 light) with "Compare Trophies" over it and "With Lumen" under it; on the right two heads over two 236 dp columns, each with avatar and name ("You" or the handle), "Level 9 · 915 points" with the track to the next level, the game's trophies by grade, and "130 points in this game"; then one row per trophy (picture 52 dp, name, "Gold · what it asks for") with, in each column, a check and the day it was earned or "Not yet". Everything numeric is the cloud's. **Names, texts and pictures come only from the player's own trophy file**; for a game that is not in the library the rows read "Trophy 4", the grade, and one quiet line says why. A hidden trophy the player has not earned is a secret in both columns ("Hidden Trophy", a lock, the Show pill on the focused row; select or Show reveals it and sends `reveal_trophies`, as on the trophy list); "Always Show Hidden Trophies" shows it. The other column is what that player's profile shows the player, so their secrets are not in it. States, one block of words under the header: loading, offline ("You are offline"), failed (Try Again, the one focus stop), hidden ("Their trophies are hidden"), empty ("Nothing to compare yet"). Up and down walk the rows; a row at the top or bottom edge of the list fades out as the edge reaches it (opaque while it rests inside the margin, gone when the cut reaches its text), so no line is cut half way under the heads. Back and Options return to the profile on the row it was left from (the cue is "back", 7.6). **Back button** (2026-10-26): the console button of the Friends screen (small, caret, "Back") at the top left of the 90 dp frame, the hint bar level with it at the right; the header starts 60 dp under the top (`screens::back_row`, `BACK_ROW`), so the mouse can leave without the keyboard. English and Turkish in `compare_strings.rs`.
 
 **Appear Offline** (network ADR 0028, control command `set_appear_offline`, `account.appear_offline` of the `state` event). `Online::set_appear_offline` shows the choice at once, a refusal takes it back with a toast, and the `state` event settles it (also when another device changes it). Where it shows: the switch "Appear Offline" (detail "Friends see you as offline") on the Account page of the online panel; the button on the own profile; "Appearing offline" in the panel's subtitle, the profile's status line and, in quiet ink (white 72 %), after the name in the top bar's profile pill, whose accent dot becomes a ring while it is on (its accessible name says "Appearing offline" instead of "Online"). Offline from the cloud the player is simply offline: nothing is shown.
 
@@ -2828,7 +2976,7 @@ Gallery scenes of the Friends screen itself (1600 x 900): `friends` (the default
 
 The launcher's side of [Play Together](https://github.com/anyplaynet/network/blob/main/spec/play-together.md): the owner's picture is "I start Minecraft from the launcher, my friend presses Join, his launcher starts Minecraft in the same session, and my world shows up as a LAN world". Nobody sets up a VPN, a port or an address. The pure rules are `anyps5_core::play_together` (the table, the join check, the presence wording); the flow is `app::together` and `app::online`; the card is `screens::together`; the words are `screens::together_strings`.
 
-**The table.** `data/lan-titles.v1.json` lists the games that can be played together (first entry: PPSA17221, Minecraft, up to 8 players). A copy is built in; an entry with a mode the launcher does not know is left out. Play Together exists only for a game in the table.
+**The table.** `data/lan-titles.v1.json` lists the games that can be played together (first entry: PPSA17221, Minecraft, up to 8 players). A copy is built in; an entry with a mode the launcher does not know is left out. Play Together exists only for a game in the table. Each entry may say how far the host's and the joiner's versions may differ, `"version"`: `exact` (the default when the field is missing, and Minecraft's, because Bedrock clients refuse another protocol version), `major` (the first dot-separated part must match: `01.044.000` joins `01.050.000`, not `02.000.000`) or `any`. The rule is data read by generic code: the join check applies it, and the launcher sends it with `check_join`, `game_start` and the cloud's join, so the net service and the cloud compare two version texts and know no game ([spec](https://github.com/anyplaynet/network/blob/main/spec/play-together.md#the-lan-title-table)).
 
 **Hosting.** On the game's page the action row reads Play, Play Together, trophies, "...". Play stays the one primary action; Play Together is a secondary control of the same size, shown only for an unlocked game in the table (a game that is locked, starting or running shows no second button). The party page has a row of the same name with the game's name as its detail. Pressing it starts the game through the ordinary start with `game_start` carrying `host` (`max_members` from the table, `visibility` friends, `party` when the player is in a party); a plain Play carries none. When the net service cannot open the session, the game runs anyway and a toast says why nobody can join ("Nobody can join: Play Together could not start. Your game runs anyway."). A start that the net service does not answer within three seconds runs alone and says so.
 
@@ -2843,11 +2991,15 @@ The launcher's side of [Play Together](https://github.com/anyplaynet/network/blo
 | Offline | You are offline | Play Together needs a connection. Try again in a moment. | **Close** |
 | Online play off | Online play is switched off | Switch it on to play together. | Close, **Switch on** |
 | Not owned | You need Minecraft to join | It is not in your library. Add it, then join again. | **Close** |
-| Wrong version | You need Minecraft 01.044.000; you have 01.008.000 | Both of you need the same version to play together. | **Close** |
+| Wrong version | You need Minecraft 01.044.000; you have 01.008.000 | Update the game, then join again. Trying anyway may not connect or may fall out of sync. (You are ahead of the session: Ask your friend to update, or install Minecraft 01.008.000. and the same second sentence.) | Try anyway, **Close** |
 | Wrong toolkit | You need toolkit v0.1.5; you have v0.1.4 | Choose it under Toolkit for This Game, then join again. | **Close** |
 | Full | This game is full | Try again when someone leaves. | **Close** |
 | Busy | Another game is running | Close it, then join. | **Close** |
 | Ended | That session has ended | Ask your friend to start a new one. | **Close** |
+
+**The pad reaches the card** (2026-10-26). The card is a stop of the home screen: `HomeFocus::Card(i)`, one stop per button in the order they are drawn (the quiet answer first, the primary one last). From the library button, Left goes to the card's primary button (before the update notice, if both show), Left again to the quiet one; Right walks back to the notice or the top bar; Down goes to the tiles; Select presses the button (sound `select`, then the focus returns to the tiles); Back keeps its job (a blocker closes, an offer is put away). The ring is the one of 3.11, drawn only for keys and the pad. Tab visits the card first. Nothing moves the focus onto the card by itself, so a card that appears never takes a key press from the game page. Scene `together-wrong-version-pad`.
+
+**Try anyway.** The version blocker is the one blocker with a second way forward. It keeps its message and its one primary action (**Close**, ink fill); "Try anyway" is the quiet answer on the left, the same place and size as the other blockers' quiet answer, 12 dp from Close. The note about the risk is the second sentence of the line, in the same 14 / 70 % white, so it is read before the button is pressed and there is no second dialog for a thing the player can undo by closing the game. Pressing it runs the same join again with the version check off: `check_join` and `game_start` carry `override_version`, the net service and the cloud skip only the version part of their guard (a different toolkit build still blocks, and says so), and the launcher's log records the session, both versions and the rule. A rule of `major` or `any` that already lets the versions through never shows the blocker. The button is the sentence-case "Try anyway" like its neighbours ("Not now", "Sign in"). Like every button of the card it is reached by the pointer, Tab and the pad (the pad's stops of the card, above).
 
 A friend who plays the game with no session (their online play is off, or they pressed Play) has no Join row; their page says "Online play is off on Mira's PC" above the actions. "Not now" remembers the offer by its session and declines the invitation; the card does not come back for that session. When the host's session ends while the player's game runs, a toast says "Mira's session ended. Your game keeps running." and the game is left alone.
 
@@ -2855,7 +3007,7 @@ A friend who plays the game with no session (their online play is off, or they p
 
 **Strings.** `together_strings.rs`, English and Turkish (the Turkish is unreviewed). Headlines say what is the case; the line under says what to do. The wrong-version headline is the owner's sentence.
 
-**Gallery.** `home-together` (the button, focused), `together-offer`, `together-offer-invitation`, one scene for each blocker (`together-signed-out`, `-offline`, `-online-off`, `-not-owned`, `-wrong-version`, `-wrong-build`, `-full`, `-busy`, `-ended`, `-no-session`), and the panel pages `together-friends`, `together-friend`, `together-friend-nosession`, `together-party`.
+**Gallery.** `home-together` (the button, focused), `together-offer`, `together-offer-invitation`, one scene for each blocker (`together-signed-out`, `-offline`, `-online-off`, `-not-owned`, `-wrong-version`, `-wrong-version-ahead` (both with Try anyway), `-wrong-build`, `-full`, `-busy`, `-ended`, `-no-session`), and the panel pages `together-friends`, `together-friend`, `together-friend-nosession`, `together-party`.
 
 ## 18. Phone as controller
 
@@ -2877,10 +3029,20 @@ The AnyPS5 Remote phone app of the macOS fork ([utkuhalis/AnyPS5-ARM](https://gi
   - *macOS* builds of this launcher have no virtual controller: the page shows "Not available".
 
 **Interface.**
-  - *Settings, "Phone as Controller"* (the category after Behaviour, glyph `device-mobile`). Rows: the switch (detail: "Use your phone as a controller. Only phones on your home network can connect, and each one has to be paired first."); with it on: Status ("Waiting for a phone", "Connecting to Pixel 8", "Connected to Pixel 8"), Delay in ms while connected, the pairing question when a phone asks (the title "Pair Pixel 8?" with the code as its value, the note "Pair only if your phone shows the same code.", then Pair Phone and Deny as two commands), Address with the note for manual entry (and notes when the port was busy or the PC could not announce itself), the Paired phones caption with one destructive "Remove Pixel 8" command per phone ("Paired on 2026-10-24"), and the Virtual controller status with its notes. When the server cannot start, one note says so and the switch stays.
+  - *Settings, "Phone as Controller"* (the category after Behaviour, glyph `device-mobile`). Rows: the switch (detail: "Use your phone as a controller. Only phones on your home network can connect, and each one has to be paired first."); with it on: Status ("Waiting for a phone", "Connecting to Pixel 8", "Connected to Pixel 8 · 4 ms": the delay is part of the status while connected), the pairing question when a phone asks (the title "Pair Pixel 8?" with the code as its value, the note "Pair only if your phone shows the same code.", then Pair Phone and Deny as two commands), Address (globe glyph, so every title shares the status row's edge) with the note for manual entry (and notes when the port was busy or the PC could not announce itself), the Paired phones caption with one "Remove Pixel 8" command per phone (ink, not danger red: pairing again undoes it) ("Paired on 2026-10-24"), and the Virtual controller status with its notes. When the server cannot start, one note says so and the switch stays.
   - *The question comes to the player.* When a phone asks to be paired while nothing else is open and no game starts or runs, the settings open on this page (the link `anyps5://settings/phone` does the same). Otherwise a toast says who asks and where to answer; the question stays up for the minute the server waits.
   - *Top bar.* While a phone is welcomed, a pill 32 dp high (the buttons' surface, white 0.10) with the `device-mobile` glyph and the phone's name (14 medium, cut in the middle past 150 dp) sits 48 dp after the title, clear of the scanning spinner. It is a status, not a button: not focusable, named "Phone connected: Pixel 8" for screen readers. It is ink on the pill, not accent: the accent is for being online with the network.
   - *Words.* English and Turkish like the rest (`screens/phone_strings.rs`). The product text names no console brand.
+
+**LudusCtrl** (2026-10-26). [LudusCtrl](https://github.com/parl0v/ludusctrl) is a second way in, for a real controller: the controller is connected to an Android phone or tablet over Bluetooth, and the LudusCtrl app passes its input on to this PC over the home network (its own UDP protocol on port 45989 with a beacon on 45990, a six-digit pairing code, signed input). It is an **option of Phone as Controller**: the preference `phoneLudusctrl`, off by default, and its server runs only while the phone switch is on too. The phone only carries the pad: it does not browse the library or start games, and the pad it feeds is the player's controller for the launcher as well as for games. The server is the core's, `anyps5_core::remote::ludusctrl` (its interface in `docs/ludusctrl-api.md`); the launcher meets it in `app::ludus` (the state, the `LudusReceiver` trait and `start_receiver`, the one place the core plugs in), and the rows and words are `screens::ludus` and `screens::ludus_strings`.
+  - *Settings.* A group of its own on the Phone as Controller page, after the phone server's rows and only while its switch is on. The switch "LudusCtrl" (glyph `game-controller`, detail: "Play with a controller connected to your phone, through the LudusCtrl app. Each phone has to be paired first."); with it on: Status ("Waiting for a phone", "Connected to Galaxy Tab S9", "Connected to Galaxy Tab S9, no controller" while the phone holds the pad with no controller on it), the pairing question in the phone server's form (`phone::pairing_rows`: "Pair Galaxy Tab S9?", the note, Pair Phone and Deny) with the code in two groups of three as the app shows it ("260 329"), Address (the PC's address with LudusCtrl's port, "192.168.178.20:45989") with the note for manual entry, the Paired LudusCtrl Phones caption with one destructive "Remove Galaxy Tab S9" command per phone ("Paired on 2026-10-25") or the line "No phone is paired yet. Open the LudusCtrl app on your phone and start the link.", then where the app comes from: the note "LudusCtrl runs on Android phones and tablets. Pair your controller with the phone over Bluetooth, then open the app." and the command "Open the LudusCtrl Page" (glyph `github-logo`, detail `github.com/parl0v/ludusctrl`). No Delay row: the protocol carries no figure to the PC. When the server cannot start, one note says so and names the likely cause (the standalone LudusCtrl receiver holds the same port), and the switch stays. The Virtual controller rows close the page once for both servers (when the phone server could not start, LudusCtrl's look at the driver fills them).
+  - *The link.* The row opens the project page, which works for everyone and points to the app. The Google Play listing (`com.parlov.ludusctrl`) opens only for the app's testers until it is in production; the row moves to it then.
+  - *The question comes to the player* as it does for the phone server: an idle launcher opens the page, otherwise a toast says who asks and where to answer. An Allow past eight paired phones gets the "Eight phones are paired" toast.
+  - *Top bar.* While a LudusCtrl phone holds the pad, the phone's pill (32 dp, `device-mobile`, the phone's name cut in the middle past 150 dp, ink on the buttons' surface) sits 12 dp after the phone server's pill, or 48 dp after the title, named "LudusCtrl connected: Galaxy Tab S9" for screen readers. It is a status, not a button, and is left out when the strip has no room for it; the controller's pill (6.9) follows it.
+  - *One controller.* Both servers drive the same virtual controller (`app::pad::SharedPad`), so with both on the system sees one. LudusCtrl gets it as soon as its server runs (its pad drives the launcher too) and plugs it in with the first input; the phone server takes it while a game starts or runs, as before, and the game's rumble goes to that phone. A LudusCtrl phone that leaves lets the pad go to neutral at once and unplugs it after 10 s.
+  - *Credits.* About carries "LudusCtrl protocol and app by Josip Parlov (@parl0v)" under the credits line, and so does the README.
+  - *Words.* English and Turkish in `screens/ludus_strings.rs`; the words the two share (status, the question, Remove, the toasts) are `PhoneText`. No console brand.
+  - *Gallery.* `phone-ludus`, `phone-ludus-pairing`, `phone-ludus-connected`, `phone-both` (a phone of each kind connected, the whole page), and `home-ludus` (the top bar with both pills).
 
 **Tests.** `fake-phone` (`crates/fake-phone`, never shipped) is a phone and a game in one binary: `fake-phone phone --addr 127.0.0.1:47700 --key-file k.txt --script "select:ID,launch:ID,press:cross,..."`, `fake-phone phone --discover` finds the PC through mDNS, `fake-phone game` greets on the bridge. `crates/fake-phone/tests/e2e.rs` drives the real server with it: protocol round trip, pairing and key reuse, an unpaired phone rejected, a denied phone rejected, a request flood limited. The unit tests of `remote` cover the packets (golden hex), the device file, the layouts file, the rate limiter, the on-link rule, the relay's identity checks, the mDNS adapter choice and the pad mapping. The scenes render in the gallery; `docs/media/phone-off.jpg` is a real screenshot of the off state. Gallery scenes: `phone-off`, `phone-waiting`, `phone-pairing`, `phone-connected`, `phone-driver` (Windows without ViGEmBus), `phone-access` (Linux without access to uinput), `phone-failed`, and `home-phone` (the top bar). Not tested without hardware: a real phone on a real network and a real virtual pad in a real game (any game needs the user's go).
 

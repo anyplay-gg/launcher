@@ -20,18 +20,25 @@ pub enum AboutText {
     DiscordDetail,
     Privacy,
     Terms,
+    /// Before an account is made: the pages it means agreeing to. `{terms}` and `{privacy}` stand
+    /// for the pages' names, which are links where the text can hold them.
+    Consent,
     /// Who the launcher builds on.
     Credits,
+    /// Who made LudusCtrl, under the credits.
+    LudusCredits,
 }
 
 impl AboutText {
-    pub const ALL: [AboutText; 6] = [
+    pub const ALL: [AboutText; 8] = [
         AboutText::Website,
         AboutText::Discord,
         AboutText::DiscordDetail,
         AboutText::Privacy,
         AboutText::Terms,
+        AboutText::Consent,
         AboutText::Credits,
+        AboutText::LudusCredits,
     ];
 
     pub const fn english(self) -> &'static str {
@@ -41,9 +48,13 @@ impl AboutText {
             AboutText::DiscordDetail => "News, help and other players",
             AboutText::Privacy => "Privacy Policy",
             AboutText::Terms => "Terms of Service",
+            AboutText::Consent => {
+                "By creating an account you agree to the {terms} and the {privacy}."
+            }
             AboutText::Credits => {
                 "Built on AnyPS5 by boykopovar. The launcher began as utkuhalis' AnyPS5-ARM launcher for macOS."
             }
+            AboutText::LudusCredits => "LudusCtrl protocol and app by Josip Parlov (@parl0v)",
         }
     }
 
@@ -54,9 +65,13 @@ impl AboutText {
             AboutText::DiscordDetail => "Haberler, yardım ve diğer oyuncular",
             AboutText::Privacy => "Gizlilik Politikası",
             AboutText::Terms => "Hizmet Şartları",
+            AboutText::Consent => {
+                "Hesap oluşturarak {terms} ve {privacy} metinlerini kabul edersin."
+            }
             AboutText::Credits => {
                 "boykopovar'ın AnyPS5'i üzerine kurulu. Launcher, utkuhalis'in macOS için AnyPS5-ARM launcher'ı olarak başladı."
             }
+            AboutText::LudusCredits => "LudusCtrl protokolü ve uygulaması: Josip Parlov (@parl0v)",
         }
     }
 
@@ -82,6 +97,19 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn ludusctrl_is_credited_word_for_word() {
+        assert_eq!(
+            AboutText::LudusCredits.english(),
+            "LudusCtrl protocol and app by Josip Parlov (@parl0v)"
+        );
+        assert!(
+            AboutText::LudusCredits
+                .turkish()
+                .contains("Josip Parlov (@parl0v)")
+        );
     }
 
     #[test]

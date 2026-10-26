@@ -1,7 +1,7 @@
 //! The launch splash, "the start screen with a timer" (docs/DESIGN.md 5.5): from the press of Play
 //! until the game's first window shows. The game's icon breathes in the accent colour, the elapsed
-//! `m:ss` counts up, an endless sweep says the launcher is waiting, and Esc (or the pad's back)
-//! stops the start. While it is up the host swallows all other input.
+//! `m:ss` counts up, an endless sweep says the launcher is waiting, and the Cancel button (or Esc,
+//! or the pad's back) stops the start. While it is up the host swallows all other input.
 
 use egui::text::LayoutJob;
 use egui::{Align, Align2, Color32, Context, Layout, Rect, Ui, UiBuilder, pos2, vec2};
@@ -11,9 +11,10 @@ use crate::screens::side::commands;
 use crate::ui::Shell;
 use crate::ui::anim::{self, AnimExt, lerp};
 use crate::ui::chrome::{TileImage, TileStyle, fullscreen_panel, paint_tile};
-use crate::ui::components::{Hint, HintAction, IndeterminateLine, paint_shadow};
+use crate::ui::components::{ConsoleButton, ControlSize, IndeterminateLine, paint_shadow};
 use crate::ui::glass::GlassStyle;
 use crate::ui::i18n::{Key, Language};
+use crate::ui::icons::Icon;
 use crate::ui::input::{Command, InputEvent};
 use crate::ui::sound::Cue;
 use crate::ui::text;
@@ -98,8 +99,14 @@ impl StartScreen {
             GlassStyle::splash(),
             |ui, _| draw(ui, data, since),
         );
-        if drawn.is_none() {
-            self.closing = false;
+        match drawn {
+            None => self.closing = false,
+            // The pointer path: the same stop as Esc.
+            Some(true) if self.open => {
+                self.close();
+                actions.push(StartAction::Cancel);
+            }
+            Some(_) => {}
         }
         actions
     }
@@ -121,7 +128,8 @@ fn centred(
     painter.layout_job(job)
 }
 
-fn draw(ui: &mut Ui, data: &StartData<'_>, since: f64) {
+/// Paints the splash; true when the Cancel button was pressed.
+fn draw(ui: &mut Ui, data: &StartData<'_>, since: f64) -> bool {
     let ctx = ui.ctx().clone();
     let painter = ui.painter().clone();
     let screen = ui.max_rect();
@@ -210,18 +218,21 @@ fn draw(ui: &mut Ui, data: &StartData<'_>, since: f64) {
     y += size::PROGRESS_HEIGHT + 14.0;
     painter.galley(pos2(cx, y), info, color::text_detail());
 
-    // The hint, 40 above the bottom edge.
-    let hint_rect = Rect::from_center_size(pos2(cx, screen.max.y - 40.0 - 12.0), vec2(400.0, 24.0));
-    let mut hint = ui.new_child(
+    // Cancel, 40 above the bottom edge: a button for the pointer; Esc and the pad's back do the same.
+    let cancel_rect = Rect::from_center_size(
+        pos2(cx, screen.max.y - 40.0 - ControlSize::Medium.height() * 0.5),
+        vec2(240.0, ControlSize::Medium.height()),
+    );
+    let mut cancel = ui.new_child(
         UiBuilder::new()
-            .max_rect(hint_rect)
+            .max_rect(cancel_rect)
             .layout(Layout::top_down(Align::Center)),
     );
-    Hint {
-        action: HintAction::Back,
-        label: language.text(Key::Cancel),
-    }
-    .show(&mut hint);
+    ConsoleButton::new(language.text(Key::Cancel))
+        .icon(Icon::X)
+        .size(ControlSize::Medium)
+        .show(&mut cancel)
+        .clicked()
 }
 
 #[cfg(test)]

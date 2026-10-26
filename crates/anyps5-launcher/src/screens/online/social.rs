@@ -7,7 +7,7 @@ use anyps5_core::online::api::{
 };
 use anyps5_core::online::{Online, Purpose, others, plain};
 
-use super::{OnlineAction, OnlineData, OnlinePanel, Page, presence_text};
+use super::{Ask, OnlineAction, OnlineData, OnlinePanel, Page, presence_text};
 use crate::screens::format;
 use crate::screens::friends_strings::FriendsText as FX;
 use crate::screens::online_feed_strings::FeedText as FD;
@@ -917,16 +917,13 @@ impl OnlinePanel {
                 actions.push(OnlineAction::PartyLeader(id));
                 self.go(Page::Party, data);
             }
-            ("removeMember", Page::PartyMember(id)) => {
-                actions.push(OnlineAction::PartyKick(id));
-                self.go(Page::Party, data);
-            }
+            ("removeMember", Page::PartyMember(id)) => self.ask(Ask::RemoveMember(id), data),
             ("takeParty", _) => {
                 if let Some(session) = &online.session {
                     actions.push(OnlineAction::PartyMove(session.id.clone()));
                 }
             }
-            ("leaveParty", _) => actions.push(OnlineAction::PartyLeave),
+            ("leaveParty", _) => self.ask(Ask::LeaveParty, data),
             ("playTogether", _) => actions.push(OnlineAction::PlayTogether),
             ("sendPartyInvites", Page::PartyPicker) if !self.picked.is_empty() => {
                 actions.push(OnlineAction::PartyInvite(
@@ -952,7 +949,7 @@ impl OnlinePanel {
                 }
             }
             ("leaveConversation", Page::ChatOptions(id)) => {
-                actions.push(OnlineAction::LeaveConversation(id));
+                self.ask(Ask::LeaveConversation(id), data);
             }
             ("reply", Page::Message(id, seq)) => {
                 actions.push(OnlineAction::StartReply {
@@ -969,11 +966,13 @@ impl OnlinePanel {
                 self.go(Page::Conversation(id), data);
             }
             ("unsend", Page::Message(id, seq)) => {
-                actions.push(OnlineAction::Unsend {
-                    conversation: id.clone(),
-                    seq,
-                });
-                self.go(Page::Conversation(id), data);
+                self.ask(
+                    Ask::Unsend {
+                        conversation: id,
+                        seq,
+                    },
+                    data,
+                );
             }
             ("keyboardDone", Page::Keyboard(id)) => self.go(Page::Conversation(id), data),
             ("quickReplies", Page::Keyboard(id)) => self.go(Page::QuickReplies(id), data),
@@ -1020,15 +1019,7 @@ impl OnlinePanel {
                     self.go(Page::Report(other), data);
                 }
             }
-            ("blockChat", Page::ChatOptions(id)) => {
-                if let Some(other) = social
-                    .get(&id)
-                    .and_then(|c| others(c, me).first().map(|a| a.id))
-                {
-                    actions.push(OnlineAction::Block(other));
-                    self.go(Page::Messages, data);
-                }
-            }
+            ("blockChat", Page::ChatOptions(id)) => self.ask(Ask::BlockChat(id), data),
             ("copyText", Page::Message(id, seq)) => {
                 if let Some(message) = social.messages(&id).iter().find(|m| m.seq == seq) {
                     actions.push(OnlineAction::CopyText(plain(&message.text)));
@@ -1456,8 +1447,13 @@ mod tests {
         panel.run("makeLeader", &data(&online), &mut actions);
         assert_eq!(actions, [OnlineAction::PartyLeader(AccountId(2))]);
         panel.go(Page::PartyMember(AccountId(2)), &data(&online));
+        // Removing asks first: nothing happens until the question is confirmed.
         panel.run("removeMember", &data(&online), &mut actions);
+        assert_eq!(actions.len(), 1);
+        assert!(panel.asks());
+        panel.run("confirmYes", &data(&online), &mut actions);
         assert_eq!(actions[1], OnlineAction::PartyKick(AccountId(2)));
+        assert_eq!(panel.page, Page::Party);
     }
 
     #[test]
@@ -1569,9 +1565,9 @@ mod tests {
                 "inviteToParty",
                 "call",
                 "viewProfile",
+                "report",
                 "remove",
-                "block",
-                "report"
+                "block"
             ]
         );
         let mut actions = Vec::new();
@@ -2404,6 +2400,101 @@ mod tests {
     }
 
     #[test]
+    fn every_irreversible_action_waits_for_its_answer() {
+        let mut online = online();
+        list(
+            &mut online,
+            vec![
+                conversation("a", ConversationKind::Direct, &[(2, "Lumen")], 4, 4),
+                conversation(
+                    "g",
+                    ConversationKind::Group,
+                    &[(2, "Lumen"), (3, "Juno")],
+                    1,
+                    1,
+                ),
+            ],
+            vec![conversation(
+                "r",
+                ConversationKind::Direct,
+                &[(4, "Nyx")],
+                1,
+                0,
+            )],
+        );
+        online
+            .social
+            .apply_party(Some(party(1, &[(1, "Mira"), (2, "Lumen")])));
+        let cases: [(Page, &str, Vec<OnlineAction>, Page); 3] = [
+            (
+                Page::ChatOptions("a".into()),
+                "blockChat",
+                vec![OnlineAction::Block(AccountId(2))],
+                Page::Messages,
+            ),
+            (
+                Page::ChatOptions("g".into()),
+                "leaveConversation",
+                vec![OnlineAction::LeaveConversation("g".into())],
+                Page::Messages,
+            ),
+            (
+                Page::Party,
+                "leaveParty",
+                vec![OnlineAction::PartyLeave],
+                Page::Party,
+            ),
+        ];
+        for (page, row, expected, after) in cases {
+            let mut panel = OnlinePanel::default();
+            panel.go(page.clone(), &data(&online));
+            let at = crate::screens::rows::position(&panel.rows(&data(&online)).2, row).unwrap();
+            panel.side.nav.row = at;
+            let mut actions = Vec::new();
+            panel.run(row, &data(&online), &mut actions);
+            assert!(actions.is_empty(), "{row} ran before the answer");
+            assert!(panel.asks(), "{row} did not ask");
+            // Cancel leads back to the page and the row the question came from.
+            panel.run("confirmCancel", &data(&online), &mut actions);
+            assert_eq!(panel.page, page, "{row}");
+            assert_eq!(panel.side.nav.row, at, "{row}: the focus is where it was");
+            assert!(actions.is_empty());
+            panel.run(row, &data(&online), &mut actions);
+            panel.run("confirmYes", &data(&online), &mut actions);
+            assert_eq!(actions, expected, "{row}");
+            assert_eq!(panel.page, after, "{row}");
+        }
+        // The answer bar of a message request blocks the sender and drops the request.
+        let mut panel = OnlinePanel::default();
+        panel.go(Page::MessageRequest("r".into()), &data(&online));
+        panel.ask(super::Ask::BlockRequest("r".into()), &data(&online));
+        let mut actions = Vec::new();
+        panel.run("confirmYes", &data(&online), &mut actions);
+        assert_eq!(
+            actions,
+            [
+                OnlineAction::Block(AccountId(4)),
+                OnlineAction::LeaveConversation("r".into())
+            ]
+        );
+    }
+
+    #[test]
+    fn a_question_about_something_that_is_gone_leads_back() {
+        let mut online = online();
+        online
+            .social
+            .apply_party(Some(party(1, &[(1, "Mira"), (2, "Lumen")])));
+        let mut panel = OnlinePanel::default();
+        panel.go(Page::Party, &data(&online));
+        panel.run("leaveParty", &data(&online), &mut Vec::new());
+        assert!(panel.asks());
+        assert_eq!(panel.confirm_follow(&data(&online)), None);
+        online.social.apply_party(None);
+        assert_eq!(panel.confirm_follow(&data(&online)), Some(Page::Party));
+    }
+
+    #[test]
     fn a_message_is_answered_edited_unsent_and_reported() {
         let mut online = online();
         let mut panel = thread(&mut online);
@@ -2423,6 +2514,9 @@ mod tests {
         panel.go(Page::Message("a".into(), 4), &data(&online));
         let mut actions = Vec::new();
         panel.run("unsend", &data(&online), &mut actions);
+        assert!(actions.is_empty(), "unsend asks first");
+        assert!(panel.asks());
+        panel.run("confirmYes", &data(&online), &mut actions);
         assert_eq!(
             actions,
             [OnlineAction::Unsend {
@@ -2430,6 +2524,7 @@ mod tests {
                 seq: 4
             }]
         );
+        assert_eq!(panel.page, Page::Conversation("a".into()));
         panel.go(Page::Message("a".into(), 4), &data(&online));
         panel.run("edit", &data(&online), &mut actions);
         assert!(actions.contains(&OnlineAction::StartEdit {

@@ -38,6 +38,9 @@ naga = { version = "30", features = ["wgsl-in"] }
 [target.'cfg(windows)'.build-dependencies]
 embed-resource = "3"
 
+[target.'cfg(any(windows, target_os = "linux"))'.dependencies]
+hidapi.workspace = true
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 

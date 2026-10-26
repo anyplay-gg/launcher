@@ -5,10 +5,12 @@
 //! layer like those. It comes in with the overlay spring (fade and a short slide down) and leaves the
 //! same way. It holds at most one question: the offer has "Join" as its one primary action and a
 //! quiet "Not now"; a blocker says what is the case in a headline and what to do under it, and has
-//! "Close" (and, for the two it can mend, the remedy as the primary action). Nothing on it moves
-//! while it stays. The pad reaches the same actions through the Online panel (an invitation's Join,
-//! a friend's Join); the card is for the pointer and Tab, and each button shows a focus ring when it
-//! has the keyboard.
+//! "Close" (and, for the two it can mend, the remedy as the primary action). The version blocker
+//! also has a quiet "Try anyway" beside Close. Nothing on it moves
+//! while it stays. The pad reaches every button of the card as a stop of the home screen
+//! (`HomeFocus::Card`, to the left of the library button), and the same actions through the Online
+//! panel (an invitation's Join, a friend's Join); the pointer and Tab press the buttons directly.
+//! Each button shows the ring when it has the keyboard or the pad.
 
 use std::sync::Arc;
 
@@ -19,13 +21,14 @@ use egui::{
 };
 
 use crate::app::model::Model;
-use crate::app::together::{self, Action, Card, Fix};
+use crate::app::together::{self, Action, Card, Fix, can_try_anyway};
 use crate::screens::calls;
 use crate::screens::shared::paint_gradient_circle;
 use crate::screens::together_strings::{TogetherText as T, blocker_text};
 use crate::ui::Shell;
 use crate::ui::anim::{AnimExt, Motion};
 use crate::ui::components::{ConsoleButton, paint_shadow};
+use crate::ui::focus::HomeFocus;
 use crate::ui::glass::{GlassStyle, paint_glass};
 use crate::ui::i18n::{Arg, Language};
 use crate::ui::icons::Icon;
@@ -45,7 +48,7 @@ const HEADLINE: TextStyle = TextStyle::new(16.0, Weight::SemiBold);
 const HEADLINE_LEADING: f32 = 1.3;
 const LINE_LEADING: f32 = 1.45;
 const HEADLINE_ROWS: usize = 3;
-const LINE_ROWS: usize = 3;
+const LINE_ROWS: usize = 4;
 
 /// State kept between frames: what the card showed last, so it can fade out with its content.
 #[derive(Debug, Default)]
@@ -74,6 +77,13 @@ impl TogetherUi {
         } else {
             0.0
         };
+        // The pad's stop on the card (`HomeFocus::Card`), drawn only while no overlay covers it.
+        let pad = match model.focus {
+            HomeFocus::Card(i) if model.overlay.is_none() && model.starting.is_none() => {
+                Some(usize::from(i))
+            }
+            _ => None,
+        };
         if let Some(data) = card.as_ref().or(self.last.as_ref())
             && let Some(action) = paint(
                 ctx,
@@ -83,6 +93,7 @@ impl TogetherUi {
                 shown,
                 card.is_some(),
                 below,
+                pad,
             )
         {
             together::apply(model, action);
@@ -159,6 +170,15 @@ fn view(card: &Card, language: Language) -> View {
                         Action::Fix(fix),
                     ),
                 },
+                // A version blocker keeps Close as its one primary action; trying anyway is the
+                // quiet answer beside it, and the line above already says what it risks.
+                None if can_try_anyway(blocker) => View {
+                    lead: Lead::Warning,
+                    headline,
+                    line,
+                    quiet: Some((T::TryAnyway.text(language).to_owned(), Action::TryAnyway)),
+                    primary: (T::Close.text(language).to_owned(), Action::Close),
+                },
                 None => View {
                     lead: Lead::Warning,
                     headline,
@@ -169,6 +189,17 @@ fn view(card: &Card, language: Language) -> View {
             }
         }
     }
+}
+
+/// The actions of the card's buttons in the order they are drawn (the quiet answer first, the
+/// primary one last): what the pad's focus stops of the card (`HomeFocus::Card`) press.
+pub fn card_actions(card: &Card) -> Vec<Action> {
+    let view = view(card, Language::English);
+    view.quiet
+        .map(|(_, action)| action)
+        .into_iter()
+        .chain(std::iter::once(view.primary.1))
+        .collect()
 }
 
 /// Text in a role with its own leading, cut after `rows` rows.
@@ -203,7 +234,9 @@ fn keyboard_focus(ui: &Ui) -> bool {
 }
 
 /// The card. `live` is false while it fades out: it can no longer be pressed. `below` is the room
-/// a call's card or strip takes at the same place.
+/// a call's card or strip takes at the same place. `pad` is the button the pad's focus is on, by
+/// position in [`card_actions`].
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn paint(
     ctx: &Context,
     accent: Color32,
@@ -212,6 +245,7 @@ pub(crate) fn paint(
     shown: f32,
     live: bool,
     below: f32,
+    pad: Option<usize>,
 ) -> Option<Action> {
     let (a, slide) = entrance(shown);
     if a <= 0.003 {
@@ -294,9 +328,12 @@ pub(crate) fn paint(
                         &painter,
                         centre,
                         Align2::CENTER_CENTER,
-                        TextStyle::new(24.0, Weight::Bold),
+                        ty::ITEM_TITLE,
                         &initial,
-                        fade(Color32::WHITE, a),
+                        fade(
+                            theme::readable_ink(crate::screens::home::avatar_middle(accent)),
+                            a,
+                        ),
                     );
                 }
                 Lead::Warning => {
@@ -340,8 +377,9 @@ pub(crate) fn paint(
             } else {
                 inner.width()
             };
+            let first = usize::from(view.quiet.is_some());
             if let Some((label, quiet)) = &view.quiet {
-                let focused = keyboard_focus(&child);
+                let focused = keyboard_focus(&child) || pad == Some(0);
                 if ConsoleButton::new(label)
                     .min_width(each)
                     .focused(focused)
@@ -352,7 +390,7 @@ pub(crate) fn paint(
                     action = Some(quiet.clone());
                 }
             }
-            let focused = keyboard_focus(&child);
+            let focused = keyboard_focus(&child) || pad == Some(first);
             if ConsoleButton::new(&view.primary.0)
                 .prominent(true)
                 .min_width(each)

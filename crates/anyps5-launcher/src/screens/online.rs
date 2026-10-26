@@ -3,6 +3,7 @@
 //! and asks; the net service acts, and the host turns the panel's actions into commands for it.
 
 mod chat;
+mod confirm;
 mod feed;
 mod local;
 mod profile;
@@ -12,6 +13,7 @@ pub mod screen;
 mod social;
 mod voice;
 
+pub use confirm::Ask;
 pub use feed::{ago_text, monogram_colour, paint_avatar, rarity_text, sentence, theme_grade};
 pub use local::{Avatar, Local, OwnedGame};
 pub use voice::talk_key;
@@ -26,6 +28,7 @@ use anyps5_core::online::{
 use egui::{Color32, Context, Ui};
 
 use crate::screens::friends_strings::FriendsText as FX;
+use crate::screens::legal::Legal;
 use crate::screens::online_call_strings::{self as call_text, CallText as CT};
 use crate::screens::online_feed_strings::FeedText as F;
 use crate::screens::online_strings::OnlineText as T;
@@ -60,6 +63,8 @@ pub enum OnlineAction {
     Reconnect,
     /// Open the account web: e-mail, passkeys, devices and deleting the account.
     ManageAccount,
+    /// Open the Terms of Service or the Privacy Policy in the browser.
+    OpenLegal(Legal),
     /// Appeal the mute an action made.
     Appeal {
         action: u64,
@@ -211,7 +216,7 @@ pub enum Page {
     Messages,
     Conversation(String),
     MessageRequest(String),
-    /// One message in full: answer it, react, edit, unsend, copy, report.
+    /// One message in full: reply, edit, unsend, copy, report.
     Message(String, u64),
     /// Short answers to send without typing.
     QuickReplies(String),
@@ -227,6 +232,8 @@ pub enum Page {
     Restriction(String),
     /// What the player and their friends did.
     Feed,
+    /// Asks before something that cannot be taken back; Back and Cancel lead to the page boxed.
+    Confirm(Ask, Box<Page>),
 }
 
 /// The sections of the Friends screen: one entry of its rail each, with a page of its own to start
@@ -291,6 +298,7 @@ impl Page {
             | Page::Message(..) => Some(Section::Messages),
             Page::Feed => Some(Section::Activity),
             Page::Account | Page::Blocked(_) | Page::Restriction(_) => Some(Section::Settings),
+            Page::Confirm(_, from) => from.section(),
         }
     }
 
@@ -393,6 +401,8 @@ pub struct OnlinePanel {
     room_focus: room::RoomFocus,
     /// How many member tiles the room drew in a row last frame (0 before the first).
     room_columns: usize,
+    /// The row a confirmation was asked from: Cancel and Back put the focus there again.
+    confirm_row: usize,
 }
 
 impl OnlinePanel {
@@ -546,7 +556,8 @@ impl OnlinePanel {
                 self.queued.push(OnlineAction::CallsSeen(*id));
             }
             Page::Conversation(id) | Page::MessageRequest(id) => {
-                if self.page != page && !matches!(self.page, Page::Message(..)) {
+                if self.page != page && !matches!(self.page, Page::Message(..) | Page::Confirm(..))
+                {
                     self.shown = social::SHOWN;
                 }
                 self.queued.push(OnlineAction::OpenThread(id.clone()));
@@ -620,6 +631,7 @@ impl OnlinePanel {
                 Some(Page::Home)
             }
             Page::Picker if online.dialog.is_none() => Some(Page::Home),
+            Page::Confirm(..) => self.confirm_follow(data),
             _ => self.social_follow(data),
         };
         if let Some(page) = wanted {
@@ -638,6 +650,7 @@ impl OnlinePanel {
             Page::Voice | Page::VoiceDevices(_) => self.voice_back(),
             Page::Restriction(_) => Some(self.restriction_back(data)),
             Page::Report(id) => Some(self.report_from.clone().unwrap_or(Page::Friend(id))),
+            Page::Confirm(_, ref from) => Some((**from).clone()),
             _ => self.social_back(data).unwrap_or(Some(Page::Home)),
         }
     }
@@ -821,8 +834,14 @@ impl OnlinePanel {
     }
 
     fn back(&mut self, data: &OnlineData<'_>, actions: &mut Vec<OnlineAction>) {
+        let asked_from = self.asks().then_some(self.confirm_row);
         match self.back_page(data) {
-            Some(page) => self.go(page, data),
+            Some(page) => {
+                self.go(page, data);
+                if let Some(row) = asked_from {
+                    self.side.open_at(row);
+                }
+            }
             None => self.close_panel(data, actions),
         }
     }
@@ -968,6 +987,7 @@ impl OnlinePanel {
     fn run(&mut self, row: &str, data: &OnlineData<'_>, actions: &mut Vec<OnlineAction>) {
         let online = data.online;
         if self.profile_feed_run(row, actions)
+            || self.confirm_run(row, data, actions)
             || self.social_run(row, data, actions)
             || self.restriction_run(row, data, actions)
             || self.voice_run(row, data, actions)
@@ -997,6 +1017,8 @@ impl OnlinePanel {
             }
             ("openAgain", Page::Browser) => actions.push(OnlineAction::OpenSignInPage),
             ("manageAccount", Page::Account) => actions.push(OnlineAction::ManageAccount),
+            ("termsPage", Page::Start) => actions.push(OnlineAction::OpenLegal(Legal::Terms)),
+            ("privacyPage", Page::Start) => actions.push(OnlineAction::OpenLegal(Legal::Privacy)),
             ("invitation", _) => {
                 let index = self.nth(data, "invitation");
                 if let Some(invitation) = online.invitations.get(index) {
@@ -1032,14 +1054,18 @@ impl OnlinePanel {
             ("accept", Page::Request(id)) => actions.push(OnlineAction::Accept(*id)),
             ("decline", Page::Request(id)) => actions.push(OnlineAction::Decline(*id)),
             ("block", Page::Request(id) | Page::Friend(id)) => {
-                actions.push(OnlineAction::Block(*id));
+                let id = *id;
+                self.ask(Ask::Block(id), data);
             }
             ("withdraw", Page::Outgoing(id)) => actions.push(OnlineAction::Decline(*id)),
             ("unblock", Page::Blocked(id)) => actions.push(OnlineAction::Unblock(*id)),
             ("join", Page::Friend(id)) => actions.push(OnlineAction::Join(*id)),
             ("call", Page::Friend(id)) => actions.push(OnlineAction::Call(*id)),
             ("invite", Page::Friend(id)) => actions.push(OnlineAction::Invite(*id)),
-            ("remove", Page::Friend(id)) => actions.push(OnlineAction::RemoveFriend(*id)),
+            ("remove", Page::Friend(id)) => {
+                let id = *id;
+                self.ask(Ask::RemoveFriend(id), data);
+            }
             ("report", Page::Friend(id)) => {
                 let id = *id;
                 self.report_from = None;
@@ -1117,6 +1143,11 @@ impl OnlinePanel {
                 }
                 rows.push(sign_in);
                 rows.push(create);
+                // What creating an account means agreeing to, with a row for each page.
+                rows.push(Row::info("consent", Legal::sentence(language), None).group_start());
+                for (id, page) in [("termsPage", Legal::Terms), ("privacyPage", Legal::Privacy)] {
+                    rows.push(Row::command(id, page.name(language)).icon(Icon::FILE_TEXT));
+                }
                 let shown = match data.cloud {
                     Some(_) if !data.custom_cloud => t(T::CloudOfficial),
                     Some(url) => url,
@@ -1222,9 +1253,17 @@ impl OnlinePanel {
                 if let Some(card) = online.cards.get(id) {
                     rows.push(trophy_row(card.as_ref(), language).group_start());
                 }
+                // The trust actions come last and apart: report first, then the two that end
+                // something, both in the danger ink and both asked about first.
+                rows.push(
+                    Row::action("report", t(T::Report))
+                        .icon(Icon::FLAG)
+                        .group_start(),
+                );
                 rows.push(
                     Row::command("remove", t(T::RemoveFriend))
                         .icon(Icon::USER_MINUS)
+                        .destructive()
                         .group_start(),
                 );
                 rows.push(
@@ -1232,7 +1271,6 @@ impl OnlinePanel {
                         .icon(Icon::PROHIBIT)
                         .destructive(),
                 );
-                rows.push(Row::action("report", t(T::Report)).icon(Icon::FLAG));
                 (handle_of(*id), presence)
             }
             Page::Request(id) => {
@@ -1398,6 +1436,7 @@ impl OnlinePanel {
                     Some(subtitle.text(language).to_owned()),
                 )
             }
+            Page::Confirm(ask, _) => self.confirm_rows(ask, data, &mut rows),
             Page::Party
             | Page::PartyMember(_)
             | Page::PartyPicker
@@ -1975,8 +2014,19 @@ mod tests {
             subtitle.as_deref(),
             Some("Play with your friends over the internet")
         );
-        assert_eq!(ids(&rows), ["signIn", "createAccount", "cloudPage", "note"]);
-        assert_eq!(rows[2].detail.as_deref(), Some("https://cloud.example.org"));
+        assert_eq!(
+            ids(&rows),
+            [
+                "signIn",
+                "createAccount",
+                "consent",
+                "termsPage",
+                "privacyPage",
+                "cloudPage",
+                "note"
+            ]
+        );
+        assert_eq!(rows[5].detail.as_deref(), Some("https://cloud.example.org"));
         let mut actions = Vec::new();
         panel.run("signIn", &data(&online), &mut actions);
         panel.run("createAccount", &data(&online), &mut actions);
@@ -2387,15 +2437,68 @@ mod tests {
                 "inviteToParty",
                 "call",
                 "viewProfile",
+                "report",
                 "remove",
-                "block",
-                "report"
+                "block"
             ]
         );
         assert_eq!(rows[0].detail.as_deref(), Some("1 of 4 players"));
         let mut actions = Vec::new();
         panel.run("join", &data(&online), &mut actions);
         assert_eq!(actions, [OnlineAction::Join(AccountId(2))]);
+    }
+
+    #[test]
+    fn what_cannot_be_taken_back_asks_first_and_cancel_holds_the_focus() {
+        let online = signed_in();
+        let mut panel = OnlinePanel::default();
+        panel.go(Page::Friend(AccountId(2)), &data(&online));
+        for (row, title) in [
+            ("block", "Block Lumen?"),
+            ("remove", "Remove Lumen as a friend?"),
+        ] {
+            let mut actions = Vec::new();
+            panel.go(Page::Friend(AccountId(2)), &data(&online));
+            panel.run(row, &data(&online), &mut actions);
+            assert!(actions.is_empty(), "{row} must not run before the answer");
+            assert!(panel.asks());
+            let (heading, question, rows) = panel.rows(&data(&online));
+            assert_eq!(heading, title);
+            assert!(question.is_some());
+            assert_eq!(ids(&rows), ["confirmCancel", "confirmYes"]);
+            assert!(rows[1].destructive && !rows[0].destructive);
+            // The page opens on Cancel; Back and Cancel lead to where the question was asked.
+            assert_eq!(panel.side.nav.row, 0);
+            assert_eq!(
+                panel.back_page(&data(&online)),
+                Some(Page::Friend(AccountId(2)))
+            );
+            panel.run("confirmCancel", &data(&online), &mut actions);
+            assert_eq!(panel.page, Page::Friend(AccountId(2)));
+            assert!(actions.is_empty());
+        }
+        let mut actions = Vec::new();
+        panel.run("block", &data(&online), &mut actions);
+        panel.run("confirmYes", &data(&online), &mut actions);
+        assert_eq!(actions, [OnlineAction::Block(AccountId(2))]);
+        assert_eq!(panel.page, Page::Home);
+    }
+
+    #[test]
+    fn a_confirmation_belongs_to_the_section_it_was_asked_in_and_ends_when_its_subject_is_gone() {
+        let online = signed_in();
+        let mut panel = OnlinePanel::default();
+        panel.go(Page::Friend(AccountId(2)), &data(&online));
+        panel.run("remove", &data(&online), &mut Vec::new());
+        assert_eq!(panel.section(), Some(Section::Friends));
+        // A friend who is gone leaves nothing to ask about.
+        let mut gone = signed_in();
+        gone.friends.friends.clear();
+        assert_eq!(
+            panel.confirm_follow(&data(&gone)),
+            Some(Page::Friend(AccountId(2)))
+        );
+        assert_eq!(panel.confirm_follow(&data(&online)), None);
     }
 
     #[test]
@@ -2422,9 +2525,9 @@ mod tests {
                 "call",
                 "viewProfile",
                 "trophies",
+                "report",
                 "remove",
-                "block",
-                "report"
+                "block"
             ]
         );
         assert_eq!(rows[5].control, Control::Info(Some("35".into())));

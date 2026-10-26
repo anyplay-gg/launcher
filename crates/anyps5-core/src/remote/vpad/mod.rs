@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 
 pub use map::{PadState, axis, map_packet, xbutton};
 
-use super::{InputPacket, OutputPacket, PadSink};
+use super::{InputPacket, OutputPacket, PadSink, PadTarget};
 
 #[cfg(target_os = "linux")]
 use self::linux as backend;
@@ -98,6 +98,12 @@ impl VirtualPad {
         }
     }
 
+    /// A pad with no driver behind it: it takes every state and the system sees nothing. For
+    /// tests and previews of the code that shares one pad.
+    pub fn inert() -> VirtualPad {
+        VirtualPad::with_backend(Box::new(Inert))
+    }
+
     fn with_backend(backend: Box<dyn Backend>) -> VirtualPad {
         VirtualPad {
             inner: Mutex::new(Inner {
@@ -127,7 +133,8 @@ impl Inner {
         self.failed = false;
     }
 
-    fn apply(&mut self, state: PadState) {
+    /// Plugs in if needed and writes the state. True when the controller holds it.
+    fn apply(&mut self, state: PadState) -> bool {
         if !self.plugged {
             match self.backend.plug() {
                 Ok(()) => self.plugged = true,
@@ -135,21 +142,25 @@ impl Inner {
                     if !std::mem::replace(&mut self.failed, true) {
                         tracing::warn!("virtual controller could not be plugged in: {error}");
                     }
-                    return;
+                    return false;
                 }
             }
         }
         if self.last == Some(state) {
-            return;
+            return true;
         }
         match self.backend.update(&state) {
-            Ok(()) => self.last = Some(state),
+            Ok(()) => {
+                self.last = Some(state);
+                true
+            }
             Err(error) => {
                 // The driver may not be ready for a moment after the plug-in; try again with the
                 // next packet.
                 if !std::mem::replace(&mut self.failed, true) {
                     tracing::warn!("virtual controller update failed: {error}");
                 }
+                false
             }
         }
     }
@@ -165,6 +176,32 @@ impl PadSink for VirtualPad {
 
     fn ended(&self) {
         self.release();
+    }
+}
+
+struct Inert;
+
+impl Backend for Inert {
+    fn plug(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+    fn update(&mut self, _: &PadState) -> Result<(), String> {
+        Ok(())
+    }
+    fn unplug(&mut self) {}
+}
+
+/// LudusCtrl's pad is already an XInput state.
+impl PadTarget for VirtualPad {
+    fn write(&self, state: &PadState) -> bool {
+        self.inner
+            .lock()
+            .map(|mut inner| inner.apply(*state))
+            .unwrap_or(false)
+    }
+
+    fn release(&self) {
+        VirtualPad::release(self);
     }
 }
 
@@ -254,6 +291,32 @@ mod tests {
         assert!(log.updates.lock().unwrap().is_empty());
         drop(pad);
         assert_eq!(log.unplugs.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn a_ludusctrl_state_goes_through_as_it_is() {
+        let log = Arc::new(Log::default());
+        let pad = pad(&log);
+        let state = PadState {
+            buttons: xbutton::A | xbutton::GUIDE,
+            lx: -32768,
+            ry: 32767,
+            right_trigger: 9,
+            ..PadState::default()
+        };
+        assert!(PadTarget::write(&pad, &state));
+        assert!(PadTarget::write(&pad, &state), "unchanged is still held");
+        assert_eq!(*log.updates.lock().unwrap(), vec![state]);
+        PadTarget::release(&pad);
+        assert_eq!(log.unplugs.load(Ordering::SeqCst), 1);
+        let failing = Arc::new(Log {
+            fail_plug: true,
+            ..Log::default()
+        });
+        assert!(!PadTarget::write(
+            &super::VirtualPad::with_backend(Box::new(Fake(failing))),
+            &state
+        ));
     }
 
     #[test]

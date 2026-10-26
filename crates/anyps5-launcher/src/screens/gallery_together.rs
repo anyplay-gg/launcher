@@ -26,6 +26,12 @@ fn every_blocker() -> Vec<Blocker> {
             need: "01.044.000".into(),
             have: "01.008.000".into(),
         },
+        // You are ahead of the session: the longest line the card has to hold.
+        Blocker::WrongVersion {
+            title: "Minecraft".into(),
+            need: "01.008.000".into(),
+            have: "01.044.000".into(),
+        },
         Blocker::WrongBuild {
             need: "v0.1.5".into(),
             have: "v0.1.4".into(),
@@ -49,14 +55,17 @@ pub enum TogetherLook {
     OfferInvitation,
     /// One blocker, by position in [`together::every_blocker`].
     Blocked(usize),
+    /// The same with the pad's focus on a button (its position in the card's actions).
+    Focused(usize, usize),
 }
 
-const BLOCKERS: [&str; 10] = [
+const BLOCKERS: [&str; 11] = [
     "signed-out",
     "offline",
     "online-off",
     "not-owned",
     "wrong-version",
+    "wrong-version-ahead",
     "wrong-build",
     "full",
     "busy",
@@ -70,6 +79,8 @@ pub fn parse(name: &str) -> Option<TogetherLook> {
     match rest {
         "offer" => Some(TogetherLook::Offer),
         "offer-invitation" => Some(TogetherLook::OfferInvitation),
+        // The pad's focus on the version blocker's quiet button ("Try Anyway").
+        "wrong-version-pad" => Some(TogetherLook::Focused(4, 0)),
         other => BLOCKERS
             .iter()
             .position(|b| *b == other)
@@ -103,7 +114,7 @@ pub fn card(look: TogetherLook) -> Card {
             offer: offer(None),
             invitation: Some("i1".into()),
         },
-        TogetherLook::Blocked(n) => {
+        TogetherLook::Blocked(n) | TogetherLook::Focused(n, _) => {
             Card::Blocked(every_blocker().into_iter().nth(n).unwrap_or(Blocker::Full))
         }
     }
@@ -116,7 +127,11 @@ pub fn paint(
     look: TogetherLook,
     language: crate::ui::i18n::Language,
 ) {
-    together::paint(ctx, accent, &card(look), language, 1.0, true, 0.0);
+    let pad = match look {
+        TogetherLook::Focused(_, button) => Some(button),
+        _ => None,
+    };
+    together::paint(ctx, accent, &card(look), language, 1.0, true, 0.0, pad);
 }
 
 /// Friends of the panel pages: Lumen plays Minecraft together (2/4), Juno plays it with no

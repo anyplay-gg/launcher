@@ -29,6 +29,9 @@ pub enum HomeFocus {
     Ask(usize),
     /// The launcher update notice after the title: its buttons from the left.
     Update(u8),
+    /// The Play Together card at the top centre: its buttons from the left (the quiet answer
+    /// first, the primary one last). The pad reaches it from the library button, to the left.
+    Card(u8),
 }
 
 /// What the home screen needs to know to navigate.
@@ -46,6 +49,8 @@ pub struct HomeContext {
     pub asking: bool,
     /// Buttons of the launcher update notice (0 = no notice).
     pub notice: u8,
+    /// Buttons of the Play Together card (0 = no card).
+    pub card: u8,
 }
 
 impl HomeContext {
@@ -89,7 +94,11 @@ pub enum HomeIntent {
     AnswerRun(usize),
     /// A button of the launcher update notice (0 = the main one).
     UpdateAction(usize),
+    /// A button of the Play Together card, in the order it is drawn.
+    CardAction(usize),
     OpenLibrary,
+    /// The captures button: the screenshots and clips.
+    OpenCaptures,
     OpenSettings,
     /// The friends button: the online area on the friends list, or on sign-in while signed out.
     OpenFriends,
@@ -112,18 +121,20 @@ pub struct HomeStep {
 
 impl HomeFocus {
     pub const LIBRARY: HomeFocus = HomeFocus::Top(0);
-    pub const FRIENDS: HomeFocus = HomeFocus::Top(1);
-    pub const SETTINGS: HomeFocus = HomeFocus::Top(2);
-    pub const PROFILE: HomeFocus = HomeFocus::Top(3);
+    pub const CAPTURES: HomeFocus = HomeFocus::Top(1);
+    pub const FRIENDS: HomeFocus = HomeFocus::Top(2);
+    pub const SETTINGS: HomeFocus = HomeFocus::Top(3);
+    pub const PROFILE: HomeFocus = HomeFocus::Top(4);
     /// The last stop of the top bar.
-    const LAST_TOP: u8 = 3;
+    const LAST_TOP: u8 = 4;
 
     /// What a press on stop `index` of the top bar does.
     pub fn top_intent(index: u8) -> HomeIntent {
         match index {
             0 => HomeIntent::OpenLibrary,
-            1 => HomeIntent::OpenFriends,
-            2 => HomeIntent::OpenSettings,
+            1 => HomeIntent::OpenCaptures,
+            2 => HomeIntent::OpenFriends,
+            3 => HomeIntent::OpenSettings,
             _ => HomeIntent::OpenOnline,
         }
     }
@@ -131,7 +142,8 @@ impl HomeFocus {
     /// Every stop of the home screen in reading order: the top bar from left to right, the tile
     /// row (one stop, the arrows pick the tile), the action row and, while asked, the question.
     pub fn reading_order(ctx: HomeContext) -> Vec<HomeFocus> {
-        let mut order: Vec<HomeFocus> = (0..=Self::LAST_TOP).map(HomeFocus::Top).collect();
+        let mut order: Vec<HomeFocus> = (0..ctx.card).map(HomeFocus::Card).collect();
+        order.extend((0..=Self::LAST_TOP).map(HomeFocus::Top));
         order.push(HomeFocus::Tiles);
         if ctx.games > 0 {
             order.extend((0..ctx.action_count()).map(HomeFocus::Actions));
@@ -217,6 +229,9 @@ impl HomeFocus {
                 Command::Left if i == 0 && ctx.notice > 0 => {
                     go(&mut step, HomeFocus::Update(ctx.notice - 1));
                 }
+                Command::Left if i == 0 && ctx.card > 0 => {
+                    go(&mut step, HomeFocus::Card(ctx.card - 1));
+                }
                 Command::Left => go(&mut step, HomeFocus::Top(i.saturating_sub(1))),
                 Command::Right => go(&mut step, HomeFocus::Top((i + 1).min(Self::LAST_TOP))),
                 Command::Down | Command::Back => go(&mut step, HomeFocus::Tiles),
@@ -243,11 +258,24 @@ impl HomeFocus {
                 }
             }
             HomeFocus::Update(i) => match command {
+                Command::Left if i == 0 && ctx.card > 0 => {
+                    go(&mut step, HomeFocus::Card(ctx.card - 1));
+                }
                 Command::Left => go(&mut step, HomeFocus::Update(i.saturating_sub(1))),
                 Command::Right if i + 1 < ctx.notice => go(&mut step, HomeFocus::Update(i + 1)),
                 Command::Right => go(&mut step, HomeFocus::Top(0)),
                 Command::Down | Command::Back => go(&mut step, HomeFocus::Tiles),
                 Command::Select => step.intent = Some(HomeIntent::UpdateAction(usize::from(i))),
+                Command::Options if has_games => step.intent = Some(HomeIntent::OpenGameSettings),
+                _ => {}
+            },
+            HomeFocus::Card(i) => match command {
+                Command::Left => go(&mut step, HomeFocus::Card(i.saturating_sub(1))),
+                Command::Right if i + 1 < ctx.card => go(&mut step, HomeFocus::Card(i + 1)),
+                Command::Right if ctx.notice > 0 => go(&mut step, HomeFocus::Update(0)),
+                Command::Right => go(&mut step, HomeFocus::Top(0)),
+                Command::Down => go(&mut step, HomeFocus::Tiles),
+                Command::Select => step.intent = Some(HomeIntent::CardAction(usize::from(i))),
                 Command::Options if has_games => step.intent = Some(HomeIntent::OpenGameSettings),
                 _ => {}
             },
@@ -467,6 +495,7 @@ mod tests {
             together: false,
             asking: false,
             notice: 0,
+            card: 0,
         }
     }
 
@@ -486,6 +515,37 @@ mod tests {
         assert_eq!(select.intent, Some(HomeIntent::AnswerRun(2)));
         let up = HomeFocus::Ask(3).navigate(Command::Up, c);
         assert_eq!(up.focus, HomeFocus::Actions(0));
+    }
+
+    #[test]
+    fn the_pad_reaches_every_button_of_the_card() {
+        let mut c = ctx(3, 0, true);
+        c.card = 2;
+        // Left of the library button: the card's primary (last) button, then its quiet one.
+        let left = HomeFocus::LIBRARY.navigate(Command::Left, c);
+        assert_eq!(left.focus, HomeFocus::Card(1));
+        let left = HomeFocus::Card(1).navigate(Command::Left, c);
+        assert_eq!(left.focus, HomeFocus::Card(0));
+        let select = HomeFocus::Card(0).navigate(Command::Select, c);
+        assert_eq!(select.intent, Some(HomeIntent::CardAction(0)));
+        // Right walks back to the top bar; Down leaves for the tiles.
+        let right = HomeFocus::Card(0).navigate(Command::Right, c);
+        assert_eq!(right.focus, HomeFocus::Card(1));
+        let right = HomeFocus::Card(1).navigate(Command::Right, c);
+        assert_eq!(right.focus, HomeFocus::LIBRARY);
+        let down = HomeFocus::Card(1).navigate(Command::Down, c);
+        assert_eq!(down.focus, HomeFocus::Tiles);
+        // With an update notice too, the notice sits between the card and the top bar.
+        c.notice = 2;
+        let left = HomeFocus::Update(0).navigate(Command::Left, c);
+        assert_eq!(left.focus, HomeFocus::Card(1));
+        let right = HomeFocus::Card(1).navigate(Command::Right, c);
+        assert_eq!(right.focus, HomeFocus::Update(0));
+        // No card, no stop.
+        c.card = 0;
+        c.notice = 0;
+        let left = HomeFocus::LIBRARY.navigate(Command::Left, c);
+        assert_eq!(left.focus, HomeFocus::LIBRARY);
     }
 
     #[test]
@@ -510,6 +570,7 @@ mod tests {
                 HomeFocus::Top(1),
                 HomeFocus::Top(2),
                 HomeFocus::Top(3),
+                HomeFocus::Top(4),
                 HomeFocus::Tiles,
                 HomeFocus::Actions(0),
                 HomeFocus::Actions(1),
@@ -584,9 +645,10 @@ mod tests {
     fn top_bar_navigation() {
         let c = ctx(3, 1, false);
         let nav = |from: HomeFocus, command| from.navigate(command, c);
-        // Left to right: library, friends, settings, profile; no wrap at either end.
+        // Left to right: library, captures, friends, settings, profile; no wrap at either end.
         let order = [
             HomeFocus::LIBRARY,
+            HomeFocus::CAPTURES,
             HomeFocus::FRIENDS,
             HomeFocus::SETTINGS,
             HomeFocus::PROFILE,
@@ -607,6 +669,7 @@ mod tests {
         );
         for (focus, intent) in [
             (HomeFocus::LIBRARY, HomeIntent::OpenLibrary),
+            (HomeFocus::CAPTURES, HomeIntent::OpenCaptures),
             (HomeFocus::FRIENDS, HomeIntent::OpenFriends),
             (HomeFocus::SETTINGS, HomeIntent::OpenSettings),
             (HomeFocus::PROFILE, HomeIntent::OpenOnline),

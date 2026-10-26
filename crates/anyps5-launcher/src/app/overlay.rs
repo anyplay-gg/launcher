@@ -20,6 +20,8 @@ pub enum Overlay {
     Settings,
     GameSettings,
     Library,
+    /// The screenshots and clips of the player (a full-screen panel).
+    Captures,
     Log,
     ConfirmUninstall,
     /// The backups of a game's saves (a side panel).

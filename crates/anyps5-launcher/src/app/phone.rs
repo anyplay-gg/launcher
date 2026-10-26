@@ -10,16 +10,16 @@ use std::{
     collections::HashMap,
     path::Path,
     sync::{
-        Arc, Mutex, Weak,
+        Arc, Mutex,
         mpsc::{Receiver, Sender, channel},
     },
 };
 
 use anyps5_core::paths::GameId;
 use anyps5_core::remote::{
-    Layouts, MAX_DEVICES, Message, OutputPacket, PairedDevice, PairedDevices, PairingRequest,
-    RemoteConfig, RemoteEvents, RemoteGame, RemoteInfo, RemoteServer, VirtualPad, VirtualPadStatus,
-    pc_name, vpad,
+    Layouts, MAX_DEVICES, Message, PairedDevice, PairedDevices, PairingRequest, RemoteConfig,
+    RemoteEvents, RemoteGame, RemoteInfo, RemoteServer, VirtualPad, VirtualPadStatus, pc_name,
+    vpad,
 };
 use anyps5_core::trophies::{Grade, Trophy};
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -27,6 +27,7 @@ use egui::Context;
 
 use crate::app::LauncherApp;
 use crate::app::model::{Effect, GameState, Model};
+use crate::app::pad::SharedPad;
 use crate::screens::phone::PhoneAction;
 use crate::screens::phone_strings::PhoneText;
 use crate::ui::home_button::{HomeButton, Route};
@@ -145,6 +146,8 @@ pub struct PhoneService {
     rx: Receiver<Ev>,
     server: Option<Arc<RemoteServer>>,
     layouts: Option<Layouts>,
+    /// The one virtual controller, shared with LudusCtrl.
+    shared_pad: Arc<SharedPad>,
     pad: Option<Arc<VirtualPad>>,
     pad_attached: bool,
     /// The last library told to the phone, as JSON: sent again only when it differs.
@@ -161,7 +164,12 @@ const LIBRARY_EVERY: f64 = 0.4;
 const PAD_CHECK_EVERY: f64 = 2.0;
 
 impl PhoneService {
-    pub fn new(wake: Arc<dyn Fn() + Send + Sync>, simulated: bool, home: Arc<HomeButton>) -> Self {
+    pub fn new(
+        wake: Arc<dyn Fn() + Send + Sync>,
+        simulated: bool,
+        home: Arc<HomeButton>,
+        shared_pad: Arc<SharedPad>,
+    ) -> Self {
         let (tx, rx) = channel();
         Self {
             wake,
@@ -171,6 +179,7 @@ impl PhoneService {
             rx,
             server: None,
             layouts: None,
+            shared_pad,
             pad: None,
             pad_attached: false,
             told: None,
@@ -210,6 +219,7 @@ impl PhoneService {
 
     fn stop(&mut self, model: &mut Model) {
         self.detach_pad();
+        self.shared_pad.rumble_to(None);
         if let Some(server) = self.server.take() {
             server.stop();
         }
@@ -232,21 +242,11 @@ impl PhoneService {
             return;
         }
         if self.pad.is_none() {
-            let weak: Weak<RemoteServer> = Arc::downgrade(&server);
-            let feedback: Arc<dyn Fn(OutputPacket) + Send + Sync> = Arc::new(move |packet| {
-                if let Some(server) = weak.upgrade() {
-                    server.send_feedback(&packet);
-                }
-            });
-            match VirtualPad::open(Some(feedback)) {
-                Ok(pad) => self.pad = Some(Arc::new(pad)),
-                Err(error) => {
-                    tracing::warn!("no virtual controller: {error}");
-                    return;
-                }
-            }
+            // The same controller LudusCtrl drives: the system sees one, whichever phone plays.
+            self.pad = self.shared_pad.get();
         }
         if let Some(pad) = &self.pad {
+            self.shared_pad.rumble_to(Some(Arc::downgrade(&server)));
             server.set_pad_sink(Some(pad.clone()));
             self.pad_attached = true;
         }
