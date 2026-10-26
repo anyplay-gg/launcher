@@ -343,7 +343,8 @@ impl TrophyListPanel {
         } else {
             set.title.as_str()
         };
-        let hint_w = 520.0;
+        // The title gives way to the hint bar at the trailing edge, as wide as it measures.
+        let hint_w = components::hint_bar_size(&painter, language, false).0 + theme::space::XL;
         let title_galley = clamped(
             &painter,
             title_style,
@@ -371,7 +372,7 @@ impl TrophyListPanel {
         let bar = Rect::from_center_size(pos2(cx + 130.0, row_y + row_h * 0.5), vec2(260.0, 4.0));
         paint_progress(&painter, bar, percent as f32 / 100.0, data.accent);
         cx = bar.max.x + 16.0;
-        let count_style = theme::TextStyle::new(15.0, theme::Weight::SemiBold);
+        let count_style = ty::FACT;
         for grade in anyps5_core::trophies::Grade::ALL {
             let (unlocked, total) = set.count(grade);
             if total == 0 {
@@ -410,6 +411,18 @@ impl TrophyListPanel {
         clicked: &mut Option<usize>,
         shown: &mut Option<usize>,
     ) {
+        if data.set.trophies.is_empty() {
+            let at = ui.max_rect().center();
+            text::paint(
+                ui.painter(),
+                at,
+                Align2::CENTER_CENTER,
+                ty::BODY,
+                Extra::TrophiesNone.text(data.language),
+                color::text_empty(),
+            );
+            return;
+        }
         let ctx = ui.ctx().clone();
         let id = ui.make_persistent_id("trophy-rows");
         let (follow, scroll_to) = Follow::begin(&ctx, id, Some(self.index));
@@ -496,7 +509,7 @@ impl TrophyListPanel {
             1.0
         };
         let show_label = Extra::TrophyShow.text(language);
-        let show_style = theme::TextStyle::new(15.0, theme::Weight::SemiBold);
+        let show_style = ty::FACT;
         let show_w = if secret {
             text::width(ui.painter(), show_style, show_label) + 2.0 * SHOW_PAD
         } else {
@@ -507,7 +520,7 @@ impl TrophyListPanel {
         let grade: Grade = convert::grade(trophy.grade);
 
         // Right column first: it decides how much room the text has.
-        let grade_style = theme::TextStyle::new(14.0, theme::Weight::SemiBold);
+        let grade_style = ty::SECTION_CAPTION;
         let grade_text = grade.title(language);
         let date_text = match trophy.unlocked {
             Some(micros) => format::local_date_text(micros, language),
@@ -658,7 +671,7 @@ impl TrophyListPanel {
             text::paint_tabular(
                 &painter,
                 pos2(bar.max.x + 10.0, y),
-                theme::TextStyle::new(12.0, theme::Weight::Medium),
+                ty::MICRO,
                 &format!("{value}/{target}"),
                 ink(0.6),
             );

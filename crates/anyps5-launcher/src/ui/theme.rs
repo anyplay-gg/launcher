@@ -396,6 +396,14 @@ pub mod color {
     pub fn text_inactive() -> Color32 {
         white(0.4)
     }
+    /// The light ground of a QR code (5.8): a camera wants dark modules on white, whatever the
+    /// theme. A picture, not text: exempt from the ink table, and 21:1 against its modules.
+    pub fn qr_card() -> Color32 {
+        Color32::WHITE
+    }
+    pub fn qr_module() -> Color32 {
+        Color32::BLACK
+    }
     // Surfaces
     pub fn surface() -> Color32 {
         white(0.10)
@@ -555,6 +563,8 @@ pub mod radius {
     pub const BANNER: f32 = LARGE;
     pub const BOX: f32 = CARD;
     pub const TOAST: f32 = 28.0;
+    /// The white card of a QR code (5.8).
+    pub const QR_CARD: f32 = ROW;
 
     /// Game tile radius for a tile of `size` dp.
     pub fn tile(size: f32) -> f32 {
@@ -631,6 +641,12 @@ pub mod size {
     pub const CHOICE_VALUE_WIDTH: (f32, f32) = (100.0, 190.0);
     pub const STEPPER_VALUE_WIDTH: f32 = 100.0;
     pub const TEXT_FIELD_WIDTH: f32 = 200.0;
+    /// A QR code's white card (5.8), and the light margin around the modules, in modules (the
+    /// standard's quiet zone).
+    pub const QR_CARD: f32 = 200.0;
+    pub const QR_QUIET: usize = 4;
+    /// The mono face of a link row's address (5.8).
+    pub const LINK_MONO: f32 = 14.0;
     /// A window caption button, in points at zoom 1 (the Windows 11 size, not scaled with the UI).
     pub const CAPTION_BUTTON: (f32, f32) = (46.0, 32.0);
     pub const CAPTION_GLYPH: f32 = 10.0;

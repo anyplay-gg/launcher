@@ -4,10 +4,14 @@
 //! fake-phone phone --addr 127.0.0.1:47700 --key-file k.txt --script "wait500,select:ID,wait300,launch:ID,wait500,press:cross,wait1500,home"
 //! fake-phone phone --discover ...            find the PC through mDNS instead of --addr
 //! fake-phone game --bridge 127.0.0.1:47701   greet like an engine would and answer pad packets
+//! fake-phone browser --url "https://127.0.0.1:45991/#t=TOKEN" --press cross --seconds 3
+//!                                            LudusCtrl's browser client (see browser.rs)
 //! ```
 //! Script words: `waitMS`, `select:ID`, `launch:ID`, `close`, `home`, `command:NAME`, `art:ID`,
 //! `layout:ID:TEXT`, `flood:N` (N quick `left` commands), `press:cross+r1`, `release`, `stick:LX+LY+RX+RY`, `touch:X+Y`, `expect:library`,
 //! `expect:running=ID`, `expect:selected=ID`, `expect:feedback`, `expect:closed`, `expect:rejected`.
+
+mod browser;
 
 use std::{
     collections::BTreeMap,
@@ -29,7 +33,8 @@ fn main() -> ExitCode {
     let outcome = match mode.as_str() {
         "phone" => phone(&options),
         "game" => game(&options),
-        _ => Err("usage: fake-phone phone|game [--flag value]...".into()),
+        "browser" => browser::browser(&options),
+        _ => Err("usage: fake-phone phone|game|browser [--flag value]...".into()),
     };
     match outcome {
         Ok(()) => ExitCode::SUCCESS,

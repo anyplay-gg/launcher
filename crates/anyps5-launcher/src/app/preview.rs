@@ -10,7 +10,7 @@
 //! `home`, `home-actions`, `home-trophies`, `home-locked`, `home-unlocking`, `home-relinking`,
 //! `home-failed`, `home-queued`, `home-running`, `home-outdated`, `home-diagnosis`, `home-messages` (the
 //! profile button with unread messages), `home-friends` (signed in, three friends online),
-//! `home-appearing` (signed in, appearing offline), `home-friends-quiet` (nobody online), `home-phone` (a phone is connected), `home-ludus` (a phone and a LudusCtrl phone are connected), `home-friends-focus` and `home-signin-focus` (the top bar's
+//! `home-appearing` (signed in, appearing offline), `home-friends-quiet` (nobody online), `home-phone` (a phone is connected), `home-ludus` (a phone and a LudusCtrl phone are connected), `home-browser` (a phone and a LudusCtrl browser client are connected), `home-friends-focus` and `home-signin-focus` (the top bar's
 //! two pills focused), `home-theme1`,
 //! `home-ask` (signed in, a session just ended: "How did it run?"), `home-runs` (the community verdict),
 //! `home-glibc` and `home-glibc-locked` (the system's glibc is older than the libraries ask for),
@@ -82,6 +82,7 @@ pub enum Scene {
     HomePhone,
     /// The phone server's phone and a LudusCtrl phone are connected: both after the title.
     HomeLudus,
+    HomeBrowser,
     /// The friends button focused, twelve friends online (two digits).
     HomeFriendsFocus,
     /// Signed out with the sign-in button focused.
@@ -149,6 +150,7 @@ impl Scene {
             "home-friends-quiet" => Scene::HomeFriendsQuiet,
             "home-phone" => Scene::HomePhone,
             "home-ludus" => Scene::HomeLudus,
+            "home-browser" => Scene::HomeBrowser,
             "home-friends-focus" => Scene::HomeFriendsFocus,
             "home-signin-focus" => Scene::HomeSignInFocus,
             "home-ask" => Scene::HomeAsk,
@@ -175,7 +177,7 @@ impl Scene {
         })
     }
 
-    pub const ALL_NAMES: [&'static str; 45] = [
+    pub const ALL_NAMES: [&'static str; 46] = [
         "onboarding0",
         "onboarding1",
         "onboarding2",
@@ -203,6 +205,7 @@ impl Scene {
         "home-friends-quiet",
         "home-phone",
         "home-ludus",
+        "home-browser",
         "home-friends-focus",
         "home-signin-focus",
         "home-ask",
@@ -714,6 +717,11 @@ pub fn apply_scene(m: &mut crate::app::model::Model, scene: Scene, games: Vec<Ga
         Scene::HomeLudus => {
             m.phone.connected = Some("Pixel 8".into());
             m.ludus.connected = Some("Galaxy Tab S9".into());
+        }
+        Scene::HomeBrowser => {
+            m.phone.connected = Some("Pixel 8".into());
+            m.ludus.browser.peer = Some("192.168.178.41".into());
+            m.ludus.browser.device = Some("iPhone".into());
         }
         Scene::HomeFriendsQuiet => {
             sign_in(m);

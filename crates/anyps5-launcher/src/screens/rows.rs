@@ -17,7 +17,7 @@ use crate::ui::i18n::{Key, Language};
 use crate::ui::icons::Icon;
 use crate::ui::input::Command;
 use crate::ui::sound::Cue;
-use crate::ui::theme::size;
+use crate::ui::theme::{size, space};
 
 use anyps5_core::controls::Controls;
 
@@ -59,6 +59,12 @@ pub enum Control {
         labels: Vec<String>,
         selected: usize,
     },
+    /// A QR code of this text on a white card, the detail beside it; the title is its name for
+    /// screen readers. A picture: not focusable.
+    Qr(String),
+    /// An address to read off or type in, in the mono face: it takes the room the title leaves
+    /// and is cut in the middle. Not focusable.
+    Link(String),
 }
 
 /// One row of a panel.
@@ -74,8 +80,14 @@ pub struct Row {
     pub destructive: bool,
     /// Caution: an info row that says something may not work. Never danger.
     pub warning: bool,
+    /// A note that says what the player has to do: detail ink, not the quiet note ink.
+    pub step: bool,
     /// Starts a new group: the list leaves a double gap above it.
     pub group_start: bool,
+    /// Starts a section (an option with rows of its own): a group with `space::XL` more above
+    /// it, so it reads apart from the group before (SYSTEM.md 5: at least twice the gap in a
+    /// group).
+    pub section_start: bool,
     /// A note that belongs to the row above: no gap between them.
     pub attached: bool,
     /// A text row whose field takes the room the title leaves, written from the left.
@@ -84,6 +96,8 @@ pub struct Row {
     pub avatar: Option<RowAvatar>,
     /// The buttons of a buttons row come up with the focus or the pointer.
     pub reveal: bool,
+    /// A row below that belongs to this one: with the focus here, the list keeps both in view.
+    pub keeps_in_view: Option<RowId>,
 }
 
 impl Row {
@@ -97,11 +111,14 @@ impl Row {
             control,
             destructive: false,
             warning: false,
+            step: false,
             group_start: false,
+            section_start: false,
             attached: false,
             wide: false,
             avatar: None,
             reveal: false,
+            keeps_in_view: None,
         }
     }
 
@@ -117,6 +134,12 @@ impl Row {
         self
     }
 
+    /// With the focus on this row, the list scrolls so the row `id` is in view too.
+    pub fn keeps_in_view(mut self, id: RowId) -> Row {
+        self.keeps_in_view = Some(id);
+        self
+    }
+
     pub fn choice(
         id: RowId,
         title: impl Into<String>,
@@ -127,8 +150,21 @@ impl Row {
     }
 
     /// Starts a new group (a double gap above the row).
+    /// A note the player has to act on: drawn in the detail ink.
+    pub fn step(mut self) -> Row {
+        self.step = true;
+        self
+    }
+
     pub fn group_start(mut self) -> Row {
         self.group_start = true;
+        self
+    }
+
+    /// Starts a section: a group with more room above it.
+    pub fn section_start(mut self) -> Row {
+        self.group_start = true;
+        self.section_start = true;
         self
     }
 
@@ -190,6 +226,16 @@ impl Row {
         Row::new(id, title, Control::Info(value))
     }
 
+    /// A QR code of `data`; `name` is what a screen reader says for it.
+    pub fn qr(id: RowId, name: impl Into<String>, data: impl Into<String>) -> Row {
+        Row::new(id, name, Control::Qr(data.into()))
+    }
+
+    /// An address shown in full where it fits, cut in the middle where it does not.
+    pub fn link(id: RowId, title: impl Into<String>, address: impl Into<String>) -> Row {
+        Row::new(id, title, Control::Link(address.into()))
+    }
+
     pub fn caption(id: RowId, title: impl Into<String>) -> Row {
         Row::new(id, title, Control::Caption)
     }
@@ -233,7 +279,9 @@ impl Row {
             Control::Toggle(_) => RowKind::Toggle,
             Control::Stepper { .. } => RowKind::Stepper,
             Control::Action | Control::Command => RowKind::Action,
-            Control::Info(_) | Control::Caption => RowKind::Info,
+            Control::Info(_) | Control::Caption | Control::Qr(_) | Control::Link(_) => {
+                RowKind::Info
+            }
             Control::Text(_) => RowKind::Text,
             Control::Keys { .. } => RowKind::Keys,
         }
@@ -547,7 +595,12 @@ pub fn list_with_header(
 ) -> Vec<ListEvent> {
     let ctx = ui.ctx().clone();
     let id = ui.make_persistent_id(id_salt);
-    let (follow, scroll_to) = Follow::begin(&ctx, id, options.focus);
+    let with = options
+        .focus
+        .and_then(|focus| rows.get(focus))
+        .and_then(|row| row.keeps_in_view)
+        .and_then(|with| rows.iter().position(|row| row.id == with));
+    let (follow, scroll_to) = Follow::begin_with(&ctx, id, options.focus, with);
 
     let mut events = Vec::new();
     let mut geometry: Vec<(f32, f32)> = Vec::with_capacity(rows.len());
@@ -589,7 +642,11 @@ pub fn list_with_header(
                     };
                     let row = &mut rows[index];
                     if row.group_start && index > 0 {
-                        ui.add_space(size::ROW_GAP);
+                        ui.add_space(if row.section_start {
+                            size::ROW_GAP + space::XL
+                        } else {
+                            size::ROW_GAP
+                        });
                     }
                     let focused = options.focus == Some(index);
                     let force = options.force.and_then(|(i, f)| (i == index).then_some(f));
@@ -662,11 +719,14 @@ fn show_row(
         control,
         destructive,
         warning,
+        step,
         group_start: _,
+        section_start: _,
         attached,
         wide,
         avatar,
         reveal,
+        keeps_in_view: _,
     } = row;
     let caps;
     let none_label = language.text(Key::NoKey);
@@ -706,6 +766,8 @@ fn show_row(
             value: value.as_deref(),
         },
         Control::Text(value) => RowControl::Text { value },
+        Control::Qr(data) => RowControl::Qr { data },
+        Control::Link(value) => RowControl::Link { value },
         Control::Keys { sources, capturing } => {
             caps = key_caps(sources, language);
             RowControl::Keys {
@@ -717,12 +779,19 @@ fn show_row(
         }
     };
     let is_text = matches!(rc, RowControl::Text { .. });
-    let focusable = !matches!(rc, RowControl::Info { .. } | RowControl::Caption);
+    let focusable = !matches!(
+        rc,
+        RowControl::Info { .. }
+            | RowControl::Caption
+            | RowControl::Qr { .. }
+            | RowControl::Link { .. }
+    );
     let mut panel_row = PanelRow::new(title, rc)
         .language(language)
         .focused(focused)
         .destructive(*destructive)
         .warning(*warning)
+        .step(*step)
         .attached(*attached)
         .wide(*wide)
         .avatar(*avatar)
@@ -967,6 +1036,22 @@ mod tests {
             Some(Change::Capture { row: "keys" })
         );
         assert_eq!(resolve(&rows, activate(0)), None, "info rows do nothing");
+    }
+
+    #[test]
+    fn a_qr_code_and_a_link_are_read_not_used() {
+        let rows = vec![
+            Row::qr("qr", "QR code", "https://192.168.1.23:45991/#t=x"),
+            Row::link("link", "Link", "https://192.168.1.23:45991/#t=x"),
+        ];
+        assert_eq!(kinds(&rows), [RowKind::Info, RowKind::Info]);
+        for row in 0..2 {
+            assert_eq!(resolve(&rows, PanelEffect::Activate { row }), None);
+            assert_eq!(
+                resolve(&rows, PanelEffect::Adjust { row, direction: 1 }),
+                None
+            );
+        }
     }
 
     #[test]

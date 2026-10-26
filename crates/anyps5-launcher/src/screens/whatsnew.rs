@@ -25,12 +25,20 @@ use crate::ui::icons::Icon;
 use crate::ui::input::{self, Command, InputEvent};
 use crate::ui::sound::Cue;
 use crate::ui::text;
-use crate::ui::theme::{TextStyle, color, pad, radius, size, ty};
+use crate::ui::theme::{TextStyle, color, pad, radius, size, space, ty};
 
 /// Areas shown on their own under Highlights; the rest are gathered in one more group.
 const AREAS: usize = 7;
 const ROW_HEIGHT: f32 = 44.0;
-const ROW_GAP: f32 = 4.0;
+const ROW_GAP: f32 = space::XS;
+/// The header: the title and the two buttons share this height.
+const HEADER_HEIGHT: f32 = 54.0;
+/// The scope column of a change, and the number column at its end.
+const SCOPE_WIDTH: f32 = 150.0;
+const NUMBER_WIDTH: f32 = 90.0;
+/// The caret of a group sits in this indent, the group's title after it.
+const CARET_X: f32 = 22.0;
+const TITLE_X: f32 = 44.0;
 const RELEASE_PAGE: &str = "https://github.com/boykopovar/AnyPS5/releases/tag";
 /// The same for the launcher's own notes.
 const LAUNCHER_RELEASE_PAGE: &str = "https://github.com/anyplaynet/launcher/releases/tag";
@@ -383,7 +391,7 @@ impl WhatsNewPanel {
         let painter = ui.painter().clone();
         let area = ui.max_rect().shrink2(vec2(pad::LOG, pad::PANEL_TOP));
         // Header: title on the left, the two buttons on the right.
-        let header = Rect::from_min_size(area.min, vec2(area.width(), 54.0));
+        let header = Rect::from_min_size(area.min, vec2(area.width(), HEADER_HEIGHT));
         let title = if data.launcher {
             UpdateText::WhatsNewIn.format(language, &[Arg::Str(data.tag)])
         } else {
@@ -395,14 +403,14 @@ impl WhatsNewPanel {
             Align2::LEFT_CENTER,
             ty::LOG_TITLE,
             &title,
-            Color32::WHITE,
+            color::text(),
         );
         let mut buttons = ui.new_child(
             UiBuilder::new()
                 .max_rect(header)
                 .layout(Layout::right_to_left(Align::Center)),
         );
-        buttons.spacing_mut().item_spacing.x = 12.0;
+        buttons.spacing_mut().item_spacing.x = size::CONTROL_GAP;
         if ConsoleButton::new(language.text(crate::ui::i18n::Key::Close))
             .icon(Icon::X)
             .show(&mut buttons)
@@ -419,7 +427,7 @@ impl WhatsNewPanel {
         }
 
         // The release line under the title.
-        let mut y = header.max.y + 4.0;
+        let mut y = header.max.y + space::XS;
         let subtitle = match &data.view {
             NotesView::Ready(published) => {
                 let count = published.notes.changes.len();
@@ -451,7 +459,7 @@ impl WhatsNewPanel {
             &subtitle,
             color::text_detail(),
         );
-        y += 36.0;
+        y += space::XXL;
 
         let body = Rect::from_min_max(pos2(area.min.x, y), area.max);
         match &data.view {
@@ -562,7 +570,7 @@ fn draw_line(ui: &mut Ui, rect: Rect, line: &Line<'_>, focused: bool, index: usi
     if let Line::Section(title) = line {
         text::paint(
             &painter,
-            pos2(rect.min.x, rect.max.y - 10.0),
+            pos2(rect.min.x, rect.max.y - space::S),
             Align2::LEFT_BOTTOM,
             ty::TROPHIES_OVERLINE,
             &title.to_uppercase(),
@@ -596,7 +604,7 @@ fn draw_line(ui: &mut Ui, rect: Rect, line: &Line<'_>, focused: bool, index: usi
         0.0,
         size::FOCUS_RING,
     );
-    let ink = Color32::WHITE;
+    let ink = color::text();
     let quiet = color::text_caption();
     match line {
         Line::Group { key, count, open } => {
@@ -606,15 +614,15 @@ fn draw_line(ui: &mut Ui, rect: Rect, line: &Line<'_>, focused: bool, index: usi
                 Icon::CARET_RIGHT
             };
             painter.text(
-                pos2(rect.min.x + 22.0, rect.center().y),
+                pos2(rect.min.x + CARET_X, rect.center().y),
                 Align2::CENTER_CENTER,
                 glyph.glyph(),
-                glyph.font(16.0, false),
+                glyph.font(size::ROW_ICON, false),
                 quiet,
             );
             text::paint(
                 &painter,
-                pos2(rect.min.x + 44.0, rect.center().y),
+                pos2(rect.min.x + TITLE_X, rect.center().y),
                 Align2::LEFT_CENTER,
                 ty::ROW_TITLE,
                 key,
@@ -622,7 +630,7 @@ fn draw_line(ui: &mut Ui, rect: Rect, line: &Line<'_>, focused: bool, index: usi
             );
             text::paint(
                 &painter,
-                pos2(rect.max.x - 18.0, rect.center().y),
+                pos2(rect.max.x - size::ROW_PADDING_X, rect.center().y),
                 Align2::RIGHT_CENTER,
                 ty::ROW_INFO,
                 &count.to_string(),
@@ -630,10 +638,10 @@ fn draw_line(ui: &mut Ui, rect: Rect, line: &Line<'_>, focused: bool, index: usi
             );
         }
         Line::Change { change, with_scope } => {
-            let mut x = rect.min.x + 18.0;
+            let mut x = rect.min.x + size::ROW_PADDING_X;
             if *with_scope {
                 let scope = change.scope.as_deref().unwrap_or("");
-                let width = 150.0;
+                let width = SCOPE_WIDTH;
                 let shown = text::middle_truncate(&painter, ty::ROW_INFO, scope, width);
                 text::paint(
                     &painter,
@@ -643,11 +651,11 @@ fn draw_line(ui: &mut Ui, rect: Rect, line: &Line<'_>, focused: bool, index: usi
                     &shown,
                     quiet,
                 );
-                x += width + 14.0;
+                x += width + space::M;
             }
             let number = change.pull.map(|n| format!("#{n}")).unwrap_or_default();
-            let right = rect.max.x - 18.0;
-            let number_w = if number.is_empty() { 0.0 } else { 90.0 };
+            let right = rect.max.x - size::ROW_PADDING_X;
+            let number_w = if number.is_empty() { 0.0 } else { NUMBER_WIDTH };
             if !number.is_empty() {
                 text::paint(
                     &painter,

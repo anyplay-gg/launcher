@@ -1,12 +1,15 @@
 # How the launcher works
 
-The launcher is a Cargo workspace of three crates. All logic lives apart from the interface.
+The launcher is a Cargo workspace of six crates. All logic lives apart from the interface.
 
 | Crate | What it holds |
 |---|---|
 | `crates/anyps5-core` | All logic, no interface: library scan, unlock pipeline, toolkit, launch and diagnosis, controls, saves, trophies, settings, self-update and the online state. The launcher depends on it; it never depends on the launcher. |
 | `crates/anyps5-launcher` | The application `anyplay-launcher`: egui and eframe on wgpu, the screens, the sounds, the window handling and the glue between them. |
+| `crates/atrac9` | ATRAC9 game-music decoding: builds LibAtrac9 from source and exposes it through a safe Rust wrapper. |
 | `crates/fake-relinker` | A stand-in for AnyPS5's relinker, so tests run without the toolkit or a game. |
+| `crates/fake-phone` | Test helper standing in for the AnyPS5 Remote phone app and a game on the pad bridge; never shipped. |
+| `crates/update-manifest` | The signed self-update manifest format, its verification logic and the `update-sign` signing tool. |
 
 The words the code uses are in [CONTEXT.md](../CONTEXT.md), the logic step by step in [PORT.md](PORT.md) and the interface in [DESIGN.md](DESIGN.md).
 

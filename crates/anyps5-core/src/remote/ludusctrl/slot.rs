@@ -141,7 +141,7 @@ pub struct PadSlot {
 
 impl PadSlot {
     fn lock(&self) -> MutexGuard<'_, Inner> {
-        self.inner.lock().expect("ludusctrl pad slot")
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// The pad the slot writes to (`None`: nowhere, never live). The old one is released.
