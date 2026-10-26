@@ -273,7 +273,7 @@ impl RestorePanel {
         let mut rows = build();
         let ask = Extra::SavesRestoreAsk.format(language, &[Arg::Str(stamp)]);
         let view = SideView {
-            title: Extra::SavesRestore.text(language),
+            title: Extra::SavesRestoreTitle.text(language),
             subtitle: Some(&ask),
             question: true,
             list_id: "restore-rows",
@@ -304,9 +304,10 @@ impl RestorePanel {
 pub fn confirm_rows(language: Language) -> Vec<Row> {
     vec![
         Row::command("restore", Extra::SavesRestore.text(language))
-            .icon(Icon::ARROW_COUNTER_CLOCKWISE)
-            .destructive(),
-        Row::command("cancel", language.text(Key::Cancel)).icon(Icon::X),
+            .icon(Icon::ARROW_COUNTER_CLOCKWISE),
+        Row::command("cancel", language.text(Key::Cancel))
+            .icon(Icon::X)
+            .refusal(),
     ]
 }
 
@@ -412,10 +413,10 @@ mod tests {
     }
 
     #[test]
-    fn the_question_opens_on_cancel_and_the_destructive_row_is_the_restore() {
+    fn the_question_opens_on_cancel_and_the_restore_is_the_primary_answer() {
         let rows = confirm_rows(Language::English);
         assert_eq!(ids(&rows), ["restore", "cancel"]);
-        assert!(rows[0].destructive && !rows[1].destructive);
+        assert!(!rows[0].destructive && rows[1].refusal);
         let mut panel = RestorePanel::default();
         panel.open();
         assert_eq!(panel.side.nav.row, 1);

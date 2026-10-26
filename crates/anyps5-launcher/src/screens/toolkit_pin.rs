@@ -270,7 +270,9 @@ fn missing_rows(data: &MissingData<'_>) -> Vec<Row> {
     vec![
         download,
         Row::command("follow", Pin::FollowGlobal.text(language)).icon(Icon::STACK),
-        Row::command("cancel", language.text(Key::Cancel)).icon(Icon::X),
+        Row::command("cancel", language.text(Key::Cancel))
+            .icon(Icon::X)
+            .refusal(),
     ]
 }
 

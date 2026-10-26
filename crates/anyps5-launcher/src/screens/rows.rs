@@ -78,6 +78,8 @@ pub struct Row {
     pub control: Control,
     /// Danger: the row removes, ends or blocks something.
     pub destructive: bool,
+    /// The answer "no" of a question (Cancel, Keep Playing): a card never makes it the primary button.
+    pub refusal: bool,
     /// Caution: an info row that says something may not work. Never danger.
     pub warning: bool,
     /// A text block the page is about: body size and ink.
@@ -112,6 +114,7 @@ impl Row {
             detail: None,
             control,
             destructive: false,
+            refusal: false,
             warning: false,
             body: false,
             step: false,
@@ -268,6 +271,12 @@ impl Row {
 
     pub fn destructive(mut self) -> Row {
         self.destructive = true;
+        self
+    }
+
+    /// The answer "no" of a question.
+    pub fn refusal(mut self) -> Row {
+        self.refusal = true;
         self
     }
 
@@ -728,6 +737,7 @@ fn show_row(
         detail,
         control,
         destructive,
+        refusal: _,
         warning,
         body,
         step,

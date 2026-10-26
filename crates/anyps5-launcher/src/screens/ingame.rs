@@ -28,6 +28,8 @@ pub enum InGameText {
     /// The question's sentence: `%@` = the game.
     CloseAsk,
     KeepPlaying,
+    /// The card's title: the question.
+    CloseTitle,
 }
 
 impl InGameText {
@@ -41,7 +43,10 @@ impl InGameText {
             InGameText::BackToGame => "Back to Game",
             InGameText::Friends => "Friends and Party",
             InGameText::CloseGame => "Close Game",
-            InGameText::CloseAsk => "Close %@? Anything the game has not saved is lost.",
+            InGameText::CloseAsk => {
+                "%@ closes right away. Anything the game has not saved is lost."
+            }
+            InGameText::CloseTitle => "Close the game?",
             InGameText::KeepPlaying => "Keep Playing",
         }
     }
@@ -56,7 +61,8 @@ impl InGameText {
             InGameText::BackToGame => "Oyuna Dön",
             InGameText::Friends => "Arkadaşlar ve Parti",
             InGameText::CloseGame => "Oyunu Kapat",
-            InGameText::CloseAsk => "%@ kapatılsın mı? Oyunun kaydetmediği ilerleme kaybolur.",
+            InGameText::CloseAsk => "%@ hemen kapanır. Oyunun kaydetmediği ilerleme kaybolur.",
+            InGameText::CloseTitle => "Oyun kapatılsın mı?",
             InGameText::KeepPlaying => "Oynamaya Devam Et",
         }
     }
@@ -72,7 +78,7 @@ impl InGameText {
         substitute(self.text(language), args)
     }
 
-    pub const ALL: [InGameText; 8] = [
+    pub const ALL: [InGameText; 9] = [
         InGameText::Setting,
         InGameText::SettingDetail,
         InGameText::Running,
@@ -81,6 +87,7 @@ impl InGameText {
         InGameText::CloseGame,
         InGameText::CloseAsk,
         InGameText::KeepPlaying,
+        InGameText::CloseTitle,
     ];
 }
 
@@ -264,7 +271,9 @@ impl CloseGamePanel {
                 Row::command("close", InGameText::CloseGame.text(language))
                     .icon(Icon::POWER)
                     .destructive(),
-                Row::command("keep", InGameText::KeepPlaying.text(language)).icon(Icon::PLAY),
+                Row::command("keep", InGameText::KeepPlaying.text(language))
+                    .icon(Icon::PLAY)
+                    .refusal(),
             ]
         };
         if self.side.is_open() {
@@ -281,7 +290,7 @@ impl CloseGamePanel {
         let mut rows = build();
         let ask = InGameText::CloseAsk.format(language, &[Arg::Str(title)]);
         let view = SideView {
-            title: InGameText::CloseGame.text(language),
+            title: InGameText::CloseTitle.text(language),
             subtitle: Some(&ask),
             question: true,
             list_id: "close-game-rows",
@@ -338,7 +347,7 @@ mod tests {
     #[test]
     fn the_question_names_the_game() {
         let ask = InGameText::CloseAsk.format(Language::English, &[Arg::Str("Astro")]);
-        assert!(ask.starts_with("Close Astro?"), "{ask}");
+        assert!(ask.starts_with("Astro closes right away."), "{ask}");
     }
 
     #[test]

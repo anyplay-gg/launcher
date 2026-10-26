@@ -535,7 +535,12 @@ impl OnlinePanel {
 
     /// Shows `page` (previews jump straight to one).
     pub fn show_page(&mut self, page: Page, data: &OnlineData<'_>) {
+        let asks = matches!(page, Page::Confirm(..));
         self.go(page, data);
+        // A question opens on its safe answer, like the real `ask`.
+        if asks {
+            self.side.open_at(confirm::CANCEL_ROW);
+        }
     }
 
     /// Shows `page`, focused on its first row that takes focus.

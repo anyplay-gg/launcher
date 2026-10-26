@@ -36,6 +36,12 @@ fn every_blocker() -> Vec<Blocker> {
             need: "v0.1.5".into(),
             have: "v0.1.4".into(),
         },
+        // The longest card: a long title in the ahead variant, whose risk note must stay whole.
+        Blocker::WrongVersion {
+            title: "Minecraft Bedrock Edition Starter Collection Deluxe".into(),
+            need: "01.008.000".into(),
+            have: "01.044.000".into(),
+        },
         Blocker::Full,
         Blocker::Busy,
         Blocker::Ended,
@@ -59,7 +65,7 @@ pub enum TogetherLook {
     Focused(usize, usize),
 }
 
-const BLOCKERS: [&str; 11] = [
+const BLOCKERS: [&str; 12] = [
     "signed-out",
     "offline",
     "online-off",
@@ -67,6 +73,7 @@ const BLOCKERS: [&str; 11] = [
     "wrong-version",
     "wrong-version-ahead",
     "wrong-build",
+    "wrong-version-ahead-long",
     "full",
     "busy",
     "ended",
@@ -79,7 +86,7 @@ pub fn parse(name: &str) -> Option<TogetherLook> {
     match rest {
         "offer" => Some(TogetherLook::Offer),
         "offer-invitation" => Some(TogetherLook::OfferInvitation),
-        // The pad's focus on the version blocker's quiet button ("Try Anyway").
+        // The pad's focus on the version blocker's secondary button ("Try Anyway").
         "wrong-version-pad" => Some(TogetherLook::Focused(4, 0)),
         other => BLOCKERS
             .iter()

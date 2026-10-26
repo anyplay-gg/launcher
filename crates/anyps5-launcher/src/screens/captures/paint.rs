@@ -136,8 +136,15 @@ pub(super) fn draw(
 ) {
     let area = ui.max_rect().shrink2(vec2(pad::LIBRARY.0, pad::LIBRARY.1));
     match screen.mode {
-        Mode::Browse => browse(ui, area, screen, data, flat, pressed),
-        Mode::View { place, focus } => view(ui, area, data, flat, place, Some(focus), pressed),
+        Mode::Browse => {
+            browse(ui, area, screen, data, flat, pressed);
+            dialog::close(ui.ctx(), CONFIRM_CARD);
+        }
+        Mode::View { place, focus } => {
+            view(ui, area, data, flat, place, Some(focus), pressed);
+            // The question has just been answered: its card leaves.
+            dialog::close(ui.ctx(), CONFIRM_CARD);
+        }
         Mode::Confirm { place, button } => {
             view(ui, area, data, flat, place, None, pressed);
             confirm(ui, data, flat, place, button, pressed);
@@ -917,6 +924,11 @@ fn centred_row(ui: &mut Ui, rect: Rect, mut add: impl FnMut(&mut Ui)) {
     add(&mut row);
 }
 
+/// How much of the card's width the file name in the sentence may take.
+const FILE_NAME_SHARE: f32 = 0.8;
+/// The animation identity of the delete question's card.
+const CONFIRM_CARD: &str = "captures-confirm";
+
 // --- the question before a delete ---------------------------------------------------------------
 
 fn confirm(
@@ -938,16 +950,21 @@ fn confirm(
         ),
         Kind::Clip => (CapturesText::DeleteClipTitle, CapturesText::DeleteClip),
     };
-    let name = text::middle_truncate(&painter, ty::QUESTION, &capture.file_name(), 360.0);
+    let name = text::middle_truncate(
+        &painter,
+        ty::QUESTION,
+        &capture.file_name(),
+        dialog::inner_width(&ctx) * FILE_NAME_SHARE,
+    );
     let body = CapturesText::DeleteBody.format(language, &[Arg::Str(&name)]);
     // The card of every question (screens::dialog): Delete first, Cancel last, the focus on the
     // button the model holds (0 = Cancel, 1 = Delete).
     let rows = vec![
         Row::command("delete", verb.text(language)).destructive(),
-        Row::command("cancel", CapturesText::Cancel.text(language)),
+        Row::command("cancel", CapturesText::Cancel.text(language)).refusal(),
     ];
     let card = dialog::Card {
-        id: "captures-confirm",
+        id: CONFIRM_CARD,
         title: title.text(language),
         message: Some(&body),
         language,
