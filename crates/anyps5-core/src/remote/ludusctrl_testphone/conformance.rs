@@ -16,6 +16,7 @@
 use std::{
     io::{self, BufRead, BufReader, Write},
     net::{SocketAddr, TcpStream, UdpSocket},
+    sync::Mutex,
     thread,
     time::{Duration, Instant},
 };
@@ -140,9 +141,16 @@ const ACK_WAIT: Duration = Duration::from_millis(1200);
 const NO_ACK_WAIT: Duration = Duration::from_millis(350);
 const PAD_WAIT: Duration = Duration::from_millis(1200);
 
+/// One run at a time in a process: the checks time the receiver against the spec's timers, and
+/// runs side by side on a busy test machine starve each other's receive loops.
+static ONE_RUN: Mutex<()> = Mutex::new(());
+
 /// Runs every check against `pc`, in order: beacon, pairing, unsigned acks, input, stale and
 /// forged packets, sessions, the watchdog, release.
 pub fn run_conformance(pc: &mut dyn PcUnderTest) -> Result<Report, Failure> {
+    let _one_run = ONE_RUN
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let phone = TestPhone::new(pc.input_addr()).map_err(net("set up the phone"))?;
     let beacon = pc.beacon_socket();
     let observable = pc.pad().is_some();
