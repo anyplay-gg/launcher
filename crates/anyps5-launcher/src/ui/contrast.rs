@@ -326,10 +326,10 @@ fn home(report: &mut Report) {
 }
 
 /// The surfaces of a panel over a theme's lit tone.
-/// The brightest the system's blur behind a see-through window can be: a dark material over a
-/// white wallpaper. Measured values are not at hand without a Mac, so this is a bound set well
-/// above what the dark HUD material gives (docs/DESIGN.md 19.2); the Mac owner checks the real one.
-const WORST_BLUR: u8 = 115;
+/// The brightest the system's blur behind a see-through window can be: the dark material over a
+/// white wallpaper. The macOS runners show 92 to 96 (sRGB, gray) for Liquid Glass and for the
+/// sidebar material there (docs/DESIGN.md 19.2), so 105 leaves a margin.
+const WORST_BLUR: u8 = 105;
 
 /// A colour of the theme as seen in a see-through window at its worst: the theme over the plate
 /// over the brightest blur.
@@ -356,12 +356,7 @@ fn panel(report: &mut Report) {
         } else {
             lit(theme)
         };
-        let overlay = if glass {
-            color::side_panel().gamma_multiply(crate::ui::glass::WINDOW_GLASS_PANEL)
-        } else {
-            color::side_panel()
-        };
-        let panel = over(overlay, under);
+        let panel = over(color::side_panel(), under);
         let row = over(color::surface_row(), panel);
         let hover = over(color::surface_hover(), panel);
         let focus = over(color::surface_focus(), panel);

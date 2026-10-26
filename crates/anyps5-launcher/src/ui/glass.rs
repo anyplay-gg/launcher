@@ -36,8 +36,6 @@ pub struct GlassStyle {
     /// Opacity of the whole panel (a panel inside a fading screen); [`paint_glass_on`] also
     /// multiplies in the painter's own opacity.
     pub alpha: f32,
-    /// Mac style: the share of the panel that stays opaque while the window is see-through.
-    pub window: f32,
 }
 
 /// Material tint toward white and saturation boost of the blurred copy (estimates, DESIGN.md 12).
@@ -54,7 +52,6 @@ impl GlassStyle {
             overlay: Color32::TRANSPARENT,
             stroke: true,
             alpha: 1.0,
-            window: WINDOW_GLASS_PANEL,
         }
     }
 
@@ -87,7 +84,6 @@ impl GlassStyle {
             overlay: Color32::TRANSPARENT,
             stroke: false,
             alpha: 1.0,
-            window: WINDOW_GLASS_FULLSCREEN,
         }
     }
 
@@ -116,7 +112,6 @@ impl GlassStyle {
             overlay: color::side_panel(),
             stroke: false,
             alpha: 1.0,
-            window: WINDOW_GLASS_PANEL,
         }
     }
 }
@@ -348,14 +343,10 @@ pub(crate) fn panels_painted() -> bool {
     PANELS.load(Ordering::Relaxed) > 0
 }
 
-/// Mac style: the window is see-through, so panels let a little of it through (docs/DESIGN.md 19.2).
+/// Mac style: the window is see-through this frame (docs/DESIGN.md 19.2).
 static WINDOW_GLASS: AtomicBool = AtomicBool::new(false);
-/// How much of a panel is opaque while the window is see-through: cards and the side panel keep
-/// nearly all of it, the full-screen panels let the window show a little more.
-pub const WINDOW_GLASS_PANEL: f32 = 0.96;
-pub const WINDOW_GLASS_FULLSCREEN: f32 = 0.85;
 /// How much of the game artwork is drawn while the window is see-through: the rest is the window.
-pub const WINDOW_GLASS_ARTWORK: f32 = 0.55;
+pub const WINDOW_GLASS_ARTWORK: f32 = 0.45;
 
 /// Whether the window is see-through this frame.
 pub(crate) fn window_glass() -> bool {
@@ -402,9 +393,6 @@ pub fn paint_glass_on(
 ) {
     let mut style = style;
     style.alpha *= painter.opacity();
-    if window_glass() {
-        style.alpha *= style.window;
-    }
     if style.alpha <= 0.0 {
         return;
     }
