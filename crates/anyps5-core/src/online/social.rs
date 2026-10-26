@@ -33,30 +33,33 @@ pub enum Fetch {
     After(u64),
     /// The newest ones below this number.
     Before(u64),
+    /// The messages that were edited, unsent or reacted to after this change number.
+    Changed(u64),
 }
 
 impl Fetch {
     /// How many messages the fetch asks for.
     pub fn limit(self) -> u32 {
         match self {
-            Fetch::After(_) => CATCH_UP,
+            Fetch::After(_) | Fetch::Changed(_) => CATCH_UP,
             Fetch::Newest | Fetch::Before(_) => PAGE,
         }
     }
 
     /// The command that fetches this from `conversation`.
     pub fn command(self, conversation: &str) -> Command {
-        let (after, before) = match self {
-            Fetch::Newest => (None, None),
-            Fetch::After(n) => (Some(n), None),
-            Fetch::Before(n) => (None, Some(n)),
+        let (after, before, changed_after) = match self {
+            Fetch::Newest => (None, None, None),
+            Fetch::After(n) => (Some(n), None, None),
+            Fetch::Before(n) => (None, Some(n), None),
+            Fetch::Changed(n) => (None, None, Some(n)),
         };
         Command::Messages {
             conversation: conversation.to_owned(),
             after,
             before,
             limit: Some(self.limit()),
-            changed_after: None,
+            changed_after,
         }
     }
 }
@@ -72,6 +75,8 @@ struct Thread {
     loaded: bool,
     /// There may be messages older than the first one held.
     older: bool,
+    /// The conversation's change number as far as the messages held are up to date with it.
+    rev: u64,
 }
 
 /// What a page of messages changed.
@@ -101,6 +106,19 @@ pub struct Social {
     requests: Vec<Conversation>,
     threads: BTreeMap<String, Thread>,
     drafts: BTreeMap<String, String>,
+    /// The message each conversation's draft answers, and the one it edits.
+    replying: BTreeMap<String, u64>,
+    editing: BTreeMap<String, u64>,
+    /// The newest message of each conversation, for the list: from a thread that was read, or
+    /// from the one-message fetch the list asks for. Never more than that one message.
+    previews: BTreeMap<String, Message>,
+    /// The conversations a preview was asked for, so that it is asked once.
+    previews_asked: std::collections::BTreeSet<String>,
+    /// Conversations whose messages could not be fetched, and whether the list could not be.
+    failed: std::collections::BTreeSet<String>,
+    list_failed: bool,
+    /// Who types where, until when (Unix seconds). Never kept longer than the cloud's time.
+    typing: BTreeMap<(String, AccountId), u64>,
     /// The cloud's list was read at least once.
     listed: bool,
 }
@@ -159,12 +177,17 @@ impl Social {
             if let Some(read) = held.get(&c.id) {
                 c.read = c.read.max((*read).min(c.last));
             }
+            // What was read here is read, whatever the cloud counted a moment ago.
+            if c.read >= c.last {
+                c.unread = 0;
+            }
             c
         };
         self.conversations = lists.conversations.into_iter().map(keep_read).collect();
         self.requests = lists.requests.into_iter().map(keep_read).collect();
         let first = !self.listed;
         self.listed = true;
+        self.list_failed = false;
         let ids: Vec<&String> = self
             .conversations
             .iter()
@@ -172,16 +195,27 @@ impl Social {
             .map(|c| &c.id)
             .collect();
         self.threads.retain(|id, _| ids.contains(&id));
+        self.previews.retain(|id, _| ids.contains(&id));
+        self.previews_asked.retain(|id| ids.contains(&id));
         self.drafts.retain(|id, _| ids.contains(&id));
+        self.replying.retain(|id, _| ids.contains(&id));
+        self.editing.retain(|id, _| ids.contains(&id));
+        self.typing.retain(|(id, _), _| ids.contains(&id));
         let mut listed = Listed::default();
         for conversation in self.conversations.iter().chain(&self.requests) {
             if let Some(thread) = self.threads.get(&conversation.id)
                 && thread.loaded
-                && conversation.last > thread.highest
             {
-                listed
-                    .fetches
-                    .push((conversation.id.clone(), Fetch::After(thread.highest)));
+                if conversation.last > thread.highest {
+                    listed
+                        .fetches
+                        .push((conversation.id.clone(), Fetch::After(thread.highest)));
+                }
+                if conversation.rev > thread.rev {
+                    listed
+                        .fetches
+                        .push((conversation.id.clone(), Fetch::Changed(thread.rev)));
+                }
             }
         }
         if !first {
@@ -200,6 +234,9 @@ impl Social {
         let read = self.get(&conversation.id).map_or(0, |c| c.read);
         let mut conversation = conversation;
         conversation.read = conversation.read.max(read.min(conversation.last));
+        if conversation.read >= conversation.last {
+            conversation.unread = 0;
+        }
         self.conversations.retain(|c| c.id != conversation.id);
         self.requests.retain(|c| c.id != conversation.id);
         if conversation.request {
@@ -214,7 +251,12 @@ impl Social {
         self.conversations.retain(|c| c.id != id);
         self.requests.retain(|c| c.id != id);
         self.threads.remove(id);
+        self.previews.remove(id);
+        self.previews_asked.remove(id);
         self.drafts.remove(id);
+        self.replying.remove(id);
+        self.editing.remove(id);
+        self.typing.retain(|(c, _), _| c != id);
     }
 
     pub fn get(&self, id: &str) -> Option<&Conversation> {
@@ -231,17 +273,78 @@ impl Social {
             .find(|c| c.id == id)
     }
 
-    /// The conversations apart from message requests: those with unread messages first, then the
-    /// newest.
+    /// The conversations apart from message requests: pinned ones first, then the newest.
     pub fn conversations(&self) -> Vec<&Conversation> {
         let mut list: Vec<&Conversation> = self.conversations.iter().collect();
-        list.sort_by_key(|c| (self.unread_of(c) == 0, std::cmp::Reverse(c.updated)));
+        list.sort_by_key(|c| (!c.pinned, std::cmp::Reverse(c.updated)));
         list
     }
 
     /// The message requests, newest first.
     pub fn requests(&self) -> &[Conversation] {
         &self.requests
+    }
+
+    /// The newest message of a conversation the launcher knows of, for its row in the list.
+    pub fn preview(&self, id: &str) -> Option<&Message> {
+        let held = self
+            .threads
+            .get(id)
+            .filter(|t| t.loaded)
+            .and_then(|t| t.messages.last());
+        match (held, self.previews.get(id)) {
+            (Some(a), Some(b)) => Some(if a.seq >= b.seq { a } else { b }),
+            (a, b) => a.or(b),
+        }
+    }
+
+    /// The conversations that have messages and no preview yet and were not asked for: marks them
+    /// asked, so each is asked once. A conversation whose thread is held needs none.
+    pub fn wants_previews(&mut self, ids: &[String]) -> Vec<String> {
+        let mut wanted = Vec::new();
+        for id in ids {
+            let last = self.get(id).map_or(0, |c| c.last);
+            if last > 0 && self.preview(id).is_none() && self.previews_asked.insert(id.clone()) {
+                wanted.push(id.clone());
+            }
+        }
+        wanted
+    }
+
+    /// The answer of a one-message fetch.
+    pub fn set_preview(&mut self, message: Message) {
+        let newer = self
+            .previews
+            .get(&message.conversation)
+            .is_none_or(|held| message.seq >= held.seq);
+        if newer && self.get(&message.conversation).is_some() {
+            self.previews.insert(message.conversation.clone(), message);
+        }
+    }
+
+    /// A fetch of the list or of a thread's newest messages was refused or lost.
+    pub fn fetch_failed(&mut self, conversation: Option<&str>) {
+        match conversation {
+            Some(id) => {
+                self.failed.insert(id.to_owned());
+            }
+            None => self.list_failed = true,
+        }
+    }
+
+    /// The messages of the conversation could not be loaded and nothing is shown instead.
+    pub fn has_failed(&self, id: &str) -> bool {
+        self.failed.contains(id) && !self.is_loaded(id)
+    }
+
+    /// The list of conversations could not be loaded.
+    pub fn list_has_failed(&self) -> bool {
+        self.list_failed && !self.listed
+    }
+
+    /// How many conversations the player pinned.
+    pub fn pinned_count(&self) -> usize {
+        self.conversations.iter().filter(|c| c.pinned).count()
     }
 
     /// The direct conversation with `account`.
@@ -259,24 +362,23 @@ impl Social {
 
     // Unread
 
-    fn unread_of(&self, c: &Conversation) -> u64 {
-        c.last.saturating_sub(c.read)
-    }
-
-    /// How many messages of the conversation the player has not read: an upper bound, since a
-    /// block can hide some of the numbers.
+    /// How many messages of the conversation the player has not read. The cloud counts them
+    /// (blocked senders and unsent messages left out), so every device shows the same number;
+    /// between two lists this count follows the events.
     pub fn unread(&self, id: &str) -> u64 {
-        self.get(id).map_or(0, |c| self.unread_of(c))
+        self.get(id).map_or(0, |c| c.unread.min(c.last))
     }
 
-    /// Unread messages in all conversations, those of message requests included: one number for
-    /// the profile button, the Messages row and the Messages page.
+    /// Unread messages in all conversations that are not muted, plus one for each message
+    /// request: one number for the profile button, the Messages row and the Messages page.
     pub fn unread_total(&self) -> u64 {
-        self.conversations
+        let chats: u64 = self
+            .conversations
             .iter()
-            .chain(&self.requests)
-            .map(|c| self.unread_of(c))
-            .sum()
+            .filter(|c| !c.muted)
+            .map(|c| c.unread.min(c.last))
+            .sum();
+        chats + self.requests.len() as u64
     }
 
     /// The player read the conversation up to `seq`. Returns true when that moved the mark.
@@ -284,6 +386,11 @@ impl Social {
         match self.get_mut(id) {
             Some(c) if seq > c.read && c.read < c.last => {
                 c.read = seq.min(c.last).max(c.read);
+                c.unread = if c.read >= c.last {
+                    0
+                } else {
+                    c.unread.min(c.last - c.read)
+                };
                 true
             }
             _ => false,
@@ -306,14 +413,126 @@ impl Social {
         }
         if let Some(c) = self.get_mut(id) {
             match c.marks.iter_mut().find(|m| m.account == account) {
-                Some(mark) => mark.seq = mark.seq.max(seq),
+                Some(mark) => {
+                    mark.seq = mark.seq.max(seq);
+                    mark.delivered = mark.delivered.max(mark.seq);
+                }
                 None => c.marks.push(super::api::ReadMark {
                     account,
                     seq,
-                    // Read implies received.
                     delivered: seq,
                 }),
             }
+        }
+    }
+
+    /// Somebody's device received a direct conversation up to `seq`.
+    pub fn apply_delivered(&mut self, id: &str, account: AccountId, seq: u64) {
+        if let Some(c) = self.get_mut(id) {
+            match c.marks.iter_mut().find(|m| m.account == account) {
+                Some(mark) => mark.delivered = mark.delivered.max(seq),
+                None => c.marks.push(super::api::ReadMark {
+                    account,
+                    seq: 0,
+                    delivered: seq,
+                }),
+            }
+        }
+    }
+
+    // Typing
+
+    /// A member types in the conversation, or stopped. `now` is Unix seconds.
+    pub fn apply_typing(&mut self, id: &str, account: AccountId, typing: bool, now: u64) {
+        let key = (id.to_owned(), account);
+        if typing {
+            self.typing.insert(key, now + super::api::TYPING_TTL_SECS);
+        } else {
+            self.typing.remove(&key);
+        }
+    }
+
+    /// Who types in the conversation at `now` (Unix seconds), the player excluded.
+    pub fn typers(&self, id: &str, now: u64, me: AccountId) -> Vec<Account> {
+        let Some(conversation) = self.get(id) else {
+            return Vec::new();
+        };
+        self.typing
+            .iter()
+            .filter(|((c, a), until)| c == id && *a != me && **until > now)
+            .filter_map(|((_, a), _)| conversation.members.iter().find(|m| m.id == *a).cloned())
+            .collect()
+    }
+
+    /// When the first typing signal now shown runs out, so the screen can be drawn again then.
+    pub fn typing_ends(&self, now: u64) -> Option<u64> {
+        self.typing
+            .values()
+            .copied()
+            .filter(|until| *until > now)
+            .min()
+    }
+
+    // Changes to messages
+
+    /// An edit, unsend or reaction arrived as a pointer. The fetch to make, if the thread is held
+    /// and behind.
+    pub fn message_update(&self, id: &str, rev: u64) -> Option<Fetch> {
+        let thread = self.threads.get(id).filter(|t| t.loaded)?;
+        (rev > thread.rev).then_some(Fetch::Changed(thread.rev))
+    }
+
+    /// Puts a message as the cloud answered it in place of the one held.
+    pub fn replace_message(&mut self, message: Message) {
+        if let Some(held) = self.previews.get_mut(&message.conversation)
+            && held.seq == message.seq
+        {
+            *held = message.clone();
+        }
+        if let Some(thread) = self.threads.get_mut(&message.conversation)
+            && let Some(held) = thread.messages.iter_mut().find(|m| m.seq == message.seq)
+        {
+            *held = message;
+        }
+    }
+
+    // Writing: the message the draft answers or edits
+
+    pub fn replying_to(&self, id: &str) -> Option<&Message> {
+        let seq = *self.replying.get(id)?;
+        self.threads.get(id)?.messages.iter().find(|m| m.seq == seq)
+    }
+
+    pub fn editing(&self, id: &str) -> Option<&Message> {
+        let seq = *self.editing.get(id)?;
+        self.threads.get(id)?.messages.iter().find(|m| m.seq == seq)
+    }
+
+    /// The draft answers a message. Editing and answering exclude each other.
+    pub fn start_reply(&mut self, id: &str, seq: u64) {
+        self.editing.remove(id);
+        self.replying.insert(id.to_owned(), seq);
+    }
+
+    /// The draft becomes the text of one of the player's messages.
+    pub fn start_edit(&mut self, id: &str, seq: u64) {
+        self.replying.remove(id);
+        self.editing.insert(id.to_owned(), seq);
+        if let Some(text) = self
+            .threads
+            .get(id)
+            .and_then(|t| t.messages.iter().find(|m| m.seq == seq))
+            .map(|m| m.text.clone())
+        {
+            self.set_draft(id, text);
+        }
+    }
+
+    /// Drops an answer or an edit in progress; an edit also drops its text.
+    pub fn cancel_compose(&mut self, id: &str) {
+        self.replying.remove(id);
+        if self.editing.remove(id).is_some() {
+            self.drafts.remove(id);
         }
     }
 
@@ -322,9 +541,21 @@ impl Social {
     /// A message with this number exists. Returns false for a conversation the list lacks, which
     /// the caller answers by reading the list again.
     pub fn note_last(&mut self, id: &str, seq: u64) -> bool {
+        let top = self
+            .conversations
+            .iter()
+            .chain(&self.requests)
+            .map(|c| c.updated)
+            .max()
+            .unwrap_or(0);
         match self.get_mut(id) {
             Some(c) => {
-                c.last = c.last.max(seq);
+                if seq > c.last {
+                    c.unread += seq - c.last;
+                    c.last = seq;
+                    // The conversation moves up the list.
+                    c.updated = c.updated.max(top + 1);
+                }
                 true
             }
             None => false,
@@ -372,10 +603,12 @@ impl Social {
         let limit = fetch.limit() as usize;
         let full = page.messages.len() >= limit;
         let page_last = page.last;
+        let page_rev = page.rev;
         if let Some(c) = self.get_mut(id) {
             c.last = c.last.max(page_last);
         }
         let last = self.get(id).map_or(page_last, |c| c.last.max(page_last));
+        self.failed.remove(id);
         let thread = self.threads.entry(id.to_owned()).or_default();
         let mut incoming = page.messages;
         incoming.sort_by_key(|m| m.seq);
@@ -395,7 +628,22 @@ impl Social {
                 thread.messages = incoming;
                 thread.loaded = true;
                 thread.older = full;
+                thread.rev = page_rev;
                 thread.highest = page_last.max(thread.messages.last().map_or(0, |m| m.seq));
+            }
+            Fetch::Changed(_) => {
+                let top = incoming.iter().map(|m| m.rev).max().unwrap_or(thread.rev);
+                for message in incoming {
+                    if let Some(held) = thread.messages.iter_mut().find(|m| m.seq == message.seq) {
+                        *held = message;
+                    }
+                }
+                // A full page may leave changes behind it: the next fetch starts after its last.
+                thread.rev = if full {
+                    thread.rev.max(top)
+                } else {
+                    thread.rev.max(page_rev).max(top)
+                };
             }
             Fetch::After(_) => {
                 let top = thread.messages.last().map_or(thread.highest, |m| m.seq);
@@ -431,7 +679,11 @@ impl Social {
             }
         }
         let highest = thread.highest;
-        let follow = (thread.loaded && last > highest).then_some(Fetch::After(highest));
+        let follow = if matches!(fetch, Fetch::Changed(_)) {
+            full.then_some(Fetch::Changed(thread.rev))
+        } else {
+            (thread.loaded && last > highest).then_some(Fetch::After(highest))
+        };
         Ingested { new, follow }
     }
 
@@ -442,6 +694,7 @@ impl Social {
         if let Some(c) = self.get_mut(&id) {
             c.last = c.last.max(message.seq);
         }
+        self.reply_sent(&id);
         let last = self.get(&id).map_or(message.seq, |c| c.last);
         let Some(thread) = self.threads.get_mut(&id).filter(|t| t.loaded) else {
             return Ingested::default();
@@ -473,6 +726,11 @@ impl Social {
         } else {
             self.drafts.insert(id.to_owned(), text);
         }
+    }
+
+    /// The answer a message was sent with is done.
+    fn reply_sent(&mut self, id: &str) {
+        self.replying.remove(id);
     }
 
     /// Forgets the draft once the message it was sent as arrived, unless the player went on
@@ -522,6 +780,24 @@ pub fn others(conversation: &Conversation, me: AccountId) -> Vec<&Account> {
     conversation.members.iter().filter(|m| m.id != me).collect()
 }
 
+/// How far the other member of a direct conversation received it: their `delivered` mark.
+pub fn delivered_to_other(conversation: &Conversation, me: AccountId) -> Option<u64> {
+    conversation
+        .marks
+        .iter()
+        .find(|m| m.account != me)
+        .map(|m| m.delivered.max(m.seq))
+}
+
+/// How many of the other members of a conversation read up to `seq` or further.
+pub fn seen_by(conversation: &Conversation, me: AccountId, seq: u64) -> usize {
+    conversation
+        .marks
+        .iter()
+        .filter(|m| m.account != me && m.seq >= seq)
+        .count()
+}
+
 /// When the other member of a direct conversation read up to: their mark, if they have one.
 pub fn read_by_other(conversation: &Conversation, me: AccountId) -> Option<u64> {
     conversation
@@ -555,7 +831,7 @@ mod tests {
             updated: last,
             request: false,
             party: None,
-            unread: 0,
+            unread: last.saturating_sub(read),
             muted: false,
             pinned: false,
             rev: 0,
@@ -654,7 +930,7 @@ mod tests {
     }
 
     #[test]
-    fn unread_is_last_minus_read_and_unread_conversations_come_first() {
+    fn pinned_conversations_come_first_then_the_newest_and_the_cloud_counts_unread() {
         let mut social = Social::default();
         let mut old = conversation("old", 5, 5);
         old.updated = 900;
@@ -662,6 +938,7 @@ mod tests {
         fresh.updated = 800;
         let mut unread = conversation("unread", 7, 4);
         unread.updated = 100;
+        unread.pinned = true;
         social.set_conversations(lists(
             vec![old, fresh, unread],
             vec![conversation("r", 1, 0)],
@@ -671,12 +948,16 @@ mod tests {
             .iter()
             .map(|c| c.id.as_str())
             .collect();
-        assert_eq!(order, ["unread", "old", "fresh"]);
+        assert_eq!(
+            order,
+            ["unread", "old", "fresh"],
+            "pinned first, then newest"
+        );
         assert_eq!(social.unread("unread"), 3);
         assert_eq!(
             social.unread_total(),
             3 + 1,
-            "the messages of a request count too"
+            "a message request counts once"
         );
         assert!(social.mark_read("unread", 7));
         assert!(!social.mark_read("unread", 7), "nothing moves twice");
@@ -872,7 +1153,7 @@ mod tests {
             [ReadMark {
                 account: AccountId(2),
                 seq: 4,
-                delivered: 4,
+                delivered: 4
             }]
         );
         assert_eq!(
@@ -944,6 +1225,7 @@ mod tests {
             line(Fetch::After(7)),
             "{\"id\":1,\"do\":\"messages\",\"conversation\":\"c1\",\"after\":7,\"before\":null,\"limit\":100,\"changed_after\":null}\n"
         );
+        assert!(line(Fetch::Changed(4)).contains("\"changed_after\":4"));
         assert!(line(Fetch::Before(7)).contains("\"before\":7"));
         assert!(line(Fetch::Newest).contains("\"after\":null"));
     }
@@ -988,5 +1270,137 @@ let's go",
             .map(|a| a.handle.as_str())
             .collect();
         assert_eq!(names, ["Lumen"]);
+    }
+
+    fn edited(id: &str, seq: u64, rev: u64, text: &str) -> Message {
+        let mut m = message(id, seq, 2);
+        m.text = text.into();
+        m.rev = rev;
+        m.edited = Some(5);
+        m
+    }
+
+    #[test]
+    fn a_muted_conversation_counts_for_no_badge_and_the_unread_count_follows_events() {
+        let mut social = Social::default();
+        let mut quiet = conversation("quiet", 5, 5);
+        quiet.muted = true;
+        social.set_conversations(lists(vec![quiet, conversation("loud", 2, 2)], vec![]));
+        social.note_last("quiet", 8);
+        social.note_last("loud", 3);
+        assert_eq!(social.unread("quiet"), 3, "the count goes on");
+        assert_eq!(social.unread_total(), 1, "a muted chat is not in the total");
+        social.mark_read("quiet", 8);
+        assert_eq!(social.unread("quiet"), 0);
+        // A list that is older than what was read here does not bring the count back.
+        let mut stale = conversation("loud", 3, 2);
+        stale.unread = 1;
+        social.mark_read("loud", 3);
+        social.set_conversations(lists(vec![stale], vec![]));
+        assert_eq!(social.unread("loud"), 0);
+    }
+
+    #[test]
+    fn changes_to_messages_are_fetched_by_revision_and_applied_to_held_messages() {
+        let mut social = Social::default();
+        social.set_conversations(lists(vec![conversation("c", 3, 3)], vec![]));
+        social.ingest(
+            "c",
+            Fetch::Newest,
+            Messages {
+                messages: (1..=3).map(|n| message("c", n, 2)).collect(),
+                last: 3,
+                rev: 4,
+            },
+        );
+        assert_eq!(social.message_update("c", 4), None, "already up to date");
+        assert_eq!(social.message_update("c", 6), Some(Fetch::Changed(4)));
+        assert_eq!(social.message_update("nope", 6), None);
+        let got = social.ingest(
+            "c",
+            Fetch::Changed(4),
+            Messages {
+                messages: vec![edited("c", 2, 5, "fixed"), edited("c", 9, 6, "unknown")],
+                last: 3,
+                rev: 6,
+            },
+        );
+        assert_eq!(got.follow, None);
+        assert_eq!(social.messages("c")[1].text, "fixed");
+        assert_eq!(
+            social.messages("c").len(),
+            3,
+            "a message not held is dropped"
+        );
+        assert_eq!(social.message_update("c", 6), None);
+        // The conversation list after a break names a newer revision: the thread asks again.
+        let mut ahead = conversation("c", 3, 3);
+        ahead.rev = 9;
+        let listed = social.set_conversations(lists(vec![ahead], vec![]));
+        assert_eq!(listed.fetches, [("c".to_owned(), Fetch::Changed(6))]);
+    }
+
+    #[test]
+    fn typing_runs_out_by_itself_and_never_shows_the_player() {
+        let mut social = Social::default();
+        social.set_conversations(lists(vec![conversation("c", 0, 0)], vec![]));
+        social.apply_typing("c", AccountId(2), true, 100);
+        social.apply_typing("c", AccountId(1), true, 100);
+        let names = |social: &Social, now| -> Vec<String> {
+            social
+                .typers("c", now, AccountId(1))
+                .into_iter()
+                .map(|a| a.handle)
+                .collect()
+        };
+        assert_eq!(names(&social, 100), ["Lumen"]);
+        assert_eq!(names(&social, 105), ["Lumen"]);
+        assert!(names(&social, 106).is_empty(), "six seconds");
+        assert_eq!(social.typing_ends(100), Some(106));
+        assert_eq!(social.typing_ends(106), None);
+        social.apply_typing("c", AccountId(2), true, 200);
+        social.apply_typing("c", AccountId(2), false, 201);
+        assert!(names(&social, 201).is_empty(), "stopped");
+    }
+
+    #[test]
+    fn delivered_and_read_marks_keep_the_higher_number() {
+        let mut social = Social::default();
+        social.set_conversations(lists(vec![conversation("c", 5, 5)], vec![]));
+        social.apply_delivered("c", AccountId(2), 3);
+        let c = social.get("c").unwrap();
+        assert_eq!(delivered_to_other(c, AccountId(1)), Some(3));
+        assert_eq!(read_by_other(c, AccountId(1)), Some(0));
+        social.apply_read("c", AccountId(2), 4, AccountId(1));
+        let c = social.get("c").unwrap();
+        assert_eq!(read_by_other(c, AccountId(1)), Some(4));
+        assert_eq!(
+            delivered_to_other(c, AccountId(1)),
+            Some(4),
+            "read implies delivered"
+        );
+        social.apply_delivered("c", AccountId(2), 2);
+        let c = social.get("c").unwrap();
+        assert_eq!(delivered_to_other(c, AccountId(1)), Some(4));
+        assert_eq!(seen_by(c, AccountId(1), 4), 1);
+        assert_eq!(seen_by(c, AccountId(1), 5), 0);
+    }
+
+    #[test]
+    fn an_answer_or_an_edit_in_progress_is_dropped_with_its_text() {
+        let mut social = Social::default();
+        social.set_conversations(lists(vec![conversation("c", 2, 2)], vec![]));
+        social.ingest("c", Fetch::Newest, page("c", 1, 2, 2));
+        social.start_reply("c", 2);
+        assert_eq!(social.replying_to("c").map(|m| m.seq), Some(2));
+        social.start_edit("c", 1);
+        assert!(
+            social.replying_to("c").is_none(),
+            "edit and answer exclude each other"
+        );
+        assert_eq!(social.draft("c"), "m1", "an edit starts from the text");
+        social.cancel_compose("c");
+        assert_eq!(social.draft("c"), "");
+        assert!(social.editing("c").is_none());
     }
 }

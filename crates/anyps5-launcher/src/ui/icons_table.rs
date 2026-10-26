@@ -104,6 +104,10 @@ impl Icon {
     pub const MICROPHONE_SLASH: Icon = Icon('\u{e328}');
     pub const SPEAKER_SLASH: Icon = Icon('\u{e45a}');
     pub const HEADPHONES: Icon = Icon('\u{e2a6}');
+    pub const ARROW_BEND_UP_LEFT: Icon = Icon('\u{e024}');
+    pub const PUSH_PIN: Icon = Icon('\u{e3e2}');
+    pub const BELL_SLASH: Icon = Icon('\u{e0d4}');
+    pub const PENCIL_SIMPLE: Icon = Icon('\u{e3b4}');
     pub const DEVICE_MOBILE: Icon = Icon('\u{e1e0}');
     pub const WIFI_HIGH: Icon = Icon('\u{e4ea}');
     pub const PLUG: Icon = Icon('\u{e946}');
