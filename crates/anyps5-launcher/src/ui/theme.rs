@@ -352,6 +352,10 @@ pub mod color {
     pub fn text_hint_key() -> Color32 {
         white(1.0)
     }
+    /// The dark ring behind a small mark (a reminder dot) so it reads on any glyph or picture.
+    pub fn mark_halo() -> Color32 {
+        black(0.62)
+    }
     pub fn text_hint() -> Color32 {
         white(0.78)
     }

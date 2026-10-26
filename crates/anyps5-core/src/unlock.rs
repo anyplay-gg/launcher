@@ -2064,6 +2064,56 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_error_is_told_by_what_the_player_can_do_about_it() {
+        let io = |code: i32| UnlockError::Io {
+            context: "copy".into(),
+            source: io::Error::from_raw_os_error(code),
+        };
+        let cases = [
+            (UnlockError::ToolkitMissing, FailureKind::ToolkitMissing),
+            (
+                UnlockError::NotAnExecutable { file: "a".into() },
+                FailureKind::BadDump,
+            ),
+            (UnlockError::NoOutput, FailureKind::Converter),
+            (
+                UnlockError::Relinker {
+                    code: Some(3),
+                    last_line: String::new(),
+                },
+                FailureKind::Converter,
+            ),
+            (
+                UnlockError::LocationMissing(PathBuf::from("D:/x")),
+                FailureKind::LocationMissing,
+            ),
+            (
+                UnlockError::NotEnoughSpace {
+                    needed: 2,
+                    free: 1,
+                    folder: PathBuf::from("D:/x"),
+                    copying: false,
+                },
+                FailureKind::DiskFull,
+            ),
+            (UnlockError::Cancelled, FailureKind::Other),
+        ];
+        for (error, kind) in cases {
+            assert_eq!(error.kind(), kind, "{error}");
+        }
+        #[cfg(windows)]
+        {
+            assert_eq!(io(112).kind(), FailureKind::DiskFull);
+            assert_eq!(io(32).kind(), FailureKind::FileInUse);
+        }
+        #[cfg(unix)]
+        {
+            assert_eq!(io(28).kind(), FailureKind::DiskFull);
+            assert_eq!(io(13).kind(), FailureKind::FileInUse);
+        }
+    }
+
+    #[test]
     fn required_bytes_counts_work_twice_and_copies_only_what_is_copied() {
         let linked = SpaceNeed {
             binaries: 100,

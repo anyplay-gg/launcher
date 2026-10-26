@@ -49,10 +49,10 @@ const STATE_GAP: f32 = 4.0;
 const FACTS_ABOVE: f32 = 46.0;
 const FACTS_SPACING: f32 = 48.0;
 /// Between a fact's overline and its value.
-const FACT_GAP: f32 = 6.0;
+const FACT_GAP: f32 = space::S;
 /// Most facts in the row, and the gap between a value and the quiet note beside it.
 const MAX_FACTS: usize = 4;
-const FACT_NOTE_GAP: f32 = 8.0;
+const FACT_NOTE_GAP: f32 = space::S;
 /// Between the facts and the line that asks "How did it run?" below them. The row is kept free
 /// whether it shows or not, so nothing moves when it appears or goes.
 const ASK_GAP: f32 = 18.0;
@@ -238,7 +238,7 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
         .show(&mut row);
     if update_waiting {
         let dot = response.rect.right_top() + vec2(-8.0, 8.0);
-        painter.circle_filled(dot, GEAR_DOT + space::XS * 0.5, theme::black(0.62));
+        painter.circle_filled(dot, GEAR_DOT_HALO, color::mark_halo());
         painter.circle_filled(dot, GEAR_DOT, color::text());
     }
     if response.clicked() {
@@ -454,8 +454,9 @@ fn update_notice(
     );
 }
 
-/// The reminder dot on the gear (radius).
+/// The reminder dot on the gear and the dark halo that lifts it off the glyph (radii).
 const GEAR_DOT: f32 = 4.0;
+const GEAR_DOT_HALO: f32 = 6.0;
 
 /// Room the colon of the clock takes between the hours and the minutes.
 const CLOCK_COLON: f32 = 7.0;
@@ -516,8 +517,8 @@ fn phone_status(
 ) -> Option<f32> {
     let painter = ui.painter().clone();
     let shown = text::middle_truncate(&painter, ty::CHIP, name, PHONE_STATUS_NAME_MAX);
-    let glyph = 18.0;
-    let width = glyph + 8.0 + text::width(&painter, ty::CHIP, &shown);
+    let glyph = size::BUTTON_ICON_MEDIUM;
+    let width = glyph + space::S + text::width(&painter, ty::CHIP, &shown);
     if limit_x.is_some_and(|limit| left_middle.x + width > limit) {
         return None;
     }
@@ -527,6 +528,8 @@ fn phone_status(
     );
     let response = ui.allocate_rect(rect, Sense::hover());
     response.widget_info(|| WidgetInfo::labeled(Role::Label, true, label));
+    // The name may have been cut in the middle; the pointer reads it whole.
+    response.on_hover_text(name);
     if !ui.is_rect_visible(rect) {
         return Some(rect.max.x);
     }
@@ -540,7 +543,7 @@ fn phone_status(
     );
     text::paint(
         &painter,
-        pos2(rect.min.x + glyph + 8.0, rect.center().y),
+        pos2(rect.min.x + glyph + space::S, rect.center().y),
         Align2::LEFT_CENTER,
         ty::CHIP,
         &shown,
@@ -574,13 +577,13 @@ fn pad_status(
         }
         pad_info::Battery::Unknown => (None, Extra::PadStatus.text(language).to_owned()),
     };
-    let glyph = 18.0;
+    let glyph = size::BUTTON_ICON_MEDIUM;
     let charging = matches!(battery, pad_info::Battery::Level { charging: true, .. });
     // A small bolt after the percent says "charging" to the eye; the label says it to the ear.
     let bolt = if charging { 6.0 + BOLT_WIDTH } else { 0.0 };
-    let text_width = shown
-        .as_deref()
-        .map_or(0.0, |s| 8.0 + text::width(&painter, ty::CHIP, s) + bolt);
+    let text_width = shown.as_deref().map_or(0.0, |s| {
+        space::S + text::width(&painter, ty::CHIP, s) + bolt
+    });
     let width = glyph + text_width;
     if left_middle.x + width > limit_x {
         return None;
@@ -605,7 +608,7 @@ fn pad_status(
     if let Some(shown) = shown {
         let text_rect = text::paint(
             &painter,
-            pos2(rect.min.x + glyph + 8.0, rect.center().y),
+            pos2(rect.min.x + glyph + space::S, rect.center().y),
             Align2::LEFT_CENTER,
             ty::CHIP,
             &shown,
@@ -1593,31 +1596,18 @@ fn action_row_status(
             painter.galley(pos2(x + 16.0, top), galley, color::text_subtitle());
         }
         GameState::Failed(message) => {
-            // What happened and what to do, in words; the technical message stays under it, quiet.
-            let headline = wrapped(
-                &painter,
-                ty::ROW_TITLE,
-                crate::screens::prepare_strings::failure_headline(language),
-                color::error_text(),
-                room,
-                2,
-            );
+            // The state line above the title says that it stopped; here is what to do, in words.
+            // The technical message is in the log, never here.
             let detail = wrapped(
                 &painter,
-                ty::DETAIL,
+                ty::DETAIL_LARGE,
                 message,
                 color::text_subtitle(),
                 room,
                 3,
             );
-            let gap = space::XS;
-            let top = mid - (headline.size().y + gap + detail.size().y) * 0.5;
-            let detail_top = top + headline.size().y + gap;
-            painter.galley(pos2(x + 16.0, top), headline, color::error_text());
-            let total = Rect::from_min_size(
-                pos2(x + 16.0, top),
-                vec2(room, detail_top + detail.size().y - top),
-            );
+            let top = mid - detail.size().y * 0.5;
+            let total = Rect::from_min_size(pos2(x + 16.0, top), vec2(room, detail.size().y));
             let name = format!(
                 "{} {message}",
                 crate::screens::prepare_strings::failure_headline(language)
@@ -1628,7 +1618,7 @@ fn action_row_status(
             if detail.elided {
                 response.on_hover_text(message.as_str());
             }
-            painter.galley(pos2(x + 16.0, detail_top), detail, color::text_subtitle());
+            painter.galley(pos2(x + 16.0, top), detail, color::text_subtitle());
         }
         _ => {
             // One status at a time: the glibc shortfall (why a start may fail) before the last
@@ -1706,29 +1696,56 @@ fn fact(
         &overline,
         color::text_overline(),
     );
-    text::paint(
+    // The value and the quiet note beside it stand on one baseline.
+    let value_top = at.y + ty::INFO_OVERLINE.line_height() + FACT_GAP;
+    let baseline = value_top + baseline_offset(&painter, ty::INFO_VALUE, value);
+    paint_on_baseline(
         &painter,
-        pos2(at.x, at.y + ty::INFO_OVERLINE.line_height() + FACT_GAP),
-        Align2::LEFT_TOP,
+        pos2(at.x, baseline),
         ty::INFO_VALUE,
         value,
         color::text_label(),
     );
     if let Some(note) = note {
         let value_width = text::width(&painter, ty::INFO_VALUE, value);
-        text::paint(
+        paint_on_baseline(
             &painter,
-            pos2(
-                at.x + value_width + FACT_NOTE_GAP,
-                at.y + ty::INFO_OVERLINE.line_height() + FACT_GAP + ty::INFO_VALUE.line_height(),
-            ),
-            Align2::LEFT_BOTTOM,
+            pos2(at.x + value_width + FACT_NOTE_GAP, baseline),
             ty::NOTE,
             note,
             color::text_note(),
         );
     }
     width
+}
+
+/// How far the baseline of a line of `text` lies below its top.
+fn baseline_offset(painter: &egui::Painter, style: theme::TextStyle, text_: &str) -> f32 {
+    let galley = text::layout(painter, style, text_, Color32::WHITE, f32::INFINITY);
+    galley
+        .rows
+        .first()
+        .and_then(|row| row.glyphs.first().map(|glyph| row.pos.y + glyph.pos.y))
+        .unwrap_or(style.size)
+}
+
+/// Paints `text` with its baseline at `at.y` and its left edge at `at.x`.
+fn paint_on_baseline(
+    painter: &egui::Painter,
+    at: egui::Pos2,
+    style: theme::TextStyle,
+    text_: &str,
+    color: Color32,
+) {
+    let top = at.y - baseline_offset(painter, style, text_);
+    text::paint(
+        painter,
+        pos2(at.x, top),
+        Align2::LEFT_TOP,
+        style,
+        text_,
+        color,
+    );
 }
 
 // ---------------------------------------------------------------------------------------------
