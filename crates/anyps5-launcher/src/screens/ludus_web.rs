@@ -1,14 +1,11 @@
 //! LudusCtrl's browser client on the "Phone as Controller" page (docs/DESIGN.md 18, "LudusCtrl
-//! browser client"): its switch under the LudusCtrl option, who holds the pad, the QR code and the
-//! link, the links of the other addresses, a new link, and the notes that explain what the phone
-//! will say.
-
-use anyps5_core::settings::Preferences;
+//! browser client"), in the LudusCtrl group ([`crate::screens::ludus::rows`]): who holds the pad,
+//! the QR code and the link, the links of the other addresses, a new link, and the notes that
+//! explain what the phone will say. It has no switch: it runs with LudusCtrl.
 
 use crate::app::ludus_web::{BrowserState, Certificate, LUDUS_WEB_PORT};
 use crate::screens::ludus::LudusAction;
 use crate::screens::ludus_web_strings::BrowserText;
-use crate::screens::phone_strings::PhoneText;
 use crate::screens::rows::{Change, Row};
 use crate::ui::i18n::{Arg, Language};
 use crate::ui::icons::Icon;
@@ -33,40 +30,18 @@ pub fn host_of(url: &str) -> &str {
     host.rsplit_once(':').map_or(host, |(host, _)| host)
 }
 
-/// The browser client's rows. `windows`: the firewall note applies.
-pub fn rows(
-    prefs: &Preferences,
-    browser: &BrowserState,
-    windows: bool,
-    language: Language,
-) -> Vec<Row> {
+/// The browser client's status row, under the app's in the LudusCtrl group: who holds the pad,
+/// or the note that it could not start. None while it does not run (LudusCtrl is off).
+pub fn status_row(browser: &BrowserState, language: Language) -> Option<Row> {
     let t = |text: BrowserText| text.text(language).to_owned();
-    let mut rows = vec![
-        Row::toggle(
-            "ludusBrowser",
-            t(BrowserText::Title),
-            prefs.phone_ludusctrl_browser,
-        )
-        .detail(t(BrowserText::SwitchDetail))
-        .icon(Icon::GLOBE)
-        .group_start(),
-    ];
-    if !prefs.phone_ludusctrl_browser {
-        return rows;
-    }
     if browser.failed {
-        rows.push(Row::info(
+        return Some(Row::info(
             "browserFailed",
             t(BrowserText::StartFailed),
             None,
         ));
-        return rows;
     }
-    let Some(info) = &browser.info else {
-        return rows;
-    };
-
-    // Who holds the pad.
+    browser.info.as_ref()?;
     let status = match (&browser.peer, &browser.device) {
         (Some(peer), Some(device)) => {
             BrowserText::ConnectedDevice.format(language, &[Arg::Str(device), Arg::Str(peer)])
@@ -74,15 +49,17 @@ pub fn rows(
         (Some(peer), None) => BrowserText::ConnectedTo.format(language, &[Arg::Str(peer)]),
         (None, _) => t(BrowserText::Waiting),
     };
-    rows.push(
-        Row::info(
-            "browserStatus",
-            PhoneText::Status.text(language),
-            Some(status),
-        )
-        .icon(Icon::WIFI_HIGH)
-        .group_start(),
-    );
+    Some(Row::info("browserStatus", t(BrowserText::Status), Some(status)).icon(Icon::GLOBE))
+}
+
+/// The browser client's own rows while it runs: the QR code, the link and its notes, the other
+/// addresses and New Link. `windows`: the firewall note applies.
+pub fn link_rows(browser: &BrowserState, windows: bool, language: Language) -> Vec<Row> {
+    let t = |text: BrowserText| text.text(language).to_owned();
+    let mut rows = Vec::new();
+    let Some(info) = &browser.info else {
+        return rows;
+    };
 
     // The QR code, the link it encodes and the row that copies it.
     if let Some(url) = info.urls.first() {
@@ -173,13 +150,11 @@ mod tests {
 
     const LINK: &str = "https://192.168.178.20:45991/#t=q8Zk3VtW0bHn5sLc2pRj1A";
 
-    fn on() -> Preferences {
-        Preferences {
-            phone_remote: true,
-            phone_ludusctrl: true,
-            phone_ludusctrl_browser: true,
-            ..Preferences::first_run()
-        }
+    /// The status row, then the rest, as the LudusCtrl group lays them out.
+    fn rows(browser: &BrowserState, windows: bool, language: Language) -> Vec<Row> {
+        let mut rows: Vec<Row> = status_row(browser, language).into_iter().collect();
+        rows.extend(link_rows(browser, windows, language));
+        rows
     }
 
     fn running(urls: &[&str]) -> BrowserState {
@@ -200,37 +175,31 @@ mod tests {
     }
 
     #[test]
-    fn off_is_the_switch_alone_and_off_by_default() {
-        let prefs = Preferences {
-            phone_remote: true,
-            phone_ludusctrl: true,
-            ..Preferences::first_run()
-        };
-        let rows = rows(&prefs, &BrowserState::default(), true, Language::English);
-        assert_eq!(ids(&rows), ["ludusBrowser"]);
-        assert_eq!(rows[0].title, "Browser Client");
-        assert_eq!(rows[0].control, Control::Toggle(false));
-        assert!(rows[0].group_start);
+    fn nothing_while_it_does_not_run() {
+        let rows = rows(&BrowserState::default(), true, Language::English);
+        assert!(rows.is_empty());
     }
 
     #[test]
-    fn a_failed_start_says_so_and_keeps_the_switch() {
+    fn a_failed_start_is_one_note_in_place_of_the_status() {
         let state = BrowserState {
             failed: true,
             ..BrowserState::default()
         };
-        let rows = rows(&on(), &state, true, Language::English);
-        assert_eq!(ids(&rows), ["ludusBrowser", "browserFailed"]);
-        assert_eq!(rows[0].control, Control::Toggle(true));
+        let rows = rows(&state, true, Language::English);
+        assert_eq!(ids(&rows), ["browserFailed"]);
+        assert_eq!(
+            rows[0].title,
+            "The browser client could not start. The log has the reason."
+        );
     }
 
     #[test]
     fn waiting_shows_the_code_the_link_and_the_notes() {
-        let rows = rows(&on(), &running(&[LINK]), true, Language::English);
+        let rows = rows(&running(&[LINK]), true, Language::English);
         assert_eq!(
             ids(&rows),
             [
-                "ludusBrowser",
                 "browserStatus",
                 "browserQr",
                 "browserLink",
@@ -266,7 +235,7 @@ mod tests {
 
     #[test]
     fn the_firewall_note_is_for_windows() {
-        let rows = rows(&on(), &running(&[LINK]), false, Language::English);
+        let rows = rows(&running(&[LINK]), false, Language::English);
         assert!(!ids(&rows).contains(&"browserFirewall"));
     }
 
@@ -284,7 +253,7 @@ mod tests {
                 "192.168.178.41 adresindeki tarayıcı bağlı",
             ),
         ] {
-            let rows = rows(&on(), &state, true, language);
+            let rows = rows(&state, true, language);
             let status = rows.iter().find(|r| r.id == "browserStatus").unwrap();
             assert_eq!(status.control, Control::Info(Some(text.into())));
         }
@@ -305,7 +274,7 @@ mod tests {
                 "iPhone üzerindeki tarayıcı bağlı (192.168.178.41)",
             ),
         ] {
-            let rows = rows(&on(), &state, true, language);
+            let rows = rows(&state, true, language);
             let status = rows.iter().find(|r| r.id == "browserStatus").unwrap();
             assert_eq!(status.control, Control::Info(Some(text.into())));
         }
@@ -313,7 +282,7 @@ mod tests {
 
     #[test]
     fn a_pc_without_an_address_says_what_to_do() {
-        let rows = rows(&on(), &running(&[]), true, Language::English);
+        let rows = rows(&running(&[]), true, Language::English);
         let list = ids(&rows);
         assert!(list.contains(&"browserNoAddress"));
         assert!(!list.contains(&"browserQr") && !list.contains(&"browserCopy"));
@@ -329,7 +298,7 @@ mod tests {
         if let Some(info) = &mut state.info {
             info.certificate = Certificate::New;
         }
-        let rows = rows(&on(), &state, true, Language::English);
+        let rows = rows(&state, true, Language::English);
         assert!(!ids(&rows).contains(&"browserReissued"));
         assert!(ids(&rows).contains(&"browserCertNote"));
     }
@@ -342,7 +311,7 @@ mod tests {
             info.preferred_port = false;
             info.port = 51234;
         }
-        let rows = rows(&on(), &state, true, Language::English);
+        let rows = rows(&state, true, Language::English);
         let reissued = rows.iter().find(|r| r.id == "browserReissued").unwrap();
         assert!(reissued.warning && reissued.attached);
         let busy = rows.iter().find(|r| r.id == "browserPortBusy").unwrap();
@@ -354,7 +323,7 @@ mod tests {
         let second = "https://10.0.0.7:45991/#t=q8Zk3VtW0bHn5sLc2pRj1A";
         let third = "https://[fe80::1]:45991/#t=q8Zk3VtW0bHn5sLc2pRj1A";
         let state = running(&[LINK, second, third]);
-        let rows = rows(&on(), &state, true, Language::Turkish);
+        let rows = rows(&state, true, Language::Turkish);
         let caption = rows.iter().find(|r| r.id == "browserOther").unwrap();
         assert_eq!(caption.title, "Diğer Adresler");
         let first = rows.iter().find(|r| r.id == "browserAddr0").unwrap();
@@ -392,10 +361,9 @@ mod tests {
 
     #[test]
     fn the_rows_read_in_turkish() {
-        let rows = rows(&on(), &running(&[LINK]), true, Language::Turkish);
+        let rows = rows(&running(&[LINK]), true, Language::Turkish);
         let title = |id: &str| rows.iter().find(|r| r.id == id).unwrap().title.clone();
-        assert_eq!(title("ludusBrowser"), "Tarayıcı İstemcisi");
-        assert_eq!(title("browserStatus"), "Durum");
+        assert_eq!(title("browserStatus"), "Tarayıcı");
         assert_eq!(title("browserCopy"), "Bağlantıyı Kopyala");
         assert_eq!(title("browserNewLink"), "Yeni Bağlantı");
     }

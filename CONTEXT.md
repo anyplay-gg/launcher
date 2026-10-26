@@ -357,6 +357,10 @@ _Avoid_: Fake pad, emulated controller
 A phone or tablet running the LudusCtrl app, which passes on a controller paired with it over Bluetooth. Turned on with the LudusCtrl option of Phone as Controller; it is paired once by comparing a six-digit code and carries only the pad, never the library.
 _Avoid_: Bridge, relay (the code's words for other things)
 
+**Browser client**:
+A phone without the LudusCtrl app (an iPhone above all) that opens a page from this PC by scanning the QR code on the settings page; its browser passes on the controller connected to the phone. It runs whenever the LudusCtrl option is on, needs no pairing (the link's token is the consent) and shares the one virtual controller with the app: only one of them holds it.
+_Avoid_: Web app, web client
+
 **ViGEmBus**:
 The Windows driver that makes a virtual controller possible. The launcher explains it and links its official download; it never installs it.
 _Avoid_: Driver (alone, there are others)

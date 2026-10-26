@@ -602,15 +602,11 @@ pub struct Preferences {
     /// (docs/DESIGN.md 18). Off until the player turns it on.
     #[serde(default)]
     pub phone_remote: bool,
-    /// LudusCtrl, an option of the phone server: a controller connected to an Android phone plays
-    /// on this PC through the LudusCtrl app. Off until the player turns it on.
+    /// LudusCtrl, an option of the phone server: a controller connected to a phone plays on this
+    /// PC, through the LudusCtrl app on Android or the phone's browser (the browser client runs
+    /// with it). Off until the player turns it on.
     #[serde(default)]
     pub phone_ludusctrl: bool,
-    /// LudusCtrl's browser client, an option of LudusCtrl: a phone opens a page from this PC and
-    /// its browser passes on a controller connected to it, with no app. Off until the player
-    /// turns it on; it runs only while `phone_remote` and `phone_ludusctrl` are on too.
-    #[serde(default)]
-    pub phone_ludusctrl_browser: bool,
     /// Clips: how many seconds of the running game the launcher keeps for a clip (one of
     /// [`crate::clips::LENGTHS`]); 0 is Off, and nothing is recorded.
     #[serde(default)]
@@ -678,7 +674,6 @@ impl Default for Preferences {
             record_network: false,
             phone_remote: false,
             phone_ludusctrl: false,
-            phone_ludusctrl_browser: false,
             clips_seconds: 0,
             clips_hotkey: None,
             run_asked: BTreeSet::new(),
@@ -1310,7 +1305,6 @@ mod tests {
             "the phone server is off until the player turns it on"
         );
         assert!(!prefs.phone_ludusctrl);
-        assert!(!prefs.phone_ludusctrl_browser);
         assert!(prefs.check_for_updates);
         assert_eq!(prefs.profile_name, "Player");
         assert_eq!(prefs.toolkit_repository, crate::toolkit::DEFAULT_REPOSITORY);
@@ -1320,6 +1314,21 @@ mod tests {
         let again: Value =
             serde_json::from_slice(&fs::read(paths.preferences_file()).unwrap()).unwrap();
         assert_eq!(again["futureThing"], json!({"a": [1, 2]}));
+    }
+
+    #[test]
+    fn a_file_with_the_old_browser_client_switch_still_loads() {
+        // The browser client had a switch of its own before it ran with LudusCtrl.
+        let prefs: Preferences = serde_json::from_str(
+            r#"{"phoneRemote": true, "phoneLudusctrl": true, "phoneLudusctrlBrowser": true}"#,
+        )
+        .unwrap();
+        assert!(prefs.phone_remote && prefs.phone_ludusctrl);
+        assert_eq!(
+            prefs.extra["phoneLudusctrlBrowser"],
+            json!(true),
+            "kept, unread"
+        );
     }
 
     #[test]

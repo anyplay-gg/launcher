@@ -187,18 +187,16 @@ pub fn page(
         .and_then(|info| info.addresses.first())
         .zip(ludus.port)
         .map(|(address, port)| format!("{address}:{port}"));
-    rows.extend(crate::screens::ludus::rows(prefs, ludus, address, language));
-    // The browser client is an option of LudusCtrl: under its rows, while it runs.
-    if prefs.phone_ludusctrl && !ludus.failed {
-        rows.extend(crate::screens::ludus_web::rows(
-            prefs,
-            &ludus.browser,
-            phone.windows,
-            language,
-        ));
-    }
+    rows.extend(crate::screens::ludus::rows(
+        prefs,
+        ludus,
+        address,
+        phone.windows,
+        language,
+    ));
     let phone_on = !phone.failed;
-    let ludus_on = prefs.phone_ludusctrl && !ludus.failed;
+    // LudusCtrl's server runs for the app, or for the browser client alone.
+    let ludus_on = prefs.phone_ludusctrl && (!ludus.failed || ludus.browser.info.is_some());
     let pad = phone
         .pad
         .as_ref()

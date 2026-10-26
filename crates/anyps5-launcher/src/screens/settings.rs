@@ -1310,10 +1310,6 @@ pub fn apply_value(prefs: &mut Preferences, change: &Change) -> bool {
             row: "ludusctrl",
             on,
         } => prefs.phone_ludusctrl = *on,
-        Change::Toggle {
-            row: "ludusBrowser",
-            on,
-        } => prefs.phone_ludusctrl_browser = *on,
         Change::Choice {
             row: "clips",
             index,

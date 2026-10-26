@@ -6,9 +6,8 @@ use crate::ui::i18n::{Arg, Language, substitute};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BrowserText {
-    /// The switch and its detail.
-    Title,
-    SwitchDetail,
+    /// The title of the browser client's status row, under the app's.
+    Status,
     /// The bridge could not start; the reason is in the log.
     StartFailed,
     /// Status values: no browser yet, and a browser that holds the pad (`%@` = its address; with
@@ -48,9 +47,8 @@ pub enum BrowserText {
 }
 
 impl BrowserText {
-    pub const ALL: [BrowserText; 24] = [
-        BrowserText::Title,
-        BrowserText::SwitchDetail,
+    pub const ALL: [BrowserText; 23] = [
+        BrowserText::Status,
         BrowserText::StartFailed,
         BrowserText::Waiting,
         BrowserText::ConnectedTo,
@@ -77,10 +75,7 @@ impl BrowserText {
 
     pub const fn english(self) -> &'static str {
         match self {
-            BrowserText::Title => "Browser Client",
-            BrowserText::SwitchDetail => {
-                "Play with a controller connected to an iPhone or any other phone, through the phone's browser. No app needed."
-            }
+            BrowserText::Status => "Browser",
             BrowserText::StartFailed => {
                 "The browser client could not start. The log has the reason."
             }
@@ -124,10 +119,7 @@ impl BrowserText {
 
     pub const fn turkish(self) -> &'static str {
         match self {
-            BrowserText::Title => "Tarayıcı İstemcisi",
-            BrowserText::SwitchDetail => {
-                "iPhone'a ya da başka bir telefona bağlı bir kumandayla telefonun tarayıcısı üzerinden oyna. Uygulama gerekmez."
-            }
+            BrowserText::Status => "Tarayıcı",
             BrowserText::StartFailed => "Tarayıcı istemcisi başlatılamadı. Nedeni günlükte yazılı.",
             BrowserText::Waiting => "Bir tarayıcı bekleniyor",
             BrowserText::ConnectedTo => "%@ adresindeki tarayıcı bağlı",
@@ -244,7 +236,7 @@ mod tests {
     fn titles_are_title_case_and_sentences_are_not() {
         // DESIGN.md 3.10: row titles, buttons and captions in Title Case.
         for text in [
-            BrowserText::Title,
+            BrowserText::Status,
             BrowserText::Link,
             BrowserText::Copy,
             BrowserText::Other,

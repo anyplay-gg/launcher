@@ -251,6 +251,8 @@ pub enum PhoneLook {
     BrowserReissued,
     /// The browser client could not start.
     BrowserFailed,
+    /// LudusCtrl's server could not start for the app: the browser client runs alone.
+    AppFailed,
 }
 
 impl PhoneLook {
@@ -270,7 +272,7 @@ impl PhoneLook {
         ) || self.browser_on()
     }
 
-    /// Whether LudusCtrl's browser client is on in this look.
+    /// Whether this look is one of the browser client's scenes.
     fn browser_on(self) -> bool {
         matches!(
             self,
@@ -278,6 +280,7 @@ impl PhoneLook {
                 | PhoneLook::BrowserLinked
                 | PhoneLook::BrowserReissued
                 | PhoneLook::BrowserFailed
+                | PhoneLook::AppFailed
         )
     }
 }
@@ -559,7 +562,8 @@ fn sample_phone(look: PhoneLook) -> crate::app::phone::PhoneState {
         | PhoneLook::BrowserWaiting
         | PhoneLook::BrowserLinked
         | PhoneLook::BrowserReissued
-        | PhoneLook::BrowserFailed => {}
+        | PhoneLook::BrowserFailed
+        | PhoneLook::AppFailed => {}
         PhoneLook::Both => {
             state.connected = Some("Pixel 8".into());
             state.latency_ms = Some(4.0);
@@ -604,9 +608,16 @@ fn sample_ludus(look: PhoneLook) -> crate::app::ludus::LudusState {
         | PhoneLook::BrowserReissued
         | PhoneLook::BrowserFailed => {
             state.paired = vec![phone("c3", "Galaxy Tab S9", "2026-10-25T20:41:07Z")];
-            state.browser = sample_browser(look);
+        }
+        PhoneLook::AppFailed => {
+            state.failed = true;
+            state.port = None;
         }
         _ => {}
+    }
+    // The browser client runs whenever LudusCtrl does.
+    if look.ludus_on() {
+        state.browser = sample_browser(look);
     }
     state
 }
@@ -628,6 +639,7 @@ fn sample_browser(look: PhoneLook) -> crate::app::ludus_web::BrowserState {
         LUDUS_WEB_PORT
     };
     let link = |address: &str| format!("https://{address}:{port}/#t={token}");
+    // The other addresses show in the browser client's own scene.
     let urls = if look == PhoneLook::BrowserWaiting {
         vec![
             link("192.168.178.20"),
@@ -718,6 +730,7 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "phone-browser-linked" => ScreenPage::Phone(PhoneLook::BrowserLinked),
         "phone-browser-reissued" => ScreenPage::Phone(PhoneLook::BrowserReissued),
         "phone-browser-failed" => ScreenPage::Phone(PhoneLook::BrowserFailed),
+        "phone-ludus-failed" => ScreenPage::Phone(PhoneLook::AppFailed),
         "toolkit" => ScreenPage::Toolkit(ToolkitLook::Stable),
         "toolkit-update" => ScreenPage::Toolkit(ToolkitLook::Update),
         "toolkit-newer" => ScreenPage::Toolkit(ToolkitLook::Newer),
@@ -1934,7 +1947,6 @@ impl ScreenGallery {
             ScreenPage::Phone(look) => {
                 prefs.phone_remote = look.phone_on();
                 prefs.phone_ludusctrl = look.ludus_on();
-                prefs.phone_ludusctrl_browser = look.browser_on();
                 (sample_phone(look), sample_ludus(look))
             }
             _ => Default::default(),
@@ -2746,13 +2758,16 @@ impl ScreenGallery {
                     self.settings.focus_row(4);
                 }
                 // LudusCtrl's question lands on its first answer; a connected LudusCtrl phone
-                // shows the end of the page, where the app comes from.
-                // The browser client's scenes land in its group, so it is in view.
+                // shows the end of the page, where the app comes from. LudusCtrl waiting and the
+                // browser client's scenes land on the QR code's group, so it is in view.
                 let focus = match look {
+                    PhoneLook::LudusWaiting => Some("browserCopy"),
                     PhoneLook::LudusPairing => Some("ludusAllow"),
                     PhoneLook::LudusConnected => Some("ludusApp"),
                     PhoneLook::BrowserWaiting => Some("browserCopy"),
-                    PhoneLook::BrowserLinked | PhoneLook::BrowserFailed => Some("ludusBrowser"),
+                    PhoneLook::BrowserLinked => Some("browserStatus"),
+                    PhoneLook::BrowserFailed => Some("browserFailed"),
+                    PhoneLook::AppFailed => Some("ludusFailed"),
                     PhoneLook::BrowserReissued => Some("browserNewLink"),
                     _ => None,
                 };

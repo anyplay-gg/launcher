@@ -1,6 +1,7 @@
 //! LudusCtrl's browser client on the launcher's side (docs/DESIGN.md 18, "LudusCtrl browser
 //! client"): a phone opens a page from this PC, and its browser passes on the controller connected
-//! to it. No app, no pairing: the token in the link is the consent.
+//! to it. No app, no pairing: the token in the link is the consent. It has no switch of its own:
+//! it runs whenever LudusCtrl does ([`crate::app::ludus::wanted`]).
 //!
 //! The bridge itself (HTTPS, WebSocket, the token, the certificate) is the core's, a part of the
 //! LudusCtrl server that feeds the same pad slot (`docs/ludusctrl-web-api.md`). The launcher meets
@@ -44,11 +45,6 @@ pub struct BrowserState {
     pub device: Option<String>,
 }
 
-/// The browser client runs while Phone as Controller, LudusCtrl and its browser option are on.
-pub fn wanted(prefs: &anyps5_core::settings::Preferences) -> bool {
-    crate::app::ludus::wanted(prefs) && prefs.phone_ludusctrl_browser
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -62,17 +58,5 @@ mod tests {
         assert!(config.cert_file.ends_with("LudusCtrlWeb.json"));
         assert!(config.cert_file.starts_with(&paths.config));
         assert_eq!(config.bind, None, "every interface");
-    }
-
-    #[test]
-    fn the_option_needs_both_switches_above_it() {
-        let mut prefs = anyps5_core::settings::Preferences::first_run();
-        assert!(!prefs.phone_ludusctrl_browser, "off by default");
-        prefs.phone_ludusctrl_browser = true;
-        assert!(!wanted(&prefs));
-        prefs.phone_remote = true;
-        assert!(!wanted(&prefs));
-        prefs.phone_ludusctrl = true;
-        assert!(wanted(&prefs));
     }
 }

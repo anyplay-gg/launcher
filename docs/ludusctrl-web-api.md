@@ -9,9 +9,11 @@ below are re-exported from `anyps5_core::remote`.
 
 ## Preference
 
-The browser client is an option of the LudusCtrl option: it runs only while `phone_remote`, `phone_ludusctrl` and its own
-preference (the UI branch's, for example `phone_ludusctrl_browser`, serde default `false`) are on. It is a method of the running
-`LudusServer`, so it cannot run without it, and it feeds the same pad slot.
+The browser client has no preference of its own: it runs whenever the LudusCtrl option does, that is while `phone_remote` and
+`phone_ludusctrl` are on, and starts and stops with the app's server. It is a method of the running `LudusServer` and feeds the
+same pad slot. When the app's UDP port cannot be bound, the launcher starts the server with `LudusServer::start_without_app`
+(no UDP socket, no beacon, `port()` 0), so the browser client still runs; when the browser client cannot start, the app's
+server keeps running.
 
 ## Starting and stopping
 

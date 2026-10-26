@@ -13,11 +13,13 @@ pub const PROJECT_PAGE_SHOWN: &str = "github.com/parl0v/ludusctrl";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LudusText {
-    /// The switch and its detail.
+    /// The switch and its detail (the app and the browser client both).
     Title,
     SwitchDetail,
-    /// The server could not start.
+    /// The server could not start for the app.
     StartFailed,
+    /// The title of the app's status row.
+    AppStatus,
     /// Status: a phone holds the pad with no controller connected to it (`%@` = its name).
     NoController,
     /// The caption over the paired LudusCtrl phones, and the line while there is none.
@@ -31,10 +33,11 @@ pub enum LudusText {
 }
 
 impl LudusText {
-    pub const ALL: [LudusText; 9] = [
+    pub const ALL: [LudusText; 10] = [
         LudusText::Title,
         LudusText::SwitchDetail,
         LudusText::StartFailed,
+        LudusText::AppStatus,
         LudusText::NoController,
         LudusText::Paired,
         LudusText::PairedNone,
@@ -47,11 +50,12 @@ impl LudusText {
         match self {
             LudusText::Title => "LudusCtrl",
             LudusText::SwitchDetail => {
-                "Play with a controller connected to your phone, through the LudusCtrl app. Each phone has to be paired first."
+                "Play with a controller connected to your phone: scan the code with the phone's camera, or use the LudusCtrl app on Android. A phone with the app has to be paired first."
             }
             LudusText::StartFailed => {
-                "Could not start. Another program, such as the LudusCtrl receiver, may be using its network port."
+                "The connection for the LudusCtrl app could not start. Another program, such as the LudusCtrl receiver, may be using its network port."
             }
+            LudusText::AppStatus => "App",
             LudusText::NoController => "Connected to %@, no controller",
             LudusText::Paired => "Paired LudusCtrl Phones",
             LudusText::PairedNone => {
@@ -69,11 +73,12 @@ impl LudusText {
         match self {
             LudusText::Title => "LudusCtrl",
             LudusText::SwitchDetail => {
-                "Telefonuna bağlı bir kumandayla LudusCtrl uygulaması üzerinden oyna. Her telefon önce eşleştirilmelidir."
+                "Telefonuna bağlı bir kumandayla oyna: kodu telefonun kamerasıyla tara ya da Android'de LudusCtrl uygulamasını kullan. Uygulamayı kullanan her telefon önce eşleştirilmelidir."
             }
             LudusText::StartFailed => {
-                "Başlatılamadı. LudusCtrl alıcısı gibi başka bir program ağ bağlantı noktasını kullanıyor olabilir."
+                "LudusCtrl uygulamasının bağlantısı başlatılamadı. LudusCtrl alıcısı gibi başka bir program ağ bağlantı noktasını kullanıyor olabilir."
             }
+            LudusText::AppStatus => "Uygulama",
             LudusText::NoController => "%@ bağlı, kumanda yok",
             LudusText::Paired => "Eşleştirilmiş LudusCtrl Telefonları",
             LudusText::PairedNone => {
