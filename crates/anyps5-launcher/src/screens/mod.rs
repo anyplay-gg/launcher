@@ -52,6 +52,8 @@ pub mod legal;
 pub mod library;
 pub mod location_strings;
 pub mod log;
+pub mod ludus;
+pub mod ludus_strings;
 pub mod onboarding;
 pub mod onboarding_strings;
 pub mod online;

@@ -157,7 +157,13 @@ fn phone(options: &BTreeMap<String, String>) -> Result<(), String> {
         },
     )?;
 
-    let udp = UdpSocket::bind("0.0.0.0:0").map_err(|e| e.to_string())?;
+    // Against a PC on this machine the pad socket stays on loopback (no firewall prompt).
+    let local = if address.ip().is_loopback() {
+        "127.0.0.1:0"
+    } else {
+        "0.0.0.0:0"
+    };
+    let udp = UdpSocket::bind(local).map_err(|e| e.to_string())?;
     udp.set_nonblocking(true).map_err(|e| e.to_string())?;
     let mut session: Option<(u64, SocketAddr)> = None;
     let mut library: Option<Message> = None;

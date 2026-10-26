@@ -62,8 +62,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyplay_update_manifest::{
-    Artifact, LINUX_X64, MAX_MANIFEST_BYTES, MAX_SIGNATURE_BYTES, Manifest, ManifestError,
-    TrustedKeys, WINDOWS_X64, verify_signed,
+    Artifact, LINUX_X64, MACOS_ARM64, MAX_MANIFEST_BYTES, MAX_SIGNATURE_BYTES, Manifest,
+    ManifestError, TrustedKeys, WINDOWS_X64, verify_signed,
 };
 pub use anyplay_update_manifest::{Version, is_newer};
 use sha2::{Digest, Sha256};
@@ -103,6 +103,10 @@ const EXE_SUFFIX: &str = "-x64.exe";
 
 /// The AppImage is `AnyPlay-Launcher-<v>-x86_64.AppImage`.
 const APPIMAGE_SUFFIX: &str = "-x86_64.AppImage";
+const MACOS_SUFFIX: &str = "-macos-arm64.zip";
+
+#[cfg(target_os = "macos")]
+mod macos;
 
 /// Which kind of file the launcher replaces itself with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,6 +115,8 @@ pub enum Platform {
     Windows,
     /// The AppImage; the new file is renamed over the running one.
     Linux,
+    /// The complete Apple silicon macOS app bundle, distributed as a zip.
+    MacosArm64,
 }
 
 impl Platform {
@@ -120,6 +126,8 @@ impl Platform {
             Some(Platform::Windows)
         } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
             Some(Platform::Linux)
+        } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+            Some(Platform::MacosArm64)
         } else {
             None
         }
@@ -130,6 +138,7 @@ impl Platform {
         match self {
             Platform::Windows => WINDOWS_X64,
             Platform::Linux => LINUX_X64,
+            Platform::MacosArm64 => MACOS_ARM64,
         }
     }
 
@@ -138,6 +147,7 @@ impl Platform {
         match self {
             Platform::Windows => vec![exe_name(version), legacy_exe_name(version)],
             Platform::Linux => vec![appimage_name(version)],
+            Platform::MacosArm64 => vec![format!("{EXE_PREFIX}{version}{MACOS_SUFFIX}")],
         }
     }
 
@@ -146,6 +156,7 @@ impl Platform {
         match self {
             Platform::Windows => version_of_exe_name(name),
             Platform::Linux => name.strip_prefix(EXE_PREFIX)?.strip_suffix(APPIMAGE_SUFFIX),
+            Platform::MacosArm64 => name.strip_prefix(EXE_PREFIX)?.strip_suffix(MACOS_SUFFIX),
         }
     }
 
@@ -154,6 +165,7 @@ impl Platform {
         let mut head = [0u8; 11];
         let read = io::Read::read(&mut fs::File::open(path)?, &mut head)?;
         let ok = match self {
+            Platform::MacosArm64 => read >= 4 && head.starts_with(b"PK\x03\x04"),
             Platform::Windows => read >= 2 && &head[..2] == b"MZ",
             // A 64-bit ELF with the AppImage type 2 magic after the ELF identification.
             Platform::Linux => {
@@ -498,10 +510,10 @@ fn evaluate(
     keys: &TrustedKeys,
 ) -> Result<Option<Release>, SelfUpdateError> {
     if keys.is_empty() {
-        // Only Windows has an unsigned flow; Linux offers nothing without a trusted key.
+        // Only Windows has an unsigned flow.
         return match platform {
             Platform::Windows => parse_latest(json, current),
-            Platform::Linux => Ok(None),
+            Platform::Linux | Platform::MacosArm64 => Ok(None),
         };
     }
     parse_signed(
@@ -669,10 +681,9 @@ fn signed_artifact(
     platform: Platform,
 ) -> Result<Option<&Artifact>, SelfUpdateError> {
     let Some(artifact) = manifest.artifact(platform.key()) else {
-        // Only Linux is optional: every release has its Windows exe, so a manifest without it is
-        // broken. A manifest from before the AppImage was signed simply has nothing for Linux.
+        // Linux and macOS entries are optional in older manifests. Every release has a Windows exe.
         return match platform {
-            Platform::Linux => Ok(None),
+            Platform::Linux | Platform::MacosArm64 => Ok(None),
             Platform::Windows => Err(SelfUpdateError::NoRelease),
         };
     };
@@ -918,6 +929,16 @@ fn hash_file(path: &Path) -> io::Result<String> {
 pub fn install_path() -> Option<PathBuf> {
     match Platform::current()? {
         Platform::Windows => std::env::current_exe().ok(),
+        Platform::MacosArm64 => {
+            #[cfg(target_os = "macos")]
+            {
+                macos::install_path(&std::env::current_exe().ok()?)
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                None
+            }
+        }
         Platform::Linux => appimage_path(
             std::env::var_os("APPIMAGE").as_deref(),
             std::env::var_os("APPDIR").as_deref(),
@@ -998,7 +1019,7 @@ fn pending_with(
     keys: Option<&TrustedKeys>,
     now: OffsetDateTime,
 ) -> Option<Staged> {
-    if keys.is_none() && platform == Platform::Linux {
+    if keys.is_none() && platform != Platform::Windows {
         return None;
     }
     fs::read_dir(updates_dir(paths))
@@ -1048,6 +1069,16 @@ impl Staged {
     /// is not the exact file the manifest vouched for; the staged file may have been changed
     /// since it was checked.
     pub fn swap_in(&self, exe: &Path) -> Result<(), SelfUpdateError> {
+        if self.platform == Platform::MacosArm64 {
+            #[cfg(target_os = "macos")]
+            {
+                return macos::swap(self, exe);
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                return Err(SelfUpdateError::NotAnExecutable);
+            }
+        }
         let dir = exe.parent().unwrap_or(Path::new("."));
         let name = exe
             .file_name()
@@ -1080,10 +1111,10 @@ impl Staged {
     /// it is renamed into place, and removed when it is not.
     fn check_copy(&self, incoming: &Path) -> Result<(), SelfUpdateError> {
         let Some(want) = &self.sha256 else {
-            // Only Windows has an unsigned flow; an AppImage is never installed without a hash.
+            // Only Windows has an unsigned flow; other platforms require the signed hash.
             return match self.platform {
                 Platform::Windows => Ok(()),
-                Platform::Linux => {
+                Platform::Linux | Platform::MacosArm64 => {
                     let _ = fs::remove_file(incoming);
                     Err(SelfUpdateError::Digest)
                 }
@@ -1136,6 +1167,17 @@ impl Staged {
         args: impl IntoIterator<Item = std::ffi::OsString>,
     ) -> Result<(), SelfUpdateError> {
         self.swap_in(exe)?;
+        if self.platform == Platform::MacosArm64 {
+            #[cfg(target_os = "macos")]
+            {
+                macos::restart(exe, args)?;
+                return Ok(());
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                return Err(SelfUpdateError::NotAnExecutable);
+            }
+        }
         let mut command = Command::new(exe);
         command.args(args);
         if self.platform == Platform::Linux {
@@ -1771,3 +1813,11 @@ mod signed_tests;
 
 #[cfg(test)]
 mod appimage_tests;
+
+#[cfg(all(test, target_os = "macos", target_arch = "aarch64"))]
+mod macos_selection_test {
+    #[test]
+    fn an_apple_silicon_launcher_has_an_update_platform() {
+        assert!(super::Platform::current().is_some());
+    }
+}

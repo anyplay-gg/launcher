@@ -17,6 +17,7 @@ use anyps5_core::settings::{Backdrop, CpuConversion, Preferences, ToolkitChannel
 use anyps5_core::toolkit::InstalledRelease;
 use egui::{Align2, Color32, Context, Rect, Sense, Ui, UiBuilder, pos2, vec2};
 
+use crate::app::ludus::LudusState;
 use crate::app::phone::PhoneState;
 use crate::screens::clips_strings::ClipsText;
 use crate::screens::convert;
@@ -24,6 +25,7 @@ use crate::screens::dialogs;
 use crate::screens::discord_strings::DiscordText;
 use crate::screens::format::{abbreviate_path, home_dir};
 use crate::screens::ingame::InGameText;
+use crate::screens::ludus::{self, LudusAction};
 use crate::screens::phone::{self, PhoneAction};
 use crate::screens::phone_strings::PhoneText;
 use crate::screens::rows::{self, Change, ListOptions, Row};
@@ -209,6 +211,8 @@ pub struct SettingsEnv<'a> {
     pub cjk_fonts: CjkState,
     /// What the phone server is doing.
     pub phone: &'a PhoneState,
+    /// What the LudusCtrl receiver is doing.
+    pub ludus: &'a LudusState,
     pub clips: ClipsEnv,
     pub location: LocationEnv,
     /// Linux with share screen on: Cisco's OpenH264 and what the share worker made of it. `None`
@@ -303,6 +307,8 @@ pub enum SettingsAction {
     AddGamesToSteam,
     /// A row of the Phone as Controller page asks for something.
     Phone(PhoneAction),
+    /// A LudusCtrl row of the same page asks for something.
+    Ludus(LudusAction),
     Quit,
 }
 
@@ -686,7 +692,7 @@ pub fn build_categories(
     }
 
     // Phone as Controller
-    let phone_rows = phone::rows(prefs, env.phone, language);
+    let phone_rows = phone::page(prefs, env.phone, env.ludus, language);
 
     // Toolkit
     let channel = prefs.toolkit_channel();
@@ -986,6 +992,7 @@ pub fn build_categories(
         about.push(Row::command("aboutPrivacy", A::Privacy.text(language)).icon(Icon::FILE_TEXT));
         about.push(Row::command("aboutTerms", A::Terms.text(language)).icon(Icon::FILE_TEXT));
         about.push(Row::info("credits", A::Credits.text(language), None));
+        about.push(Row::info("creditsLudus", A::LudusCredits.text(language), None).attached());
     }
     about.push(
         Row::command("quit", t(Key::Quit))
@@ -1298,6 +1305,10 @@ pub fn apply_value(prefs: &mut Preferences, change: &Change) -> bool {
         } => prefs.backdrop = Backdrop::Theme,
         Change::Run { row: "fontsReset" } => prefs.fonts_folder = None,
         Change::Toggle { row: "phone", on } => prefs.phone_remote = *on,
+        Change::Toggle {
+            row: "ludusctrl",
+            on,
+        } => prefs.phone_ludusctrl = *on,
         Change::Choice {
             row: "clips",
             index,
@@ -1583,6 +1594,10 @@ impl SettingsPanel {
             change if phone::action(env.phone, change).is_some() => {
                 out.actions
                     .extend(phone::action(env.phone, change).map(SettingsAction::Phone));
+            }
+            change if ludus::action(env.ludus, change).is_some() => {
+                out.actions
+                    .extend(ludus::action(env.ludus, change).map(SettingsAction::Ludus));
             }
             Change::Run { row: "screenshots" } => {
                 let start = prefs.screenshots_folder.clone();
@@ -1910,6 +1925,7 @@ mod tests {
             links: Handler::Absent,
             cjk_fonts: CjkState::Missing,
             phone: Box::leak(Box::new(PhoneState::default())),
+            ludus: Box::leak(Box::new(LudusState::default())),
             clips: ClipsEnv::default(),
             location: LocationEnv::default(),
             openh264: None,
@@ -2290,6 +2306,47 @@ mod tests {
         prefs.fonts_folder = Some("D:\\Fonts".into());
         let with = build_categories(&prefs, &e, Language::English);
         assert!(ids(&with, Category::Advanced).contains(&"fontsReset"));
+    }
+
+    #[test]
+    fn about_credits_ludusctrl_under_the_credits() {
+        let rows = about_rows(LauncherUpdate::None);
+        let ids = row_ids(&rows);
+        let at = |id: &str| ids.iter().position(|i| *i == id).unwrap();
+        assert_eq!(at("creditsLudus"), at("credits") + 1);
+        let prefs = Preferences::first_run();
+        let cats = build_categories(&prefs, &env(None, UpdateState::Unknown), Language::English);
+        let about = cats.iter().find(|c| c.category == Category::About).unwrap();
+        let row = about.rows.iter().find(|r| r.id == "creditsLudus").unwrap();
+        assert_eq!(
+            row.title,
+            "LudusCtrl protocol and app by Josip Parlov (@parl0v)"
+        );
+        assert!(row.attached);
+    }
+
+    #[test]
+    fn the_ludusctrl_switch_is_stored_and_sits_on_the_phone_page() {
+        let mut prefs = Preferences::first_run();
+        assert!(apply_value(
+            &mut prefs,
+            &Change::Toggle {
+                row: "ludusctrl",
+                on: true
+            }
+        ));
+        assert!(prefs.phone_ludusctrl && !prefs.phone_remote);
+        let cats = build_categories(&prefs, &env(None, UpdateState::Unknown), Language::English);
+        assert_eq!(
+            ids(&cats, Category::Phone),
+            ["phone"],
+            "an option of the phone switch"
+        );
+        prefs.phone_remote = true;
+        let cats = build_categories(&prefs, &env(None, UpdateState::Unknown), Language::English);
+        let phone = ids(&cats, Category::Phone);
+        let at = |id: &str| phone.iter().position(|i| *i == id).unwrap();
+        assert!(at("phonePaired") < at("ludusctrl") && at("ludusctrl") < at("ludusApp"));
     }
 
     #[test]
