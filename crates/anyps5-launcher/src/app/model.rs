@@ -1222,9 +1222,14 @@ impl Model {
         if matches!(self.focus, HomeFocus::Update(_)) && self.update_notice().is_none() {
             self.focus = HomeFocus::Tiles;
         }
-        // The same for the Play Together card, which goes when it is answered or put away.
-        if matches!(self.focus, HomeFocus::Card(_)) && self.home_context().card == 0 {
-            self.focus = HomeFocus::Tiles;
+        // The same for the Play Together card, which goes when it is answered or put away, or
+        // comes back with fewer buttons.
+        if let HomeFocus::Card(i) = self.focus {
+            let buttons = self.home_context().card;
+            self.focus = match buttons {
+                0 => HomeFocus::Tiles,
+                n => HomeFocus::Card(i.min(n - 1)),
+            };
         }
         let step = self.focus.navigate(command, self.home_context());
         self.focus = step.focus;
