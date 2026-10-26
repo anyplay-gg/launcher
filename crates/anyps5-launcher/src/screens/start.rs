@@ -128,6 +128,18 @@ fn centred(
     painter.layout_job(job)
 }
 
+/// The status block under the name, and the room the name has either side of it.
+const COLUMN_WIDTH: f32 = 380.0;
+const TITLE_MARGIN: f32 = 160.0;
+const TITLE_MIN: f32 = 200.0;
+const TITLE_MAX: f32 = 900.0;
+/// Between the tile, the name and the status block; between the parts of the status block.
+const COLUMN_GAP: f32 = 24.0;
+const BLOCK_GAP: f32 = 12.0;
+/// Between the Cancel button and the bottom edge, and its width.
+const CANCEL_BOTTOM: f32 = 40.0;
+const CANCEL_WIDTH: f32 = 240.0;
+
 /// Paints the splash; true when the Cancel button was pressed.
 fn draw(ui: &mut Ui, data: &StartData<'_>, since: f64) -> bool {
     let ctx = ui.ctx().clone();
@@ -138,8 +150,8 @@ fn draw(ui: &mut Ui, data: &StartData<'_>, since: f64) -> bool {
 
     // The column is centred as a whole: tile, name, the 380-wide status block.
     let tile_side = size::SPLASH_TILE;
-    let column_w = 380.0;
-    let title_w = (screen.width() - 160.0).clamp(200.0, 900.0);
+    let column_w = COLUMN_WIDTH;
+    let title_w = (screen.width() - TITLE_MARGIN).clamp(TITLE_MIN, TITLE_MAX);
     let title = centred(
         &painter,
         ty::SPLASH_TITLE,
@@ -157,8 +169,8 @@ fn draw(ui: &mut Ui, data: &StartData<'_>, since: f64) -> bool {
         usize::MAX,
     );
     let status_h = ty::CHOICE_VALUE.line_height();
-    let block_h = status_h + 14.0 + size::PROGRESS_HEIGHT + 14.0 + info.size().y;
-    let total = tile_side + 26.0 + title.size().y + 26.0 + block_h;
+    let block_h = status_h + BLOCK_GAP + size::PROGRESS_HEIGHT + BLOCK_GAP + info.size().y;
+    let total = tile_side + COLUMN_GAP + title.size().y + COLUMN_GAP + block_h;
     let top = screen.center().y - total * 0.5;
     let cx = screen.center().x;
 
@@ -186,14 +198,14 @@ fn draw(ui: &mut Ui, data: &StartData<'_>, since: f64) -> bool {
     paint_tile(&painter, tile, &style);
 
     // Name.
-    let mut y = top + tile_side + 26.0;
+    let mut y = top + tile_side + COLUMN_GAP;
     painter.galley(pos2(cx, y), title.clone(), Color32::WHITE);
-    y += title.size().y + 26.0;
+    y += title.size().y + COLUMN_GAP;
 
     // "Starting..." with the timer on the right, the sweep, the explanation.
     let left = cx - column_w * 0.5;
     let right = left + column_w;
-    const STATUS: theme::TextStyle = theme::TextStyle::new(16.0, theme::Weight::Medium);
+    const STATUS: theme::TextStyle = ty::TOAST;
     let ink = white(0.88);
     text::paint(
         &painter,
@@ -207,7 +219,7 @@ fn draw(ui: &mut Ui, data: &StartData<'_>, since: f64) -> bool {
     let clock = elapsed_text((time - since).max(0.0) as u64);
     let w = text::tabular_width(&painter, STATUS, &clock);
     text::paint_tabular(&painter, pos2(right - w, y), STATUS, &clock, ink);
-    y += status_h + 14.0;
+    y += status_h + BLOCK_GAP;
     let mut bar = ui.new_child(UiBuilder::new().max_rect(Rect::from_min_size(
         pos2(left, y),
         vec2(column_w, size::PROGRESS_HEIGHT),
@@ -215,13 +227,16 @@ fn draw(ui: &mut Ui, data: &StartData<'_>, since: f64) -> bool {
     IndeterminateLine::new(data.accent)
         .width(column_w)
         .show(&mut bar);
-    y += size::PROGRESS_HEIGHT + 14.0;
+    y += size::PROGRESS_HEIGHT + BLOCK_GAP;
     painter.galley(pos2(cx, y), info, color::text_detail());
 
     // Cancel, 40 above the bottom edge: a button for the pointer; Esc and the pad's back do the same.
     let cancel_rect = Rect::from_center_size(
-        pos2(cx, screen.max.y - 40.0 - ControlSize::Medium.height() * 0.5),
-        vec2(240.0, ControlSize::Medium.height()),
+        pos2(
+            cx,
+            screen.max.y - CANCEL_BOTTOM - ControlSize::Medium.height() * 0.5,
+        ),
+        vec2(CANCEL_WIDTH, ControlSize::Medium.height()),
     );
     let mut cancel = ui.new_child(
         UiBuilder::new()

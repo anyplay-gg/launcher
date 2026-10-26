@@ -1266,8 +1266,8 @@ process, larger than 200 x 150, up to 240 s; if the process dies first the splas
 appeared the toast `startFailed` is shown). Esc / controller back cancels: the game process is killed, sound `back`. While the
 splash is up **all other input is swallowed** except back.
 
-Layout: full-window overlay (blurred backdrop + black 0.55); centred column, gap 26: tile 200 (radius 24, same placeholder rules),
-breathing glow (animation 26); game name (34 light, centred, 2 lines); a 380-wide block (gap 14): row `starting` (16 medium, white
+Layout: full-window overlay (blurred backdrop + black 0.55); centred column, gap 24: tile 200 (radius 24, same placeholder rules),
+breathing glow (animation 26); game name (34 light, centred, 2 lines); a 380-wide block (gap 12): row `starting` (16 medium, white
 0.88) and the elapsed `m:ss` (16 semibold tabular, counting from 0:00, tick 1 s), the indeterminate sweep (accent), and
 `startingText` (14, white 0.6, centred, wraps). At the bottom, 40 above the edge, a secondary 44 dp button "Cancel" (X glyph, 240 wide): the pointer's way to the same stop as Esc or the pad's back, which stay. After the window shows,
 the splash leaves (overlay spring), the launcher optionally hides ("Hide Launcher While Playing"). (S-starting.)
@@ -1431,7 +1431,7 @@ Home: the trophy button between Play and "..." appears only for games with a tro
 black 0.74 blurred; header row (gap 26): set icon 112, then a column (gap 12): overline `trophies` (13 semibold uppercase tracking
 0.8, 0.55), title (set title or game name, 36 light, 1 line), a row (gap 16): percent `"8%"` (22 semibold tabular), progress bar
 260 wide (accent), and per grade with at least one trophy a count `"unlocked/total"` (trophy glyph in the grade colour + 15 semibold
-tabular, white 0.85); hint bar (no options) right. Below, a scrolling list (gap 10, padding 8) of trophy rows in package order:
+tabular, white 0.85); hint bar (no options) right, the title giving way to its measured width. A set with no trophies says "This game has no trophies." in the middle (scene `trophies-empty`). Below, a scrolling list (gap 10, padding 8) of trophy rows in package order:
 
 ```
 [ icon 68 ]  Name (18 semibold)                                     [trophy] Bronze (14 semibold, grade colour)

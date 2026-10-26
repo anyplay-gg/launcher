@@ -17,7 +17,7 @@ use crate::ui::icons::Icon;
 use crate::ui::input::{self, Command, InputEvent};
 use crate::ui::sound::Cue;
 use crate::ui::text;
-use crate::ui::theme::{self, color, pad, size, ty, white};
+use crate::ui::theme::{color, pad, size, ty, white};
 
 /// Columns when the width is not known yet; the grid fills the width it gets (`columns_for`).
 pub const COLUMNS: usize = 6;
@@ -233,16 +233,7 @@ fn draw(
         area_scroll = area_scroll.vertical_scroll_offset(offset);
     }
     let tile = size::LIBRARY_TILE;
-    let name_style = |focused: bool| {
-        theme::TextStyle::new(
-            15.0,
-            if focused {
-                theme::Weight::SemiBold
-            } else {
-                theme::Weight::Regular
-            },
-        )
-    };
+    let name_style = |focused: bool| if focused { ty::FACT } else { ty::SENTENCE };
     let cell_h = tile + 10.0 + 15.0 * 1.2 + 10.0 + ty::STATE_LABEL_SMALL.line_height();
     let rows = data.entries.len().div_ceil(columns);
     let mut geometry = Vec::with_capacity(rows);

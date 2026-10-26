@@ -73,6 +73,8 @@ pub enum Extra {
     ShowHiddenTrophies,
     ShowHiddenTrophiesDetail,
     TrophyShow,
+    /// The trophy list of a game that has no trophies.
+    TrophiesNone,
     /// The log box before the game wrote anything.
     EmptyLog,
     /// The button of the removal confirmation (its title already says what is removed).
@@ -329,6 +331,7 @@ impl Extra {
                 "Hidden trophies show their name and description before you earn them. Only you see this."
             }
             Extra::TrophyShow => "Show",
+            Extra::TrophiesNone => "This game has no trophies.",
             Extra::EmptyLog => "No log yet. Play the game once and it appears here.",
             Extra::Remove => "Remove",
             Extra::ToolkitFolderInvalid => {
@@ -538,6 +541,7 @@ impl Extra {
                 "Gizli kupaların adı ve açıklaması kazanmadan önce de görünür. Bunu yalnızca sen görürsün."
             }
             Extra::TrophyShow => "Göster",
+            Extra::TrophiesNone => "Bu oyunun kupası yok.",
             Extra::EmptyLog => "Henüz günlük yok. Oyunu bir kez oynadığında burada görünür.",
             Extra::Remove => "Kaldır",
             Extra::ToolkitFolderInvalid => {
@@ -692,7 +696,7 @@ impl Extra {
         substitute(self.text(language), args)
     }
 
-    pub const ALL: [Extra; 154] = [
+    pub const ALL: [Extra; 155] = [
         Extra::Toolkit,
         Extra::UpdateCheck,
         Extra::UpdateCheckDetail,
@@ -740,6 +744,7 @@ impl Extra {
         Extra::ShowHiddenTrophies,
         Extra::ShowHiddenTrophiesDetail,
         Extra::TrophyShow,
+        Extra::TrophiesNone,
         Extra::EmptyLog,
         Extra::Remove,
         Extra::Layout,
