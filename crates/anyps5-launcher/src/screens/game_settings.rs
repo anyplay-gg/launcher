@@ -1,4 +1,4 @@
-//! The game's settings side panel (the "..." menu, docs/DESIGN.md 5.9) and the uninstall
+//! The game's settings panel (the "..." menu, docs/DESIGN.md 5.9) and the uninstall
 //! confirmation that shares its frame. Values live in the core's [`GameSettings`]; the panel edits
 //! them in place, reports `changed` so the host saves, and returns [`GameSettingsAction`]s for
 //! everything that is not a value (open the controls, reveal the folder, ...).
@@ -24,7 +24,7 @@ pub const WINDOW_SIZE_STEP: i32 = 5;
 /// What the host has to do after a frame of the panel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GameSettingsAction {
-    /// The panel is closing (back, options, a click on the scrim).
+    /// The panel is closing (back, options).
     Close,
     OpenControls,
     OpenAdvanced,
@@ -408,7 +408,7 @@ pub enum UninstallAction {
     Cancel,
 }
 
-/// "Uninstall" / "Cancel" in the side panel frame.
+/// "Uninstall" / "Cancel" in the panel frame.
 #[derive(Default)]
 pub struct UninstallPanel {
     side: SideState,

@@ -102,18 +102,6 @@ impl GlassStyle {
             ..Self::fullscreen_panel()
         }
     }
-
-    /// Side panel: material plus a near-black gray at 0.92.
-    pub fn side_panel() -> Self {
-        Self {
-            radius: 0.0,
-            material_mix: 1.0,
-            black: 0.0,
-            overlay: color::side_panel(),
-            stroke: false,
-            alpha: 1.0,
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------------------------

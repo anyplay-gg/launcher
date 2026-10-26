@@ -8,7 +8,7 @@
 use egui::{Context, Ui, UiBuilder, pos2, vec2};
 
 use crate::screens::rows::{self, ListEvent, ListOptions, Row};
-use crate::screens::{BACK_ROW, back_row, footer_hints};
+use crate::screens::{BACK_ROW, back_button, footer_hints};
 use crate::ui::chrome;
 use crate::ui::components::{Force, HintSet};
 use crate::ui::focus::PanelNav;
@@ -25,6 +25,9 @@ const SIDE_ID: &str = "game-side-panel";
 const COLUMN: f32 = 720.0;
 /// Where a confirmation's question starts, as a share of the screen height.
 const QUESTION_TOP: f32 = 0.28;
+/// The leading of a confirmation's question, and of a quiet subtitle.
+const QUESTION_LEADING: f32 = 1.45;
+const SUBTITLE_LEADING: f32 = 1.2;
 
 /// Open and closing state plus the focus model of one side panel.
 #[derive(Clone, Copy, Debug)]
@@ -186,17 +189,20 @@ fn panel<R>(
             let area = screen.shrink2(vec2(pad::TROPHIES.0, pad::TROPHIES.1));
             let painter = ui.painter().clone();
             let mut back = false;
+            // The hint bar is the footer's, as everywhere (DESIGN.md 3.12); "Back" is left out where a
+            // Back button is on screen.
             let top = if question {
                 footer_hints(ui, screen, language, HintSet::BASIC);
                 (screen.min.y + screen.height() * QUESTION_TOP).max(area.min.y)
             } else {
-                back = back_row(ui, area, language);
-                area.min.y + BACK_ROW + space::XL
+                footer_hints(ui, screen, language, HintSet::BASIC.without_back());
+                back = back_button(ui, area, language);
+                area.min.y + BACK_ROW
             };
             let width = COLUMN.min(area.width());
             let x = area.center().x - width * 0.5;
-            // Title and subtitle start on the edge of the row cards below them.
-            let edge = x + size::LIST_INSET;
+            // Title and subtitle start on the text of the rows below them (the icon's edge).
+            let edge = x + size::LIST_INSET + size::ROW_PADDING_X;
             let title_galley =
                 text::layout(&painter, ty::SIDE_PANEL_TITLE, title, color::text(), width);
             let mut y = top;
@@ -208,9 +214,9 @@ fn panel<R>(
                 // confirmation's question is what the player decides on: body size and ink, with
                 // room between the lines. Any other subtitle is a quiet line.
                 let (style, ink, leading) = if question {
-                    (ty::QUESTION, color::text_label(), 1.45)
+                    (ty::QUESTION, color::text_label(), QUESTION_LEADING)
                 } else {
-                    (ty::SENTENCE, color::text_detail(), 1.2)
+                    (ty::SENTENCE, color::text_detail(), SUBTITLE_LEADING)
                 };
                 let galley = text::layout_font_pretty(
                     &painter,
@@ -225,8 +231,11 @@ fn panel<R>(
                 painter.galley(pos2(edge, y), galley, ink);
                 y += height + space::S;
             }
-            y += space::L;
-            let column = egui::Rect::from_min_max(pos2(x, y), pos2(x + width, area.max.y));
+            y += space::M;
+            // The list runs down to the foot of the screen: the hint bar sits at the trailing
+            // edge, clear of the column.
+            let column =
+                egui::Rect::from_min_max(pos2(x, y), pos2(x + width, screen.max.y - space::XL));
             let mut child = ui.new_child(
                 UiBuilder::new()
                     .max_rect(column)

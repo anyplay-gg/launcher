@@ -23,8 +23,6 @@ use crate::ui::sound::Cue;
 pub enum AdvancedAction {
     /// Back or options: the panel is gone; open the game settings on the `advanced` row.
     Back,
-    /// The scrim was clicked: everything closes.
-    Close,
     Toast(ToastRequest),
 }
 
@@ -402,9 +400,10 @@ impl AdvancedPanel {
                     self.apply(shell, data, change, &mut out);
                 }
                 if drawn.back_clicked {
+                    // The Back button is the Back key: one step up, to the game settings.
                     shell.play(Cue::Close);
-                    self.side.close();
-                    out.actions.push(AdvancedAction::Close);
+                    self.side.dismiss();
+                    out.actions.push(AdvancedAction::Back);
                 }
             }
             Some(_) => {}

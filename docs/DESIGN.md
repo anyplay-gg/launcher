@@ -114,9 +114,8 @@ theme's default accent).
 | Hairline | white 0.12 (buttons), white 0.14 (language cards), white 0.09 (glass), white 0.08 (side panel edge, card gradient end) |
 | Track (progress/indeterminate) | white 0.16 |
 | Keycap fill (hint) | white 0.16 |
-| Scrim behind side panel | black 0.35 |
-| Full-screen panel | black 0.74 over blurred backdrop (settings, library, trophies); black 0.65 for the log |
-| Side panel | `Color(white: 0.06)` at 0.92 over blurred backdrop, 1 px left edge white 0.08. SwiftUI's `Color(white:)` is a **gray level** (rgb 15,15,15), not white with alpha; the same holds for the next row |
+| Full-screen panel | black 0.74 over blurred backdrop (settings, library, trophies, and the panels of a game); black 0.65 for the log |
+| Side panel (first round, gone in 0.2.8: no drawers) | `Color(white: 0.06)` at 0.92 over blurred backdrop, 1 px left edge white 0.08. SwiftUI's `Color(white:)` is a **gray level** (rgb 15,15,15), not white with alpha; the same holds for the next row |
 | Glass panel (cards, toast, log boxes) | blurred backdrop + black `opacity` (default 0.38; 0.5 diagnosis box; 0.55 log box; 0.6 toast and banner) + 1 px inner stroke white 0.09 |
 | Splash | blurred backdrop + black 0.55 |
 | Destructive | text/icon `(1.00, 0.60, 0.55)` = `#FF998C` for titles, `(1.00, 0.55, 0.50)` = `#FF8C80` for icons and the button label |
@@ -1393,7 +1392,7 @@ a key: `pressKey` (15 semibold, pulsing, animation 17b).
 
 ### 5.9 Game settings (the "..." menu) and the panels of its frame
 
-**No drawers (0.2.8).** The launcher is a console home: every page is a full-screen area, nothing slides in from a side. The panels of a game share one frame (`screens::side`): game settings, controls, advanced, saves, the recommended settings, the toolkit pin, the Home-button panel and the confirmations. The frame is the full-screen area of Friends and Captures (`chrome::fullscreen_panel`: glass and black, the same enter and exit): the Back row on top (`screens::back_row`: the Back button at the leading edge, the hint bar at the trailing one; clicking the button is the Back command), a content column 720 wide centred under it (title 28 light, subtitle 15 in the text-detail ink, then the rows with their 6 dp inset), nothing else. Switching from one panel to another keeps the area on screen and swaps the content. A confirmation (Remove Installation, Close Game, Restore) keeps the area but not the Back row: its question stands higher up on the column (28 % of the height, body size, 1.45 leading) with the choices under it and the footer hints bottom right, so the decision is the only thing on the page; Cancel or Keep Playing holds the first focus, and Back is the same as Cancel. A centred card was weighed and left out: the page is the card, and nothing else competes for the eye.
+**No drawers (0.2.8).** The launcher is a console home: every page is a full-screen area, nothing slides in from a side. The panels of a game share one frame (`screens::side`): game settings, controls, advanced, saves, the recommended settings, the toolkit pin, the Home-button panel and the confirmations. The frame is the full-screen area of Friends and Captures (`chrome::fullscreen_panel`: glass and black, the same enter and exit): the Back row on top (`screens::back_row`: the Back button at the leading edge, the hint bar at the trailing one; clicking the button is the Back command), a content column 720 wide centred under it (title 28 light, subtitle 15 in the text-detail ink, then the rows with their 6 dp inset), nothing else. Switching from one panel to another keeps the area on screen and swaps the content. The hint bar is the footer's (3.12) with "Back" left out, since the Back button is on screen. A confirmation (Remove Installation, Close Game, Restore) keeps the area but not the Back button: its question stands higher up on the column (28 % of the height, body size, 1.45 leading) with the choices under it and the footer hints bottom right, so the decision is the only thing on the page; Cancel or Keep Playing holds the first focus, and Back is the same as Cancel. A centred card was weighed and left out: the page is the card, and nothing else competes for the eye.
 
 Opened by "..." or `O` / Y / Menu / Options. Title = game name, subtitle `gameSettings`, rows below. (S-game-settings.) Rows
 in order, with the condition for each:
@@ -2727,7 +2726,7 @@ The shared UI layer of this specification. Screens use these modules and nothing
 | `background` | `Backdrop` (clock 3.1, theme cross-fade), `Background` paint callback, WGSL 3.4 |
 | `blur`, `glass` | section 4: Gaussian chain on 1/8 resolution, `GlassStyle` presets, `paint_glass` |
 | `components` | `ConsoleButton`, `IconButton`, `Switch`, `ProgressLine`, `IndeterminateLine`, hint bar, key caps, `PadGlyph`, focus glow and ring |
-| `chrome` | `paint_tile` (5.1), `info_card` / `facts_line` (5.3), `PanelRow` with all kinds (5.8), `side_panel` (5.9), `fullscreen_panel`, `toast` (5.6), `language_card`, `onboarding_dots` |
+| `chrome` | `paint_tile` (5.1), `info_card` / `facts_line` (5.3), `PanelRow` with all kinds (5.8), `fullscreen_panel` (the frame of 5.9 is `screens::side`), `toast` (5.6), `language_card`, `onboarding_dots` |
 | `text`, `icons` | line height, tracking, middle truncation, tabular figures; Phosphor constants (5.16) |
 | `sound` | section 7.3 (replaces 7.1): eight cues rendered once, home music generated live, one mixer on its own thread, lazy device |
 | `i18n` | section 8: 212 keys, `Language::text/format`, `byte_text`, Windows replacements of 9.3 applied |
@@ -2806,7 +2805,7 @@ Decisions and deviations:
 | `Settings` | `settings` | options button, `Ctrl+,` | back to home |
 | `Library` | `library` | library button | pick selects the game (focus on the tiles) and closes |
 | `GameSettings` | `game_settings` | "..." button | back to home |
-| `Controls`, `Advanced` | `controls`, `advanced` | rows of the game settings | back (the Back button too) returns to the game settings on the row that opened them (no exit) |
+| `Controls`, `Advanced` | `controls`, `advanced` | rows of the game settings | back (the Back button too, the same step) returns to the game settings on the row that opened them (no exit) |
 | `Trophies` | `trophies` | trophy button, row of the game settings | back to home |
 | `Log` | `log` | "Open log" row | back to home |
 | `ConfirmUninstall` | `UninstallPanel` | "Uninstall" row | both answers close everything, as in the original |

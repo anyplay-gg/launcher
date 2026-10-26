@@ -12,8 +12,8 @@ use crate::app::textures::Textures;
 use crate::ui::Shell;
 use crate::ui::input::Command;
 
-/// The overlays of the original (`Overlay` in `AppModel.swift`). Settings, library, log, trophies,
-/// the profile and the friends are full-screen panels; the others slide in as the side panel
+/// the profile and the friends are full-screen panels, and so are the panels of a game, which share
+/// one frame (`screens::side`).
 /// family.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Overlay {
@@ -24,14 +24,14 @@ pub enum Overlay {
     Captures,
     Log,
     ConfirmUninstall,
-    /// The backups of a game's saves (a side panel).
+    /// The backups of a game's saves (a panel of the game frame).
     Saves,
-    /// The question before a backup is put back (a side panel).
+    /// The question before a backup is put back (a panel of the game frame).
     ConfirmRestore,
     Controls,
     Trophies,
     Advanced,
-    /// What the catalogue recommends for the game (a side panel).
+    /// What the catalogue recommends for the game (a panel of the game frame).
     Recommended,
     /// The notes of a toolkit release (a full-screen panel).
     WhatsNew,
@@ -43,11 +43,11 @@ pub enum Overlay {
     /// The player's trophies in a game next to another player's (a full-screen panel).
     Compare,
     /// The release a game stays on is gone: download it again or follow the global toolkit
-    /// (a side panel).
+    /// (a panel of the game frame).
     ToolkitMissing,
-    /// The quick panel of the running game, opened by the Home button (a side panel).
+    /// The quick panel of the running game, opened by the Home button (a panel of the game frame).
     InGame,
-    /// The question before the running game is closed (a side panel).
+    /// The question before the running game is closed (a panel of the game frame).
     ConfirmCloseGame,
     /// "Update required": this version is retired, so the update comes before the online area.
     /// Offline play stays open (a full-screen panel, docs/DESIGN.md 9.5.1).
@@ -55,7 +55,7 @@ pub enum Overlay {
 }
 
 impl Overlay {
-    /// Rendered as the side panel (slides in from the right, the home screen stays visible).
+    /// Rendered on the game panels' frame (a full-screen area, `screens::side`).
     pub fn is_side_panel(self) -> bool {
         matches!(
             self,

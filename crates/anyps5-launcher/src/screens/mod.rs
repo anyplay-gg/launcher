@@ -182,15 +182,26 @@ pub const BACK_ROW: f32 = 60.0;
 /// trailing one, as on the Friends screen. Returns true when the button was clicked; the screen
 /// answers it like the Back command.
 pub fn back_row(ui: &mut egui::Ui, area: egui::Rect, language: crate::ui::i18n::Language) -> bool {
-    use crate::ui::components::{ConsoleButton, ControlSize};
-    use crate::ui::i18n::Key;
-    use crate::ui::icons::Icon;
-    use egui::{Align, Layout, Rect, UiBuilder, vec2};
+    use egui::{Rect, vec2};
     right_aligned_hints(
         ui,
         Rect::from_min_size(area.min, vec2(area.width(), 26.0)),
         language,
     );
+    back_button(ui, area, language)
+}
+
+/// The Back button alone, at the top leading corner of `area`: for a screen that keeps its hint bar
+/// in the footer (`footer_hints`, without "Back"). Returns true when it was clicked.
+pub fn back_button(
+    ui: &mut egui::Ui,
+    area: egui::Rect,
+    language: crate::ui::i18n::Language,
+) -> bool {
+    use crate::ui::components::{ConsoleButton, ControlSize};
+    use crate::ui::i18n::Key;
+    use crate::ui::icons::Icon;
+    use egui::{Align, Layout, Rect, UiBuilder, vec2};
     let mut back = ui.new_child(
         UiBuilder::new()
             .max_rect(Rect::from_min_size(area.min, vec2(200.0, 32.0)))

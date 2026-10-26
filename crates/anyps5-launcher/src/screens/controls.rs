@@ -35,8 +35,6 @@ use crate::ui::sound::Cue;
 pub enum ControlsAction {
     /// Back or options: the panel is gone; open the game settings on the `controls` row.
     Back,
-    /// The scrim was clicked: everything closes.
-    Close,
     /// Something to tell the player (a layout was saved, imported or refused).
     Toast(ToastRequest),
 }
@@ -143,9 +141,10 @@ impl ControlsPanel {
                     self.apply(shell, data, change, &mut out);
                 }
                 if drawn.back_clicked {
+                    // The Back button is the Back key: one step up, to the game settings.
                     shell.play(Cue::Close);
-                    self.close(shell);
-                    out.actions.push(ControlsAction::Close);
+                    self.dismiss(shell);
+                    out.actions.push(ControlsAction::Back);
                 }
             }
             Some(_) => {}

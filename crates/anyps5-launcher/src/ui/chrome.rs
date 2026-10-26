@@ -1,6 +1,6 @@
 //! Surfaces and compound widgets built from the components (docs/DESIGN.md section 5): the game
 //! tile base, info cards (the "facts" line of the hero), panel rows with all their controls, the
-//! side panel, full-screen panels, the toast and scroll-to-focus.
+//! full-screen panels, the toast and scroll-to-focus.
 
 use egui::text::LayoutJob;
 use egui::{
@@ -1514,7 +1514,7 @@ pub fn fullscreen_panel<R>(
         .fixed_pos(screen.min)
         .interactable(true)
         .show(ctx, |ui| {
-            // Covers the screen so the panel's lists get the wheel (see the side panel).
+            // Covers the screen so the panel's lists get the wheel (see the game panels' frame).
             ui.expand_to_include_rect(screen);
             let painter = ui.painter().clone();
             let faded = GlassStyle {
