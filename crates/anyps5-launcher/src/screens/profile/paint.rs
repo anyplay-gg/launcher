@@ -19,7 +19,7 @@ use super::nav::{Column, Slot};
 use super::view::{ActivityRow, Body, GameRow, Press, ProfileView, Ready, Stat, TrophyRow};
 use crate::screens::online::paint_avatar;
 use crate::screens::profile_strings::ProfileText as P;
-use crate::screens::{clamped, right_aligned_hints};
+use crate::screens::{BACK_ROW, back_row, clamped};
 use crate::ui::anim::AnimExt;
 use crate::ui::components::{ConsoleButton, corner, paint_spinner_arc};
 use crate::ui::i18n::Language;
@@ -31,7 +31,7 @@ use crate::ui::theme::{self, Grade, TextStyle, Weight, color, fade, pad, radius,
 const AVATAR: f32 = 120.0;
 const AVATAR_GAP: f32 = 32.0;
 const SCROLL_MARGIN: f32 = 8.0;
-const HINT_ROOM: f32 = 36.0;
+const HINT_ROOM: f32 = BACK_ROW;
 const SECTION_GAP: f32 = 40.0;
 const CAPTION_HEIGHT: f32 = 28.0;
 const CAPTION_GAP: f32 = 14.0;
@@ -79,6 +79,8 @@ pub struct Drawn {
     pub content_height: f32,
     pub viewport_height: f32,
     pub offset: f32,
+    /// The Back button was clicked.
+    pub back_clicked: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -412,11 +414,7 @@ pub fn draw(
     let screen = ui.max_rect();
     paint_wash(ui.painter(), screen, model.tint);
     let area = screen.shrink2(vec2(pad::TROPHIES.0, pad::TROPHIES.1));
-    right_aligned_hints(
-        ui,
-        Rect::from_min_size(area.min, vec2(area.width(), 26.0)),
-        settings.language,
-    );
+    drawn.back_clicked = back_row(ui, area, settings.language);
     drawn.slots.clear();
     drawn.presses.clear();
     drawn.geometry.clear();

@@ -17,6 +17,7 @@
 #![allow(dead_code)]
 
 pub mod avatars;
+pub mod captures;
 pub mod clips;
 pub mod clock;
 pub mod compare;
@@ -503,8 +504,8 @@ impl LauncherApp {
                     // grid of tiles: reading order is along the row, then the next one.
                     use crate::ui::input::Command;
                     let command = match (self.model.overlay, backwards) {
-                        (Some(Overlay::Library), false) => Command::Right,
-                        (Some(Overlay::Library), true) => Command::Left,
+                        (Some(Overlay::Library | Overlay::Captures), false) => Command::Right,
+                        (Some(Overlay::Library | Overlay::Captures), true) => Command::Left,
                         (_, false) => Command::Down,
                         (_, true) => Command::Up,
                     };

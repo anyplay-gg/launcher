@@ -26,6 +26,7 @@ use anyps5_core::online::{
 use egui::{Color32, Context, Ui};
 
 use crate::screens::friends_strings::FriendsText as FX;
+use crate::screens::legal::Legal;
 use crate::screens::online_call_strings::{self as call_text, CallText as CT};
 use crate::screens::online_feed_strings::FeedText as F;
 use crate::screens::online_strings::OnlineText as T;
@@ -60,6 +61,8 @@ pub enum OnlineAction {
     Reconnect,
     /// Open the account web: e-mail, passkeys, devices and deleting the account.
     ManageAccount,
+    /// Open the Terms of Service or the Privacy Policy in the browser.
+    OpenLegal(Legal),
     /// Appeal the mute an action made.
     Appeal {
         action: u64,
@@ -997,6 +1000,8 @@ impl OnlinePanel {
             }
             ("openAgain", Page::Browser) => actions.push(OnlineAction::OpenSignInPage),
             ("manageAccount", Page::Account) => actions.push(OnlineAction::ManageAccount),
+            ("termsPage", Page::Start) => actions.push(OnlineAction::OpenLegal(Legal::Terms)),
+            ("privacyPage", Page::Start) => actions.push(OnlineAction::OpenLegal(Legal::Privacy)),
             ("invitation", _) => {
                 let index = self.nth(data, "invitation");
                 if let Some(invitation) = online.invitations.get(index) {
@@ -1117,6 +1122,11 @@ impl OnlinePanel {
                 }
                 rows.push(sign_in);
                 rows.push(create);
+                // What creating an account means agreeing to, with a row for each page.
+                rows.push(Row::info("consent", Legal::sentence(language), None).group_start());
+                for (id, page) in [("termsPage", Legal::Terms), ("privacyPage", Legal::Privacy)] {
+                    rows.push(Row::command(id, page.name(language)).icon(Icon::FILE_TEXT));
+                }
                 let shown = match data.cloud {
                     Some(_) if !data.custom_cloud => t(T::CloudOfficial),
                     Some(url) => url,
@@ -1975,8 +1985,19 @@ mod tests {
             subtitle.as_deref(),
             Some("Play with your friends over the internet")
         );
-        assert_eq!(ids(&rows), ["signIn", "createAccount", "cloudPage", "note"]);
-        assert_eq!(rows[2].detail.as_deref(), Some("https://cloud.example.org"));
+        assert_eq!(
+            ids(&rows),
+            [
+                "signIn",
+                "createAccount",
+                "consent",
+                "termsPage",
+                "privacyPage",
+                "cloudPage",
+                "note"
+            ]
+        );
+        assert_eq!(rows[5].detail.as_deref(), Some("https://cloud.example.org"));
         let mut actions = Vec::new();
         panel.run("signIn", &data(&online), &mut actions);
         panel.run("createAccount", &data(&online), &mut actions);

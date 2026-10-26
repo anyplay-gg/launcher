@@ -34,7 +34,7 @@ use crate::ui::glass::{GlassStyle, paint_glass};
 use crate::ui::i18n::{Key, Language};
 use crate::ui::icons::Icon;
 use crate::ui::text;
-use crate::ui::theme::{self, Accent, Theme, color, radius, size, ty, white};
+use crate::ui::theme::{self, Accent, Theme, color, radius, size, ty};
 
 /// Which gallery page to show.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,6 +42,8 @@ pub enum Page {
     Components,
     /// Destructive buttons, switches and rows in every state.
     States,
+    /// The type scale alone.
+    Type,
     Panels,
     Artwork,
     Themes,
@@ -86,6 +88,7 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Option<Options> {
             options.page = match page {
                 "panels" => Page::Panels,
                 "states" => Page::States,
+                "type" => Page::Type,
                 "artwork" => Page::Artwork,
                 "themes" => Page::Themes,
                 "bg0" | "cosmic" => Page::Background(Theme::Cosmic),
@@ -231,6 +234,10 @@ impl eframe::App for Gallery {
             Page::Themes => themes_page(&ctx, ui, &self.shell, self.options.time),
             Page::Components => components_page(ui, &self.shell),
             Page::States => states_page(ui, &self.shell),
+            Page::Type => {
+                ui.add_space(40.0);
+                type_scale(ui);
+            }
             Page::Panels => {
                 let art = self.art(&ctx);
                 panels_page(ui, &self.shell, &art);
@@ -454,33 +461,62 @@ fn components_page(ui: &mut Ui, shell: &Shell) {
     });
     ui.add_space(26.0);
 
+    type_scale(ui);
+}
+
+/// The twelve sizes of the type scale (`--gallery=type`, also the end of the components page).
+fn type_scale(ui: &mut Ui) {
     heading(ui, "Type scale");
     let painter = ui.painter().clone();
-    let mut y = ui.cursor().min.y;
-    for (label, style) in [
-        ("Hero title 58 light", ty::HERO_TITLE),
-        ("Screen title 40 light", ty::SCREEN_TITLE),
-        ("Top bar 24 semibold", ty::TOP_BAR_TITLE),
-        ("Button 19 semibold", ty::BUTTON),
-        ("Row title 17 medium  0123456789", ty::ROW_TITLE),
-        ("Detail 13 regular  Çok güzel İıŞşĞğ", ty::DETAIL),
-    ] {
-        let r = text::paint(
-            &painter,
-            pos2(ui.max_rect().min.x, y),
-            Align2::LEFT_TOP,
-            style,
-            label,
-            Color32::WHITE,
-        );
-        y += r.height() + 4.0;
+    let top = ui.cursor().min.y;
+    // Twelve sizes (DESIGN.md 3.12): the large ones on the left, the text sizes on the right.
+    let columns: [(f32, &[(&str, theme::TextStyle)]); 2] = [
+        (
+            0.0,
+            &[
+                ("Display 56 light", ty::DISPLAY),
+                ("Title 40 light", ty::TITLE),
+                ("Heading 34 light", ty::HEADING),
+                ("Panel title 28 light", ty::PANEL_TITLE),
+                ("Item title 22 semibold", ty::ITEM_TITLE),
+                ("Button 19 semibold", ty::BUTTON),
+            ],
+        ),
+        (
+            760.0,
+            &[
+                ("Toast, medium button 16", ty::TOAST),
+                ("Row title 17 medium  0123456789", ty::ROW_TITLE),
+                ("Label 15 medium", ty::LABEL),
+                ("Note 14 regular", ty::NOTE),
+                ("Detail 13 regular  Çok güzel İıŞşĞğ", ty::DETAIL),
+                ("Badge 13 semibold", ty::BADGE),
+                ("Micro 12 medium", ty::MICRO),
+            ],
+        ),
+    ];
+    let mut bottom = top;
+    for (dx, rows) in columns {
+        let mut y = top;
+        for (label, style) in rows {
+            let r = text::paint(
+                &painter,
+                pos2(ui.max_rect().min.x + dx, y),
+                Align2::LEFT_TOP,
+                *style,
+                label,
+                Color32::WHITE,
+            );
+            y += r.height() + 4.0;
+        }
+        bottom = bottom.max(y);
     }
     let clock = text::paint_tabular(
         &painter,
-        pos2(ui.max_rect().min.x + 760.0, ui.cursor().min.y),
+        pos2(ui.max_rect().min.x + 760.0, bottom + 8.0),
         ty::CLOCK,
         "12:34:56",
-        white(0.92),
+        color::text_label(),
     );
     text::paint(
         &painter,

@@ -44,6 +44,14 @@ KERNEL=="hidraw*", KERNELS=="*054C:0CE6*|*054C:0DF2*|*054C:05C4*|*054C:09CC*|*05
 
 Distributions that ship a game-devices udev package, and Steam's own rules, already do this.
 
+## macOS
+
+Apple silicon with macOS 11 or newer. Download `AnyPlay-Launcher-<version>-macos-arm64.zip`, unzip it, and move **AnyPlay Launcher.app** to Applications before opening it. Games may need Rosetta; macOS offers to install it when needed.
+
+The app is ad hoc signed, without an Apple Developer ID or notarization. If macOS says the developer cannot be verified, open **System Settings → Privacy & Security** and choose **Open Anyway**. On macOS 11 and 12 this is in **System Preferences → Security & Privacy**. Repeat after an update if macOS asks. Do not remove quarantine with a terminal command.
+
+The Mac toolkit currently comes from AnyPS5-ARM. Playing a game through AnyPlay's network bridge needs a macOS toolkit from AnyPlay's engine fork; the current toolkit does not provide it.
+
 ## First start
 
 1. Choose a language and a look.

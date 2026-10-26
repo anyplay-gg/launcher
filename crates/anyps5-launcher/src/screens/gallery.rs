@@ -4,6 +4,8 @@
 //! ```text
 //! anyplay-launcher --gallery=settings|settings1..6|game-settings|confirm|controls|controls-capture|
 //!                           controls-end|advanced|trophies|trophies-hidden|trophies-revealed|banner|start|unlocking|log|report|library|
+//!                           captures-empty|captures-few|captures-many|captures-clips|captures-screenshot|captures-clip|
+//!                           captures-clip-plain|captures-confirm|captures-missing|captures-loading|
 //!                           about-update|behavior-links|settings-codec|settings-codec-off|settings-location|settings-location-custom|settings-location-network|settings-location-missing|settings-location-moving|settings-location-left|behavior-clips-off|behavior-clips|behavior-clips-key|behavior-steam|toolkit|toolkit-update|toolkit-newer|toolkit-pinned|toolkit-local|toolkit-engine|toolkit-engine-update|
 //!                           toolkit-unused|game-toolkit|
 //!                           recommended|recommended-warning|whats-new|whats-new-loading|
@@ -56,6 +58,7 @@ use egui::{Color32, ColorImage, Context, Rect, TextureHandle, TextureOptions, Ui
 use crate::app::preview::{HomeStand, Scene};
 use crate::screens::advanced::{AdvancedData, AdvancedPanel};
 use crate::screens::banner::{self, BannerLook, BannerTrophy};
+use crate::screens::captures::sample::CapturesLook;
 use crate::screens::controls::{ControlsData, ControlsPanel};
 use crate::screens::game_settings::{
     GameSettingsData, GameSettingsPanel, RecommendedRow, UninstallPanel,
@@ -107,6 +110,8 @@ pub enum ScreenPage {
     /// The review of a report to AnyPS5.
     Report,
     Library,
+    /// The Captures area, in one of its states.
+    Captures(crate::screens::captures::sample::CapturesLook),
     /// The Toolkit category, in its rows: stable, an update waiting, pinned, a local build.
     Toolkit(ToolkitLook),
     /// The About page with a downloaded launcher update waiting ("Restart Now").
@@ -532,6 +537,16 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "log" => ScreenPage::Log,
         "report" => ScreenPage::Report,
         "library" => ScreenPage::Library,
+        "captures-empty" => ScreenPage::Captures(CapturesLook::Empty),
+        "captures-few" => ScreenPage::Captures(CapturesLook::Few),
+        "captures-many" => ScreenPage::Captures(CapturesLook::Many),
+        "captures-clips" => ScreenPage::Captures(CapturesLook::Clips),
+        "captures-screenshot" => ScreenPage::Captures(CapturesLook::Screenshot),
+        "captures-clip" => ScreenPage::Captures(CapturesLook::Clip),
+        "captures-clip-plain" => ScreenPage::Captures(CapturesLook::ClipPlain),
+        "captures-confirm" => ScreenPage::Captures(CapturesLook::Confirm),
+        "captures-missing" => ScreenPage::Captures(CapturesLook::Missing),
+        "captures-loading" => ScreenPage::Captures(CapturesLook::Loading),
         "about-update" => ScreenPage::AboutUpdate(UpdateLook::Ready),
         "about-update-checking" => ScreenPage::AboutUpdate(UpdateLook::Checking),
         "about-update-current" => ScreenPage::AboutUpdate(UpdateLook::UpToDate),
@@ -1729,6 +1744,8 @@ pub struct ScreenGallery {
     advanced: AdvancedPanel,
     trophies: TrophyListPanel,
     library: LibraryGrid,
+    captures: crate::screens::captures::CapturesScreen,
+    captures_sample: Option<crate::screens::captures::sample::Sample>,
     log: LogView,
     start: StartScreen,
     banner_icons: IconCache,
@@ -1842,6 +1859,8 @@ impl ScreenGallery {
             advanced: AdvancedPanel::default(),
             trophies: TrophyListPanel::default(),
             library: LibraryGrid::default(),
+            captures: crate::screens::captures::CapturesScreen::default(),
+            captures_sample: None,
             log: LogView::default(),
             start: StartScreen::default(),
             banner_icons: IconCache::default(),
@@ -1876,6 +1895,89 @@ impl ScreenGallery {
         ) && let Some(strip) = calls::strip_data(&self.online)
         {
             calls::call_strip(ctx, &strip, language, 1.0, true);
+        }
+    }
+
+    /// The Captures area over the invented folder.
+    fn captures_screen(&mut self, shell: &mut Shell, ctx: &Context, look: CapturesLook) {
+        use crate::screens::captures::{CapturesData, sample};
+        let games: Vec<Game> = (0..NAMES.len()).map(fake_game).collect();
+        let language = shell.language;
+        let accent = shell.accent_color();
+        let covers: Vec<TileImage> = (0..NAMES.len()).map(|i| self.tile(i)).collect();
+        let sample = self
+            .captures_sample
+            .get_or_insert_with(|| sample::Sample::new(ctx, look, &games));
+        let grouped =
+            crate::app::captures::group_by_game(&games, &sample.captures, self.captures.filter());
+        let secs = crate::app::captures::sections(
+            &games,
+            &grouped,
+            crate::screens::captures_strings::CapturesText::OtherGame.text(language),
+            |game| {
+                games
+                    .iter()
+                    .position(|g| g.title_id == game.title_id)
+                    .map(|i| covers[i])
+            },
+        );
+        let list = sample.captures.clone();
+        let mut data = CapturesData {
+            load: look.load(),
+            folder: "~/Pictures/AnyPS5",
+            captures: &list,
+            sections: &secs,
+            any: !list.is_empty(),
+            clips_available: true,
+            language,
+            accent,
+            now: sample::NOW,
+            utc_offset: 0,
+            media: sample.media(),
+        };
+        self.captures.show(shell, ctx, &[], &mut data);
+    }
+
+    /// Opens the Captures area the way the page wants it.
+    fn open_captures(&mut self, ctx: &Context, look: CapturesLook) {
+        use anyps5_core::captures::Kind;
+        let games: Vec<Game> = (0..NAMES.len()).map(fake_game).collect();
+        let sample = crate::screens::captures::sample::Sample::new(ctx, look, &games);
+        let grouped = crate::app::captures::group_by_game(
+            &games,
+            &sample.captures,
+            anyps5_core::captures::Filter::All,
+        );
+        let secs = crate::app::captures::sections(&games, &grouped, "", |_| None);
+        match look {
+            CapturesLook::Many => {
+                self.captures.open();
+                self.captures.focus_place(9);
+            }
+            CapturesLook::Few => {
+                self.captures.open();
+                self.captures.focus_place(1);
+            }
+            CapturesLook::Clips => {
+                self.captures.open();
+                self.captures
+                    .set_filter(anyps5_core::captures::Filter::Clips);
+            }
+            CapturesLook::Screenshot => {
+                self.captures
+                    .open_view(sample.first(Kind::Screenshot, &secs), None);
+            }
+            CapturesLook::Clip | CapturesLook::ClipPlain => {
+                self.captures
+                    .open_view(sample.first(Kind::Clip, &secs), None);
+            }
+            CapturesLook::Confirm => {
+                self.captures
+                    .open_confirm(sample.first(Kind::Screenshot, &secs));
+            }
+            CapturesLook::Empty | CapturesLook::Missing | CapturesLook::Loading => {
+                self.captures.open();
+            }
         }
     }
 
@@ -2294,6 +2396,9 @@ impl ScreenGallery {
         if let ScreenPage::Compare(look) = self.page {
             self.compare_screen(shell, &ctx, look);
         }
+        if let ScreenPage::Captures(look) = self.page {
+            self.captures_screen(shell, &ctx, look);
+        }
         self.library.show(
             shell,
             &ctx,
@@ -2521,6 +2626,7 @@ impl ScreenGallery {
                 self.trophies.reveal(SECRET_TROPHY);
             }
             ScreenPage::Library => self.library.open(1),
+            ScreenPage::Captures(look) => self.open_captures(ctx, look),
             ScreenPage::ControlsEnd => self.controls.open_row(30),
             ScreenPage::Toolkit(look) => {
                 self.settings.open_at(5, true);

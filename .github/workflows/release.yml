@@ -348,10 +348,65 @@ jobs:
           path: launcher/dist/*
           if-no-files-found: error
 
+  # Apple silicon app, signed ad hoc. No Developer ID or notarization secret is used.
+  macos:
+    needs: notices
+    runs-on: macos-15
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    defaults:
+      run:
+        shell: bash
+        working-directory: launcher
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: launcher
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          repository: anyplaynet/network
+          ref: ${{ needs.notices.outputs.network }}
+          path: network
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-apple-darwin
+      - name: Install dependency audit tools
+        run: |
+          cargo install --locked cargo-auditable --version "$CARGO_AUDITABLE_VERSION"
+          cargo install --locked rust-audit-info --version "$RUST_AUDIT_INFO_VERSION"
+      - name: Build
+        run: cargo auditable build --release --locked --target aarch64-apple-darwin
+      - name: Check the dependency list
+        run: |
+          rust-audit-info target/aarch64-apple-darwin/release/anyplay-launcher \
+            | jq -e '[.packages[].name] | index("anyps5-launcher") != null'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist-notices
+          path: launcher/notices
+      - name: Package and verify the distributed app
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          tools/macos/package.sh "$version" target/aarch64-apple-darwin/release/anyplay-launcher notices/THIRD-PARTY-LICENSES.txt dist
+          mkdir "$RUNNER_TEMP/unpacked"
+          ditto -x -k "dist/AnyPlay-Launcher-$version-macos-arm64.zip" "$RUNNER_TEMP/unpacked"
+          app="$RUNNER_TEMP/unpacked/AnyPlay Launcher.app"
+          codesign --verify --strict "$app"
+          test "$(lipo -archs "$app/Contents/MacOS/anyplay-launcher")" = arm64
+          "$app/Contents/MacOS/anyplay-launcher" --gallery=home --screenshot="$RUNNER_TEMP/macos-home.png"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist-macos
+          path: launcher/dist/*.zip
+          if-no-files-found: error
+
   # SBOMs, build info and one checksum file for everything, and the signing tool. No secret and no
   # write access: what signs and what publishes are the jobs `sign` and `release` below.
   publish:
-    needs: [notices, windows, linux]
+    needs: [notices, windows, linux, macos]
     runs-on: ubuntu-latest
     steps:
       # The signing tool is built from this repository (docs/UPDATES.md); it needs the network
@@ -398,6 +453,7 @@ jobs:
           sbom launcher anyps5-launcher anyplay-launcher_bin.cdx.json linux-x86_64 x86_64-unknown-linux-gnu .sbom
           sbom network net anyplay-net_bin.cdx.json linux-x86_64 x86_64-unknown-linux-gnu .net-service.sbom
           sbom network share-worker anyplay-share_bin.cdx.json linux-x86_64 x86_64-unknown-linux-gnu .share-worker.sbom
+          sbom launcher anyps5-launcher anyplay-launcher_bin.cdx.json macos-arm64 aarch64-apple-darwin .sbom
           for sbom in dist/*.cdx.json; do
             jq -e '.bomFormat == "CycloneDX" and (.components | length) > 0' "$sbom" > /dev/null
             echo "$sbom: $(jq '.components | length' "$sbom") components"
@@ -605,6 +661,8 @@ jobs:
             dist/AnyPlay-Launcher-${{ needs.windows.outputs.version }}-Setup.exe
             dist/AnyPlay-Launcher-${{ needs.windows.outputs.version }}-x86_64.AppImage
             dist/AnyPlay-Launcher-${{ needs.windows.outputs.version }}-linux-x86_64.tar.gz
+            dist/AnyPlay-Launcher-${{ needs.windows.outputs.version }}-macos-arm64.zip
+            dist/AnyPlay-Launcher-${{ needs.windows.outputs.version }}-macos-arm64.sbom.cdx.json
             dist/AnyPS5-Launcher-${{ needs.windows.outputs.version }}-x64.exe
             dist/AnyPlay-Launcher-${{ needs.windows.outputs.version }}-windows-x86_64.sbom.cdx.json
             dist/AnyPlay-Launcher-${{ needs.windows.outputs.version }}-windows-x86_64.net-service.sbom.cdx.json
