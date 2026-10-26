@@ -5,6 +5,7 @@
 //! |---|---|---|
 //! | `Settings` | `settings::SettingsPanel` | options button, `Ctrl+,` |
 //! | `Library` | `library::LibraryGrid` | library button |
+//! | `Captures` | `captures::CapturesScreen` | captures button, the Home button panel |
 //! | `GameSettings` | `game_settings::GameSettingsPanel` | the "..." button of the hero |
 //! | `ConfirmUninstall` | `game_settings::UninstallPanel` | "Uninstall" row of the game settings |
 //! | `Saves`, `ConfirmRestore` | `saves::SavesPanel`, `saves::RestorePanel` | "Save Data" row of the game settings |
@@ -20,6 +21,7 @@
 //! the panel reports `changed`. Work with I/O (reports, uninstall, toolkit) runs on worker threads
 //! and answers through channels polled in [`OverlayHost::frame`].
 
+mod captures;
 mod compare;
 mod friends;
 mod profile;
@@ -145,6 +147,9 @@ pub struct PanelHost {
     advanced: AdvancedPanel,
     trophies: TrophyListPanel,
     library: LibraryGrid,
+    /// The Captures area (`Overlay::Captures`) and the files and pictures it shows.
+    captures: crate::screens::captures::CapturesScreen,
+    capture_service: crate::app::captures::CaptureService,
     log: LogView,
     recommended: RecommendedPanel,
     saves: SavesPanel,
@@ -241,6 +246,8 @@ impl PanelHost {
             advanced: AdvancedPanel::default(),
             trophies: TrophyListPanel::default(),
             library: LibraryGrid::default(),
+            captures: crate::screens::captures::CapturesScreen::default(),
+            capture_service: crate::app::captures::CaptureService::new(ctx),
             log: LogView::default(),
             recommended: RecommendedPanel::default(),
             saves: SavesPanel::default(),
@@ -847,6 +854,7 @@ impl PanelHost {
             match action {
                 InGameAction::Resume | InGameAction::Dismiss => model.return_to_game(),
                 InGameAction::Trophies => model.open(Overlay::Trophies),
+                InGameAction::Captures => model.open(Overlay::Captures),
                 InGameAction::GameSettings => model.open(Overlay::GameSettings),
                 InGameAction::Friends => model.open(Overlay::Friends),
                 InGameAction::AskClose => model.switch_overlay(Overlay::ConfirmCloseGame),
@@ -1983,6 +1991,7 @@ impl OverlayHost for PanelHost {
             Overlay::Advanced => self.advanced_ui(cx, wanted),
             Overlay::Trophies => self.trophies_ui(cx, wanted),
             Overlay::Library => self.library_ui(cx, wanted),
+            Overlay::Captures => self.captures_ui(cx, wanted),
             Overlay::Log => self.log_ui(cx, wanted),
             Overlay::Recommended => self.recommended_ui(cx, wanted),
             Overlay::WhatsNew => self.whats_new_ui(cx, wanted),
@@ -2366,6 +2375,7 @@ mod tests {
         for overlay in [
             Overlay::Settings,
             Overlay::Library,
+            Overlay::Captures,
             Overlay::GameSettings,
             Overlay::Controls,
             Overlay::Advanced,
@@ -2413,6 +2423,7 @@ mod tests {
         for (intent, overlay) in [
             (HomeIntent::OpenSettings, Overlay::Settings),
             (HomeIntent::OpenLibrary, Overlay::Library),
+            (HomeIntent::OpenCaptures, Overlay::Captures),
             (HomeIntent::OpenOnline, Overlay::Friends),
             (HomeIntent::OpenFriends, Overlay::Friends),
             (HomeIntent::OpenGameSettings, Overlay::GameSettings),
@@ -2711,5 +2722,106 @@ mod tests {
         ] {
             assert!(!launcher_release_page(&bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn captures_of_a_big_folder_load_lazily_and_stay_light() {
+        let mut rig = Rig::new("captures-many");
+        let folder = rig.dir.join("shots");
+        std::fs::create_dir_all(&folder).unwrap();
+        // 2400 screenshots of the games' title IDs, 600 clips, and files that are not captures.
+        let mut png = Vec::new();
+        image::RgbaImage::from_pixel(64, 36, image::Rgba([30, 120, 200, 255]))
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let titles: Vec<String> = rig
+            .app
+            .model
+            .games
+            .iter()
+            .map(|g| g.title_id.clone())
+            .collect();
+        let names: Vec<String> = rig.app.model.games.iter().map(|g| g.name.clone()).collect();
+        for n in 0..3000usize {
+            let game = n % titles.len();
+            let name = if n % 5 == 4 {
+                format!(
+                    "{} 2026-10-{:02} 10-{:02}-{:02}.mp4",
+                    names[game],
+                    1 + n % 25,
+                    n / 60 % 60,
+                    n % 60
+                )
+            } else {
+                format!(
+                    "{}-202610{:02}-{:02}{:02}{:02}.png",
+                    titles[game],
+                    1 + n % 25,
+                    n / 3600 % 24,
+                    n / 60 % 60,
+                    n % 60
+                )
+            };
+            std::fs::write(
+                folder.join(&name),
+                if name.ends_with(".png") {
+                    &png[..]
+                } else {
+                    b"not a video"
+                },
+            )
+            .unwrap();
+        }
+        std::fs::write(folder.join("notes.txt"), b"x").unwrap();
+        rig.app.model.prefs.screenshots_folder = Some(folder.clone());
+        rig.app.model.open(Overlay::Captures);
+        // The scan runs on a thread; frames go on meanwhile.
+        let started = std::time::Instant::now();
+        let mut slowest = std::time::Duration::ZERO;
+        for _ in 0..200 {
+            let at = std::time::Instant::now();
+            rig.frames(1);
+            slowest = slowest.max(at.elapsed());
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            if started.elapsed() > std::time::Duration::from_secs(3) {
+                break;
+            }
+        }
+        assert_eq!(rig.app.model.overlay, Some(Overlay::Captures));
+        // Walk down through the list: a few hundred presses of Down and Right.
+        for n in 0..300 {
+            let at = std::time::Instant::now();
+            rig.press(if n % 3 == 0 {
+                Command::Right
+            } else {
+                Command::Down
+            });
+            slowest = slowest.max(at.elapsed());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        rig.frames(5);
+        let textures = rig.ctx.tex_manager().read().num_allocated();
+        // Pictures were loaded for what came into view, not for the thousands that never did.
+        assert!(textures > 0, "nothing was loaded");
+        assert!(
+            textures < 1500,
+            "{textures} textures are allocated for 3000 captures"
+        );
+        // No single frame, a press included, stalls on the thousands of files.
+        assert!(
+            slowest < std::time::Duration::from_millis(400),
+            "{slowest:?}"
+        );
+        rig.press(Command::Back);
+        assert_eq!(rig.app.model.overlay, None);
+        // Closing lets the pictures go.
+        rig.frames(30);
+        let after = rig.ctx.tex_manager().read().num_allocated();
+        assert!(
+            after < textures,
+            "{after} textures after closing, {textures} before"
+        );
+        // Every file is still there: the area only reads.
+        assert_eq!(std::fs::read_dir(&folder).unwrap().count(), 3001);
     }
 }

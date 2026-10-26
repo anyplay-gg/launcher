@@ -100,6 +100,8 @@ theme's default accent).
 
 #### UI colours (all sRGB, straight alpha)
 
+*The text, surface and hairline values in this table are the first round; 3.10 and 3.12 hold the values in use.*
+
 | Role | Value |
 |---|---|
 | Primary text / icons | white 1.0 (title text), white 0.9 (secondary labels), white 0.85 (values), white 0.72 (hints) |
@@ -136,6 +138,8 @@ theme's default accent).
 Percent = `unlocked points * 100 / total points` (integer division, 0 when total is 0).
 
 ### 1.3 Radii
+
+*3.12 reduces these to five values; the table is the first round.*
 
 SwiftUI uses `.continuous` (superellipse "squircle") corners everywhere. egui only has circular corners; use them (difference
 is invisible at these radii). An optional refinement is Figma "corner smoothing 60 %", which matches Apple's continuous curve.
@@ -270,6 +274,8 @@ Bundling in egui:
   include Japanese, Korean, Chinese and Arabic names: load Windows' own fonts as egui fallbacks at runtime if present (Yu Gothic UI /
   Malgun Gothic / Microsoft YaHei UI / Segoe UI) instead of bundling large CJK fonts; trophy texts in game languages need the same.
 - Icons: SF Symbols cannot be redistributed. Use **Phosphor Icons** (MIT; `egui-phosphor` crate or the font file), mapping in 5.16.
+
+*The scale in use is in 3.12 (twelve sizes); the table below is the first round.*
 
 Type scale (size dp / weight; weight numbers: light 300, regular 400, medium 500, semibold 600, bold 700):
 
@@ -671,7 +677,7 @@ The launcher keeps the port's structure but trims what read as noise next to the
 - **Hint bar.** Follows the device in use (`input::device`): keycaps `Enter`, `Esc`, `O` on a
   keyboard, ✕ ○ △ in circles on a gamepad. No combined labels, no Move hint. 26 dp keys, 15 dp
   labels, 28 dp between hints.
-- **Top bar.** Outline icons at 20 dp (`squares-four` for the library, `users` for friends, `gear-six`
+- **Top bar.** Outline icons at 20 dp (`squares-four` for the library, `images` for the captures, `users` for friends, `gear-six`
   for settings), 12 dp between the buttons of the strip, 32 dp between the groups (the strip, the
   profile, the clock). The profile and the friends button are pills on the icon buttons' own
   surface, hover and focus, so the whole corner reads as one family of controls. The avatar's
@@ -833,7 +839,7 @@ makes a circle); rows, cards, cells and tiles keep their radii (12, 16, 20, 12 %
 | Size | Height | Text | Glyph | Used for |
 |---|---|---|---|---|
 | Large | 54 | 19 semibold, 30 padding | 17 (22 alone) | the action row of the game page, dialogs |
-| Medium | 44 | 16 semibold, 20 padding | 18 (20 alone) | the top bar: library, friends, settings, profile |
+| Medium | 44 | 16 semibold, 20 padding | 18 (20 alone) | the top bar: library, captures, friends, settings, profile; the chips and actions of the Captures area |
 | Small | 32 | 14 medium, 14 padding | 14 | an answer inside a line of text ("How did it run?") |
 
 Neighbouring controls are always 12 apart (`size::CONTROL_GAP`), in the top bar and the action row alike. The profile pill is a
@@ -989,6 +995,58 @@ The white ring was loud, and it stayed after a click. Now it behaves like `:focu
 - The pointer resting on a tile or a primary button still draws the hover ring at 45 % of this ring (3.9): that is the hover, not a lingering focus.
 - Gallery: `--noring` renders any scene as it looks after a click.
 
+### 3.12 Round 6 (0.2.8): the system, fewer values (2026-10-26, replaces the value tables of 1.2, 1.3 and 1.6)
+
+The audit is `polish028/audit/system.md`. The tokens were many and close together: eleven white alphas for text, nineteen font
+sizes, eight radii, and 14 different text alphas as literals in the screens. The rule of this round is that a value is chosen
+from a short list, and a page holds no literal that has a token. Where 1.2, 1.3 and 1.6 differ, this section wins.
+
+**Text ink: four levels** (`ui::theme::color`). The contrast test keeps every one of them above its ratio.
+
+| Level | White | Tokens |
+|---|---|---|
+| Text | 1.00 | `text` |
+| Label | 0.90 | `text_label`, `text_value`, `text_clock`, `text_active` |
+| Detail | 0.78 | `text_detail`, `text_subtitle`, `text_empty`, `text_overline`, `text_row_detail`, `text_inert`, `text_hint`, `state_neutral` |
+| Note | 0.55 | `text_note`, `text_caption`, `text_count`, `text_path` |
+| Inactive (exempt) | 0.40 | `text_inactive` |
+
+**Surfaces and hairlines.** Fills: 0.07 row (`surface_row`, `surface_trophy_row`, `surface_tile_placeholder`), 0.10 control, 0.16
+hover (also track, keycap, switch track off), 0.20 focus, 0.26 pressed. Hairlines: 0.08 panel and glass edge, 0.12 control and
+card, 0.32 under the pointer. Removed (unused): `hairline`, `selected_category`, `surface_prominent`, `panel_fullscreen`,
+`panel_log`, `splash_overlay`.
+
+**Type scale: twelve sizes.** 12, 13, 14, 15, 16, 17, 19, 22, 28, 34, 40, 56. Light only from 28 up; no Bold. A page takes a
+`ty::` token by role, it does not build a style.
+
+| Token | Size / weight | Was |
+|---|---|---|
+| `DISPLAY` (`HERO_TITLE`, `ONBOARDING_TITLE`) | 56 light | 58 and 54 |
+| `TITLE` (`SCREEN_TITLE`) | 40 light | |
+| `HEADING` (`EMPTY_TITLE`, `SPLASH_TITLE`, `TROPHY_LIST_TITLE`) | 34 light | trophy list 36 |
+| `PANEL_TITLE` (`SIDE_PANEL_TITLE`, `LOG_TITLE`) | 28 light | 30 |
+| `LANGUAGE_NAME` | 28 medium | |
+| `ITEM_TITLE` (`TOP_BAR_TITLE`, `TILE_NAME`, `PERCENT`) | 22 semibold | top bar 24 |
+| `STATE_TITLE` (`LIBRARY_COUNT`) | 22 medium | |
+| `BUTTON`, `CATEGORY`, `CATEGORY_SELECTED`, `BANNER_NAME` | 19 | |
+| `BUTTON_MEDIUM`, `TOAST` (`PROFILE`, `DIAGNOSIS_LOG`), `CHOICE_VALUE` | 16 | |
+| `BODY` (`QUESTION`), `ROW_TITLE` (`CLOCK`, `ONBOARDING_STATUS`), `INFO_VALUE` (`TROPHY_NAME`) | 17 regular, medium, semibold | trophy name and onboarding status 18 |
+| `LABEL` (`ROW_INFO`, `HINT_LABEL`, `PROGRESS_LABEL`), `FACT` (`PROGRESS_PERCENT`), `SENTENCE` | 15 medium, semibold, regular | |
+| `NOTE` (`DETAIL_LARGE`), `CHIP` (`STATE_LABEL`), `SECTION_CAPTION` | 14 regular, medium, semibold | |
+| `DETAIL`, `BADGE` (`HINT_KEY`, `KEY_CAP`, `BANNER_LABEL`), `OVERLINE` (tracking 0.8 for all three overlines) | 13 regular, semibold | key cap 13.5; info overline tracking 0.6; onboarding overline 14 |
+| `MICRO` (`STATE_LABEL_SMALL`) | 12 medium | |
+
+**Radius: five values.** Keycap 7, row 12, card 16, large 20, capsule (and the toast, 28). `TROPHY_ROW` and `BOX` are 16 (the box was 14),
+`LANGUAGE_CARD`, `THEME_CARD` (was 18) and `BANNER` are 20. Removed: `CONSOLE_BUTTON`, `ICON_BUTTON`, `KEYCAP_HINT` (now 7, was 6).
+
+**Spacing: `ui::theme::space`.** 4, 8, 12 (the control gap), 16, 24, 32, 48. Gaps of 6, 10, 14, 18, 20, 26 and 28 are off the grid and
+move to the nearest step when a page is touched.
+
+**Rules for the rest** (one source for the area work: `polish028/SYSTEM.md`): one primary button per view and destructive is a
+secondary with the danger ink; icons are 14, 17, 18, 20, 24 or 36 dp; the only motion is `Motion::*`; one action has one cue; a
+page draws no focus ring of its own; the case rule of 3.10 stands, and the verbs are Cancel, Back, Close, Done, Continue, Try
+Again, Remove, Delete, Sign In, Later.
+
 ## 4. Materials and blur on the GPU
 
 SwiftUI `.ultraThinMaterial` is a backdrop blur with a light tint and some saturation; it is used under every panel. egui has no
@@ -1060,7 +1118,7 @@ inset by `tile * 0.035`, anchored bottom-trailing. Installing line: height `max(
 Vertical stack, spacing 0: **TopBar**, **TileRow** (or **EmptyLibrary**), flexible space, **HeroInfo**, **HintBar**.
 
 **Top bar** (padding h 64, top 34): left "Games" (24 semibold), a small spinner while scanning; right-aligned, left to right:
-library button (glyph: 3x3 grid), friends button (glyph: two people; see below), settings button (glyph: gear), 12 dp apart; then 32 dp
+library button (glyph: 3x3 grid), captures button (glyph: two pictures), friends button (glyph: two people; see below), settings button (glyph: gear), 12 dp apart; then 32 dp
 on, the profile (12 dp, the same gap), then 28 dp on, the clock (HH:mm, local time, 17 medium white 0.78, colon fixed; 3.9). Icon buttons: 44
 circle, a secondary control of the family in 3.9. The profile and the friends button are pills of the same
 height on the same surface, hover and focus (3.9: a ring and a lighter fill, never white). Everything sits on
@@ -1228,7 +1286,7 @@ category's rows (5.8).
 
 Settings are persisted per user (`Preferences`): `onboarded`, `language` (system default: Turkish if the OS UI language starts with
 `tr`, else English), `theme` (Cosmic), `accent` (nil = theme default), `backdrop` (theme), `backdropFile`, `gameArtwork` (true),
-`reducedMotion` (false), `showHiddenTrophies` (false), `sounds` (true), `music` (true), `discordPresence` (true), `hideWhilePlaying` (false), `prepareGames` (true), `profileName` (first word of the user's full name, fallback
+`reducedMotion` (false), `showHiddenTrophies` (false), `sounds` (true), `music` (true), `discordPresence` (false, 2026-10-26: a new profile shows no game on Discord until the player turns it on), `hideWhilePlaying` (false), `prepareGames` (true), `profileName` (first word of the user's full name, fallback
 "Player"), `gamesFolder`, `unlockedFolder` (nil = next to the games), `unlockedMovingFrom` (the store copies are moved out of, while any are left there), `screenshotsFolder` (nil = `Pictures/AnyPS5`), `fontsFolder`, per-game settings, `lastPlayed`.
 Every change saves immediately and re-applies language, motion and sound flags.
 
@@ -1457,7 +1515,7 @@ The **language and theme choices apply live** while moving the focus (left/right
 immediately, so the page re-renders in that language and the backdrop switches theme); select confirms and advances (sound
 `select`); Back (Esc/B/button) returns (sound `back`). Step 2 focus: 0 = the folder button, 1 = Start (only once a folder is set; focus
 jumps to Start after picking); select on Start goes on to the online step when there is a cloud, and otherwise finishes: sound `unlocked`, cross-fade
-(animation 19), focus on the tiles, rescan if empty. Step 3 focus: 0 Sign In, 1 Create Account, 2 Not Now. Every choice
+(animation 19), focus on the tiles, rescan if empty. Step 3 focus: 0 Sign In, 1 Create Account, 2 Not Now. Under the three buttons one line of 13 dp text (`screens::legal`): "By creating an account you agree to the Terms of Service and the Privacy Policy." The two names are links (2026-10-26; underlined, brighter on hover, pointing hand; `https://anyplaynet.com/terms` and `/privacy`, the About pages' addresses in `about_strings.rs`), wrapped at 800 dp, the "You can sign in any time" line under it. The sentence is a template with `{terms}` and `{privacy}` so a language can put the names where its grammar wants them. The links are for the pointer; the pad reaches the same two pages as rows on the Friends screen's Start page. Every choice
 finishes the first start; Sign In and Create Account also open the online area, where the browser sign-in starts as soon as
 the net service has said hello (a missing service drops it). Mouse: tapping a language card selects and confirms; tapping a theme card selects it (sound `move`).
 
@@ -1634,6 +1692,7 @@ Original: `Input.swift`, `AppModel.handle`, `panelCommand`, `onboardingCommand`.
 | Left / Right / Up / Down arrows | left / right / up / down | `ArrowLeft` .. `ArrowDown` |
 | Return, keypad Enter, Space | select | `Enter`, `NumpadEnter`, `Space` |
 | Esc, Delete (backspace key) | back | `Escape`, `Backspace` |
+| mouse button 4 (the back button) | back | `PointerButton::Extra1`, 2026-10-26; not while a binding waits for a key or a text field has focus |
 | letter O (any layout, ignoring shift) | options | `O` |
 
 Rules: any key with the **Command** modifier is ignored (Windows: ignore when Ctrl, Alt or the Windows key is held, except the
@@ -1645,7 +1704,7 @@ and under a thumb. It ends when the key is up, when a dialog opens or when a bin
 
 ### 6.2 Mouse and wheel
 
-Everything also works with the mouse (clicks listed per component). Mouse wheel / horizontal scroll on the **home screen with no
+Everything also works with the mouse (clicks listed per component); the mouse's back button (button 4) is the Back command, like Esc. Every full-screen area has a Back button for the pointer at its top left (Friends, Profile, Trophy compare; `screens::back_row`, the hint bar level with it). Mouse wheel / horizontal scroll on the **home screen with no
 overlay**: moves the tile selection by one per step: wheel down / scroll right = next game, wheel up / scroll left = previous.
 Accumulate deltas and step at +-40 dp of accumulated scroll (reset the accumulator after each step, and when the gesture pauses);
 one notch of a classic wheel must produce exactly one step; trackpad pixel deltas are used as is. (The original's sign handling
@@ -1732,7 +1791,7 @@ function is the state machine and carries the tests. The UI takes two flags once
 and opens or closes the panel.
 
 **The quick panel** is a side panel (`Overlay::InGame`, `screens::ingame`) in the family of 3.9 and 5.9: the game's name, the line
-"The game keeps running behind the launcher.", and the rows *Back to Game* (the focused row on open), *Trophies*, *Game
+"The game keeps running behind the launcher.", and the rows *Back to Game* (the focused row on open), *Trophies*, *Captures*, *Game
 Settings* (the game's own sheet), *Friends and Party* (only when signed in) and *Close Game* (destructive). *Close Game* opens the
 question `Overlay::ConfirmCloseGame` on *Keep Playing*, so Enter never ends a game. The panel selects the running game first, so
 trophies and settings are that game's. Back on the panel, a click beside it and *Back to Game* all return to the game. Back on the
@@ -2116,7 +2175,7 @@ through the AnyPlay network also gets "on AnyPlay", the size of the party and a 
 - **When.** Set when the game's window appears (`PipelineEvent::WindowShown`), cleared when it
   exits or when the setting is turned off. Everything runs on a `discord` thread; the UI only
   sends messages. Previews and tests never connect.
-- **Settings.** Behaviour, "Show Game on Discord" (`discordPresence`, on by default), with the
+- **Settings.** Behaviour, "Show Game on Discord" (`discordPresence`, off by default since 2026-10-26; a saved choice is kept), with the
   detail "With Discord open, your profile shows the game and for how long." and the `discord-logo`
   icon. Right under it, only while it is on, "Show a Join Button on Discord" (`discordJoinButton`,
   on by default; row `discordJoin`, icon `user-plus`): "While you play online, people who see your
@@ -2531,6 +2590,23 @@ Players who live in Steam (Big Picture, the Steam Deck) can put AnyPlay there as
 
 ---
 
+### 9.10 Captures
+
+Screenshots and clips have a place of their own: a full-screen gallery, like a console's. The module is `anyps5_core::captures` (reading the folder: the list, the owner of a file, the length of a clip, delete); the screen is `screens/captures.rs` (layout in `captures/layout.rs`, drawing in `captures/paint.rs`); the data and the pictures are `app/captures.rs` and `app/captures/images.rs`; the glue is `app/panels/captures.rs`. The overlay is `Overlay::Captures`, a full-screen panel with the library's glass.
+
+- **Reached from.** The captures button in the top bar (`images`, between the library and friends; `HomeIntent::OpenCaptures`) and the row **Captures** in the quick panel the Home button opens in front of a running game. Back leaves, to where it was opened from.
+- **Where the files are.** The screenshots folder (Settings > Advanced; `Pictures/AnyPS5` by default), top level only; links are not followed. A screenshot is `<TITLEID>-<yyyymmdd>-<hhmmss>[-<n>].png` (the engine's), a clip `<game name> <yyyy-mm-dd> <hh-mm-ss>[ (<n>)].mp4` (9.8). `.png`, `.jpg`, `.jpeg` and `.mp4` of any other name count too, as captures of no known game. The folder is read when the area opens, on a thread of its own, and again on **Try Again** or when the folder in the settings changes.
+- **Grouped by game.** Each group has the game's own icon and name from the library; a screenshot is matched by the title ID in its name, a clip by the game name in its name (the same safe-file-name rule the recorder uses). A game the library does not know is a group under the name the file gives it, files of no game are **Other Captures**. Groups are ordered by their newest capture, captures inside a group newest first. Nothing in this is specific to one title.
+- **The grid.** 16:9 tiles that fill the width (as many as fit at about 300 dp, at least two), 20 dp between them, the time under each (`14:32` today, `Oct 25, 14:32` before). A clip carries a play disc and its length in the corner. The first row of a group has the group's header above it. Filters **All**, **Screenshots** and **Clips** are chips under the title (the chosen one is the filled button); select on a chip chooses it.
+- **Focus.** One 2D grid across the groups: left and right step one place and cross from a group to the next, up and down keep the column (into a shorter row the last tile), up from the first row reaches the chips, down from the chips the first tile. Every step plays `move`, an end `bump`, opening `open`, leaving `close`. Tab walks like the library. A click on a tile opens it.
+- **One capture.** A screenshot fills the space between the title and the buttons (the small picture shows at once and the big one, at most 2560 px on the longer side, replaces it). A clip shows its picture and its length, and plays in the system's player (**Open in Player**); the launcher has no video decoder. The picture of a clip is the system's own thumbnail (Windows: the shell's thumbnail of the file, 512 px for the grid and 1024 px for the view, asked on a worker thread of its own so that a hung provider cannot hold up the screenshots; Linux: none), and when there is none the tile is plain with the play disc. The title names the game and "3 of 4" counts within it. Left and right step through the captures in the order of the grid, from one game to the next, and a picture that is already there appears at once (one that has to be waited for fades in); down reaches the buttons: **Open in Player** (clips, the one filled button) or **Copy Image** (screenshots, to the clipboard), **Show in Folder** (Windows and macOS select the file, Linux opens the folder) and **Delete**. Select on a clip's picture plays it; on a screenshot it moves to the buttons. Back returns to the grid on the capture last seen.
+- **Delete** asks first, with the file's name in the question, and opens on **Cancel**: "Delete this screenshot?" / "Delete this clip?", "<name> is removed from your PC. This cannot be undone.", **Cancel** and **Delete Screenshot** / **Delete Clip**. Back and a click beside the card are Cancel (back to the Delete button). The file is removed for good (no recycle bin). Only files the engine or the recorder named can be deleted: a picture or video of the player's own that merely sits in the folder (a screenshots folder pointed at a general Pictures folder) is listed under **Other Captures**, can be viewed, played and shown in its folder, and has no Delete button; `delete` refuses it too. After a delete the view stays at the place and shows the next capture, or the previous one when it was the last, or the grid when the list is empty.
+- **States.** *Loading* (a spinner and the words), *empty* ("No captures yet", how to take a screenshot, F12, and on Windows how to turn Clips on, with **Open Clips Settings**), a filter that hides everything ("No screenshots yet" / "No clips yet", **Show All Captures**), *folder missing* (the folder's path, **Open Folder Settings**) and *unreadable* (**Try Again**). Each has the chips above it and at most one button.
+- **Thousands of files.** Only the rows on screen and one more are laid out and drawn; the scroll follows the focus as in the library. Pictures are decoded by two workers (and the clip thumbnails by a third) off the interface thread; what a frame asks for is the queue (what was scrolled past leaves it); the texture cache holds at most 160 MiB and gives up the ones drawn longest ago; a file that does not decode is asked for once and shows as a plain tile; a picture of more than 64 million pixels is not opened. Closing the area frees the textures.
+- **Never.** Nothing is uploaded or shared, nothing is moved or edited, no game dump is touched; the only write is the delete the player confirmed.
+- **Gallery.** `--gallery=captures-empty|captures-few|captures-many|captures-clips|captures-screenshot|captures-clip|captures-clip-plain|captures-confirm|captures-missing|captures-loading`. All names, times and pictures are invented.
+- **Not yet.** Video playback inside the launcher, a picture for a clip on Linux, a recycle bin, sharing.
+
 ## 10. Asset list
 
 | Asset in the ARM repo | Reuse? | Notes |
@@ -2708,7 +2784,7 @@ The launcher's side of the AnyPlay network ([anyplaynet/network](https://github.
   - *Focus.* Two zones (`friends::nav::step`, pure and tested): the rail and the page. Up and down walk the rail and show the section they stop on; right or select crosses to the page; left on the page crosses back to the rail once the row under the focus has nothing left to step through (a row of buttons or a choice keeps left until it is on its first). Back from the rail or from the first page of a section leaves the screen. The pad, the keyboard and the pointer reach every entry and every row; the screen reader follows the ring (`ui/a11y.rs`) and reads the rail as buttons, the current section selected.
   - *Back.* Back returns to where the screen was opened from, like the profile screen: home for the friends button and the profile button before sign-in; the profile screen when it was opened from there (`Model::friends_back`). A friend's View Profile opens their profile screen; Back from it comes back to the Friends screen on the page and the row it left.
   - *Motion.* The screen comes in and goes out with the overlay spring of the other full-screen panels (opacity and a scale from 1.03); nothing else moves except the rows' own focus and hover, and the quick actions fade with the focus. Reduced motion swaps the springs for the short eases of every other overlay (`AnimExt`); no motion of this screen is the only carrier of a state.
-  - *States.* Signed out: the Start page (Sign In, Create Account, the cloud) in the middle. Offline and connecting: the note and Try Again. Loading and failed: the feed has its own block (3.x); the friends page shows what it has. No friends: above. A ban: the Start page keeps the first row. A mute: the banner row at the top of Home (Restrictions below).
+  - *States.* Signed out: the Start page (Sign In, Create Account, then the same sentence as a note with two rows, Terms of Service and Privacy Policy, which open the pages in the browser (2026-10-26), then the cloud) in the middle. Offline and connecting: the note and Try Again. Loading and failed: the feed has its own block (3.x); the friends page shows what it has. No friends: above. A ban: the Start page keeps the first row. A mute: the banner row at the top of Home (Restrictions below).
   - *Words.* Titles and captions in title case, notes in sentence case. English and Turkish in `friends_strings.rs`.
 
 **Pages.** One screen whose pages swap in place (no slide); Back leads up a page and leaves the screen at the first page of a section. Each page opens on its first focusable row.
@@ -2744,7 +2820,7 @@ Rows keep their identity by their `RowId` and their place among rows of the same
 Hints that explain a text field or a toggle stand under it with the normal 8 dp row gap, not attached: the focused row grows 3 dp and would touch an attached note. A command waiting for the net service says "Sending…" in its detail line.
 
 **Profile screen** (`screens::profile`, its host `app::panels::profile`, the return path `app::profile`; network `spec/cloud-api.md` Profiles, ADR 0024). A full-screen overlay (`Overlay::Profile`) for a player's profile, the player's own or another's, on the frame of the trophy list: glass, 90 dp of side padding, the hint bar at the top right. It replaced the profile page of the side panel, whose banner is gone. `profile` answers a `ProfilePage`: the parts the player may see (`about`, `favourites`, `avatar`, `playtime`), the trophy counts (null when hidden) and the linked accounts. What is shown is decided in `screens::profile::view`, a function from what the launcher knows to plain data (`ProfileView`), and tested without a window; the painter decides nothing.
-  - *Entry and Back.* The profile button of the top bar (own, once signed in), Your Profile in the Friends screen's rail, View Profile on a friend's page, and a card of the feed (the account of the card). Back leaves for where the player came from (`app::profile::Back`): Home for the button; for the others the Friends screen opens again on the page it was left on, with the focus on the row it was on. Signed out, the button keeps its old meaning and opens sign-in. On the player's own profile the buttons under the name are Edit Profile (opens the account web, as before; the one prominent button), Friends and, while the cloud answers, **Appear Offline** (Appear Online while it is on; the same button both ways, `Press::AppearOffline`) (the Friends screen on its first page). On a friend's: Friend Options (their page in the panel: Join Game, Message, Invite, Remove, Block, Report). On someone who asked: Answer Request. On a stranger: Add Friend. Entering through a profile never closes the way back to anything the old page offered.
+  - *Entry and Back.* The profile button of the top bar (own, once signed in), Your Profile in the Friends screen's rail, View Profile on a friend's page, and a card of the feed (the account of the card). Back leaves for where the player came from (`app::profile::Back`): Home for the button; for the others the Friends screen opens again on the page it was left on, with the focus on the row it was on. Signed out, the button keeps its old meaning and opens sign-in. On the player's own profile the buttons under the name are Edit Profile (opens the account web, as before; the one prominent button), Friends and, while the cloud answers, **Appear Offline** (Appear Online while it is on; the same button both ways, `Press::AppearOffline`) (the Friends screen on its first page). On a friend's: Friend Options (their page in the panel: Join Game, Message, Invite, Remove, Block, Report). On someone who asked: Answer Request. On a stranger: Add Friend. Entering through a profile never closes the way back to anything the old page offered. **Back button** (2026-10-26): as on the Friends screen, at the top left; the page starts 60 dp under the top and scrolls out under that row.
   - *Header.* One column, no banner: the avatar (120 dp; the first letter of the handle on one of six calm colours without a picture), the handle as the title (40 light), under it a line with a chip for how you know each other ("Friend", "Request sent", "Wants to be friends"; nothing for a stranger or for yourself) and the status (their presence: Online, Playing a game, Offline, with a dot in the accent while they are online; for the own profile "This is what other players see", and "Appearing offline · This is what other players see" while appearing offline, without a dot), then the text about them (17, white 86 %, at most three lines, 640 dp wide; the status line above it is the small one: 15 medium, 70 %), then the buttons. On a friend's profile a quiet line under the text says what only a friend's page can: "You have 3 of their games" (their titles that are in the player's library; left out at none). "Playing Neon Orchard" says what they play and nothing about joining: the profile has no Join button (that is on their page in the panel, one press away through Friend Options). The only colour that is the player's own is a soft wash behind the top-left of the page: the avatar's colour (`banner_colour`, or the monogram's colour) at 22 % in the corner, to nothing 520 dp down and 70 % across; text keeps its contrast with the glass because the wash is never stronger than that. Behind the 120 dp avatar and the handle it is the one thing on the page that could only be this player's.
   - *Figures.* On the right of the header, plain, no boxes: games, hours (minutes below one hour), trophies, each a 34 light tabular figure over a small tracked label, the trophies with their grades as four coloured trophy glyphs and counts under the label (platinum first, a grade without trophies left out). After the trophies comes **Level**: the level (34 light) over its label, under it the points ("1,240 points", 14 medium tabular) and a 96 dp or text-wide track with the way to the next level in the accent. Level, points and the track are the cloud's (`ProfilePage.level`, network ADR 0029); the launcher only draws the fraction, and without the cloud's answer (hidden trophies, loading, offline) there is no Level. A figure whose part is hidden is left out and the others close ranks; with only one figure left there is no strip at all (one number alone only repeats the caption of its section).
   - *Sections.* Games, Recent Trophies and Recent Activity, in at most two columns, and a section with nothing to show for another player is not there at all, so no one sees that a part was hidden: three sections put the games on the left (45 % of the width) and the other two stacked on the right; two sections one column each; one stands on the left. The own profile keeps all three and says in one sentence what fills an empty one ("Earn a trophy in a game and it shows up here."). A section has a 20 semibold caption (with the count of games in 14 beside it), rows 8 dp apart and 40 dp between sections. Nothing sits in a box at rest: a row is text on the page; the pointer makes it a faint surface (white 7 %), the focus makes it the white card of every list (3 dp grow, dark ink, shadow).
@@ -2758,7 +2834,7 @@ Hints that explain a text field or a toggle stand under it with the normal 8 dp 
   - *Trophy names.* Never from the cloud. A sentence names a trophy only when the player has the game, its trophy file is read (`Effect::LoadTrophies`, off the UI thread, once per game) and the trophy is not hidden, or hidden and earned by the player.
   - *Words.* Sentence-style notes, title-case buttons and captions, no exclamation marks. English and Turkish in `profile_strings.rs` and `online_feed_strings.rs`.
 
-**Trophy compare** (`screens::compare`, view `screens::compare::view`, host `app::panels::compare`, state `app::compare`; network `spec/cloud-api.md` Comparing, ADR 0029; control command `compare`). A full-screen overlay (`Overlay::Compare`) on the frame of the trophy list: the game's art and name (36 light) with "Compare Trophies" over it and "With Lumen" under it; on the right two heads over two 236 dp columns, each with avatar and name ("You" or the handle), "Level 9 · 915 points" with the track to the next level, the game's trophies by grade, and "130 points in this game"; then one row per trophy (picture 52 dp, name, "Gold · what it asks for") with, in each column, a check and the day it was earned or "Not yet". Everything numeric is the cloud's. **Names, texts and pictures come only from the player's own trophy file**; for a game that is not in the library the rows read "Trophy 4", the grade, and one quiet line says why. A hidden trophy the player has not earned is a secret in both columns ("Hidden Trophy", a lock, the Show pill on the focused row; select or Show reveals it and sends `reveal_trophies`, as on the trophy list); "Always Show Hidden Trophies" shows it. The other column is what that player's profile shows the player, so their secrets are not in it. States, one block of words under the header: loading, offline ("You are offline"), failed (Try Again, the one focus stop), hidden ("Their trophies are hidden"), empty ("Nothing to compare yet"). Up and down walk the rows; a row at the top or bottom edge of the list fades out as the edge reaches it (opaque while it rests inside the margin, gone when the cut reaches its text), so no line is cut half way under the heads. Back and Options return to the profile on the row it was left from (the cue is "back", 7.6). English and Turkish in `compare_strings.rs`.
+**Trophy compare** (`screens::compare`, view `screens::compare::view`, host `app::panels::compare`, state `app::compare`; network `spec/cloud-api.md` Comparing, ADR 0029; control command `compare`). A full-screen overlay (`Overlay::Compare`) on the frame of the trophy list: the game's art and name (36 light) with "Compare Trophies" over it and "With Lumen" under it; on the right two heads over two 236 dp columns, each with avatar and name ("You" or the handle), "Level 9 · 915 points" with the track to the next level, the game's trophies by grade, and "130 points in this game"; then one row per trophy (picture 52 dp, name, "Gold · what it asks for") with, in each column, a check and the day it was earned or "Not yet". Everything numeric is the cloud's. **Names, texts and pictures come only from the player's own trophy file**; for a game that is not in the library the rows read "Trophy 4", the grade, and one quiet line says why. A hidden trophy the player has not earned is a secret in both columns ("Hidden Trophy", a lock, the Show pill on the focused row; select or Show reveals it and sends `reveal_trophies`, as on the trophy list); "Always Show Hidden Trophies" shows it. The other column is what that player's profile shows the player, so their secrets are not in it. States, one block of words under the header: loading, offline ("You are offline"), failed (Try Again, the one focus stop), hidden ("Their trophies are hidden"), empty ("Nothing to compare yet"). Up and down walk the rows; a row at the top or bottom edge of the list fades out as the edge reaches it (opaque while it rests inside the margin, gone when the cut reaches its text), so no line is cut half way under the heads. Back and Options return to the profile on the row it was left from (the cue is "back", 7.6). **Back button** (2026-10-26): the console button of the Friends screen (small, caret, "Back") at the top left of the 90 dp frame, the hint bar level with it at the right; the header starts 60 dp under the top (`screens::back_row`, `BACK_ROW`), so the mouse can leave without the keyboard. English and Turkish in `compare_strings.rs`.
 
 **Appear Offline** (network ADR 0028, control command `set_appear_offline`, `account.appear_offline` of the `state` event). `Online::set_appear_offline` shows the choice at once, a refusal takes it back with a toast, and the `state` event settles it (also when another device changes it). Where it shows: the switch "Appear Offline" (detail "Friends see you as offline") on the Account page of the online panel; the button on the own profile; "Appearing offline" in the panel's subtitle, the profile's status line and, in quiet ink (white 72 %), after the name in the top bar's profile pill, whose accent dot becomes a ring while it is on (its accessible name says "Appearing offline" instead of "Online"). Offline from the cloud the player is simply offline: nothing is shown.
 

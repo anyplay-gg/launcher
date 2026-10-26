@@ -246,6 +246,16 @@ fn top_bar(ui: &mut Ui, cx: &mut ScreenCx<'_>, screen: Rect, presses: &mut Vec<P
     if friends.clicked() {
         presses.push(Press::Focus(HomeFocus::FRIENDS));
     }
+    // Captures sit beside the library: the pictures and videos of the games.
+    let response = IconButton::new(
+        Icon::IMAGES,
+        crate::screens::captures_strings::CapturesText::Title.text(language),
+    )
+    .focused(focused(HomeFocus::CAPTURES))
+    .show(&mut row);
+    if response.clicked() {
+        presses.push(Press::Focus(HomeFocus::CAPTURES));
+    }
     let response = IconButton::new(Icon::SQUARES_FOUR, language.text(Key::Library))
         .focused(focused(HomeFocus::LIBRARY))
         .show(&mut row);
