@@ -1128,6 +1128,7 @@ fn tile(
         1,
     );
     let name_height = name.size().y;
+    let mut cut = name.elided;
     painter.galley(
         pos2(rect.center().x - name.size().x * 0.5, y),
         name,
@@ -1148,6 +1149,7 @@ fn tile(
         1,
     );
     let state_height = state.size().y;
+    cut |= state.elided;
     painter.galley(
         pos2(rect.center().x - state.size().x * 0.5, y),
         state,
@@ -1156,10 +1158,29 @@ fn tile(
     y += state_height + 2.0;
     if let Some(game) = &tile.game {
         let line = clamped(&painter, GAME, game, egui::Color32::PLACEHOLDER, inner, 1);
+        cut |= line.elided;
         painter.galley(
             pos2(rect.center().x - line.size().x * 0.5, y),
             line,
             color::text_row_detail(),
+        );
+    }
+    // A name, a state or a game cut to the tile's width is read in full while the pointer or the
+    // focus is on it.
+    if cut {
+        let mut said = format!("{}\n{}", tile.handle, tile.state);
+        if let Some(game) = &tile.game {
+            said.push('\n');
+            said.push_str(game);
+        }
+        crate::ui::reveal::full_text(
+            &ctx,
+            response.id,
+            rect,
+            &said,
+            crate::ui::input::hovered(&ctx, &response)
+                || (focused && crate::ui::input::focus_visible(&ctx)),
+            true,
         );
     }
     response.clicked()

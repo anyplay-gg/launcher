@@ -312,6 +312,10 @@ pub enum OnlineLook {
     FriendsOffline,
     /// The cloud has not answered yet.
     FriendsConnecting,
+    /// A friend with the longest handle and game name, focused on the list: the chip reads them.
+    FriendsLong,
+    /// The party room with the same long names on a tile.
+    PartyLong,
     /// A friend's row has the focus: the quick actions come up.
     FriendsFocus,
     /// The focus stands on the rail.
@@ -784,6 +788,8 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "friends-empty" => ScreenPage::Online(OnlineLook::FriendsEmpty),
         "friends-offline" => ScreenPage::Online(OnlineLook::FriendsOffline),
         "friends-connecting" => ScreenPage::Online(OnlineLook::FriendsConnecting),
+        "friends-long" => ScreenPage::Online(OnlineLook::FriendsLong),
+        "friends-party-long" => ScreenPage::Online(OnlineLook::PartyLong),
         "friends-focus" => ScreenPage::Online(OnlineLook::FriendsFocus),
         "friends-rail" => ScreenPage::Online(OnlineLook::FriendsRail),
         "friends-party-none" => ScreenPage::Online(OnlineLook::PartyNone),
@@ -1040,6 +1046,9 @@ fn sample_online(look: OnlineLook) -> anyps5_core::online::Online {
         state.invitations.clear();
     } else {
         sample_social(&mut state);
+    }
+    if matches!(look, OnlineLook::FriendsLong | OnlineLook::PartyLong) {
+        long_names(&mut state);
     }
     match look {
         OnlineLook::FriendsOffline => state.cloud = Some(Cloud::Offline),
@@ -1359,6 +1368,31 @@ fn sample_screen(state: &mut anyps5_core::online::Online, look: OnlineLook) {
 }
 
 /// An invented party of three, a session, four conversations and a stranger who wrote first.
+/// The longest handle and game name the sample friend can have: what a row, a tile and a strip
+/// have to cut and the chip has to give back.
+fn long_names(state: &mut anyps5_core::online::Online) {
+    const HANDLE: &str = "Wanderer_of_the_Skies_01";
+    const GAME: &str = "Lanternfall: The Complete Ember Drift Anthology Edition";
+    if let Some(friend) = state
+        .friends
+        .friends
+        .iter_mut()
+        .find(|f| f.account.id == anyps5_core::online::api::AccountId(2))
+    {
+        friend.account.handle = HANDLE.into();
+        if let Some(activity) = friend.presence.activity.as_mut() {
+            activity.title = GAME.into();
+        }
+    }
+    if let Some(party) = state.social.party.as_mut() {
+        for member in &mut party.members {
+            if member.account.id == anyps5_core::online::api::AccountId(2) {
+                member.account.handle = HANDLE.into();
+            }
+        }
+    }
+}
+
 fn sample_social(state: &mut anyps5_core::online::Online) {
     use anyps5_core::online::api::{
         Account, AccountId, Conversation, ConversationKind, Conversations, Message, Messages,
@@ -2692,7 +2726,10 @@ impl ScreenGallery {
                         self.friends.focus_row("friendRow", 1, &data);
                     }
                     OnlineLook::FriendsRail => self.friends.focus_rail(),
-                    OnlineLook::PartyNone => self.friends.show_page(Page::Party, &data),
+                    OnlineLook::PartyNone | OnlineLook::PartyLong => {
+                        self.friends.show_page(Page::Party, &data)
+                    }
+                    OnlineLook::FriendsLong => self.friends.focus_row("friendRow", 0, &data),
                     OnlineLook::MissedCall => self.friends.show_page(Page::Home, &data),
                     OnlineLook::PartyDiscord => self.friends.show_page(Page::Party, &data),
                     OnlineLook::Friend => self

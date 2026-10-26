@@ -1387,6 +1387,7 @@ fn entry_row(
     let tag_room = tag.as_ref().map_or(0.0, |t| t.size().x + 3.0 * space::S);
     let title_room = (x - text_x - space::S - tag_room).max(40.0);
     let title = one_line(&painter, title_style, &entry.title, title_room);
+    let mut cut = title.elided;
     let title_w = title.size().x;
     painter.galley(
         pos2(text_x, first_y - title.size().y * 0.5),
@@ -1433,12 +1434,9 @@ fn entry_row(
     } else {
         color::text_detail()
     };
-    let preview = one_line(
-        &painter,
-        preview_style,
-        &entry_preview(entry, language),
-        preview_room,
-    );
+    let said = entry_preview(entry, language);
+    let preview = one_line(&painter, preview_style, &said, preview_room);
+    cut |= preview.elided;
     painter.galley(
         pos2(text_x, second_y - preview.size().y * 0.5),
         preview,
@@ -1462,6 +1460,18 @@ fn entry_row(
             ty::BADGE,
             &count,
             color::on_primary(),
+        );
+    }
+    // A name or a line cut to the row's width is read in full while the pointer or the focus is
+    // on it.
+    if cut {
+        crate::ui::reveal::full_text(
+            &ctx,
+            response.id,
+            rect,
+            &format!("{}\n{said}", entry.title),
+            hovered || (focused && input::focus_visible(&ctx)),
+            true,
         );
     }
     rect

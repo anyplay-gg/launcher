@@ -1366,11 +1366,6 @@ impl OnlinePanel {
                     manage = manage.group_start();
                 }
                 rows.push(manage);
-                rows.push(Row::info(
-                    "cloud",
-                    t(T::Cloud),
-                    data.cloud.map(str::to_owned),
-                ));
                 rows.push(appear_offline_row(data).group_start());
                 rows.push(
                     Row::toggle("relayOnly", t(T::RelayOnly), data.relay_only)
@@ -1413,6 +1408,17 @@ impl OnlinePanel {
                     )
                     .group_start(),
                 );
+                // Which cloud the account is on is a note under Sign Out, not a row of its own: it
+                // is a fact to read, and there is nothing to press on it.
+                if let Some(cloud) = data.cloud {
+                    let host = cloud
+                        .trim_start_matches("https://")
+                        .trim_start_matches("http://")
+                        .trim_end_matches('/');
+                    rows.push(
+                        Row::info("cloud", f(T::SignedInOn, &[Arg::Str(host)]), None).attached(),
+                    );
+                }
                 (
                     FX::OnlineSettings.text(language).to_owned(),
                     account.map(|a| a.handle.clone()),
@@ -2311,6 +2317,20 @@ mod tests {
         assert_eq!(ids(&panel.rows(&data(&online)).2)[0], "connecting");
         online.cloud = Some(Cloud::Online);
         assert_ne!(ids(&panel.rows(&data(&online)).2)[0], "connecting");
+    }
+
+    #[test]
+    fn the_cloud_is_a_note_under_sign_out_not_a_row_between_cards() {
+        let online = signed_in();
+        let mut panel = OnlinePanel::default();
+        panel.open(&data(&online));
+        panel.go(Page::Account, &data(&online));
+        let rows = panel.rows(&data(&online)).2;
+        let last = rows.last().unwrap();
+        assert_eq!(last.id, "cloud");
+        assert_eq!(last.title, "Signed in on cloud.example.org.");
+        assert!(last.attached && !last.kind().focusable());
+        assert_eq!(rows[rows.len() - 2].id, "signOut");
     }
 
     #[test]

@@ -1053,6 +1053,9 @@ leaves the "Back" hint out (`HintSet::without_back`): the bar never repeats a co
 **Messages** (tokens for the social area): `color::bubble_other` white 0.10, `bubble_own` 0.16, `composer` 0.10 with the control hairline;
 gaps `space::BUBBLE_IN_GROUP` 4, `BUBBLE_BETWEEN` 16, `BUBBLE_DAY` 24. A system row is centred 14 regular in `text_note` with no bubble.
 
+**Reading what was cut (social round 2, 2026-10-26).** A value that ends in an ellipsis is reachable. `ui::reveal::full_text` shows the full text in a glass chip (radius 12, `ty::NOTE`, the toast's glass) under the thing, over it where the window ends below: while the pointer is on it, or once the focus has rested on it for 0.5 s (keys and pad only, so a walk down a list shows none), faded in with `Motion::Hover`. It is used by every panel row whose title or detail is cut (`PanelRow`), the conversation list (name and newest line), a party tile (name, state, game) and the call surfaces: the strip grows with its words up to 520 dp before it cuts, and the chip gives back the rest; the ringing card's caller likewise. The chip is not an accessible node: the accessible names carry the full text already. Gallery scenes: `friends-long`, `friends-party-long`.
+- *Online Settings.* The Cloud row, a bare label and address between two cards, is gone: the address is a note under Sign Out ("Signed in on cloud.example.org."), a fact to read with nothing to press.
+
 **Motion and avatars (PR 3 of the round).** Hover, press, progress and every reduced-motion ease (focus, layout, overlay, banner slide) use `Bezier::STRONG_OUT` (0.23, 1, 0.32, 1)
 at the same durations (120, 100, 350, 120 ms): the answer to a touch is seen at once. The exit of the old hero keeps the softer ease-out it was
 tuned with. The initial in the call card and the Play Together card (24 bold before) is `ty::ITEM_TITLE` (22 semibold) in `readable_ink` of the gradient's middle
