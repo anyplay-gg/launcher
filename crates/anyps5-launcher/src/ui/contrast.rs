@@ -570,3 +570,9 @@ fn the_text_roles_are_sized_as_the_standard_reads_them() {
     assert_eq!(Need::of(ty::HERO_TITLE), Need::Large);
     assert_eq!(Need::of(ty::TOP_BAR_TITLE), Need::Large);
 }
+
+#[test]
+fn a_qr_code_is_black_on_white_whatever_the_theme() {
+    // A picture, exempt from the ink table (DESIGN.md 5.8); a camera still wants the full ratio.
+    assert!(ratio(color::qr_module(), color::qr_card()) > 20.9);
+}

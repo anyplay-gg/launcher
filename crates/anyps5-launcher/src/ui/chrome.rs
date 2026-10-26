@@ -396,6 +396,14 @@ pub enum RowControl<'a> {
         labels: &'a [String],
         selected: usize,
     },
+    /// A QR code of `data` on a white card, the row's detail beside it. Not focusable.
+    Qr {
+        data: &'a str,
+    },
+    /// An address in the mono face, in the room the title leaves, cut in the middle. Not focusable.
+    Link {
+        value: &'a str,
+    },
 }
 
 /// A person's picture in the place of a row's glyph: a round picture, or the first letter on a calm
@@ -589,7 +597,49 @@ impl<'a> PanelRow<'a> {
     }
 
     fn focusable(&self) -> bool {
-        !matches!(self.control, RowControl::Info { .. } | RowControl::Caption)
+        !matches!(
+            self.control,
+            RowControl::Info { .. }
+                | RowControl::Caption
+                | RowControl::Qr { .. }
+                | RowControl::Link { .. }
+        )
+    }
+
+    /// A QR code: the white card at the text edge of the panel, the detail beside it. No row
+    /// surface: it is a picture on the panel, like a note is text on it.
+    fn show_qr(self, ui: &mut Ui, data: &str) -> RowOutput {
+        let painter = ui.painter().clone();
+        let width = ui.available_width();
+        let side = size::QR_CARD;
+        let space = (6.0, 6.0);
+        let (rect, response) =
+            ui.allocate_exact_size(vec2(width, space.0 + side + space.1), Sense::hover());
+        response.widget_info(|| self.widget_info());
+        if ui.is_rect_visible(rect) {
+            let card = Rect::from_min_size(
+                pos2(rect.min.x + size::ROW_PADDING_X, rect.min.y + space.0),
+                Vec2::splat(side),
+            );
+            paint_qr(&painter, card, data);
+            if let Some(detail) = self.detail {
+                let left = card.max.x + QR_HINT_GAP;
+                let wrap = (rect.max.x - size::ROW_PADDING_X - left).min(QR_HINT_WIDTH);
+                if wrap > 0.0 {
+                    let galley = text::layout(&painter, ty::NOTE, detail, color::text_note(), wrap);
+                    let top = card.center().y - galley.size().y * 0.5;
+                    painter.galley(pos2(left, top), galley, color::text_note());
+                }
+            }
+        }
+        RowOutput {
+            response,
+            step: None,
+            toggled: false,
+            text_changed: false,
+            submitted: false,
+            pressed: None,
+        }
     }
 
     /// Notes and captions: bare text on the panel, no card, as high as their text needs.
@@ -680,6 +730,11 @@ impl<'a> PanelRow<'a> {
                 info.current_text_value = Some(labels.join(", "));
                 info
             }
+            // A picture with its name; what it encodes is the link row under it.
+            RowControl::Qr { .. } => WidgetInfo::labeled(Role::Image, true, self.title),
+            RowControl::Link { value } => {
+                WidgetInfo::labeled(Role::Label, true, format!("{}: {value}", self.title))
+            }
             RowControl::Action | RowControl::Command | RowControl::Text { .. } => {
                 // What the row says under its title is read after its name.
                 let mut info = WidgetInfo::labeled(Role::Button, true, self.title);
@@ -698,6 +753,9 @@ impl<'a> PanelRow<'a> {
             RowControl::Caption | RowControl::Info { value: None }
         ) {
             return self.show_text_block(ui);
+        }
+        if let RowControl::Qr { data } = self.control {
+            return self.show_qr(ui, data);
         }
         let focusable = self.focusable();
         let width = ui.available_width();
@@ -937,6 +995,26 @@ impl<'a> PanelRow<'a> {
             RowControl::Info { value } => value.map_or(0.0, |v| {
                 text::width(painter, ty::ROW_INFO, v).min(row_width * 0.4)
             }),
+            // The address takes what the title leaves, the title kept whole on one line.
+            RowControl::Link { value } => {
+                let icon = if self.icon.is_some() {
+                    size::ROW_ICON_BOX + 14.0
+                } else {
+                    0.0
+                };
+                let title = text::width(painter, ty::ROW_TITLE, self.title);
+                let room = row_width - 2.0 * size::ROW_PADDING_X - icon - title - 24.0;
+                let natural = painter
+                    .layout_no_wrap(
+                        (*value).to_owned(),
+                        theme::font_mono(size::LINK_MONO),
+                        Color32::WHITE,
+                    )
+                    .size()
+                    .x;
+                natural.min(room.max(80.0))
+            }
+            RowControl::Qr { .. } => size::QR_CARD,
             RowControl::Text { .. } if self.wide => {
                 // The field takes the whole row; the title is its hint while it is empty.
                 let icon = if self.icon.is_some() || self.pad_glyph.is_some() {
@@ -1218,6 +1296,19 @@ impl<'a> PanelRow<'a> {
                     );
                 }
             }
+            RowControl::Link { value } => {
+                let font = theme::font_mono(size::LINK_MONO);
+                let shown = text::middle_truncate_font(&painter, &font, value, rect.width());
+                painter.text(
+                    pos2(rect.max.x, rect.center().y),
+                    Align2::RIGHT_CENTER,
+                    shown,
+                    font,
+                    color::text_path(),
+                );
+            }
+            // Drawn by `show_qr`.
+            RowControl::Qr { .. } => {}
             RowControl::Text { value } => {
                 let field = Rect::from_center_size(rect.center(), vec2(rect.width(), 30.0));
                 let (align, layout) = if wide {
@@ -1292,6 +1383,70 @@ impl<'a> PanelRow<'a> {
             }
         }
     }
+}
+
+/// The hint beside a QR code: 24 dp from the card, at most a note's comfortable measure.
+const QR_HINT_GAP: f32 = 24.0;
+const QR_HINT_WIDTH: f32 = 340.0;
+
+/// The modules of `data` as a QR code (error correction M), or `None` when it is too long for
+/// one. Kept between frames: the link changes only with a new token.
+fn qr_modules(ctx: &Context, data: &str) -> Option<std::sync::Arc<(usize, Vec<bool>)>> {
+    let id = Id::unique(("qr-modules", data));
+    if let Some(code) = ctx.data(|d| d.get_temp::<std::sync::Arc<(usize, Vec<bool>)>>(id)) {
+        return Some(code);
+    }
+    let code = qrcodegen::QrCode::encode_text(data, qrcodegen::QrCodeEcc::Medium).ok()?;
+    let n = code.size() as usize;
+    let mut modules = Vec::with_capacity(n * n);
+    for y in 0..n as i32 {
+        for x in 0..n as i32 {
+            modules.push(code.get_module(x, y));
+        }
+    }
+    let code = std::sync::Arc::new((n, modules));
+    ctx.data_mut(|d| d.insert_temp(id, code.clone()));
+    Some(code)
+}
+
+/// A QR code of `data` filling `card`: the white card (radius 12), then the dark modules as one
+/// mesh without feathering, each module a whole number of physical pixels and the code centred,
+/// so no module blurs into its neighbour and the quiet zone is at least four modules.
+pub fn paint_qr(painter: &Painter, card: Rect, data: &str) {
+    painter.rect_filled(card, corner(radius::QR_CARD), color::qr_card());
+    let Some(code) = qr_modules(painter.ctx(), data) else {
+        return;
+    };
+    let (n, modules) = (&code.0, &code.1);
+    let ppp = painter.pixels_per_point();
+    let total = (*n + 2 * size::QR_QUIET) as f32;
+    let module = ((card.width() * ppp / total).floor() / ppp).max(1.0 / ppp);
+    let drawn = module * *n as f32;
+    let snap = |v: f32| (v * ppp).round() / ppp;
+    let origin = pos2(
+        snap(card.center().x - drawn * 0.5),
+        snap(card.center().y - drawn * 0.5),
+    );
+    let mut mesh = egui::Mesh::default();
+    let dark = color::qr_module();
+    for y in 0..*n {
+        let mut x = 0;
+        while x < *n {
+            if !modules[y * n + x] {
+                x += 1;
+                continue;
+            }
+            // One quad per horizontal run of dark modules.
+            let start = x;
+            while x < *n && modules[y * n + x] {
+                x += 1;
+            }
+            let min = origin + vec2(start as f32 * module, y as f32 * module);
+            let run = Rect::from_min_size(min, vec2((x - start) as f32 * module, module));
+            mesh.add_colored_rect(run, dark);
+        }
+    }
+    painter.add(egui::Shape::mesh(mesh));
 }
 
 /// Spring-animated scroll offset that keeps the focused row centred (`scrollTo(anchor: .center)`

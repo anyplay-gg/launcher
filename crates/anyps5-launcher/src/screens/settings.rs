@@ -26,6 +26,7 @@ use crate::screens::discord_strings::DiscordText;
 use crate::screens::format::{abbreviate_path, home_dir};
 use crate::screens::ingame::InGameText;
 use crate::screens::ludus::{self, LudusAction};
+use crate::screens::ludus_web;
 use crate::screens::phone::{self, PhoneAction};
 use crate::screens::phone_strings::PhoneText;
 use crate::screens::rows::{self, Change, ListOptions, Row};
@@ -1180,6 +1181,10 @@ pub fn apply_value(prefs: &mut Preferences, change: &Change) -> bool {
             row: "ludusctrl",
             on,
         } => prefs.phone_ludusctrl = *on,
+        Change::Toggle {
+            row: "ludusBrowser",
+            on,
+        } => prefs.phone_ludusctrl_browser = *on,
         Change::Choice {
             row: "clips",
             index,
@@ -1445,6 +1450,11 @@ impl SettingsPanel {
             change if ludus::action(env.ludus, change).is_some() => {
                 out.actions
                     .extend(ludus::action(env.ludus, change).map(SettingsAction::Ludus));
+            }
+            change if ludus_web::action(&env.ludus.browser, change).is_some() => {
+                out.actions.extend(
+                    ludus_web::action(&env.ludus.browser, change).map(SettingsAction::Ludus),
+                );
             }
             Change::Run { row: "screenshots" } => {
                 let start = prefs.screenshots_folder.clone();

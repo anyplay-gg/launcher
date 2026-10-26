@@ -233,6 +233,14 @@ pub enum PhoneLook {
     LudusConnected,
     /// A phone of the phone server and a LudusCtrl phone both connected: the whole page.
     Both,
+    /// LudusCtrl's browser client waits: the QR code, the link, two other addresses.
+    BrowserWaiting,
+    /// A browser holds the pad.
+    BrowserLinked,
+    /// The certificate was made again and the port was busy: both notes.
+    BrowserReissued,
+    /// The browser client could not start.
+    BrowserFailed,
 }
 
 impl PhoneLook {
@@ -249,6 +257,17 @@ impl PhoneLook {
                 | PhoneLook::LudusPairing
                 | PhoneLook::LudusConnected
                 | PhoneLook::Both
+        ) || self.browser_on()
+    }
+
+    /// Whether LudusCtrl's browser client is on in this look.
+    fn browser_on(self) -> bool {
+        matches!(
+            self,
+            PhoneLook::BrowserWaiting
+                | PhoneLook::BrowserLinked
+                | PhoneLook::BrowserReissued
+                | PhoneLook::BrowserFailed
         )
     }
 }
@@ -468,7 +487,13 @@ fn sample_phone(look: PhoneLook) -> crate::app::phone::PhoneState {
             state.info = None;
             state.failed = true;
         }
-        PhoneLook::LudusWaiting | PhoneLook::LudusPairing | PhoneLook::LudusConnected => {}
+        PhoneLook::LudusWaiting
+        | PhoneLook::LudusPairing
+        | PhoneLook::LudusConnected
+        | PhoneLook::BrowserWaiting
+        | PhoneLook::BrowserLinked
+        | PhoneLook::BrowserReissued
+        | PhoneLook::BrowserFailed => {}
         PhoneLook::Both => {
             state.connected = Some("Pixel 8".into());
             state.latency_ms = Some(4.0);
@@ -508,9 +533,54 @@ fn sample_ludus(look: PhoneLook) -> crate::app::ludus::LudusState {
                 phone("d4", "Redmi Note 13 Pro", "2026-10-26T08:15:52Z"),
             ];
         }
+        PhoneLook::BrowserWaiting
+        | PhoneLook::BrowserLinked
+        | PhoneLook::BrowserReissued
+        | PhoneLook::BrowserFailed => {
+            state.paired = vec![phone("c3", "Galaxy Tab S9", "2026-10-25T20:41:07Z")];
+            state.browser = sample_browser(look);
+        }
         _ => {}
     }
     state
+}
+
+/// An invented browser client for the same page. The token is made up and as long as a real one
+/// (22 characters), so the link row shows its true width.
+fn sample_browser(look: PhoneLook) -> crate::app::ludus_web::BrowserState {
+    use crate::app::ludus_web::{BrowserInfo, BrowserState, LUDUS_WEB_PORT};
+    if look == PhoneLook::BrowserFailed {
+        return BrowserState {
+            failed: true,
+            ..BrowserState::default()
+        };
+    }
+    let token = "q8Zk3VtW0bHn5sLc2pRj1A";
+    let port = if look == PhoneLook::BrowserReissued {
+        51234
+    } else {
+        LUDUS_WEB_PORT
+    };
+    let link = |address: &str| format!("https://{address}:{port}/#t={token}");
+    let urls = if look == PhoneLook::BrowserWaiting {
+        vec![
+            link("192.168.178.20"),
+            link("10.0.0.7"),
+            link("172.20.144.1"),
+        ]
+    } else {
+        vec![link("192.168.178.20")]
+    };
+    BrowserState {
+        info: Some(BrowserInfo {
+            urls,
+            port,
+            preferred_port: port == LUDUS_WEB_PORT,
+            reissued: look == PhoneLook::BrowserReissued,
+        }),
+        failed: false,
+        peer: (look == PhoneLook::BrowserLinked).then(|| "192.168.178.41".into()),
+    }
 }
 
 /// The page named on the command line.
@@ -560,6 +630,10 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "phone-ludus-pairing" => ScreenPage::Phone(PhoneLook::LudusPairing),
         "phone-ludus-connected" => ScreenPage::Phone(PhoneLook::LudusConnected),
         "phone-both" => ScreenPage::Phone(PhoneLook::Both),
+        "phone-browser" => ScreenPage::Phone(PhoneLook::BrowserWaiting),
+        "phone-browser-linked" => ScreenPage::Phone(PhoneLook::BrowserLinked),
+        "phone-browser-reissued" => ScreenPage::Phone(PhoneLook::BrowserReissued),
+        "phone-browser-failed" => ScreenPage::Phone(PhoneLook::BrowserFailed),
         "toolkit" => ScreenPage::Toolkit(ToolkitLook::Stable),
         "toolkit-update" => ScreenPage::Toolkit(ToolkitLook::Update),
         "toolkit-newer" => ScreenPage::Toolkit(ToolkitLook::Newer),
@@ -1666,6 +1740,7 @@ impl ScreenGallery {
             ScreenPage::Phone(look) => {
                 prefs.phone_remote = look.phone_on();
                 prefs.phone_ludusctrl = look.ludus_on();
+                prefs.phone_ludusctrl_browser = look.browser_on();
                 (sample_phone(look), sample_ludus(look))
             }
             _ => Default::default(),
@@ -2406,9 +2481,13 @@ impl ScreenGallery {
                 }
                 // LudusCtrl's question lands on its first answer; a connected LudusCtrl phone
                 // shows the end of the page, where the app comes from.
+                // The browser client's scenes land in its group, so it is in view.
                 let focus = match look {
                     PhoneLook::LudusPairing => Some("ludusAllow"),
                     PhoneLook::LudusConnected => Some("ludusApp"),
+                    PhoneLook::BrowserWaiting => Some("browserCopy"),
+                    PhoneLook::BrowserLinked | PhoneLook::BrowserFailed => Some("ludusBrowser"),
+                    PhoneLook::BrowserReissued => Some("browserNewLink"),
                     _ => None,
                 };
                 if let Some(focus) = focus {

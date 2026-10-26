@@ -34,6 +34,10 @@ pub enum LudusAction {
     Forget(String),
     /// Open the LudusCtrl project page.
     OpenProjectPage,
+    /// Put this browser link on the clipboard (the host does it and says so).
+    CopyLink(String),
+    /// A new browser link: the old one stops working.
+    NewLink,
 }
 
 /// The LudusCtrl group, an option of Phone as Controller: the page shows it only while the phone

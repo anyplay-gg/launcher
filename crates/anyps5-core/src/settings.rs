@@ -594,6 +594,11 @@ pub struct Preferences {
     /// on this PC through the LudusCtrl app. Off until the player turns it on.
     #[serde(default)]
     pub phone_ludusctrl: bool,
+    /// LudusCtrl's browser client, an option of LudusCtrl: a phone opens a page from this PC and
+    /// its browser passes on a controller connected to it, with no app. Off until the player
+    /// turns it on; it runs only while `phone_remote` and `phone_ludusctrl` are on too.
+    #[serde(default)]
+    pub phone_ludusctrl_browser: bool,
     /// Clips: how many seconds of the running game the launcher keeps for a clip (one of
     /// [`crate::clips::LENGTHS`]); 0 is Off, and nothing is recorded.
     #[serde(default)]
@@ -658,6 +663,7 @@ impl Default for Preferences {
             record_network: false,
             phone_remote: false,
             phone_ludusctrl: false,
+            phone_ludusctrl_browser: false,
             clips_seconds: 0,
             clips_hotkey: None,
             run_asked: BTreeSet::new(),
@@ -1280,6 +1286,7 @@ mod tests {
             "the phone server is off until the player turns it on"
         );
         assert!(!prefs.phone_ludusctrl);
+        assert!(!prefs.phone_ludusctrl_browser);
         assert!(prefs.check_for_updates);
         assert_eq!(prefs.profile_name, "Player");
         assert_eq!(prefs.toolkit_repository, crate::toolkit::DEFAULT_REPOSITORY);
