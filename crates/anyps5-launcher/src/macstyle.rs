@@ -280,7 +280,10 @@ mod imp {
             let ns_window = view.window()?;
             // The launcher is dark only: dark traffic lights, dark material.
             let dark = NSAppearance::appearanceNamed(unsafe { NSAppearanceNameDarkAqua });
+            // On the application, the window and the blur view alike: whichever the system asks first.
+            NSApplication::sharedApplication(mtm).setAppearance(dark.as_deref());
             ns_window.setAppearance(dark.as_deref());
+            tracing::debug!("mac style: dark appearance {}", dark.is_some());
 
             let bounds = view.bounds();
             // Liquid Glass where the system has it (macOS 26), the older blur otherwise.
@@ -301,6 +304,7 @@ mod imp {
                 view.setState(NSVisualEffectState::Active);
                 Retained::into_super(view)
             };
+            effect.setAppearance(dark.as_deref());
             effect.setAutoresizingMask(
                 objc2_app_kit::NSAutoresizingMaskOptions::ViewWidthSizable
                     | objc2_app_kit::NSAutoresizingMaskOptions::ViewHeightSizable,
