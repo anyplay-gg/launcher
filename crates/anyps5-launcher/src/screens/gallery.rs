@@ -116,6 +116,8 @@ pub enum ScreenPage {
     Library,
     /// The library grid with no games.
     LibraryEmpty,
+    /// The library with a long name on the focused tile: it shows in full, on two lines.
+    LibraryLongName,
     /// The Captures area, in one of its states.
     Captures(crate::screens::captures::sample::CapturesLook),
     /// The Toolkit category, in its rows: stable, an update waiting, pinned, a local build.
@@ -709,6 +711,7 @@ pub fn parse(name: &str) -> Option<ScreenPage> {
         "report" => ScreenPage::Report,
         "library" => ScreenPage::Library,
         "library-empty" => ScreenPage::LibraryEmpty,
+        "library-longname" => ScreenPage::LibraryLongName,
         "captures-empty" => ScreenPage::Captures(CapturesLook::Empty),
         "captures-few" => ScreenPage::Captures(CapturesLook::Few),
         "captures-many" => ScreenPage::Captures(CapturesLook::Many),
@@ -2337,14 +2340,25 @@ impl ScreenGallery {
         };
         let entries: Vec<LibraryEntry> = (0..shown)
             .map(|i| LibraryEntry {
-                name: NAMES[i].to_owned(),
+                name: if i == 1 && matches!(self.page, ScreenPage::LibraryLongName) {
+                    "Lanternfall: Director's Cut, Complete Edition".to_owned()
+                } else {
+                    NAMES[i].to_owned()
+                },
                 icon: Some(self.tile(i)),
                 overlay: if i == 5 {
                     TileOverlay::Running
                 } else {
                     TileOverlay::None
                 },
-                state: if i == 5 {
+                state: if i == 1 && matches!(self.page, ScreenPage::LibraryLongName) {
+                    StateText {
+                        icon: Icon::ARROW_CIRCLE_DOWN,
+                        text: "Update available".into(),
+                        tint: crate::ui::theme::color::update_available(),
+                        quiet: false,
+                    }
+                } else if i == 5 {
                     StateText {
                         icon: Icon::PLAY_CIRCLE,
                         text: language.text(Key::Running).into(),
@@ -2863,7 +2877,7 @@ impl ScreenGallery {
                 self.trophies.open_at(SECRET_TROPHY);
                 self.trophies.reveal(SECRET_TROPHY);
             }
-            ScreenPage::Library => self.library.open(1),
+            ScreenPage::Library | ScreenPage::LibraryLongName => self.library.open(1),
             ScreenPage::LibraryEmpty => self.library.open(0),
             ScreenPage::Captures(look) => self.open_captures(ctx, look),
             ScreenPage::ControlsEnd => self.controls.open_row(30),
