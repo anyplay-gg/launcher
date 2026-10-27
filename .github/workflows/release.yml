@@ -401,7 +401,7 @@ jobs:
       - name: System packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends pkg-config libpipewire-0.3-dev clang
+          sudo apt-get install -y --no-install-recommends pkg-config libpipewire-0.3-dev libudev-dev clang
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
