@@ -415,6 +415,15 @@ pub enum Purpose {
         on: bool,
         before: bool,
     },
+    /// The people the player played with recently.
+    PlayedWith,
+    /// Empties that list.
+    ClearPlayedWith,
+    /// Whether the cloud remembers the people the player plays with; `before` is what it was.
+    SetRememberPlayedWith {
+        on: bool,
+        before: bool,
+    },
     /// A page of the feed: the newest, or the one that starts before an item.
     Feed {
         before: Option<u64>,
@@ -671,6 +680,8 @@ pub struct Online {
     pub privacy: Option<api::Privacy>,
     /// Whether the page at `/u/<handle>` is shown to everyone; `None` until the cloud said.
     pub public_profile: Option<bool>,
+    /// The people the player played with recently: `{remember, people}`; `None` until the cloud said.
+    pub played_with: Option<api::PlayedWithList>,
     /// What players found per title (run reports).
     pub runs: Runs,
     /// The join code behind the Join button on Discord.
@@ -855,6 +866,11 @@ impl Online {
                 // The same: the switch showed the choice at once.
                 self.public_profile = Some(*before);
             }
+            Purpose::SetRememberPlayedWith { before, .. } => {
+                if let Some(list) = self.played_with.as_mut() {
+                    list.remember = *before;
+                }
+            }
             Purpose::AppearOffline { before, .. } => {
                 // The choice showed at once; the refusal takes it back.
                 if let Some(account) = self.account.as_mut() {
@@ -1007,6 +1023,21 @@ impl Online {
             Purpose::PublicProfile | Purpose::SetPublicProfile { .. } => {
                 if let Ok(now) = serde_json::from_value::<api::PublicProfile>(value.clone()) {
                     self.public_profile = Some(now.public_profile);
+                }
+            }
+            Purpose::PlayedWith => {
+                if let Ok(list) = serde_json::from_value::<api::PlayedWithList>(value.clone()) {
+                    self.played_with = Some(list);
+                }
+            }
+            Purpose::ClearPlayedWith => {
+                if let Some(list) = self.played_with.as_mut() {
+                    list.people.clear();
+                }
+            }
+            Purpose::SetRememberPlayedWith { on, .. } => {
+                if let Some(list) = self.played_with.as_mut() {
+                    list.remember = *on;
                 }
             }
             Purpose::Privacy | Purpose::SetPrivacy => {
@@ -1929,6 +1960,44 @@ impl Online {
         );
     }
 
+    /// Asks the cloud for the people the player played with recently, unless already known.
+    pub fn request_played_with(&mut self) {
+        if self.is_signed_in() && !self.is_waiting(|p| matches!(p, Purpose::PlayedWith)) {
+            self.send(Purpose::PlayedWith, Command::PlayedWith);
+        }
+    }
+
+    /// Empties the list of people the player played with recently.
+    pub fn clear_played_with(&mut self) {
+        if self.is_signed_in() && !self.is_waiting(|p| matches!(p, Purpose::ClearPlayedWith)) {
+            if let Some(list) = self.played_with.as_mut() {
+                list.people.clear();
+            }
+            self.send(Purpose::ClearPlayedWith, Command::ClearPlayedWith);
+        }
+    }
+
+    /// Sets whether the cloud remembers people the player plays with.
+    pub fn set_remember_played_with(&mut self, on: bool) {
+        if !self.is_signed_in() {
+            return;
+        }
+        let Some(before) = self.played_with.as_ref().map(|l| l.remember) else {
+            self.request_played_with();
+            return;
+        };
+        if before == on || self.is_waiting(|p| matches!(p, Purpose::SetRememberPlayedWith { .. })) {
+            return;
+        }
+        if let Some(list) = self.played_with.as_mut() {
+            list.remember = on;
+        }
+        self.send(
+            Purpose::SetRememberPlayedWith { on, before },
+            Command::SetRememberPlayedWith { on },
+        );
+    }
+
     /// Changes who sees the player's trophies. The cloud replaces the whole setting, so the other
     /// parts go back as the cloud last said; before it said anything, the launcher asks again
     /// instead of guessing them. The choice shows at once and comes back with the answer.
@@ -1977,6 +2046,7 @@ impl Online {
                     self.compares.clear();
                     self.privacy = None;
                     self.public_profile = None;
+                    self.played_with = None;
                     self.uploaded.clear();
                     self.secrets_sent.clear();
                     self.revealed_sent.clear();
@@ -2149,6 +2219,7 @@ impl Online {
             // The Discord Social SDK is not used by this launcher yet.
             Event::Discord(_) => {}
             Event::Unknown => {}
+            _ => {}
         }
         notices
     }
@@ -3535,6 +3606,72 @@ mod tests {
             Some(false),
             "refused: back to what it was"
         );
+    }
+
+    #[test]
+    fn played_with_request_clear_and_remember_toggle() {
+        let mut online = Online::default();
+        signed_in(&mut online);
+        online.take_outbox();
+
+        // 1. request_played_with sends Command::PlayedWith
+        online.request_played_with();
+        let lines = online.take_outbox();
+        assert_eq!(lines.len(), 1);
+        assert_eq!(
+            control::parse_command(&lines[0]).unwrap().1,
+            Command::PlayedWith
+        );
+        let id = online.next;
+        let sample = api::PlayedWithList {
+            remember: true,
+            people: vec![api::PlayedWith {
+                account: api::Account {
+                    id: AccountId(42),
+                    handle: "TestPlayer".into(),
+                },
+                last: 1700000000,
+                title_id: Some("GAME00001".into()),
+                title: Some("Sample Title".into()),
+                friend: false,
+            }],
+        };
+        answer(&mut online, id, sample.clone());
+        assert_eq!(online.played_with, Some(sample));
+
+        // 2. clear_played_with empties local people list optimistically and sends Command::ClearPlayedWith
+        online.clear_played_with();
+        let lines = online.take_outbox();
+        assert_eq!(lines.len(), 1);
+        assert_eq!(
+            control::parse_command(&lines[0]).unwrap().1,
+            Command::ClearPlayedWith
+        );
+        assert!(online.played_with.as_ref().unwrap().people.is_empty());
+        assert!(online.played_with.as_ref().unwrap().remember);
+
+        // 3. set_remember_played_with toggles remember optimistically and reverts on refusal
+        online.set_remember_played_with(false);
+        assert!(!online.played_with.as_ref().unwrap().remember);
+        let lines = online.take_outbox();
+        assert_eq!(lines.len(), 1);
+        assert_eq!(
+            control::parse_command(&lines[0]).unwrap().1,
+            Command::SetRememberPlayedWith { on: false }
+        );
+        refuse_last(&mut online, Failure::new(Failure::OFFLINE, "network down"));
+        assert!(
+            online.played_with.as_ref().unwrap().remember,
+            "reverted on refusal"
+        );
+
+        // 4. Signing out resets played_with to None
+        online.event(Event::State {
+            cloud: Cloud::Online,
+            account: None,
+            pending: None,
+        });
+        assert_eq!(online.played_with, None);
     }
 
     #[test]
