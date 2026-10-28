@@ -178,6 +178,30 @@ pub fn with_light<R>(light: bool, f: impl FnOnce() -> R) -> R {
     out
 }
 
+/// The tint of the question cards (the cancel / quit popups): the active look's own colour, as the
+/// three channels of a dark tone. Set by the backdrop each frame from the palette on screen (Game
+/// Colors included); read by [`crate::ui::pageblur`]. Starts as Cosmic's blue.
+static CARD_WASH: [AtomicU32; 3] = [AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0)];
+
+pub fn set_card_wash(rgb: [f32; 3]) {
+    for (slot, v) in CARD_WASH.iter().zip(rgb) {
+        slot.store(v.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
+    }
+}
+
+/// The card tint as straight sRGB floats (0..=1).
+pub fn card_wash() -> [f32; 3] {
+    let [r, g, b] = &CARD_WASH;
+    let load = |a: &AtomicU32| f32::from_bits(a.load(Ordering::Relaxed));
+    let wash = [load(r), load(g), load(b)];
+    // Nothing set yet (all zero bits is 0.0): Cosmic's tint, as before.
+    if wash == [0.0, 0.0, 0.0] {
+        Theme::Cosmic.palette().card_wash()
+    } else {
+        wash
+    }
+}
+
 /// High Contrast (docs/DESIGN.md 3.14): brighter ink and edges and no frosted glass. Set by the
 /// shell from the preference; read by the colour tokens and the glass.
 static HIGH_CONTRAST: AtomicBool = AtomicBool::new(false);
@@ -366,6 +390,12 @@ pub struct Palette {
 }
 
 impl Palette {
+    /// The tint a question card wears over the blurred page: the look's deep tone lifted most of
+    /// the way to its middle one, so a card on Sunset is wine, on Aurora teal, on Cosmic blue.
+    pub fn card_wash(&self) -> [f32; 3] {
+        let at = |i: usize| self.deep[i] + (self.middle[i] - self.deep[i]) * 0.6;
+        [at(0), at(1), at(2)]
+    }
     pub fn deep_color(&self) -> Color32 {
         rgb(self.deep[0], self.deep[1], self.deep[2])
     }

@@ -1781,7 +1781,16 @@ pub fn fullscreen_panel<R>(
     add_contents: impl FnOnce(&mut Ui, f32) -> R,
 ) -> Option<R> {
     let id = Id::unique(id);
-    let v = ctx.animate_to((id, "open"), if open { 1.0 } else { 0.0 }, Motion::Overlay);
+    // `animate_from_to`, not `animate_to`: a panel is only drawn while it is active, so its tracker
+    // is born on the very frame it opens, and `animate_to` starts a new tracker at its target (no
+    // entrance). The first opening (the "..." of a game, say) then appeared at once; from the
+    // second on the tracker existed, parked at 0, and the spring played.
+    let v = ctx.animate_from_to(
+        (id, "open"),
+        0.0,
+        if open { 1.0 } else { 0.0 },
+        Motion::Overlay,
+    );
     if v <= 0.001 && !open {
         return None;
     }
@@ -1799,6 +1808,10 @@ pub fn fullscreen_panel<R>(
                 black: style.black * v.clamp(0.0, 1.0),
                 overlay: fade(style.overlay, v),
                 material_mix: lerp(0.0, style.material_mix, v.clamp(0.0, 1.0)),
+                // The glass covers the page it opens over in the first half of the opening and
+                // lets it show again on the way out; before, it was opaque from the first frame,
+                // so the page vanished in one frame and the panel seemed to cut in.
+                alpha: style.alpha * (v * 2.0).clamp(0.0, 1.0),
                 ..style
             };
             paint_glass(ctx, &painter, screen, faded);
@@ -1810,7 +1823,9 @@ pub fn fullscreen_panel<R>(
             };
             let area = scale_rect(screen, scale);
             let mut child = ui.new_child(UiBuilder::new().max_rect(area));
-            child.set_opacity(v.clamp(0.0, 1.0));
+            // The contents come in once the glass has mostly covered the page, so the two pages'
+            // texts never overlap.
+            child.set_opacity(((v - 0.25) / 0.75).clamp(0.0, 1.0));
             result = Some(add_contents(&mut child, v));
         });
     result

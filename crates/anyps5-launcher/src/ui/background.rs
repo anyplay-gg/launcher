@@ -184,6 +184,13 @@ impl Backdrop {
         let light = self.theme.is_light() && !self.window_glass;
         let t = ctx.animate_to("backdrop/light", f32::from(light), Motion::Fade);
         crate::ui::theme::set_light(t);
+        // The question cards wear the colour of the look on screen (Game Colors: the game's).
+        let tones = if self.theme == Theme::GameColors {
+            self.game_palette
+        } else {
+            self.theme.palette()
+        };
+        crate::ui::theme::set_card_wash(tones.card_wash());
         let dt = f64::from(ctx.input(|i| i.unstable_dt));
         let paused = self.paused || ctx.reduced_motion() || self.window_glass;
         self.clock.advance(dt, paused);

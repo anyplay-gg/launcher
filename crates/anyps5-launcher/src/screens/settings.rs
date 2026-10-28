@@ -2656,7 +2656,11 @@ fn draw(
         area.max,
     );
     let mut child = ui.new_child(UiBuilder::new().max_rect(list_rect));
-    child.set_opacity(fade_in.clamp(0.0, 1.0));
+    // Multiplied, not set: the panel fades its whole content (title, rail, rows) with its own
+    // openness, and `set_opacity` would replace that fade with the rows' own. The rows then stayed
+    // fully opaque while the page closed (the rest of the panel was already gone) and vanished in
+    // the last frame.
+    child.multiply_opacity(fade_in.clamp(0.0, 1.0));
     let options = ListOptions {
         accent,
         language,

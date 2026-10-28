@@ -1019,13 +1019,15 @@ impl PanelHost {
         let events = self.take_events(wanted);
         let kind = QuitKind::CancelUnlock;
         if cx.model.cancel_ask.is_none() {
+            // The question is answered (or gone): the card still has to play its exit, so this
+            // does not return before `show`. Returning here left the panel in its closing state
+            // with nothing drawing it, so it vanished at once and, on the next question, showed
+            // for one frame at full strength, left again and only then opened.
             self.cancel_unlock.close();
             if wanted {
                 cx.model.dismiss_overlay();
             }
-            return;
-        }
-        if wanted && !self.cancel_unlock.is_active() {
+        } else if wanted && !self.cancel_unlock.is_active() {
             self.cancel_unlock.open(kind);
         } else if !wanted && self.cancel_unlock.is_active() {
             if cx.model.overlay.is_some_and(Overlay::is_side_panel) {
@@ -1050,14 +1052,19 @@ impl PanelHost {
     /// The question before the window closes while games are unlocked or removed.
     fn quit_ui(&mut self, cx: &mut OverlayCx<'_>, wanted: bool) {
         let events = self.take_events(wanted);
-        let Some(kind) = cx.model.quit_ask else {
+        // Once the question is answered `quit_ask` is gone, but the card still has to play its
+        // exit, so this does not return before `show` (the card draws from what it showed last;
+        // the kind only matters while it is open). Returning here left the panel in its closing
+        // state with nothing drawing it: it vanished at once and, on the next question, showed
+        // for one frame at full strength, left again and only then opened.
+        let asked = cx.model.quit_ask;
+        let kind = asked.unwrap_or(QuitKind::Unlocking);
+        if asked.is_none() {
             self.quit.close();
             if wanted {
                 cx.model.dismiss_overlay();
             }
-            return;
-        };
-        if wanted && !self.quit.is_active() {
+        } else if wanted && !self.quit.is_active() {
             self.quit.open(kind);
         } else if !wanted && self.quit.is_active() {
             if cx.model.overlay.is_some_and(Overlay::is_side_panel) {

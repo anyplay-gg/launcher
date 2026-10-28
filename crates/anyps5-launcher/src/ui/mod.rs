@@ -53,6 +53,7 @@ pub mod os_emoji;
 pub mod osk;
 pub mod pad_hub;
 pub mod pad_info;
+pub mod pageblur;
 pub mod press;
 pub mod ps_button;
 pub mod reveal;

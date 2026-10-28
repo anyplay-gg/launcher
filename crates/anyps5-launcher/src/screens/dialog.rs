@@ -27,6 +27,7 @@ use crate::ui::glass::{GlassStyle, paint_glass};
 use crate::ui::i18n::Language;
 use crate::ui::icons::Icon;
 use crate::ui::input::Command;
+use crate::ui::pageblur;
 use crate::ui::sound::Cue;
 use crate::ui::text;
 use crate::ui::theme::{self, TextStyle, color, radius, shadows, size, space, ty};
@@ -269,6 +270,7 @@ fn paint(
         Motion::Overlay,
     );
     if v <= 0.001 && !open {
+        pageblur::release(ctx, id);
         return None;
     }
     let v = v.clamp(0.0, 1.0);
@@ -286,7 +288,10 @@ fn paint(
             // Text carries explicit colours, so only the painter's opacity fades it with the card.
             let mut text_painter = painter.clone();
             text_painter.set_opacity(v);
+            // The flat dim holds until the blurred page arrives (a frame or two) and stays under
+            // High Contrast; the blur then fades in over it.
             paint_scrim(&painter, screen, SCRIM * v);
+            pageblur::paint(ctx, &painter, screen, id, open, v);
 
             let width = card_width(screen.width());
             let inner = width - 2.0 * CARD_PADDING;
@@ -336,10 +341,14 @@ fn paint(
                     ..shadows::toast()
                 },
             );
-            let mut style = GlassStyle::glass(radius::LARGE, 0.6);
-            style.black *= v;
-            style.alpha = v;
-            paint_glass(ctx, &painter, rect, style);
+            // The card is a translucent pane over the blurred page; until that page has been
+            // captured (and under High Contrast) it is the usual glass panel.
+            if !pageblur::paint_card(ctx, &painter, rect, radius::LARGE, id, v) {
+                let mut style = GlassStyle::glass(radius::LARGE, 0.6);
+                style.black *= v;
+                style.alpha = v;
+                paint_glass(ctx, &painter, rect, style);
+            }
 
             let mut y = rect.min.y + CARD_PADDING;
             let x = rect.min.x + CARD_PADDING;
