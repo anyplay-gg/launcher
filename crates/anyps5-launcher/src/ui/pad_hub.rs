@@ -75,11 +75,12 @@ pub struct PadInfo {
     pub link: Link,
     pub battery: Battery,
     /// What reads it: `gilrs (WGI)`, with `HID` added where the launcher can talk to the pad's
-    /// reports (a DualSense).
+    /// reports (a DualSense or a DualShock 4).
     pub backend: String,
     /// It is the pad the launcher listens to.
     pub active: bool,
-    /// A DualSense: the light bar can be set.
+    /// A DualSense or a DualShock 4: the light bar can be set. (The name is older than the
+    /// DualShock 4 support.)
     pub dualsense: bool,
     /// The pad has a rumble motor the launcher can drive.
     pub rumble: bool,

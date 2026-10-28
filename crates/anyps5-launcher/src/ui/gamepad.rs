@@ -22,6 +22,8 @@ use crate::ui::pad_hub::{self, Link, PadInfo};
 use crate::ui::pad_info::{self, Battery, Family};
 use crate::ui::talk;
 
+mod hid_fallback;
+
 /// Stick deflection that makes a direction, at the default dead zone of 25 percent. The dead zone
 /// of the Controllers page moves it: the stick engages 30 points above the zone and lets go 13
 /// above it.
@@ -177,6 +179,8 @@ fn press_effect(button: Button, mine: bool, bindings: &Bindings) -> PressEffect 
 /// and is not fatal (the receiver then simply stays silent).
 pub fn spawn(ctx: egui::Context, home: Arc<HomeButton>) -> Receiver<PadMessage> {
     let (tx, rx) = mpsc::channel();
+    // A DualSense or DualShock 4 the system's pad API does not list is read from its HID reports.
+    hid_fallback::spawn(ctx.clone(), tx.clone(), Arc::clone(&home));
     let spawned = thread::Builder::new()
         .name("gamepad".into())
         .spawn(move || poll(&ctx, &tx, &home));
@@ -204,6 +208,24 @@ const BACKEND: &str = if cfg!(windows) {
 const SONY: u16 = 0x054C;
 const DUALSENSE: [u16; 2] = [0x0CE6, 0x0DF2];
 
+/// Whether a vendor and product id name a pad whose light bar the launcher can set: a DualSense
+/// or a DualShock 4 (see `lightbar::kind_of`).
+fn has_light_bar(vendor: Option<u16>, product: Option<u16>) -> bool {
+    matches!(
+        (vendor, product),
+        (Some(v), Some(p)) if crate::ui::lightbar::kind_of(v, p).is_some()
+    )
+}
+
+/// Whether a vendor and product id name a DualShock 4.
+fn is_dualshock4(vendor: Option<u16>, product: Option<u16>) -> bool {
+    matches!(
+        (vendor, product),
+        (Some(v), Some(p)) if crate::ui::lightbar::kind_of(v, p)
+            == Some(crate::ui::lightbar::Kind::DualShock4)
+    )
+}
+
 /// Whether a vendor and product id name a DualSense.
 fn is_dualsense(vendor: Option<u16>, product: Option<u16>) -> bool {
     vendor == Some(SONY) && product.is_some_and(|p| DUALSENSE.contains(&p))
@@ -228,6 +250,8 @@ fn describe(
     };
     let kind = if is_dualsense(vendor, product) {
         " [DualSense]"
+    } else if is_dualshock4(vendor, product) {
+        " [DualShock 4]"
     } else {
         ""
     };
@@ -346,7 +370,7 @@ fn adopt(gilrs: &Gilrs, active: &mut ActivePad, id: GamepadId) {
 
 /// Tells the Controllers page which pads there are and how each is connected.
 fn publish(gilrs: &Gilrs, active: Option<GamepadId>, links: &[(u16, u16, Link)]) {
-    let pads = gilrs
+    let mut pads: Vec<PadInfo> = gilrs
         .gamepads()
         .map(|(id, pad)| {
             let (vendor, product) = (pad.vendor_id(), pad.product_id());
@@ -366,11 +390,12 @@ fn publish(gilrs: &Gilrs, active: Option<GamepadId>, links: &[(u16, u16, Link)])
                     format!("gilrs ({BACKEND})")
                 },
                 active: active == Some(id),
-                dualsense: is_dualsense(vendor, product),
+                dualsense: has_light_bar(vendor, product),
                 rumble: pad.is_ff_supported(),
             }
         })
         .collect();
+    pads.extend(hid_fallback::pads());
     pad_hub::publish_pads(pads);
 }
 
@@ -403,6 +428,7 @@ fn poll(ctx: &egui::Context, tx: &Sender<PadMessage>, home: &HomeButton) {
         if run.is_err() {
             tracing::warn!("gamepad thread panicked; starting it again");
         }
+        hid_fallback::gilrs_has_pad(false);
         thread::sleep(RESTART_AFTER);
     }
 }
@@ -567,6 +593,7 @@ fn session(ctx: &egui::Context, tx: &Sender<PadMessage>, home: &HomeButton, atte
         // costs no measurable CPU; with none connected there is nothing to poll for, and a plug-in
         // is noticed within a tenth of a second.
         let idle = gilrs.gamepads().next().is_none();
+        hid_fallback::gilrs_has_pad(!idle);
         thread::sleep(Duration::from_millis(if idle { 100 } else { 4 }));
     }
 }
@@ -692,6 +719,27 @@ mod tests {
         assert!(!is_dualsense(Some(0x054C), Some(0x09CC)), "a DualShock 4");
         assert!(!is_dualsense(Some(0x045E), Some(0x0CE6)));
         assert!(!is_dualsense(None, None));
+    }
+
+    #[test]
+    fn a_dualshock_4_is_known_by_its_ids_and_has_a_light_bar() {
+        for product in [0x05C4, 0x09CC, 0x0BA0] {
+            assert!(is_dualshock4(Some(0x054C), Some(product)));
+            assert!(!is_dualsense(Some(0x054C), Some(product)));
+            assert!(has_light_bar(Some(0x054C), Some(product)));
+        }
+        assert!(has_light_bar(Some(0x054C), Some(0x0CE6)));
+        assert!(!is_dualshock4(Some(0x045E), Some(0x09CC)));
+        assert!(!has_light_bar(None, None));
+        let line = describe(
+            "Wireless Controller",
+            Some(0x054C),
+            Some(0x09CC),
+            "00",
+            None,
+            MappingSource::Driver,
+        );
+        assert!(line.contains("[DualShock 4]"), "{line}");
     }
 
     #[test]

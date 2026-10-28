@@ -1,7 +1,8 @@
-//! The light bar colour of a DualSense (docs/DESIGN.md 6.10), set from the Controllers page.
+//! The light bar colour of a DualSense or a DualShock 4 (docs/DESIGN.md 6.10), set from the
+//! Controllers page.
 //!
 //! This is the one place the launcher writes to a pad's HID output, and only because the player
-//! asked on that page, only for a DualSense, and only while no game runs: a game owns the pad
+//! asked on that page, only for a DualSense or a DualShock 4, and only while no game runs: a game owns the pad
 //! while it is in front, and the next report it sends replaces the colour anyway. The caller
 //! checks "no game"; [`set`] does the writing. The report layouts are generic device facts from
 //! the public sources of the Linux kernel (`drivers/hid/hid-playstation.c`, the
@@ -20,6 +21,17 @@
 //! | Bluetooth | 0x31 | 78 | 3 (sequence in the high nibble of byte 1, tag 0x10 at byte 2, CRC-32 in the last four) |
 //!
 //! The Bluetooth CRC is CRC-32 over a 0xA2 byte and the report without its last four bytes.
+//!
+//! A DualShock 4 (kernel `dualshock4_output_report_*`, SDL `SDL_hidapi_ps4.c`) has a shorter
+//! common part of 10 bytes: `valid_flag0` (0), `valid_flag1` (1), a reserved byte, the two rumble
+//! motors (3, 4) and the colour at 5, 6 and 7. `valid_flag0` bit 1 says the colour is meant; the
+//! rumble motors stay off the report's valid flags, so a game's rumble is not touched. There is no
+//! pairing fade-out to switch off.
+//!
+//! | Link | Report id | Length | Common part starts at |
+//! |---|---|---|---|
+//! | USB | 0x05 | 32 | 1 |
+//! | Bluetooth | 0x11 | 78 | 3 (0xC0 at byte 1: HID output plus CRC, 0 at byte 2, CRC-32 in the last four) |
 
 #![cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
 
@@ -40,6 +52,36 @@ const SETUP: usize = 41;
 const RED: usize = 44;
 
 const FLAG1_LIGHTBAR: u8 = 1 << 2;
+
+/// The same, for a DualShock 4.
+const DS4_USB_ID: u8 = 0x05;
+const DS4_USB_LEN: usize = 32;
+const DS4_BT_ID: u8 = 0x11;
+const DS4_BT_LEN: usize = 78;
+const DS4_BT_HW_CONTROL: u8 = 0xC0;
+const DS4_FLAG0: usize = 0;
+const DS4_RED: usize = 5;
+const DS4_FLAG0_LIGHTBAR: u8 = 1 << 1;
+
+/// Sony's USB vendor id.
+const SONY: u16 = 0x054C;
+
+/// The two families of pads whose light bar the launcher can set; their output reports differ.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    DualSense,
+    DualShock4,
+}
+
+/// The pad a vendor and product id stand for. DualSense 0CE6 and Edge 0DF2; DualShock 4 05C4,
+/// 09CC (v2) and 0BA0 (Sony's USB adapter).
+pub fn kind_of(vendor: u16, product: u16) -> Option<Kind> {
+    match (vendor, product) {
+        (SONY, 0x0CE6 | 0x0DF2) => Some(Kind::DualSense),
+        (SONY, 0x05C4 | 0x09CC | 0x0BA0) => Some(Kind::DualShock4),
+        _ => None,
+    }
+}
 const FLAG2_LIGHTBAR_SETUP: u8 = 1 << 1;
 const SETUP_LIGHT_OUT: u8 = 1 << 1;
 
@@ -167,19 +209,44 @@ pub fn report(link: Link, rgb: [u8; 3], setup: bool, seq: u8) -> Vec<u8> {
     report
 }
 
-/// Sets the light bar of every DualSense the system lists. Returns how many took it. The
+/// A report that makes the light bar of a DualShock 4 `rgb`, for a pad on `link`. Only the
+/// colour flag is set, so rumble is left alone.
+pub fn report_ds4(link: Link, rgb: [u8; 3]) -> Vec<u8> {
+    let (mut report, start) = match link {
+        Link::Bluetooth => {
+            let mut r = vec![0u8; DS4_BT_LEN];
+            r[0] = DS4_BT_ID;
+            r[1] = DS4_BT_HW_CONTROL;
+            (r, 3)
+        }
+        _ => {
+            let mut r = vec![0u8; DS4_USB_LEN];
+            r[0] = DS4_USB_ID;
+            (r, 1)
+        }
+    };
+    report[start + DS4_FLAG0] |= DS4_FLAG0_LIGHTBAR;
+    report[start + DS4_RED..start + DS4_RED + 3].copy_from_slice(&rgb);
+    if link == Link::Bluetooth {
+        let split = DS4_BT_LEN - 4;
+        let crc = crc32(crc32(0, &[BT_CRC_SEED]), &report[..split]);
+        report[split..].copy_from_slice(&crc.to_le_bytes());
+    }
+    report
+}
+
+/// Sets the light bar of every DualSense and DualShock 4 the system lists. Returns how many took it. The
 /// caller has checked that no game runs.
 #[cfg(any(windows, target_os = "linux"))]
 pub fn set(rgb: [u8; 3]) -> Result<usize, String> {
     use hidapi::{BusType, HidApi};
-    const SONY: u16 = 0x054C;
     let api = HidApi::new().map_err(|e| e.to_string())?;
     let mut done = 0;
     let mut last_error = None;
     for info in api.device_list() {
-        if info.vendor_id() != SONY || !matches!(info.product_id(), 0x0CE6 | 0x0DF2) {
+        let Some(kind) = kind_of(info.vendor_id(), info.product_id()) else {
             continue;
-        }
+        };
         let link = match info.bus_type() {
             BusType::Bluetooth => Link::Bluetooth,
             _ => Link::Usb,
@@ -191,9 +258,12 @@ pub fn set(rgb: [u8; 3]) -> Result<usize, String> {
                 continue;
             }
         };
-        let sent = device
-            .write(&report(link, rgb, true, 0))
-            .and_then(|_| device.write(&report(link, rgb, false, 1)));
+        let sent = match kind {
+            Kind::DualSense => device
+                .write(&report(link, rgb, true, 0))
+                .and_then(|_| device.write(&report(link, rgb, false, 1))),
+            Kind::DualShock4 => device.write(&report_ds4(link, rgb)),
+        };
         match sent {
             Ok(_) => done += 1,
             Err(err) => last_error = Some(err.to_string()),
@@ -293,6 +363,46 @@ mod tests {
         assert_eq!(crc, crc32(crc32(0, &[0xA2]), &r[..74]));
         // A different colour is a different signature.
         let other = report(Link::Bluetooth, [10, 20, 31], false, 5);
+        assert_ne!(&r[74..], &other[74..]);
+    }
+
+    #[test]
+    fn the_pads_are_told_apart_by_their_ids() {
+        assert_eq!(kind_of(0x054C, 0x0CE6), Some(Kind::DualSense));
+        assert_eq!(kind_of(0x054C, 0x0DF2), Some(Kind::DualSense));
+        for product in [0x05C4, 0x09CC, 0x0BA0] {
+            assert_eq!(kind_of(0x054C, product), Some(Kind::DualShock4));
+        }
+        assert_eq!(kind_of(0x045E, 0x09CC), None);
+        assert_eq!(kind_of(0x054C, 0x0001), None);
+    }
+
+    #[test]
+    fn a_dualshock_usb_report_has_the_colour_where_the_kernel_puts_it() {
+        let r = report_ds4(Link::Usb, [1, 2, 3]);
+        assert_eq!(r.len(), 32);
+        assert_eq!(r[0], 0x05);
+        // Common part starts at 1: flag0 at 1, colour at 6, 7 and 8.
+        assert_eq!(r[1], 0x02);
+        assert_eq!(&r[6..9], [1, 2, 3]);
+        // No rumble, no flash, nothing else switched on.
+        assert_eq!(r[2], 0);
+        assert_eq!(&r[4..6], [0, 0]);
+        assert!(r[9..].iter().all(|b| *b == 0));
+    }
+
+    #[test]
+    fn a_dualshock_bluetooth_report_is_signed() {
+        let r = report_ds4(Link::Bluetooth, [10, 20, 30]);
+        assert_eq!(r.len(), 78);
+        assert_eq!(r[0], 0x11);
+        assert_eq!(r[1], 0xC0);
+        // Common part starts at 3: flag0 at 3, colour at 8, 9 and 10.
+        assert_eq!(r[3], 0x02);
+        assert_eq!(&r[8..11], [10, 20, 30]);
+        let crc = u32::from_le_bytes([r[74], r[75], r[76], r[77]]);
+        assert_eq!(crc, crc32(crc32(0, &[0xA2]), &r[..74]));
+        let other = report_ds4(Link::Bluetooth, [10, 20, 31]);
         assert_ne!(&r[74..], &other[74..]);
     }
 
